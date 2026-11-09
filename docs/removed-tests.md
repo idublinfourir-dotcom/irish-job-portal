@@ -24,7 +24,7 @@ Replaced because the two-person model of the migrations changed the rule: the ac
 | [ban] approval trigger: a ban on a confirmed ban request for this case works | two-person: `[ban] instant ban must do: kind ban, outcome ban, ban row in the applying transaction` |
 | [ban] approval trigger: a used ban request cannot make a second ban row for the same case | two-person: `[ban] ban probe: a second ban row on the same case in the applying transaction` |
 | [approval_request] status confirmed needs confirmed_by_staff_user_id | two-person: `[approval_request] must do: a different person confirms, stamped with their id and the time` |
-| [sponsorship_statement] admin_on_behalf requires confirmation_file_key and approval_request_id and no signer | smoke: `sponsorship_statement: refusal: admin_on_behalf by the portal (statement kind trigger)` covers the kind rule only (see "Not covered yet") |
+| [sponsorship_statement] admin_on_behalf requires confirmation_file_key and approval_request_id and no signer | smoke: `sponsorship_statement: refusal: admin_on_behalf by the portal (statement kind trigger)` covers the kind rule; the rest is in `coverage-gaps.test.ts` |
 
 Outdated by a later fix:
 
@@ -69,18 +69,25 @@ All 39 were marked S-C3 in the old map. The retention rules changed on purpose, 
 | [11 run_retention] storage keys returned for deletion | `[inactive] i3 CV storage key returned to the caller`, `[cases] 311 ... copy key returned`, `[erase] keys of erased people returned` |
 | [11 run_retention] "in batches of 1,000 rows per transaction": a SECURITY DEFINER procedure cannot COMMIT between batches | smoke: `run_retention(): one batch per call: deleted_account_grace erases a due candidate, returns rule, done, left` (the caller repeats) |
 | [11 run_retention] a call stops at 1,000 rows per rule and reports more = true | `more` became `left`: `[approvals] approval_request rule reports left = 0 once nothing more can go`, `[volume] 1,100 frozen candidates do not hide the 3 plain ones ...`, `[integrity] a second drain finds nothing to do` |
-| [14 pseudonymise] after erasure, a scan of every column of every table finds the person's id or email only where stated | Only in part (see "Not covered yet") |
+| [14 pseudonymise] after erasure, a scan of every column of every table finds the person's id or email only where stated | Only in part in `retention.test.ts`; the scan is in `coverage-gaps.test.ts` |
+
+## Covered by coverage-gaps.test.ts
+
+These removed checks had no newer test that stated the same rule. `packages/db/test/coverage-gaps.test.ts` now states each one, as the real role (`app_admin`), with the acting staff id set local. Each test holds the refusal (with the error text) and, where the rule allows something, the good case.
+
+| Removed check | Covered by (`coverage-gaps.test.ts`) |
+|---|---|
+| [ban] unique cro_number where not null | `[ban] unique cro_number where not null` |
+| [ban] unique email_domain where not null | `[ban] unique email_domain where not null` |
+| [staff_role] unique (staff_user_id, role) | `[staff_role] unique (staff_user_id, role)` |
+| [approval_request] target_id is required (build 17) | `[approval_request] target_id is required, so a new row's request has a natural key (build 17)` |
+| [approval_request] CONCURRENT: two pending requests for the same new row | `[approval_request] CONCURRENT: two pending requests for the same new row (same natural key): one is refused` |
+| [approval_request] CONCURRENT: two people decide one request | `[approval_request] CONCURRENT: two people decide one request, one wins` |
+| [sponsorship_statement] admin_on_behalf requires confirmation_file_key and approval_request_id and no signer | `[sponsorship_statement] admin_on_behalf requires confirmation_file_key and approval_request_id and no signer` |
+| [sponsorship_statement] admin_on_behalf: the used request cannot be used again for the same job | `[sponsorship_statement] admin_on_behalf: the used request cannot be used again for the same job` |
+| [strike] approval trigger at level 3 for a refused request and for a confirmed request for another case | `[strike] approval trigger at level 3: a refused request and a confirmed request for another case are refused; the case's own confirmed request works` |
+| [14 pseudonymise] a scan of every column of every table after an erasure | `[14 pseudonymise] after erasure, a scan of every column of every table finds the person's id or email nowhere` (the scan also finds a second, unerased person, so it is not blind). The old check allowed one sent `email_outbox` row; erasure now swaps the id for a stand-in, so the scan finds nothing. |
 
 ## Not covered yet
 
-These removed checks have no newer test that states the same rule. The rule is still in the migrations, so a test should be written.
-
-- [ban] unique cro_number where not null, and [ban] unique email_domain where not null (the two unique indexes on the ban list).
-- [staff_role] unique (staff_user_id, role).
-- [approval_request] target_id is required, so a new row's request has a natural key (build 17).
-- [approval_request] CONCURRENT: two pending requests for the same new row (same natural key): one is refused.
-- [approval_request] CONCURRENT: two people decide one request, one wins.
-- [sponsorship_statement] admin_on_behalf requires confirmation_file_key and approval_request_id and no signer (only the kind trigger is covered by smoke).
-- [sponsorship_statement] admin_on_behalf: the used request cannot be used again for the same job.
-- [strike] approval trigger at level 3 for a refused request and for a confirmed request for another case (level 2 has both, same trigger branch, but it is not stated for level 3).
-- [14 pseudonymise] a scan of every column of every table after an erasure. `retention.test.ts` checks the named tables and the audit log, not every column.
+Nothing.
