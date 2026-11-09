@@ -1,2 +1,2 @@
-// Tables are added here during the database design.
-export {};
+export * from "./schema";
+export * from "./relations";

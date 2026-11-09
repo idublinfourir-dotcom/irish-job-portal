@@ -11,6 +11,19 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # The database tests use the same image and port as packages/db/test/test-db.sh. Keep them in step.
+    services:
+      postgres:
+        image: supabase/postgres:17.11.0.018
+        env:
+          POSTGRES_PASSWORD: test
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
