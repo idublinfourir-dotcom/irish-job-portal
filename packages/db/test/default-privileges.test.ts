@@ -8,9 +8,9 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { urlFor } from "./db";
+import { RUN, urlFor } from "./db";
 
-const name = `portal_test_dp_${randomBytes(4).toString("hex")}`;
+const name = `portal_test_${RUN}_dp_${randomBytes(4).toString("hex")}`;
 const supa = ["anon", "authenticated", "service_role"];
 let owner: pg.Pool, boss: pg.Pool;
 
@@ -35,10 +35,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await owner?.end();
   await boss?.end();
-  const admin = new pg.Client({ connectionString: urlFor("postgres") });
-  await admin.connect();
-  await admin.query(`drop database if exists ${name} with (force)`);
-  await admin.end();
 });
 
 it("worst case: a table, sequence and function that portal_owner creates later are reachable by none of anon, authenticated, service_role", async () => {
@@ -46,7 +42,7 @@ it("worst case: a table, sequence and function that portal_owner creates later a
     create function public.late_fn() returns int language sql as 'select 1';`);
   const bad: string[] = [];
   for (const r of supa) {
-    const q = async (sql: string) => (await boss.query(sql, [r])).rows[0].h as boolean;
+    const q = async (sql: string) => (await boss.query(`select * from (${sql}) t(h)`, [r])).rows[0].h as boolean;
     if (await q("select has_table_privilege($1, 'public.late_table', 'select,insert,update,delete')")) bad.push(`${r}: table`);
     if (await q("select has_any_column_privilege($1, 'public.late_table', 'select,insert,update')")) bad.push(`${r}: column`);
     if (await q("select has_sequence_privilege($1, 'public.late_table_id_seq', 'usage,select,update')")) bad.push(`${r}: sequence`);

@@ -7,7 +7,9 @@ export const ROLES = ["portal_owner", "app_candidate", "app_portal", "app_admin"
 // anon and authenticated come from Supabase's image. They cannot log in, so we connect as postgres and switch role.
 export type Role = (typeof ROLES)[number] | "postgres" | "anon" | "authenticated";
 
-export const TEMPLATE = "portal_template";
+// One id per test run (set by the global setup, inherited by the workers), so parallel runs never share database names.
+export const RUN = (process.env.PORTAL_TEST_RUN ??= String(process.pid));
+export const TEMPLATE = `portal_template_${RUN}`;
 const BASE = process.env.TEST_DATABASE_URL ?? "postgres://postgres:test@127.0.0.1:54329/postgres";
 
 export function urlFor(database: string, user = "postgres"): string {
@@ -21,7 +23,7 @@ export const testPassword = () => decodeURIComponent(new URL(BASE).password);
 export type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 
 export async function createTestDb() {
-  const name = `portal_test_${randomBytes(4).toString("hex")}`;
+  const name = `portal_test_${RUN}_${randomBytes(4).toString("hex")}`;
   const admin = new pg.Client({ connectionString: urlFor("postgres") });
   await admin.connect();
   await admin.query(`create database ${name} template ${TEMPLATE}`);
@@ -47,12 +49,9 @@ export async function createTestDb() {
     name,
     pool,
     query: (role: Role, sql: string, params?: unknown[]) => pool(role).query(sql, params),
+    // Only closes connections. DROP DATABASE forces a checkpoint, and many at once took over 10 s; the global setup drops this run's databases at the end.
     async drop() {
       await Promise.all([...pools.values()].map((p) => p.end()));
-      const c = new pg.Client({ connectionString: urlFor("postgres") });
-      await c.connect();
-      await c.query(`drop database if exists ${name} with (force)`);
-      await c.end();
     },
   };
 }

@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
-import { ROLES, TEMPLATE, testPassword, urlFor } from "./db";
+import { RUN, ROLES, TEMPLATE, testPassword, urlFor } from "./db";
 
 export default async function setup() {
   const admin = new pg.Client({ connectionString: urlFor("postgres") });
@@ -13,12 +13,8 @@ export default async function setup() {
     throw new Error("The test database is not running. Start it with: npm run db:test:up");
   }
 
-  // Remove the template and any copies left by a crashed run.
-  const old = await admin.query<{ datname: string }>(
-    "select datname from pg_database where datname = $1 or datname like 'portal\\_test\\_%'",
-    [TEMPLATE],
-  );
-  for (const { datname } of old.rows) await admin.query(`drop database "${datname}" with (force)`);
+  // The migrations create server-wide roles, so only one run builds its template at a time.
+  await admin.query("select pg_advisory_lock(4242)");
   await admin.query(`create database ${TEMPLATE}`);
 
   const pool = new pg.Pool({ connectionString: urlFor(TEMPLATE), max: 1 });
@@ -37,5 +33,15 @@ export default async function setup() {
   const made = await admin.query<{ rolname: string }>("select rolname from pg_roles where rolname = any($1)", [[...ROLES]]);
   for (const { rolname } of made.rows)
     await admin.query(`alter role ${rolname} password ${admin.escapeLiteral(testPassword())}`);
+  await admin.query("select pg_advisory_unlock(4242)");
   await admin.end();
+
+  // Teardown: drop only this run's template and copies.
+  return async () => {
+    const c = new pg.Client({ connectionString: urlFor("postgres") });
+    await c.connect();
+    const mine = await c.query<{ datname: string }>("select datname from pg_database where datname = $1 or datname like $2", [TEMPLATE, `portal\\_test\\_${RUN}\\_%`]);
+    for (const { datname } of mine.rows) await c.query(`drop database "${datname}" with (force)`);
+    await c.end();
+  };
 }
