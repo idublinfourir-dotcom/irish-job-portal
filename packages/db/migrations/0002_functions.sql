@@ -93,15 +93,19 @@ create trigger organisation_big_company_approval before insert or update of is_b
 
 -- approval_request itself (section 6, Access): every new row is pending with the proposer stamped from the acting staff id; a confirmation
 -- stamps the confirmer and the time; status moves only from pending; applied_at changes once, from empty to now(). Every role, owner's rights.
--- The acting id is `set local app.staff_user_id` (section 2). PICK: a move to withdrawn needs no acting staff member (the design lists only new rows, confirmed and refused).
+-- The acting id is `set local app.staff_user_id` (section 2). Fix 6 PICK 4: every status change, a move to withdrawn included, needs an active acting staff member;
+-- a new row and a move to confirmed or refused also need some role; a move to confirmed needs the role the confirmer table names for the kind (#137 b).
 create function private.approval_request_guard() returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
 declare staff text := nullif(current_setting('app.staff_user_id', true), '');
 begin
-  if tg_op = 'INSERT' or (new.status is distinct from old.status and new.status in ('confirmed','refused')) then
+  if tg_op = 'INSERT' or new.status is distinct from old.status then
     if staff is null or not exists (select 1 from staff_user u where u.id = staff and u.status = 'active') then
       raise exception 'approval_request: no acting staff member (set local app.staff_user_id to an active staff user)' using errcode = 'P0001'; end if;
-    if not exists (select 1 from staff_role r where r.staff_user_id = staff) then
+    if new.status is distinct from 'withdrawn' and not exists (select 1 from staff_role r where r.staff_user_id = staff) then
       raise exception 'approval_request: the acting staff member holds no role' using errcode = 'P0001'; end if;
+    if new.status = 'confirmed' and not coalesce(exists (select 1 from staff_role r where r.staff_user_id = staff
+         and r.role = case when new.kind in ('strike_2','strike_3','ban','ban_lift') then 'trust_and_safety' else 'administrator' end), false) then
+      raise exception 'approval_request: the confirmer does not hold the role that covers this kind' using errcode = 'P0001'; end if;
   end if;
   if tg_op = 'INSERT' then
     new.status := 'pending'; new.proposed_by_staff_user_id := staff; new.confirmed_by_staff_user_id := null; new.decided_at := null; new.applied_at := null;
@@ -958,22 +962,25 @@ create trigger job_closed_at before insert or update of status on job for each r
 
 -- FIX-1: a ban row names only the case organisation's own CRO number and its own domains (the confirmation covers the case, not what the applying officer types)
 create function private.ban_matches_case() returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
-declare o organisation;
+declare o organisation; opened timestamptz;
 begin
   select o2.* into o from strike s join organisation o2 on o2.id = s.organisation_id where s.id = new.strike_id;
+  select s.created_at into opened from strike s where s.id = new.strike_id;
   if new.cro_number is not null and new.cro_number is distinct from o.cro_number then
     raise exception 'ban refused: cro_number is not the case organisation''s' using errcode = 'P0001'; end if;
-  if new.email_domain is not null and not exists (select 1 from organisation_domain d where d.organisation_id = o.id and d.domain = new.email_domain) then
-    raise exception 'ban refused: email_domain is not one of the case organisation''s domains' using errcode = 'P0001'; end if;
+  -- #137 a: only a domain the organisation had before its case opened
+  if new.email_domain is not null and not coalesce(exists (select 1 from organisation_domain d where d.organisation_id = o.id and d.domain = new.email_domain and d.created_at < opened), false) then
+    raise exception 'ban refused: email_domain is not one of the case organisation''s domains from before the case opened' using errcode = 'P0001'; end if;
   return new;
 end $$;
 create trigger ban_matches_case before insert on ban for each row execute function private.ban_matches_case();
 
--- FIX-5 (optional, a PICK for the owner): app_admin disables staff but cannot turn a disabled login back on; only the owner (a migration or break-glass) can.
+-- FIX-5 narrowed (C2 5, #136 c): app_admin cannot turn back on a disabled login that holds a role (that counts as a role grant); one with no role it can.
 -- Without it one administrator can re-enable a leaver who still holds a role and act as them (the acting id accepts any active staff_user).
 create function private.staff_user_no_reactivation() returns trigger language plpgsql set search_path = public, pg_temp as $$
 begin
-  if old.status = 'disabled' and new.status is distinct from old.status and current_user = 'app_admin' then
+  if old.status = 'disabled' and new.status is distinct from old.status and current_user = 'app_admin'
+     and exists (select 1 from staff_role r where r.staff_user_id = old.id) then
     raise exception 'staff_user: a disabled login is not turned back on by app_admin' using errcode = 'P0001'; end if;
   return new;
 end $$;

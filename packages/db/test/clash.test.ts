@@ -443,9 +443,10 @@ await blk("{ const o = await F.org(), mk = async () => ins(\"postgres\", \"strik
   const bid = (await su("select id from ban where strike_id=$1", [await banFor(o, { email_domain: dm })])).rows[0].id;
   await rule("ban", "delete trigger: lifting a ban needs a confirmed, unused ban_lift request for this ban", { refuse: async () => P.app_admin.query("delete from ban where id=$1", [bid]), ok: async () => { await appr("ban_lift", "ban", bid); await P.app_admin.query("delete from ban where id=$1", [bid]); }, expect: "two-person" });
   // one decision, two rows that each need an unused ban request
+  /* ported change (#137 a): the domain exists before the case opens, since a ban covers only the domains the organisation had then */
+  const dm3 = `${id("d")}.test`; await ins("postgres", "organisation_domain", { organisation_id: o, domain: dm3, source: "seed" });
   const b3 = await mk(), one = await appr("ban", "strike", b3);
   /* ported change: the strike decision and the ban row are written together by the acting staff member (set local app.staff_user_id), as the migrations take them */
-  const dm3 = `${id("d")}.test`; await ins("postgres", "organisation_domain", { organisation_id: o, domain: dm3, source: "seed" });
   const both = () => tx("app_admin", async (c) => { await c.query("select set_config('app.staff_user_id',$1,true)", [s1]); await c.query("update strike set outcome='ban', stage='decided', approval_request_id=$2 where id=$1", [b3, one]); await ins(c, "ban", { reason_code: "fake_job", email_domain: dm3, strike_id: b3, approval_request_id: one }); });
   await both().then(() => line("ban", "one confirmed ban request covers both the strike outcome and the ban row", true, null, "accepted"), (e) => line("ban", "one confirmed ban request covers both the strike outcome ban and the ban row it leads to", false, null, `refused: ${e.message}. A ban decision needs two separate confirmed requests (one for strike, one for ban), or the design must say one request serves both`)); }
 });

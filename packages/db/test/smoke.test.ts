@@ -39,7 +39,7 @@ S("staff_user", "insert three staff logins (admin creates them)", "app_admin", a
 });
 S("staff_user", "update", "app_admin", () => q("app_admin", "update staff_user set name = 'Staff 1' where id = 's1'"));
 S("staff_role", "owner seeds the first two administrators (seeded_by_owner)", "portal_owner", async () => {
-  await ow.query("insert into staff_role(staff_user_id, role, seeded_by_owner) values ('s1','administrator',true),('s2','administrator',true)");
+  await ow.query("insert into staff_role(staff_user_id, role, seeded_by_owner) values ('s1','administrator',true),('s2','administrator',true),('s2','trust_and_safety',true)");
 });
 S("candidate_user", "insert (optional columns NULL)", "app_candidate", async () => {
   for (const id of ["c1", "c2", "c3"]) await q("app_candidate", "insert into candidate_user(id, name, email, email_verified) values ($1,$2,$3,true)", [id, id, id + "@cand.test"]);

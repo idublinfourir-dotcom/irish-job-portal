@@ -300,7 +300,7 @@ create index organisation_name_trgm on organisation_name using gin(normalised_na
 create table organisation_domain(
   id bigint generated always as identity primary key, organisation_id bigint not null references organisation(id) on delete cascade,
   domain text not null check (domain = lower(domain)), source text not null check (source in ('seed','admin')),
-  added_by_staff_id text references staff_user(id), unique(organisation_id, domain));
+  added_by_staff_id text references staff_user(id), created_at timestamptz not null default now(), unique(organisation_id, domain));
 create index organisation_domain_domain_idx on organisation_domain(domain);
 create index organisation_domain_staff_idx on organisation_domain(added_by_staff_id);
 create table cro_company(
@@ -670,7 +670,7 @@ create index report_reporter_portal_idx on report(reporter_portal_user_id);
 create index report_decided_idx on report(decided_by_staff_user_id);
 alter table job add constraint job_hidden_report_fkey foreign key (hidden_report_id) references report(id) on delete set null;
 create table strike(
-  id bigint generated always as identity primary key, organisation_id bigint not null references organisation(id),
+  id bigint generated always as identity primary key, organisation_id bigint not null references organisation(id), created_at timestamptz not null default now(),
   case_kind text not null check (case_kind in ('false_claim','false_pay_floor','instant_ban')),
   job_id bigint references job(id), pay_floor_id bigint references pay_floor(id), report_id bigint references report(id),
   reason_code text not null check (reason_code in ('false_sponsorship','false_pay_floor','asks_for_money','fake_company','fake_job')),

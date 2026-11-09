@@ -64,10 +64,12 @@ export function setup(db, known0 = {}) {
   F.text = async (purpose = "application") => ins(P.postgres, "consent_text", { purpose, version: id("v"), body: "Fake wording" });
   // Adapted: the migrations stamp proposer and confirmer from `set local app.staff_user_id` and need each to hold a role,
   // so a request is built the real way (proposer inserts, confirmer updates) instead of one insert with every column set.
-  const giveRole = (s) => su("insert into staff_role(staff_user_id,role,seeded_by_owner) select $1,'administrator',true where not exists (select 1 from staff_role where staff_user_id=$1 and role='administrator')", [s]);
+  const giveRole = (s, role = "administrator") => su("insert into staff_role(staff_user_id,role,seeded_by_owner) select $1,$2::text,true where not exists (select 1 from staff_role where staff_user_id=$1 and role=$2::text)", [s, role]);
+  // #137 b: the confirmer must hold the role that covers the kind
+  const covers = (kind) => (["strike_2", "strike_3", "ban", "ban_lift"].includes(kind) ? "trust_and_safety" : "administrator");
   F.approval = async (kind, table, target, o = {}) => {
     const st = o.status || "confirmed";
-    await giveRole(o.by); if (st !== "pending") await giveRole(o.confirmer);
+    await giveRole(o.by); if (st !== "pending") await giveRole(o.confirmer, covers(kind));
     return tx(P.postgres, async (c) => {
       // ported change: only one pending request per (kind, table, target) now; park an earlier pending one while the new row is made
       const parked = st === "pending" ? [] : (await c.query("update approval_request set target_id = target_id || '~parked' where kind=$1 and target_table=$2 and target_id=$3 and status='pending' returning id", [kind, table, String(target)])).rows;

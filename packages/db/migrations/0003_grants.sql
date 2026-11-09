@@ -93,7 +93,8 @@ grant select, insert, update on organisation to app_admin;
 grant select on organisation_name to app_candidate, app_portal;
 grant select, insert on organisation_name to app_fetcher;
 grant select, insert, update, delete on organisation_name to app_admin;
-grant select, insert, update, delete on organisation_domain to app_admin;
+-- created_at is left out, so an officer cannot backdate a domain under the ban rule (#137 a); adding a domain is one person's act.
+grant select, delete, insert (organisation_id, domain, source, added_by_staff_id), update (organisation_id, domain, source, added_by_staff_id) on organisation_domain to app_admin;
 grant select, insert, update, delete on cro_company to app_fetcher;
 grant select on cro_company to app_portal, app_admin;
 grant select, insert, update, delete on dete_permit_count to app_admin;

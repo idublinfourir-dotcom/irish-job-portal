@@ -38,7 +38,7 @@ const near = (a, b, s = 5) => Math.abs(new Date(a) - new Date(b)) < s * 1000;
 const S = {};
 async function people() {
   for (const k of ["A", "B", "C", "D", "E"]) S[k] = await F.staff();
-  await su("insert into staff_role(staff_user_id, role, seeded_by_owner) values ($1,'administrator',true),($2,'administrator',true),($3,'trust_and_safety',true),($4,'account_reviewer',true)", [S.A, S.B, S.C, S.D]);
+  await su("insert into staff_role(staff_user_id, role, seeded_by_owner) values ($1,'administrator',true),($2,'administrator',true),($1,'trust_and_safety',true),($2,'trust_and_safety',true),($3,'trust_and_safety',true),($4,'account_reviewer',true)", [S.A, S.B, S.C, S.D]);
   S.X = await F.staff(); await su("insert into staff_role(staff_user_id, role, seeded_by_owner) values ($1,'administrator',true)", [S.X]);
   await su("update staff_user set status='disabled' where id=$1", [S.X]); // holds a role but is disabled
 }
@@ -104,14 +104,15 @@ sections[1] = async () => {
 
   // moving a decided request
   const refusedReq = async () => { const r = await mk(); await run("app_admin", S.B, "update approval_request set status='refused' where id=$1", [r]); return r; };
-  await rule(t, "must do: pending to refused by another person stamps them; pending to withdrawn needs no acting id (PICK)", { ok: async () => {
+  await rule(t, "must do: pending to refused by another person stamps them; pending to withdrawn needs an acting id (PICK 4)", { ok: async () => {
     const r = await refusedReq(); const x = await q1("app_admin", S.B, "select status, confirmed_by_staff_user_id c from approval_request where id=$1", [r]); must(x.status === "refused" && x.c === S.B, JSON.stringify(x));
-    const w = await mk(); await run("app_admin", null, "update approval_request set status='withdrawn' where id=$1", [w]); } });
+    const w = await mk(); await run("app_admin", S.A, "update approval_request set status='withdrawn' where id=$1", [w]);
+    const n = await mk(); let refused = false; try { await run("app_admin", null, "update approval_request set status='withdrawn' where id=$1", [n]); } catch (e) { refused = /no acting staff/.test(String(e.message)); } must(refused, "a withdraw with no acting id was not refused"); } });
   await rule(t, "must not: the proposer turns a request the other person REFUSED into confirmed (RECHECK-2 failure 2)", { refuse: async () => run("app_admin", S.A, "update approval_request set status='confirmed' where id=$1", [await refusedReq()]), expect: "status changes only from pending" });
   await rule(t, "must not: the refuser turns it to confirmed", { refuse: async () => run("app_admin", S.B, "update approval_request set status='confirmed' where id=$1", [await refusedReq()]), expect: "status changes only from pending" });
-  await rule(t, "must not: a withdrawn request becomes confirmed", { refuse: async () => { const r = await mk(); await run("app_admin", null, "update approval_request set status='withdrawn' where id=$1", [r]); await confirm(r, S.B); }, expect: "status changes only from pending" });
+  await rule(t, "must not: a withdrawn request becomes confirmed", { refuse: async () => { const r = await mk(); await run("app_admin", S.A, "update approval_request set status='withdrawn' where id=$1", [r]); await confirm(r, S.B); }, expect: "status changes only from pending" });
   await rule(t, "must not: a confirmed request goes back to pending", { refuse: async () => { const r = await mk(); await confirm(r); await run("app_admin", S.B, "update approval_request set status='pending' where id=$1", [r]); }, expect: "status changes only from pending" });
-  await rule(t, "must not: a confirmed request is withdrawn (frees nothing, but is not allowed)", { refuse: async () => { const r = await mk(); await confirm(r); await run("app_admin", null, "update approval_request set status='withdrawn' where id=$1", [r]); }, expect: "status changes only from pending" });
+  await rule(t, "must not: a confirmed request is withdrawn (frees nothing, but is not allowed)", { refuse: async () => { const r = await mk(); await confirm(r); await run("app_admin", S.A, "update approval_request set status='withdrawn' where id=$1", [r]); }, expect: "status changes only from pending" });
   await rule(t, "must not: a refused request is refused again by the proposer's partner then confirmed through a second person C", { refuse: async () => run("app_admin", S.C, "update approval_request set status='confirmed' where id=$1", [await refusedReq()]), expect: "status changes only from pending" });
 
   // applied once
@@ -131,7 +132,7 @@ sections[1] = async () => {
     await run("app_admin", S.A, "update strike set level=2 where id=$1", [st]); }, expect: "already used" });
   // request must match
   const lvl2 = async (kind, makeTarget, status = "confirmed") => { const o = await mkOrg(); const st = await mkStrike(o.id); const tgt = makeTarget ? await makeTarget(o) : st;
-    const r = await reqP(kind, "strike", tgt, S.A); if (status === "confirmed") await confirm(r); else if (status === "refused") await run("app_admin", S.B, "update approval_request set status='refused' where id=$1", [r]); else if (status === "withdrawn") await run("app_admin", null, "update approval_request set status='withdrawn' where id=$1", [r]);
+    const r = await reqP(kind, "strike", tgt, S.A); if (status === "confirmed") await confirm(r); else if (status === "refused") await run("app_admin", S.B, "update approval_request set status='refused' where id=$1", [r]); else if (status === "withdrawn") await run("app_admin", S.A, "update approval_request set status='withdrawn' where id=$1", [r]);
     return () => run("app_admin", S.A, "update strike set outcome='strike', level=2, approval_request_id=$2 where id=$1", [st, r]); };
   await rule("strike", "strike 2 must not: a pending request", { refuse: async () => (await lvl2("strike_2", null, "pending"))(), expect: "is pending, not confirmed" });
   await rule("strike", "strike 2 must not: a refused request", { refuse: async () => (await lvl2("strike_2", null, "refused"))(), expect: "is refused, not confirmed" });
