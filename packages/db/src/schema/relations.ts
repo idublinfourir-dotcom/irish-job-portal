@@ -1,3 +1,5 @@
+// Made by npm run db:pull (packages/db/test/pull-schema.mjs) from a database built by packages/db/migrations.
+// Do not edit by hand: change a migration, then run npm run db:pull. schema.test.ts fails until the two match.
 import { relations } from "drizzle-orm/relations";
 import { job, application, candidateUser, consentRecord, organisation, contactRequest, membership, candidateHiddenOrganisation, message, jobSource, fetchedAdvert, payFloor, organisationName, staffUser, report, jobText, fetchRun, jobDailyStat, candidateAccount, candidateSession, candidateProfile, candidateCv, savedJob, trackerEntry, applyClick, alert, portalUser, portalAccount, portalSession, organisationDomain, detePermitCount, sponsorshipStatement, consentText, approvalRequest, staffSession, staffAccount, staffRole, servicesCase, caseNote, caseDocument, caseQuote, contentPage, contactMessage, strike, ban, reviewItem, notificationPreference, notification, setting } from "./schema";
 

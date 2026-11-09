@@ -4,6 +4,8 @@ The map of the Postgres schema: roles, rules, tables, retention and callable fun
 
 The files in `packages/db/migrations` are the source of truth once they exist. If this page and a migration disagree, the migration wins and this page is out of date: change it in the same pull request. The full design (60 tables, 11 views, the reasoning and the trial evidence) is a private document, see the last section. Words follow `GLOSSARY.md`. Numbers like #104 are entries in the decision log.
 
+The Drizzle schema in `packages/db/src/schema` is made from the migrations, never written by hand: after changing a migration, run `npm run db:test:up` and then `npm run db:pull`. `schema.test.ts` fails until the two match.
+
 ## Roles
 
 One role per deployed app, plus the owner. A bug on one site then cannot reach another side's tables.
