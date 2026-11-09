@@ -166,3 +166,5 @@ All are `SECURITY DEFINER`, owned by `portal_owner`, in schema `private`, with e
 ## Deeper
 
 The full design is `23-database-design.md` in the private brainstorm folder, held outside this repo. It has the access line of every table, every clash rule, the page-limit queries and the CI page check. The schema trial reports (`schema-trial`, `schema-trial-2`, `schema-trial-3` under `prototype/load-tests`) are in the same private folder. Ask the engineer for access.
+
+Removed trial checks and where to find them: [removed-tests.md](removed-tests.md).

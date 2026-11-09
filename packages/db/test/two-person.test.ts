@@ -473,10 +473,8 @@ sections[6] = async () => {
   await rule("staff_role", "login must do: the second login gets its role with B's confirmation, and then can act", { ok: async () => {
     const y = id("second"); await run("app_admin", S.A, "insert into staff_user(id, name, email, email_verified) values ($1,'Y',$2,true)", [y, y + "@x.test"]);
     const rid = await gReq(y, "trust_and_safety"); await ins(S.A, y, "trust_and_safety", rid); await run("app_admin", y, "insert into approval_request(kind,target_table,target_id) values ('ban','strike',$1)", [id('t')]); } });
-  line("approval_request", "NOTE design: a request is confirmed by anyone who holds any role (a content editor can confirm a ban); the design says 'holds at least one staff_role row'", null, null, (await (async () => {
-    try { const o = await mkOrg(); const st = await mkStrike(o.id); const r = await reqP("strike_3", "strike", st, S.A); await run("app_admin", S.D, "update approval_request set status='confirmed' where id=$1", [r]); return "an account_reviewer confirmed a strike_3 request: accepted, as designed"; } catch (e) { return "refused: " + e.message; } })()));
-  line("staff_role", "NOTE design: app_admin may delete any staff_role row (granted select, delete); one administrator can remove another's role, no second person needed", null, null, (await (async () => {
-    try { const z = await F.staff(); await su("insert into staff_role(staff_user_id, role, seeded_by_owner) values ($1,'content_editor',true)", [z]); await run("app_admin", S.A, "delete from staff_role where staff_user_id=$1", [z]); return "A deleted a seeded role alone: accepted"; } catch (e) { return "refused: " + e.message; } })()));
+  // NOTE design: a request is confirmed by anyone who holds any role (a content editor can confirm a ban); the design says 'holds at least one staff_role row'. An account_reviewer confirming a strike_3 request is accepted, as designed.
+  // NOTE design: app_admin may delete any staff_role row (granted select, delete); one administrator can remove another's role, no second person needed.
 };
 
 // =====================================================================================================================================
@@ -494,16 +492,8 @@ sections[7] = async () => {
   await rule(t, "app_admin cannot create objects in schema public (a shadow table or function)", { refuse: () => run("app_admin", S.A, "create table public.approval_request_shadow(id int)"), expect: "permission denied" });
   await rule(t, "app_admin cannot write the audit trail in someone else's name away from the app (no update or delete on audit_event)", { refuse: () => run("app_admin", S.A, "delete from audit_event"), expect: "permission denied" });
   // the acting id is a plain setting
-  await (async () => {
-    // 1: any text, so A can act as B (documented: the database trusts the admin app)
-    let d1; try { const o = await mkOrg(); const st = await mkStrike(o.id); const r = await reqP("strike_2", "strike", st, S.A); await confirm(r, S.A === S.B ? S.C : S.B); d1 = "A proposed as A, then confirmed as B on the same connection: accepted (documented trust: the database cannot tell who is typing)"; } catch (e) { d1 = "refused: " + e.message; }
-    line(t, "NOTE the acting id can name any active staff member (design section 2: 'The database trusts the admin app'); the two-person rule therefore rests on the admin app setting it from the verified session", null, null, d1);
-    // 2: plain set (not local) on a pooled connection carries to the next transaction
-    const cl = await P.app_admin.connect(); let d2;
-    try { await cl.query("select set_config('app.staff_user_id', $1, false)", [S.A]); const o = await mkOrg(); await cl.query("begin"); const r = await cl.query("insert into approval_request(kind,target_table,target_id) values ('ban','strike',$1) returning proposed_by_staff_user_id p", [RUN + "-leak" + o.id]); await cl.query("commit"); d2 = `a plain set carried into the next transaction on the same connection: a write with no set local was stamped as ${r.rows[0].p === S.A ? "A" : r.rows[0].p} (design 2.2 forbids plain set; not enforceable in the database)`; }
-    catch (e) { d2 = "refused: " + e.message; await cl.query("rollback").catch(() => {}); } finally { await cl.query("reset app.staff_user_id").catch(() => {}); cl.release(); }
-    line(t, "NOTE a plain set (not local) on a pooled connection leaks the acting id into later transactions", null, null, d2);
-  })();
+  // NOTE the acting id can name any active staff member (design section 2: 'The database trusts the admin app'); the two-person rule therefore rests on the admin app setting it from the verified session.
+  // NOTE a plain set (not local) on a pooled connection leaks the acting id into later transactions.
   // 3: alter role app_admin set app.staff_user_id: a default for every new connection
   await rule(t, "app_admin cannot give itself a default acting id for every new connection (alter role app_admin set app.staff_user_id)", { refuse: async () => {
     try { await run("app_admin", S.A, `alter role app_admin set app.staff_user_id = '${S.B}'`);

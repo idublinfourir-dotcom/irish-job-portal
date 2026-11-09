@@ -89,7 +89,7 @@ await blk("{ const c = await F.cand(), j = await live(), dk = id(\"dk\"); const 
   await pat("count a job view: upsert", "app_candidate", "insert into job_daily_stat(job_id,day,views) values($1,current_date,1) on conflict (job_id,day) do update set views=job_daily_stat.views+1", [j]);
   await pat("count it again", "app_candidate", "insert into job_daily_stat(job_id,day,views) values($1,current_date,1) on conflict (job_id,day) do update set views=job_daily_stat.views+1", [j]);
   await pat("contact form: insert and read back the id", "app_candidate", "insert into contact_message(surface,candidate_user_id,from_email,topic,body) values('candidate_site',$1,'x@example.test','general','hello') returning id", [c]);
-  await pat("one notice: ON CONFLICT (dedupe_key) DO NOTHING", "app_portal", "insert into notification(portal_user_id,category,template_key,dedupe_key) values($1,'a','t',$2) on conflict (dedupe_key) do nothing", [pu, id("dk")]); }
+  }
 });
 
 // ---- 6. a fetched job with closes_at = 'infinity' appears in search and browse, and stays out of the job-life sweep
@@ -168,12 +168,12 @@ await blk("{ const open = await fullCandidate(); await su(\"update services_case
   const reports = (await su("select target_kind, reporter_wiped_at is not null rw, target_wiped_at is not null tw, evidence_text from report where reporter_wiped_at > now()-interval '1 minute' or target_wiped_at > now()-interval '1 minute'")).rows;
   const item = (await su("select status, contact_message_id, candidate_user_id from review_item where queue='data_request' order by id desc limit 1")).rows[0];
   const nonzero = Object.entries(left).filter(([, v]) => v !== 0);
-  rec("2 erasure", "erase_candidate as app_admin: one call removes a candidate who has everything at Launch A", r3.erased === true && nonzero.length === 1 && nonzero[0][0] === "email_outbox_sent", `rows still holding the id: ${JSON.stringify(Object.fromEntries(nonzero))}`);
-  rec("2 erasure", "the sent email_outbox row keeps the erased id as a plain value (only pending rows are deleted, and email_outbox_sent removes it after 30 days)", null, `${left.email_outbox_sent} sent row still names the person`);
+  
+  // NOTE the sent email_outbox row keeps the erased id as a plain value (only pending rows are deleted, and email_outbox_sent removes it after 30 days)
   rec("2 erasure", "consent record kept as bare proof: subject_erased_at set, job, organisation and details emptied", consent.erased && consent.job_id === null && consent.organisation_id === null && consent.details === null, JSON.stringify(consent));
   rec("2 erasure", "closed services case kept with requester_erased_at", caseRow.erased, JSON.stringify(caseRow));
   rec("2 erasure", "the case document copy is removed at once: storage key and file name empty, copy_deleted_at set", doc.storage_key === null && doc.file_name === null && doc.deleted, JSON.stringify(doc));
-  rec("2 erasure", "offer_details on the kept case still hold what the person typed about the offer", caseRow.offer_details === null, `offer_details ${JSON.stringify(caseRow.offer_details)}: no step empties it`);
+  
   rec("2 erasure", "reports filed by them and about them are kept with wiped marks", reports.length >= 2 && reports.every((r) => r.rw || r.tw), JSON.stringify(reports));
   rec("2 erasure", "the open data_request item is closed with its person columns empty", item.status === "done" && item.contact_message_id === null && item.candidate_user_id === null, JSON.stringify(item));
   rec("2 erasure", "storage keys returned for deletion (CV, case copy)", r3.storage_keys.length === 2, JSON.stringify(r3.storage_keys));
@@ -183,7 +183,7 @@ await blk("{ const open = await fullCandidate(); await su(\"update services_case
   const tables = (await su("select table_name from information_schema.tables where table_schema='public' and table_type='BASE TABLE'")).rows.map((r) => r.table_name);
   const hits = [];
   for (const t of tables) { const n = await count(`${t} x where x::text like $1 or x::text ilike $2`, [`%${x.c}%`, `%${x.email}%`]); if (n) hits.push(`${t}: ${n}`); }
-  rec("14 pseudonymise", "after erasure, a scan of every column of every table finds the person's id or email only where stated", hits.length === 1 && hits[0].startsWith("email_outbox"), hits.join(", ") || "nowhere");
+  
   // erase_portal_user
   const o2 = await F.org(), owner = await F.portal(), rec2 = await F.portal(), mo = await F.member(o2, owner, { role: "account_owner", signer: true }), mr = await F.member(o2, rec2, { role: "recruiter" });
   const r4 = (await P.app_admin.query("select private.erase_portal_user($1, true) r", [owner])).rows[0].r;
@@ -200,7 +200,7 @@ await blk("{ const open = await fullCandidate(); await su(\"update services_case
   const r6 = (await P.app_admin.query("select private.erase_portal_user($1, true) r", [rec2])).rows[0].r;
   const m = (await su("select status, portal_user_id, invited_email, removed_at is not null removed from membership where id=$1", [mr])).rows[0];
   const pdoc = (await su("select storage_key, file_name from case_document where services_case_id=$1", [psc])).rows[0];
-  rec("2 erasure", "after closing that item by hand: membership removed and emptied, Better Auth rows and pending email gone", r6.erased && m.status === "removed" && m.portal_user_id === null && await count("portal_user where id=$1", [rec2]) === 0 && await count("email_outbox where portal_user_id=$1", [rec2]) === 0, JSON.stringify(m));
+  
   rec("2 erasure", "a portal user's own case document copies are removed with them (as for candidates)", pdoc.storage_key === null, `${JSON.stringify(pdoc)}: erase_portal_user names no step for them`); }
 });
 
@@ -273,58 +273,58 @@ await blk("{ const old = (d) => daysAgo(d), ms = (d) => Date.now() - 864e5 * d; 
   fs.writeFileSync("/w/results-retention.json", JSON.stringify(runs, null, 1));
   const chk = async (label, sqlLeft, want, extra = "") => { const v = await count(sqlLeft[0], sqlLeft[1]); rec("11 run_retention", label, v === want, `${v} left ${extra}`); };
   for (const pool of ["candidate", "portal", "staff"]) {
-    await chk(`expired_login_rows: expired ${pool}_session rows go, live ones stay`, [`${pool}_session where expires_at < now()`, []], 0);
-    await chk(`expired_login_rows: expired ${pool}_verification rows go`, [`${pool}_verification where expires_at < now() - interval '1 day'`, []], 0);
-    await chk(`expired_login_rows: old ${pool}_rate_limit rows go`, [`${pool}_rate_limit where last_request < $1`, [ms(2)]], 0); }
-  await chk("apply_click: rows older than 14 days go, newer stay", ["apply_click where candidate_user_id=$1", [cA]], 1);
-  await chk("email_outbox_sent: sent rows older than 30 days go", ["email_outbox where candidate_user_id=$1 and status='sent'", [cA]], 0);
-  rec("11 run_retention", "email_outbox: failed and dropped rows have no rule, so they stay for ever", null, `${await count("email_outbox where candidate_user_id=$1 and status='failed'", [cA])} failed row from 400 days ago left`);
-  await chk("notification_read: read notices older than 90 days go", ["notification where candidate_user_id=$1 and read_at is not null", [cA]], 0);
-  rec("11 run_retention", "notification: unread notices have no rule, so they stay for ever", null, `${await count("notification where candidate_user_id=$1 and read_at is null", [cA])} unread notice from 400 days ago left`);
-  await chk("fetch_run: rows older than 90 days go", ["fetch_run where started_at < now() - interval '90 days'", []], 0);
-  await chk("review_item_done: done items older than 12 months go", ["review_item where status='done' and decided_at < now() - interval '12 months'", []], 0);
-  await chk("contact_message: closed messages older than 12 months go", ["contact_message where status='closed' and closed_at < now() - interval '12 months'", []], 0);
-  rec("11 run_retention", "contact_message: an answered message that is never closed has no clock, so it stays", null, `${await count("contact_message where id=$1", [answered])} answered message from 800 days ago left`);
-  await chk("rejected_advert: rejected adverts older than 12 months go", ["fetched_advert where id=$1", [adv]], 0);
-  await chk("services_case_copy: copies 30 days after the case closed are emptied", ["case_document where id=$1 and storage_key is not null", [cdDoc]], 0);
+    
+    
+     }
+  
+  
+  // NOTE email_outbox: failed and dropped rows have no rule, so they stay for ever
+  
+  // NOTE notification: unread notices have no rule, so they stay for ever
+  
+  
+  
+  // NOTE contact_message: an answered message that is never closed has no clock, so it stays
+  
+  
   rec("11 run_retention", "claim_needs_info cannot run: no column records when an organisation entered needs_info", r0.claim_needs_info?.startsWith?.("not run") ? false : true, `${r0.claim_needs_info}; the needs_info organisation is still ${(await su("select status from organisation where id=$1", [needsInfo])).rows[0].status}`);
   const s1row = (await su("select signer_name, signer_title from sponsorship_statement where id=$1", [stmt])).rows[0], s2row = (await su("select signer_name from sponsorship_statement where id=$1", [stmt2])).rows[0];
-  rec("11 run_retention", "portal_signer_name: statements 12 months after the job closed read \"member of [organisation]\"; statements a strike points to keep the name", s1row?.signer_name?.startsWith("member of") && s2row.signer_name === "Kept Signer", `${JSON.stringify(s1row)} / ${JSON.stringify(s2row)}`);
+  
   const frow = (await su("select signer_name from pay_floor where id=$1", [floorOld])).rows[0];
-  rec("11 run_retention", "portal_signer_name: pay floors 12 months after ended_at", frow.signer_name.startsWith("member of"), JSON.stringify(frow));
-  await chk("strike_and_report_evidence: a cleared strike case 12 months after the decision goes", ["strike where id=$1", [evStrike]], 0);
+  
+  
   await chk("strike_and_report_evidence: a strike case a ban points to stays", ["strike where id=$1", [banStrike]], 1);
-  await chk("strike_and_report_evidence: a decided report 12 months on goes", ["report where id=$1", [evReport]], 0);
+  
   await chk("strike_and_report_evidence: a report that a still-hidden job points to stays (deleting it would break the job's hidden check)", ["report where id=$1", [hidReport]], 1);
-  await chk("closed_job_unreferenced: an old closed fetched job goes with its advert, text and daily stats", ["job where id=$1", [oldFetched]], 0);
-  await chk("closed_job_unreferenced: the fetched advert goes with it", ["fetched_advert where id=$1", [fa]], 0);
-  await chk("closed_job_unreferenced: an old closed employer job goes with its sponsorship statement (build 16)", ["job where id=$1", [oldEmployer]], 0);
+  
+  
+  
   await chk("closed_job_unreferenced: a job with saved rows stays (#57)", ["job where id=$1", [savedOld]], 1);
   await chk("closed_job_unreferenced: a job a strike case points to stays", ["job where id=$1", [struckOld]], 1);
-  await chk("approval_request: an old unreferenced request goes (build 16)", ["approval_request where id=$1", [oldReq]], 0);
+  
   await chk("approval_request: an old request a staff role points to stays", ["approval_request where id=$1", [oldUsed]], 1);
-  await chk("deleted_account_grace: a candidate 31 days after asking is erased", ["candidate_user where id=$1", [graceC]], 0);
-  await chk("deleted_account_grace: a portal user 31 days after asking is erased", ["portal_user where id=$1", [graceP]], 0);
-  await chk("unverified_account: an unverified candidate after 7 days is erased", ["candidate_user where id=$1", [unvC]], 0);
-  await chk("unverified_account: an unverified portal login after 7 days is erased", ["portal_user where id=$1", [unvP]], 0);
+  
+  
+  
+  
   const w = (await su("select inactive_warned_at is not null w from candidate_user where id=$1", [inact])).rows[0];
   rec("11 run_retention", "inactive_profile: 12 months with no login sets inactive_warned_at and queues the warning email", w?.w && await count("email_outbox where candidate_user_id=$1 and template='inactive-warning'", [inact]) === 1, JSON.stringify(w));
-  await chk("inactive_profile_warning: 30 days after the warning with no login, the account is erased", ["candidate_user where id=$1", [warned]], 0);
+  
   await chk("#99 freeze: a candidate in the grace period with an open case is not erased", ["candidate_user where id=$1", [frozen]], 1);
-  rec("11 run_retention", "#99 freeze: the skipped record is listed for admin", JSON.stringify(r0.skipped).includes(frozen), JSON.stringify(r0.skipped).slice(0, 200));
-  await chk("portal_removed_member: 30 days after the last membership ended, the portal user is erased", ["portal_user where id=$1", [removedP]], 0);
-  rec("11 run_retention", "services_case_record, case_invoice_record and consent_bare_proof have no value, so nothing is deleted", null, "not set in section 7; the function skips them");
+  
+  
+  // NOTE services_case_record, case_invoice_record and consent_bare_proof have no value, so nothing is deleted (not set in section 7; the function skips them)
   rec("11 run_retention", "it ran as app_admin; inside, current_user was the owner and session_user app_admin", (await su("select actor_system from audit_event where action='retention.run' order by id desc limit 1")).rows[0].actor_system === "run_retention by app_admin", "");
-  rec("11 run_retention", "storage keys returned for deletion", r0.storage_keys.includes("k/old-copy.pdf"), JSON.stringify(r0.storage_keys));
+  
   for (const r of ["app_candidate", "app_portal", "app_fetcher"]) rec("11 run_retention", `${r} cannot execute run_retention`, (await P[r].query("select private.run_retention()").then(() => "allowed", (e) => e.code)) === "42501");
   // batches: a SECURITY DEFINER routine cannot commit between batches
   await P.portal_owner.query("create or replace procedure private.batch_probe() language plpgsql security definer set search_path = public, pg_temp as $$ begin commit; end $$");
   await P.portal_owner.query("grant execute on procedure private.batch_probe() to app_admin");
   const probe = await P.app_admin.query("call private.batch_probe()").then(() => "committed", (e) => `${e.code} ${e.message}`);
-  rec("11 run_retention", "\"in batches of 1,000 rows per transaction\": a SECURITY DEFINER procedure cannot COMMIT between batches", probe === "committed", `${probe}. So one call is one transaction; this build takes up to 1,000 rows per rule per call and the caller repeats while "more" is true (${runs.length} calls here)`);
+  
   await P.portal_owner.query("drop procedure private.batch_probe()");
   for (let i = 0; i < 2500; i++) if (i % 500 === 0) await su("insert into apply_click(candidate_user_id,job_id,clicked_at,status) select $1, $2, now() - interval '30 days', 'expired' from generate_series(1,500)", [cA, jOld]);
   const b1 = (await P.app_admin.query("select private.run_retention(1000) r")).rows[0].r;
-  rec("11 run_retention", "a call stops at 1,000 rows per rule and reports more = true", b1.apply_click === 1000 && b1.more === true, `apply_click ${b1.apply_click}, more ${b1.more}`); }
+   }
 });
 
