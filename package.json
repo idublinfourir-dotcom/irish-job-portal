@@ -11,6 +11,8 @@
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
+    "db:test:up": "npm run db:test:up -w @portal/db",
+    "db:test:down": "npm run db:test:down -w @portal/db",
     "test": "vitest run",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build"
   },

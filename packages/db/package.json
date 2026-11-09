@@ -7,7 +7,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:test:up": "sh test/test-db.sh up",
+    "db:test:down": "sh test/test-db.sh down"
   },
   "dependencies": {
     "@vercel/functions": "3.11.0",

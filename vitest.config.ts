@@ -1,5 +1,23 @@
 import { defineConfig } from "vitest/config";
 
+// Two projects: plain tests, and tests that need the test database (see packages/db/test/README in HANDOVER-4a).
 export default defineConfig({
-  test: { include: ["apps/**/*.test.ts", "packages/**/*.test.ts"] },
+  test: {
+    projects: [
+      {
+        test: {
+          name: "unit",
+          include: ["apps/**/*.test.ts", "packages/**/*.test.ts"],
+          exclude: ["**/node_modules/**", "packages/db/test/**"],
+        },
+      },
+      {
+        test: {
+          name: "db",
+          include: ["packages/db/test/**/*.test.ts"],
+          globalSetup: ["packages/db/test/global-setup.ts"],
+        },
+      },
+    ],
+  },
 });
