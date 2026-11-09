@@ -1,7 +1,5 @@
-// Pulled with drizzle-kit pull from a database built from packages/db/migrations (9 November 2026). Do not edit by hand:
-// after a migration changes, build a scratch database from the migrations, run
-// npx drizzle-kit pull --dialect postgresql --url <its url> --out <a temp folder> --schemaFilters public
-// and copy schema.ts and relations.ts here, keeping the two hand changes marked below (tsvector, job.hiddenReportId).
+// Made by npm run db:pull (packages/db/test/pull-schema.mjs) from a database built by packages/db/migrations.
+// Do not edit by hand: change a migration, then run npm run db:pull. schema.test.ts fails until the two match.
 import { customType, pgTable, index, foreignKey, unique, check, bigint, text, jsonb, timestamp, uniqueIndex, type AnyPgColumn, smallint, integer, boolean, date, pgView } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
