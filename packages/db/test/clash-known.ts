@@ -9,7 +9,6 @@ export const known: Record<string, string> = {
   "[sponsorship_statement] admin_on_behalf: the used request cannot be used again for the same job": "S-C2",
   "[staff_role] unique (staff_user_id, role)": "S-C2",
   "[fixture] block { const first = await F.staff(), second = await F.staff(), third = awa": "S-C2",
-  "[services_case] CONCURRENT: ten taps from a portal user make one case, through the portal view": "K-D",
   "[strike] approval trigger: a level 3 strike cannot apply on one person's pending request": "S-C2",
   "[strike] approval trigger: a level 3 strike cannot apply on a confirmed strike_2 request (wrong kind for level 3)": "S-C2",
   "[strike] approval trigger: a level 3 strike cannot apply on a refused request": "S-C2",

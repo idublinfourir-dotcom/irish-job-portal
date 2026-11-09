@@ -361,7 +361,7 @@ await blk("{ const c = await F.cand(), cs = await ins(\"postgres\", \"consent_re
   const t2 = await race(10, () => ins("app_candidate", "candidate_services_case", { candidate_user_id: c, consent_record_id: cs }, null));
   line("services_case", "CONCURRENT: ten taps with no job chosen make one case (nulls not distinct, build 17)", t2.ok.length === 1, null, `${t2.ok.length} of 10`);
   const pcs = await ins("postgres", "consent_record", { portal_user_id: pu, consent_text_id: await F.text("services_request") });
-  const t3 = await race(10, () => ins("app_portal", "portal_services_case", { portal_user_id: pu, job_id: j, consent_record_id: pcs }, null));
+  const t3 = await race(10, () => ins("app_portal", "portal_services_case", { portal_user_id: pu, job_id: j, consent_record_id: pcs, dedupe_key: "one-form-load" }, null));
   line("services_case", "CONCURRENT: ten taps from a portal user make one case, through the portal view", t3.ok.length === 1, null, `${t3.ok.length} of 10`);
   await su("update services_case set status='closed', closed_at=now(), close_reason='decided' where candidate_user_id=$1 and job_id=$2", [c, j]);
   await rule("services_case", "a closed case does not stop a new one", { ok: async () => sc({ candidate_user_id: c, job_id: j }) });
