@@ -89,7 +89,8 @@ await blk("{ const c = await F.cand(), j = await live(), dk = id(\"dk\"); const 
   await pat("count a job view: upsert", "app_candidate", "insert into job_daily_stat(job_id,day,views) values($1,current_date,1) on conflict (job_id,day) do update set views=job_daily_stat.views+1", [j]);
   await pat("count it again", "app_candidate", "insert into job_daily_stat(job_id,day,views) values($1,current_date,1) on conflict (job_id,day) do update set views=job_daily_stat.views+1", [j]);
   await pat("contact form: insert and read back the id", "app_candidate", "insert into contact_message(surface,candidate_user_id,from_email,topic,body) values('candidate_site',$1,'x@example.test','general','hello') returning id", [c]);
-  }
+  /* ported change: app_portal writes notices through the portal_notification view (it has no grant on the table) */
+  await pat("one notice: ON CONFLICT (dedupe_key) DO NOTHING", "app_portal", "insert into portal_notification(portal_user_id,category,template_key,dedupe_key) values($1,'a','t',$2) on conflict (dedupe_key) do nothing", [pu, id("dk")]); }
 });
 
 // ---- 6. a fetched job with closes_at = 'infinity' appears in search and browse, and stays out of the job-life sweep
