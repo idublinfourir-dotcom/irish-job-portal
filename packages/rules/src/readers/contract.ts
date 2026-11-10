@@ -18,6 +18,9 @@ const TEMP_PHRASE = py(
   String.raw`\b(fixed[- ]term|temporary|maternity (leave )?cover|specified purpose|locum)\s+(contract|role|position|basis|post|vacancy)|this (is a |role is a |position is a )(temporary|fixed[- ]term|contract)`,
   "i",
 );
+// NEW BEHAVIOUR (10 November 2026), not in the Python. Maternity cover is temporary and under two years. The gate found a wrong pass
+// whose text said "provides maternity cover for a ..." (the old patterns need "maternity cover contract" or the like).
+const MATERNITY = py(String.raw`\bmaternity\s+(leave\s+)?cover\b|\bcover(ing)?\s+(for\s+)?(an?\s+|the\s+)?(\w+\s+){0,2}maternity\s+leave\b`, "i");
 
 /** Python `contract(title, etype, desc)`: the result and the reason text. Only the first months figure is looked at. */
 export function readContract(title: string, employmentType: string | null | undefined, description: string): { result: ContractResult; reason: string } {
@@ -27,6 +30,8 @@ export function readContract(title: string, employmentType: string | null | unde
     const n = Number(asciiDigits(m[1] ?? m[5]!));
     return { result: n < 24 ? "short" : "ok", reason: `${n} months` };
   }
+  const mat = MATERNITY.exec(title + " " + head);
+  if (mat) return { result: "short", reason: mat[0] };
   const et = (employmentType || "").toLowerCase();
   if (["temporary", "intern", "seasonal"].some((w) => et.includes(w))) return { result: "short", reason: employmentType! };
   if (et.includes("contract") || TEMP_WORDS.test(title)) return { result: "unclear", reason: employmentType || "title" };

@@ -54,3 +54,29 @@ describe("R09 readContract: employment type, title and phrases", () => {
     expect(readContract("E", undefined, "")).toEqual({ result: "ok", reason: "permanent or not stated" });
   });
 });
+
+describe("R09 readContract: maternity cover is short (NEW BEHAVIOUR, 10 Nov 2026)", () => {
+  test.each([
+    ["This role provides maternity cover for a Project Manager.", "maternity cover"],
+    ["Maternity leave cover for our Dublin office", "Maternity leave cover"],
+    ["You will be covering a colleague on maternity leave", "covering a colleague on maternity leave"],
+    ["Cover for the maternity leave of the team lead", "Cover for the maternity leave"],
+    ["MATERNITY\u00a0COVER", "MATERNITY\u00a0COVER"],
+  ])("%j", (text, reason) => {
+    expect(readContract("Project Manager", "Full time", text)).toEqual({ result: "short", reason });
+  });
+  test("it is read in the title too, and wins over a permanent-looking employment type", () => {
+    expect(readContract("Accountant (maternity cover)", "Full time", "x")).toEqual({ result: "short", reason: "maternity cover" });
+  });
+  test("a months figure is read first", () => {
+    expect(readContract("E", "", "maternity cover, 6 month contract")).toEqual({ result: "short", reason: "6 months" });
+  });
+  test("other talk of maternity is not maternity cover", () => {
+    expect(readContract("E", "", "We offer generous maternity leave and a pension.")).toEqual({ result: "ok", reason: "permanent or not stated" });
+    expect(readContract("E", "", "Maternity pay is covered in full. Permanent role.")).toEqual({ result: "ok", reason: "permanent or not stated" });
+    expect(readContract("E", "", "maternity coverage plan")).toEqual({ result: "ok", reason: "permanent or not stated" });
+  });
+  test("only the first 6,000 characters are read", () => {
+    expect(readContract("E", "", "x".repeat(6000) + " maternity cover").result).toBe("ok");
+  });
+});

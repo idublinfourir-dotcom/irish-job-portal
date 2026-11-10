@@ -11,6 +11,9 @@ const NUM = String.raw`(\d{1,3}(?:[ ,. ]\d{3})+(?:[.,]\d{2})?|\d+(?:[.,]\d+)?\
 const MONEY = py(String.raw`(?:€|eur\b|euro)\s?` + NUM + "|" + NUM + String.raw`\s?(?:€|eur\b|euro)`, "ig");
 const MILLIONS = py(String.raw`^\s?(m|bn|million|billion)\b`); // classify.py:159
 const SLASH_OR_POUND = py(String.raw`^\s?(/|£)`); // classify.py:159
+// NEW BEHAVIOUR (10 November 2026), not in the Python. "€80,000.00/yr" is yearly pay, not a revenue figure. The gate found 4 qualifying
+// adverts lost to the slash test. Hourly and daily forms are still told apart below. Read on the 25 characters in `after`.
+const YEARLY = py(String.raw`^\s?/\s?(yr|year(ly)?|annum|annual(ly)?|pa)\b`);
 const HOURLY = py(String.raw`per hour|p/h|/hr|an hour|hourly|ph\b`); // classify.py:163
 const DAILY = py(String.raw`per day|daily rate|/day`); // classify.py:164
 const NOT_PAY = py(String.raw`credit card|allowance|bonus|voucher|referral|relocation|budget|stipend|benefit`); // classify.py:165
@@ -43,7 +46,7 @@ export function readSalary(description: string, box = ""): { low: number | null;
     position += cpLength(blob.slice(lastIndex, start));
     lastIndex = start;
     const after = cpHead(blob.slice(end, end + 50), 25).toLowerCase();
-    if (MILLIONS.test(after) || SLASH_OR_POUND.test(cpHead(after, 3))) continue; // revenue figures
+    if (MILLIONS.test(after) || (SLASH_OR_POUND.test(cpHead(after, 3)) && !YEARLY.test(after))) continue; // revenue figures
     let v = toNum((m[1] ?? m[2])!);
     if (!v) continue;
     const around = (cpTail(blob.slice(Math.max(0, start - 240), start), 120) + m[0] + cpHead(blob.slice(end, end + 80), 40)).toLowerCase();

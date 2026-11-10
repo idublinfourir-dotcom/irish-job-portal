@@ -29,6 +29,8 @@ const SENTENCES = [
   "Our company turnover is €350m and we have 2,000 staff across 14 countries.",
   "Benefits: pension, health cover, 25 days leave, relocation help, a laptop allowance.",
   "Please send your CV by email; there is no registration fee and no deposit of any kind.",
+  "This role requires you to be a national of an EU member state. Salary box: \u20ac80,000.00/yr - \u20ac90,000.00/yr.",
+  "This post provides maternity cover for a colleague who is covering maternity leave. Turnover \u20ac2bn/year.",
   "Registrar post, permanent / specified purpose, 5 years, based at a hospital in Cork.",
 ];
 function fakeAdvert(n: number): string {
@@ -79,6 +81,19 @@ const HOSTILE: [string, string][] = [
   ["mixed scripts and odd Unicode", "\u0645\u0631\u062d\u0628\u0627 \u65e5\u672c\u8a9e \u0130\u0131\u017f\u212a \u{1F600}\u{1D7D8} \u202f\u0085\ufeff \u20ac\u0665\u0660\u0660\u0660\u0660".repeat(5000)],
   ["null bytes", "\0".repeat(1000) + "\u20ac50,000" + "\0".repeat(1000)],
   ["lone surrogates", "\ud800 \udc00 \u20ac50,000 \ud800".repeat(5000)],
+  ["1 MB of 'must be a national of '", "must be a national of ".repeat(MB / 22)],
+  ["1 MB of 'requires you to be '", "requires you to be ".repeat(MB / 19)],
+  ["1 MB of 'must ' then one 'be a national of an EU'", "must ".repeat(MB / 5) + "be a national of an EU"],
+  ["1 MB of 'needs' with no spaces", "needs".repeat(MB / 5)],
+  ["1 MB of 'maternity '", "maternity ".repeat(MB / 10)],
+  ["1 MB of 'covering a '", "covering a ".repeat(MB / 11)],
+  ["1 MB of 'cover for the a b '", "cover for the a b ".repeat(MB / 18)],
+  ["1 MB of '\u20ac1,000/'", "\u20ac1,000/".repeat(MB / 7)],
+  ["1 MB of '\u20ac1,000 / yr '", "\u20ac1,000 / yr ".repeat(MB / 13)],
+  ["1 MB of '\u20ac80,000/yea'", "\u20ac80,000/yea".repeat(MB / 11)],
+  ["1 MB of '/' after one amount", "\u20ac80,000" + "/".repeat(MB)],
+  ["1 MB of '/ ' after one amount", "\u20ac80,000" + "/ ".repeat(MB / 2)],
+  ["odd Unicode around the new patterns", "\u0130\u0131 must be a n\u0430tional of an EU \u202f\u20ac80,000\u200b/\u200byr maternity\u00a0\u00a0cover".repeat(5000)],
   ["empty text", ""],
 ];
 
@@ -86,6 +101,13 @@ describe("security: hostile text neither throws nor hangs", () => {
   test.each(HOSTILE)("%s", (_name, text) => {
     const ms = timed(() => runAll(text.slice(0, 200), text, text.slice(0, 200)));
     expect(ms).toBeLessThan(CASE_BUDGET_MS);
+  });
+
+  test("the new patterns still answer under hostile padding", () => {
+    const pad = "a ".repeat(MB / 2);
+    expect(noSponsorshipPhrase("", pad + "requires you to be a national of an EU member state")).not.toBeNull();
+    expect(readContract("E", "", "maternity cover " + pad).result).toBe("short");
+    expect(readSalary(pad, "\u20ac80,000/yr").low).toBe(80000);
   });
 
   test("missing and empty fields", () => {
