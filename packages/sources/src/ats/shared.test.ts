@@ -48,6 +48,13 @@ describe("Python whitespace", () => {
     expect(pyStrip("\x1c\x85　 hi  \n")).toBe("hi");
     expect(pyStrip("﻿hi")).toBe("﻿hi");
   });
+  it("stays fast on a long run of white space inside the text (untrusted titles and descriptions)", () => {
+    const hostile = `a${" ".repeat(80_000)}b`;
+    const t0 = performance.now();
+    expect(pyStrip(hostile)).toBe(hostile);
+    expect(pyStrip(`${" ".repeat(80_000)}a${"\t".repeat(80_000)}`)).toBe("a");
+    expect(performance.now() - t0).toBeLessThan(200); // measured under 5 ms; the old regular expression took 4.8 s
+  });
 });
 
 describe("htmlUnescape", () => {

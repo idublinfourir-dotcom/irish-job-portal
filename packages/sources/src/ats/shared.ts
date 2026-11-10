@@ -5,9 +5,17 @@ import { HTML5, INVALID_CHARREFS, INVALID_CODEPOINTS } from "./entities";
 // ---- Python whitespace -------------------------------------------------------------------------------------------
 // Python's str.strip() and \s use str.isspace(); JavaScript's trim() and \s differ (\x1c-\x1f and \x85 only in Python,
 // ﻿ only in JavaScript). This class is Python's set.
-const WS = "\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
-const STRIP = new RegExp(`^[${WS}]+|[${WS}]+$`, "gu");
-export const pyStrip = (s: string) => s.replace(STRIP, "");
+const WS = "\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000"; // for the blank line pattern in text()
+// A loop, not a regular expression: `^[ws]+|[ws]+$` takes quadratic time on a long run of white space inside the text
+// ("a" + 80,000 spaces + "b" took 4.8 s), and titles and descriptions are untrusted.
+const isWs = (c: number) => c === 32 || (c >= 9 && c <= 13) || (c >= 0x1c && c <= 0x1f) || c === 0x85 || c === 0xa0 || c === 0x1680 || (c >= 0x2000 && c <= 0x200a) || c === 0x2028 || c === 0x2029 || c === 0x202f || c === 0x205f || c === 0x3000;
+export function pyStrip(s: string): string {
+  let a = 0;
+  let b = s.length;
+  while (a < b && isWs(s.charCodeAt(a))) a++;
+  while (b > a && isWs(s.charCodeAt(b - 1))) b--;
+  return s.slice(a, b);
+}
 
 // ---- html.unescape -----------------------------------------------------------------------------------------------
 // Port of CPython Lib/html/__init__.py (unescape and _replace_charref). Maps, not objects: "constructor" is not an entity.
