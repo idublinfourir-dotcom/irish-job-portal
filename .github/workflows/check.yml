@@ -42,3 +42,31 @@ jobs:
       # Fails on a high or critical advisory. The moderate ones today are in build tools only.
       - run: npm audit --audit-level=high
       - run: npm run check
+
+  # The page gate: full-size fake fill, then every list page must read at most 1,000 pages. About 2 minutes.
+  perf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The database tests use the same image and port as packages/db/test/test-db.sh. Keep them in step.
+    services:
+      postgres:
+        image: supabase/postgres:17.11.0.018
+        env:
+          POSTGRES_PASSWORD: test
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run test:perf
