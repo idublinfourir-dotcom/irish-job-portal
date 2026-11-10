@@ -8,7 +8,10 @@ const NO_SPONSOR = py(
     String.raw`|without (the )?(need for |requiring )?(visa |employment |work )?(permit |sponsorship)` +
     String.raw`|must (already )?(have|hold|possess) (a |the |full |valid |current |unrestricted )*(right|permission|authori[sz]ation|eligibility|entitlement) to work` +
     String.raw`|(full|unrestricted|existing|current|valid) (right|permission|authori[sz]ation|entitlement) to work in (ireland|the eu|the eea)( is (required|essential|a must))?` +
-    String.raw`|stamp 4|eu (citizen|passport|national)s? only|eu/eea (citizens?|nationals?) only`,
+    String.raw`|stamp 4|eu (citizen|passport|national)s? only|eu/eea (citizens?|nationals?) only` +
+    // NEW BEHAVIOUR (10 November 2026): "requires you to be a national of an EU member state" cannot be met by a non-EEA applicant.
+    // Found by the gate: two wrong passes. Not in the Python.
+    String.raw`|(must|requir(?:e|es|ed)|need(?:s|ed)?)\s+(\w+\s+){0,3}be\s+(an?\s+)?(national|citizen)s?\s+of\s+(an?\s+|the\s+)?(eu|eea|european union)\b`,
   "i",
 );
 // R05. classify.py:21

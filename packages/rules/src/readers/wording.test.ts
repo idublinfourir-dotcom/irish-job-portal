@@ -52,6 +52,32 @@ describe("R04 noSponsorshipPhrase", () => {
   });
 });
 
+describe("R04 noSponsorshipPhrase: an EU member state national is required (NEW BEHAVIOUR, 10 Nov 2026)", () => {
+  test.each([
+    "This role requires you to be a national of an EU member state",
+    "This role requires you to be a national of an EU Member state.",
+    "Candidate must be a national of an EU member state and residing in the EU",
+    "Applicants need to be citizens of the European Union",
+    "You are required to be an EEA national? No: you must be a citizen of the EEA",
+    "THIS POST REQUIRES THE HOLDER TO BE A CITIZEN OF THE EU",
+  ])("finds a phrase in %j", (text) => {
+    expect(noSponsorshipPhrase("", text)).not.toBeNull();
+  });
+  test("the matched phrase is the requirement itself", () => {
+    expect(noSponsorshipPhrase("", "Note: this role requires you to be a national of an EU member state.")).toBe("requires you to be a national of an EU");
+  });
+  test.each([
+    "We welcome applicants who are a national of any country",
+    "Our team includes a national of an EU member state",
+    "Nationals of the EU are welcome to apply",
+    "You must be a good citizen of the team",
+    "The role requires one more thing and then four words before to be a national of the EU",
+    "must be a national of Ireland",
+  ])("does not find a phrase in %j", (text) => {
+    expect(noSponsorshipPhrase("", text)).toBeNull();
+  });
+});
+
 describe("R05 sponsorshipAvailable", () => {
   test.each(["visa sponsorship available", "Immigration sponsorship will be offered", "we will sponsor", "We DO sponsor", "Sponsorship available", "Critical Skills Employment Permit holders", "permit sponsorship considered"])(
     "true for %j",

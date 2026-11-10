@@ -53,12 +53,15 @@ describe("R12 readSalary: known quirks", () => {
     expect(sal("Pay €21.00 per hour")).toEqual({ low: null, high: null });
     expect(sal("Pay €17.40 per Hour")).toEqual({ low: null, high: null });
   });
-  test("known quirk F2: an amount followed by '/' is skipped, so '/year' pay is lost", () => {
-    expect(sal("€50,000/year")).toEqual({ low: null, high: null });
-    expect(sal("€50,000 / year")).toEqual({ low: null, high: null });
+  test("a yearly slash form is pay, not a revenue figure (NEW BEHAVIOUR, 10 Nov 2026; the Python skipped these)", () => {
+    expect(sal("€50,000/year")).toEqual({ low: 50000, high: 50000 });
+    expect(sal("€50,000 / year")).toEqual({ low: 50000, high: 50000 });
+    expect(sal("€50,000 - €60,000 / year")).toEqual({ low: 50000, high: 60000 });
   });
-  test("known quirk F2: in a range only the last amount (no slash after it) is read as the low", () => {
-    expect(sal("€50,000 - €60,000 / year")).toEqual({ low: 50000, high: 50000 });
+  test("known quirk F2: an amount followed by any other '/' is still skipped", () => {
+    expect(sal("€50,000/employee")).toEqual({ low: null, high: null });
+    expect(sal("€50,000 / yrs-ago")).toEqual({ low: null, high: null });
+    expect(sal("€50,000/")).toEqual({ low: null, high: null });
   });
   test("known quirk F4: slash-separated country ranges lose the first figure", () => {
     expect(sal("Ireland €50,000 / Poland €30,000 / Germany €60,000")).toEqual({ low: 60000, high: 60000 });
@@ -66,6 +69,33 @@ describe("R12 readSalary: known quirks", () => {
   test("known quirk F5: a narrow no-break space (U+202F) works as a thousands separator", () => {
     expect(sal("50 000 EUR")).toEqual({ low: 50000, high: 50000 });
     expect(sal("€40 904")).toEqual({ low: 40904, high: 40904 });
+  });
+});
+
+describe("R12 readSalary: salary box with yearly slash forms", () => {
+  test.each([
+    ["€80,000.00/yr - €90,000.00/yr", 80000, 90000],
+    ["\u20ac80,000/YEAR", 80000, 80000],
+    ["€80,000 / annum", 80000, 80000],
+    ["€80,000/yearly", 80000, 80000],
+    ["€80,000/annually", 80000, 80000],
+    ["€80,000/pa", 80000, 80000],
+  ])("%j", (box, low, high) => {
+    expect(readSalary("", box)).toEqual({ low, high });
+  });
+  test("hourly and daily forms stay hourly and daily", () => {
+    expect(readSalary("", "€500/day")).toEqual({ low: null, high: null });
+    expect(readSalary("", "€150/hr")).toEqual({ low: null, high: null });
+    expect(readSalary("", "€50,000/hr")).toEqual({ low: null, high: null });
+  });
+  test("revenue figures are still dropped", () => {
+    expect(readSalary("Our revenue is €350m/yr and €2bn/year.")).toEqual({ low: null, high: null });
+    expect(readSalary("Turnover €400 million / year")).toEqual({ low: null, high: null });
+  });
+  test("a word that only starts like a yearly form is not one", () => {
+    expect(readSalary("", "€80,000/yrs")).toEqual({ low: null, high: null });
+    expect(readSalary("", "€80,000/pat")).toEqual({ low: null, high: null });
+    expect(readSalary("", "€80,000/yearbook")).toEqual({ low: null, high: null });
   });
 });
 
