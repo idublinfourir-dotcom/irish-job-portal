@@ -278,7 +278,7 @@ export const job = pgTable("job", {
 	check("job_pass_route_check", sql`pass_route = ANY (ARRAY['stated_pay'::text, 'big_company'::text, 'pay_floor'::text, 'public_pay'::text])`),
 	check("job_hire_answer_check", sql`hire_answer = ANY (ARRAY['yes'::text, 'no'::text])`),
 	check("job_status_check", sql`status = ANY (ARRAY['draft'::text, 'in_review'::text, 'live'::text, 'under_review'::text, 'hidden'::text, 'closed'::text])`),
-	check("job_close_reason_check", sql`close_reason = ANY (ARRAY['expired'::text, 'closed'::text, 'removed'::text, 'under_review_expired'::text, 'abandoned'::text])`),
+	check("job_close_reason_check", sql`close_reason = ANY (ARRAY['expired'::text, 'closed'::text, 'removed'::text, 'under_review_expired'::text, 'abandoned'::text, 'recheck_failed'::text])`),
 	check("job_hidden_reason_check", sql`hidden_reason = ANY (ARRAY['report'::text, 'organisation_suspended'::text, 'admin'::text])`),
 	check("job_permit_history_check", sql`permit_history = ANY (ARRAY['has_history'::text, 'first_time'::text, 'not_linked'::text])`),
 	check("job_application_route_check", sql`application_route = ANY (ARRAY['own_page'::text, 'on_site'::text])`),
@@ -297,6 +297,7 @@ export const job = pgTable("job", {
 	check("job_application_route_check1", sql`application_route = 'own_page'::text`),
 	check("job_check10", sql`(application_route = 'on_site'::text) OR (screening_questions = '[]'::jsonb)`),
 	check("job_screening_questions_check", sql`(jsonb_typeof(screening_questions) = 'array'::text) AND (jsonb_array_length(screening_questions) <= 5)`),
+	check("job_recheck_failed_fetched", sql`(close_reason IS DISTINCT FROM 'recheck_failed'::text) OR (source = 'fetched'::text)`),
 ]);
 
 export const jobText = pgTable("job_text", {
@@ -339,6 +340,7 @@ export const fetchedAdvert = pgTable("fetched_advert", {
 	reason: text(),
 	quotedEvidence: text("quoted_evidence"),
 	matcherModel: text("matcher_model"),
+	contentHash: text("content_hash"),
 }, (table) => [
 	index("fetched_advert_rejected_idx").using("btree", table.lastSeenAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(result = 'rejected'::text)`),
 	foreignKey({
@@ -347,7 +349,9 @@ export const fetchedAdvert = pgTable("fetched_advert", {
 			name: "fetched_advert_job_source_id_fkey"
 		}),
 	unique("fetched_advert_job_source_id_external_id_key").on(table.jobSourceId, table.externalId),
+	check("fetched_advert_content_hash_check", sql`(content_hash IS NULL) OR (content_hash ~ '^[0-9a-f]{64}$'::text)`),
 	check("fetched_advert_result_check", sql`result = ANY (ARRAY['passed'::text, 'queued'::text, 'rejected'::text])`),
+	check("fetched_advert_short_text", sql`(COALESCE(length(stage), 0) <= 200) AND (COALESCE(length(reason), 0) <= 500) AND (COALESCE(length(quoted_evidence), 0) <= 500)`),
 ]);
 
 export const fetchRun = pgTable("fetch_run", {
