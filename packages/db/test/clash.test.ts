@@ -362,7 +362,8 @@ await blk("{ const first = await F.staff(), second = await F.staff(), third = aw
 // ===== services
 await blk("{ const c = await F.cand(), cs = await ins(\"postgres\", \"consent_record", async () => {
 { const c = await F.cand(), cs = await ins("postgres", "consent_record", { candidate_user_id: c, consent_text_id: await F.text("services_request") }), j = await live();
-  const sc = (o) => ins("postgres", "services_case", { consent_record_id: cs, ...o });
+  // the consent record must belong to the same person as the case (migration 0005, services_case_guard), so another candidate gets their own
+  const sc = async (o) => ins("postgres", "services_case", { consent_record_id: o.candidate_user_id && o.candidate_user_id !== c ? await ins("postgres", "consent_record", { candidate_user_id: o.candidate_user_id, consent_text_id: await F.text("services_request") }) : cs, ...o });
   await rule("services_case", "exactly one requester, unless erased", { refuse: async () => sc({ candidate_user_id: c, portal_user_id: pu, job_id: j }), ok: async () => sc({ requester_erased_at: new Date(), job_id: j }) });
   await rule("services_case", "status closed needs closed_at and close_reason", { refuse: async () => sc({ candidate_user_id: await F.cand(), status: "closed", closed_at: new Date() }), ok: async () => sc({ candidate_user_id: await F.cand(), status: "closed", closed_at: new Date(), close_reason: "decided" }) });
   const t1 = await race(10, () => ins("app_candidate", "candidate_services_case", { candidate_user_id: c, job_id: j, consent_record_id: cs }, null));
@@ -374,11 +375,11 @@ await blk("{ const c = await F.cand(), cs = await ins(\"postgres\", \"consent_re
   line("services_case", "CONCURRENT: ten taps from a portal user make one case, through the portal view", t3.ok.length === 1, null, `${t3.ok.length} of 10`);
   await su("update services_case set status='closed', closed_at=now(), close_reason='decided' where candidate_user_id=$1 and job_id=$2", [c, j]);
   await rule("services_case", "a closed case does not stop a new one", { ok: async () => sc({ candidate_user_id: c, job_id: j }) });
-  const cid = await sc({ candidate_user_id: await F.cand(), job_id: j });
+  const cidC = await F.cand(), cid = await sc({ candidate_user_id: cidC, job_id: j }); // cidC owns the case: a document names the case's own candidate (migration 0005, case_document_guard)
   const t = await race(5, (i) => P.app_admin.query("update services_case set assigned_staff_user_id=$1 where id=$2 and assigned_staff_user_id is null returning id", [[s1, s2, s3, s1, s2][i], cid]));
   line("services_case", "CONCURRENT: 5 handlers claim one case, one wins", t.values.filter((v) => v?.rowCount === 1).length === 1, t.bad.length === 0, `${t.values.filter((v) => v?.rowCount === 1).length} winner`);
   const doc = (o) => ins("postgres", "case_document", { services_case_id: cid, storage_key: "k", ...o });
-  await rule("case_document", "at most one of the three uploader columns", { refuse: async () => doc({ candidate_user_id: c, portal_user_id: pu }), ok: async () => doc({ candidate_user_id: c }) });
+  await rule("case_document", "at most one of the three uploader columns", { refuse: async () => doc({ candidate_user_id: cidC, portal_user_id: pu }), ok: async () => doc({ candidate_user_id: cidC }) });
   await rule("case_document", "(storage_key is null) = (copy_deleted_at is not null)", { refuse: async () => doc({ copy_deleted_at: new Date() }), ok: async () => doc({ storage_key: null, copy_deleted_at: new Date() }) });
   const q = (o) => ins("postgres", "case_quote", { services_case_id: cid, amount_eur: 100, ...o });
   await rule("case_quote", "amount_eur > 0", { refuse: async () => q({ amount_eur: 0 }), ok: async () => q({ status: "draft" }) });
@@ -465,7 +466,9 @@ await blk("{ const j = await live(), o = await F.org(), ri = (x) => ins(\"postgr
   await su("update review_item set status='done' where id=$1", [it]);
   await rule("review_item", "a finished item does not stop a new one, and its target may empty once done", { ok: async () => { await ri({ queue: "fetched_job", job_id: j2 }); await su("update review_item set job_id=null where id=$1", [it]); } }); }
 });
-await rule("audit_event", "at most one of the four actor columns", { refuse: async () => ins("app_admin", "audit_event", { kind: "admin_action", action: "a", actor_staff_user_id: s1, actor_system: "fetcher" }, null), ok: async () => ins("app_admin", "audit_event", { kind: "admin_action", action: "a", actor_staff_user_id: s1 }, null) });
+/* fixture change (0004, M3): a staff actor must be the acting staff id, so both steps act as s1 */
+{ const asS1 = (row) => tx("app_admin", async (c) => { await c.query("select set_config('app.staff_user_id',$1,true)", [s1]); return ins(c, "audit_event", row, null); });
+await rule("audit_event", "at most one of the four actor columns", { refuse: async () => asS1({ kind: "admin_action", action: "a", actor_staff_user_id: s1, actor_system: "fetcher" }), ok: async () => asS1({ kind: "admin_action", action: "a", actor_staff_user_id: s1 }) }); }
 await rule("audit_event", "no app role can update or delete it", { refuse: async () => { const errs = []; for (const r of ["app_candidate", "app_portal", "app_admin", "app_fetcher"]) { await P[r].query("update audit_event set action='x'").then(() => errs.push(r), () => {}); await P[r].query("delete from audit_event").then(() => errs.push(r), () => {}); } if (!errs.length) throw new Error("all four refused both"); } });
 await blk("{ const k = id(\"v\"); await rule(\"consent_text\", \"unique (purpose, vers", async () => {
 { const k = id("v"); await rule("consent_text", "unique (purpose, version)", { ok: async () => ins("app_admin", "consent_text", { purpose: "visibility", version: k, body: "x" }), refuse: async () => ins("app_admin", "consent_text", { purpose: "visibility", version: k, body: "x" }) });

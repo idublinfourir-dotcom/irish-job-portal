@@ -20,6 +20,8 @@ One role per deployed app, plus the owner. A bug on one site then cannot reach a
 
 There is no fifth role. Erasure and retention run inside database functions. Grants are by column wherever a role sees only part of a table.
 
+Each app role has `statement_timeout`, `lock_timeout` and `idle_in_transaction_session_timeout` set (migration 0000). These are defaults that stop honest code from holding the database up. They are not a limit: Postgres has no hard cap per role, so a hostile session can lift them with `set statement_timeout = 0` (`side-fixes.test.ts` documents this). Nothing in the database stops a hostile session from doing this, so the timeouts protect against slow honest code only.
+
 ## Rules for every table
 
 - **Naming and types:** lowercase singular names, in schema `public`. Functions live in schema `private`. Ids are `bigint` identity, except Better Auth's text ids. Times are `timestamptz`, money is whole euros as integers, statuses are `text` with a CHECK. A CHECK on a column that may be empty is written so that NULL fails it (`is not distinct from` or an explicit `is not null`).
@@ -28,6 +30,8 @@ There is no fifth role. Erasure and retention run inside database functions. Gra
 - **Trust columns.** Columns that carry a claim or a decision (organisation status, big-company flag, `restricted_until`, job source and badge, hidden and in_review moves, pay floor status, block flags) are left out of the portal and fetcher grants. Where a grant cannot limit a value, a trigger checks `current_user`.
 - **The acting staff id.** Every staff member connects as `app_admin`, so the admin app runs `set local app.staff_user_id` at the start of each transaction. Triggers on `approval_request` and `strike` refuse any `app_admin` write that has no valid acting id and stamp that id into the decider columns. Those columns are left out of every grant.
 - **The two-person rule (#104, #136, #137).** A change on the #104 list takes effect only when it points to an `approval_request` confirmed by someone other than the proposer, and not used before. One trigger function checks this on every table that points to `approval_request`. Every staff role grant is two-person (#136). The confirmer must hold the role the request kind needs (#137).
+- **Settings are two-person (migration 0004).** An `app_admin` insert or value change on `setting` needs an active acting id and a confirmed, unused `setting` request whose `change` is `{"value": <the new value>}` (`{"value": null}` for empty). The trigger stamps who and when and writes one `audit_event` row (`setting.change`) with the old and new value. A value is never negative. `app_admin` cannot change `key`, `unit` or the stamps. A migration as `portal_owner` is not blocked.
+- **App roles write only their own side (migration 0004).** In `audit_event` each app role may name only its own actor (`app_candidate` a candidate, `app_portal` a portal user, `app_fetcher` a system actor, `app_admin` the acting staff id or a system actor), and `at` is always `now()`. Only `app_admin` and the fetcher write `admin_action`. In `email_outbox` an app role queues only new `pending` rows to its own side (`app_candidate` and `app_fetcher` candidates, `app_portal` portal users or invites, `app_admin` anyone). A `dedupe_key` sent by an app role is stored as `<role>:<key>` in `email_outbox` and `notification`, so `on conflict do nothing` works within a role and no role can take another's key. App code that looks a row up by key must add the prefix. Rows written by the owner's functions keep their key.
 - **The public API stays shut.** Supabase's Data API is off. Every migration revokes rights from `anon`, `authenticated`, `service_role` and PUBLIC on tables and functions. Extensions go in schema `extensions`. `pg_graphql` is dropped.
 - **Launch B is locked three ways (#72):** a `feature_flag` row; no grants on Launch B tables or functions until a named person runs that migration (#113); and two CHECKs on Launch A tables (`job.application_route = 'own_page'`, `candidate_profile.visible_to_employers = false`) that the same migration drops.
 - **Delete actions.** Every foreign key states its delete action. Erasing a candidate cascades to their owned rows and sets null on shared records. A job with saved, tracker, application, case, report or strike rows cannot be deleted. `audit_event` and `email_outbox` hold person ids as plain text with no foreign key, so a log row never blocks a deletion.
@@ -42,8 +46,8 @@ Launch A unless marked. "Pool" tables are the five Better Auth tables of a login
 
 ### Jobs
 
-- `job`: one advert, whatever its source. `organisation_id` is who stands behind it (strikes fall there, including agency jobs, #89). Status moves draft, in_review, live, under_review, hidden, closed. `permit_type` is required, fetched jobs are always critical_skills (#42). The write guard trigger limits what each role may change, and `posted_at` is set by trigger, never by a role. List indexes are partial on `status = 'live'` and lead with `(not quota_full)`. `permit_history` is copied from the organisation by trigger.
-- `job_text`: the advert text, kept until the job closes (#122). Also holds the text of a queued fetched advert.
+- `job`: one advert, whatever its source. `organisation_id` is who stands behind it (strikes fall there, including agency jobs, #89). Status moves draft, in_review, live, under_review, hidden, closed. `permit_type` is required, fetched jobs are always critical_skills (#42). The write guard trigger limits what each role may change, and `posted_at` is set by trigger, never by a role. The fetcher never moves a job back to draft, never changes the close reason of a closed job, and reopens a closed job only when it expired or the fetcher closed it (never one staff removed). List indexes are partial on `status = 'live'` and lead with `(not quota_full)`. `permit_history` is copied from the organisation by trigger.
+- `job_text`: the advert text, kept until the job closes (#122). Also holds the text of a queued fetched advert. A trigger lets `app_fetcher` write text only for fetched jobs and `app_portal` only for employer and agency jobs.
 - `job_source`: one row per job board, plus one for portal jobs. Its `last_ok_at` is the "last checked" date, so no job row changes nightly.
 - `fetched_advert`: everything the fetcher has seen, rejected adverts included. All nightly churn lives here. Linked only from `job.fetched_advert_id`.
 - `fetch_run`: one row per fetch of one source.
@@ -53,11 +57,11 @@ Launch A unless marked. "Pool" tables are the five Better Auth tables of a login
 
 A visitor has no table. Their reports and contact messages are rows with no account attached.
 
-- Candidate pool: `candidate_user`, `candidate_session`, `candidate_account`, `candidate_verification`, `candidate_rate_limit`. We add `suspended_at`, `deleted_at`, `last_active_at` and `inactive_warned_at` to the user table. Only `erase_candidate` deletes a user.
+- Candidate pool: `candidate_user`, `candidate_session`, `candidate_account`, `candidate_verification`, `candidate_rate_limit`. We add `suspended_at`, `deleted_at`, `last_active_at` and `inactive_warned_at` to the user table. An app role cannot set `last_active_at` more than five minutes ahead of the database clock. Only `erase_candidate` deletes a user.
 - `candidate_profile`: details for matching, one row per candidate. Launch B lock: `visible_to_employers` must be false.
 - `candidate_cv`: the current CV file record. The file is in private storage, the function returns its key for deletion.
 - `saved_job`: a bookmark (#25). Unique per candidate and job.
-- `tracker_entry`: the candidate's record of a job they applied to (#49, #86). Points to the job and copies no job details. On an on-site row a candidate can only set withdrawn.
+- `tracker_entry`: the candidate's record of a job they applied to (#49, #86). Points to the job and copies no job details. On an on-site row a candidate can only set withdrawn, and the trigger checks the old route too, so changing the route in the same update does not get round it.
 - `apply_click`: the "Did you apply?" prompt after a redirect (#49). One open prompt per candidate and job.
 - `alert`: a saved search that sends email (#25, #77). The send updates `last_sent_at` only if still older than the period, so two runs cannot both send.
 - `application` (Launch B): an application on our site (#45) with its own copy of what was sent. Erasure and retention empty it and keep job, date and outcome (#133).
@@ -82,30 +86,30 @@ Agency permit employer facts have no table: they sit on the job columns and on `
 
 ### Services, staff and admin
 
-- Staff pool: `staff_user`, `staff_session`, `staff_account`, `staff_verification`, `staff_rate_limit`. Only `app_admin` has rights. Nobody signs up, an administrator creates each login. Users are disabled, never deleted. Turning on a disabled login that holds a role needs a confirmed grant (#136).
+- Staff pool: `staff_user`, `staff_session`, `staff_account`, `staff_verification`, `staff_rate_limit`. Only `app_admin` has rights. Nobody signs up, an administrator creates each login. Users are disabled, never deleted. Turning on a disabled login that holds a role needs a confirmed grant (#136). `app_admin` cannot change the email of a login that holds a role: remove its roles first, then grant them again through confirmed requests. The database cannot tell Better Auth's own password and session writes from another staff member's, so the admin build must hold this rule itself: a staff login is created with no usable password and its owner sets one from an emailed link, and no staff member ever sets another's password.
 - `staff_role`: which of the seven #104 roles a person holds. Every grant needs a confirmed request unless `seeded_by_owner`. Removing a role is one person's act (#137), and no trigger may guard that delete.
-- `services_case`: one permit services request. Open means `status <> 'closed'`, and an open case freezes erasure of the people it names (#99). Candidate and portal sides use their views.
+- `services_case`: one permit services request. Open means `status <> 'closed'`, and an open case freezes erasure of the people it names (#99). Candidate and portal sides use their views. A trigger makes the consent records a case names belong to the same person as the case.
 - `case_note`: a handler's private note. `app_admin` only.
-- `case_document`: a list of uploaded copies, never originals (#50). Files live in private EU storage.
+- `case_document`: a list of uploaded copies, never originals (#50). Files live in private EU storage. A trigger makes a candidate or portal document sit on a case of the same person.
 - `case_quote`: a quote and invoice record paid by bank transfer (#84).
 - `content_page`: guides, the updates feed and help pages (#55). Terms and privacy pages are consent texts, not content pages. Public read is through `published_content_page`.
 - `contact_message`: the contact form and its staff inbox. Keeps the sender's name and email so staff can reply.
 - `report`: a complaint about a job, company, message or profile (#38, #102). The reported company never reads this table. The reporter's identity is cleared when the report closes (#99).
 - `strike`: one case against an organisation (false claim, false pay floor or instant ban, #44, #82, #96). Holds the notice, reply, decision and appeal. Triggers stamp the decider and the dates, set deadlines once, and stop one person entering and deciding the same reply or appeal (#134, #135, #136).
 - `ban`: the ban list. A row existing means the ban stands. Never updated. Inserted only in the transaction that applies its case, and only for the case organisation's own CRO number or earlier domains (#137). Deleting needs a confirmed `ban_lift`.
-- `approval_request`: the two-person rule (#104). A proposed change waits here. The proposer cannot confirm. Kinds and the confirmer role each needs are in the trigger. Rows are born pending.
-- `review_item`: admin work queues with no table of their own, the fetched-job queue included. One winner claims an item. The portal never writes it, triggers and functions do.
+- `approval_request`: the two-person rule (#104). A proposed change waits here. The proposer cannot confirm. Kinds and the confirmer role each needs are in the trigger. Rows are born pending. Kinds include `setting` (confirmed by an administrator).
+- `review_item`: admin work queues with no table of their own, the fetched-job queue included. One winner claims an item. The portal never writes it, triggers and functions do. `app_fetcher` may insert only `scam_flag` items, with only `queue`, `job_id`, `reason` and `detail`.
 - `audit_event`: the append-only log of staff actions, data views and security events. No app role can update or delete. Stores allow-listed values only, never names, emails or free text. Retention is below.
 
 ### Shared
 
 - `consent_text`: the exact wording of each consent (#90). Never updated or deleted once published. Sign-up terms and privacy notice need a confirmed `terms_privacy_page` request.
-- `consent_record`: proof of what one person agreed to and when. App roles may update only `withdrawn_at`. Erasure turns it into bare proof.
+- `consent_record`: proof of what one person agreed to and when. App roles cannot choose `given_at` (the default `now()` is the proof) and may update only `withdrawn_at`, once, from empty to `now()`. Erasure turns it into bare proof.
 - `notification_preference`: choices per category and channel (#54). Rows exist only where someone differs from the default.
 - `notification`: in-app notices, one row per member. Staff have none. A notice to the other side is written by a trigger or function, never by an app role.
 - `email_outbox`: emails waiting to send, saved in the same transaction as the action. The address is looked up at send time. Workers claim with `FOR UPDATE SKIP LOCKED`.
 - `feature_flag`: switches that keep Launch B off (#72). Only `portal_owner` writes, through a reviewed migration.
-- `setting`: every period and limit that is not final. `app_admin` reads and writes. Changes are logged. Empty means not set, so nothing is deleted automatically.
+- `setting`: every period and limit that is not final. `app_admin` reads and writes `value`, `is_guess` and the solicitor columns. A value change is two-person, and every change is logged by the trigger. Empty means not set, so nothing is deleted automatically.
 
 ## Retention
 

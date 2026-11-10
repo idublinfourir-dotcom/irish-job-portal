@@ -317,7 +317,12 @@ sections[3] = async () => {
 // =====================================================================================================================================
 sections[4] = async () => {
   // ---------- #136 a and b: late staff entry within the grace; staff-entered replies decided by someone else
-  const set = async (key, value) => (await q1("app_admin", S.A, "update setting set value=$2 where key=$1 returning value", [key, value]));
+  // fixture change (0004, M2): each value change gets its confirmed setting request, A proposes and B confirms
+  const set = async (key, value) => {
+    const r = await q1("app_admin", S.A, "insert into approval_request(kind,target_table,target_id,change) values('setting','setting',$1,$2) returning id", [key, JSON.stringify({ value })]);
+    await run("app_admin", S.B, "update approval_request set status='confirmed' where id=$1", [r.id]);
+    return q1("app_admin", S.A, "update setting set value=$2 where key=$1 returning value", [key, value]);
+  };
   const grace0 = (await su("select value from setting where key='staff_entry_grace'")).rows[0].value;
   const lateAppeal = async (dueAgo, recvAgo, text = "late by post") => { const o = await mkOrg(); const st = await mkStrike(o.id, { appeal_due: dueAgo === null ? null : ago(dueAgo) });
     const recv = recvAgo === null ? null : (recvAgo < 0 ? ahead(-recvAgo) : ago(recvAgo));
