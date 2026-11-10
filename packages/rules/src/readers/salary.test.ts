@@ -1,0 +1,103 @@
+import { describe, expect, test } from "vitest";
+import { DEFAULT_SALARY_MINIMUM, checkSalary, readSalary, salaryStage } from "./index";
+
+const sal = (d: string, box = "") => readSalary(d, box);
+
+describe("R12 readSalary: what it reads", () => {
+  test.each([
+    ["Salary: €45,000 - €55,000", 45000, 55000],
+    ["€50k", 50000, 50000],
+    ["€ 62.5k to €70k", 62500, 70000],
+    ["€45.5k", 45500, 45500],
+    ["45.000 EUR", 45000, 45000],
+    ["50,000 EUR", 50000, 50000],
+    ["€50 000,00", 50000, 50000],
+    ["€45,000 per annum", 45000, 45000],
+    ["€14,999 and €15,000", 15000, 15000],
+    ["€50,000 and then €80,000 later", 50000, 80000],
+    ["Salary €45,000 plus bonus €50,000", 45000, 50000],
+  ])("%j gives %d to %d", (text, low, high) => {
+    expect(sal(text)).toEqual({ low, high });
+  });
+  test("the benefit box is read first, then the description", () => {
+    expect(sal("x", "€48,000")).toEqual({ low: 48000, high: 48000 });
+    expect(sal("salary 52,000 euro", "€10,000")).toEqual({ low: 52000, high: 52000 });
+  });
+  test("the high is the largest amount within 80 characters of the first, not further", () => {
+    expect(sal("€50,000 " + "x".repeat(100) + " €90,000")).toEqual({ low: 50000, high: 50000 });
+  });
+  test("reads Arabic-Indic digits as Python does", () => {
+    expect(sal("€٥٠٠٠٠")).toEqual({ low: 50000, high: 50000 });
+  });
+});
+
+describe("R12 readSalary: what it skips", () => {
+  test.each([
+    ["Revenue €350m and €400 million"],
+    ["€45,000 bonus"],
+    ["€500 per day"],
+    ["€3,000 per day"],
+    ["€12,000 salary"],
+    ["€450000"],
+    ["£50,000"],
+    ["€5K"],
+    ["€1,234,567.89"],
+    [""],
+  ])("%j gives nothing", (text) => {
+    expect(sal(text)).toEqual({ low: null, high: null });
+  });
+});
+
+describe("R12 readSalary: known quirks", () => {
+  test("known quirk F1: hourly pay is never read (the amount pattern needs 4 digits, a k or thousands)", () => {
+    expect(sal("Pay €21.00 per hour")).toEqual({ low: null, high: null });
+    expect(sal("Pay €17.40 per Hour")).toEqual({ low: null, high: null });
+  });
+  test("known quirk F2: an amount followed by '/' is skipped, so '/year' pay is lost", () => {
+    expect(sal("€50,000/year")).toEqual({ low: null, high: null });
+    expect(sal("€50,000 / year")).toEqual({ low: null, high: null });
+  });
+  test("known quirk F2: in a range only the last amount (no slash after it) is read as the low", () => {
+    expect(sal("€50,000 - €60,000 / year")).toEqual({ low: 50000, high: 50000 });
+  });
+  test("known quirk F4: slash-separated country ranges lose the first figure", () => {
+    expect(sal("Ireland €50,000 / Poland €30,000 / Germany €60,000")).toEqual({ low: 60000, high: 60000 });
+  });
+  test("known quirk F5: a narrow no-break space (U+202F) works as a thousands separator", () => {
+    expect(sal("50 000 EUR")).toEqual({ low: 50000, high: 50000 });
+    expect(sal("€40 904")).toEqual({ low: 40904, high: 40904 });
+  });
+});
+
+describe("R13 checkSalary", () => {
+  test("the four results", () => {
+    expect(checkSalary(null, null)).toBe("not stated");
+    expect(checkSalary(40904, 40904)).toBe("pass");
+    expect(checkSalary(40903, 50000)).toBe("range crosses");
+    expect(checkSalary(30000, 40903)).toBe("below");
+    expect(checkSalary(30000, null)).toBe("below");
+  });
+  test("the minimum is a parameter, defaulting to the Python value", () => {
+    expect(DEFAULT_SALARY_MINIMUM).toBe(40904);
+    expect(checkSalary(45000, 45000, 50000)).toBe("below");
+    expect(checkSalary(45000, 60000, 50000)).toBe("range crosses");
+  });
+});
+
+describe("R13 salaryStage", () => {
+  test("below, range crosses and pass do not depend on the flags", () => {
+    for (const big of [false, true]) {
+      for (const agency of [false, true]) {
+        expect(salaryStage("below", big, agency)).toBe("8 salary below €40,904");
+        expect(salaryStage("range crosses", big, agency)).toBe("8 range crosses €40,904 (no rule yet)");
+        expect(salaryStage("pass", big, agency)).toBe("PASS (salary stated)");
+      }
+    }
+  });
+  test("no salary passes only for a big company that is not an agency", () => {
+    expect(salaryStage("not stated", true, false)).toBe("PASS (big-company rule)");
+    expect(salaryStage("not stated", true, true)).toBe("8 no salary, not a big company");
+    expect(salaryStage("not stated", false, false)).toBe("8 no salary, not a big company");
+    expect(salaryStage("not stated", false, true)).toBe("8 no salary, not a big company");
+  });
+});

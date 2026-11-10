@@ -1,0 +1,208 @@
+{
+ "offset": 0,
+ "limit": 100,
+ "totalFound": 3,
+ "content": [
+  {
+   "id": "12c05dca6222310",
+   "name": "Napekev SOV Didilizomamar Nazofapi",
+   "uuid": "5b3a54d4-ac5d-e32d-3d82-2205ebe7e65a",
+   "jobAdId": "39ad8343-8871-8a15-d996-34d3366dace9",
+   "defaultJobAd": true,
+   "refNumber": "ZAM917K",
+   "company": {
+    "identifier": "Pizupimedasape",
+    "name": "Bipe caf Zutufow"
+   },
+   "releasedDate": "2026-11-05T14:47:38.252Z",
+   "location": {
+    "city": "Gijefeh-Ze-Muzugad",
+    "region": "FE",
+    "country": "ie",
+    "remote": false,
+    "hybrid": false,
+    "latitude": "76.2679297",
+    "longitude": "-4.4415468",
+    "fullLocation": "Kusucis-Se-Ridozic, CU, Mitehul"
+   },
+   "industry": {
+    "id": "pekafagijewu",
+    "label": "Wiwonowotuge"
+   },
+   "department": {},
+   "function": {
+    "id": "tefolacegirivu",
+    "label": "Digogedecifapi"
+   },
+   "typeOfEmployment": {
+    "id": "suvumesov",
+    "label": "Full-time"
+   },
+   "experienceLevel": {
+    "id": "kih_wirute_kelus",
+    "label": "Pef-Gunuji Rebag"
+   },
+   "customField": [
+    {
+     "fieldId": "CURAHAJ",
+     "fieldLabel": "Fibigaz/Nahuma",
+     "valueId": "nu",
+     "valueLabel": "Ciziker"
+    },
+    {
+     "fieldId": "00p05412ro69036u4721j3s9",
+     "fieldLabel": "Fucafe",
+     "valueId": "ganupuv",
+     "valueLabel": "Bele zor Mazivat"
+    }
+   ],
+   "visibility": "PUBLIC",
+   "ref": "https://example.invalid/t9/cemugijas/revozalazimapu/dukelane/378379650326212",
+   "language": {
+    "code": "en",
+    "label": "Nuzuton",
+    "labelNative": "Sutaher (PO)"
+   }
+  },
+  {
+   "id": "d598e1ea13dd29c",
+   "name": "SEM Dikawupe Roza ",
+   "uuid": "9738deb9-7bfb-f897-5a6b-e412c13476cd",
+   "jobAdId": "fb30fd53-4122-8a29-057b-9740370c5b83",
+   "defaultJobAd": true,
+   "refNumber": "BUJ271W",
+   "company": {
+    "identifier": "Bisatujajejuku",
+    "name": "Hipu nen Pegobuf"
+   },
+   "releasedDate": "2026-11-04T08:48:41.336Z",
+   "location": {
+    "city": "Cokadi",
+    "region": "Vumuko Sulira",
+    "country": "ie",
+    "remote": false,
+    "hybrid": false,
+    "latitude": "29.8341099",
+    "longitude": "-8.8983055",
+    "fullLocation": "Vafefu, Junole Ziloma, Hofofov"
+   },
+   "industry": {
+    "id": "ronucohuculu",
+    "label": "Nolepovarezi"
+   },
+   "department": {
+    "id": "a523039",
+    "label": "Banonohisi"
+   },
+   "function": {
+    "id": "vifew",
+    "label": "Vubos"
+   },
+   "typeOfEmployment": {
+    "id": "kehozifir",
+    "label": "Full-time"
+   },
+   "experienceLevel": {
+    "id": "guz_rocaza_zasog",
+    "label": "Sep-Luhudo Busiv"
+   },
+   "customField": [
+    {
+     "fieldId": "CIDAGIZ",
+     "fieldLabel": "Heviwik/Kikace",
+     "valueId": "li",
+     "valueLabel": "Kiguvab"
+    },
+    {
+     "fieldId": "92z83473fo48214a9281m5k3",
+     "fieldLabel": "Gevago",
+     "valueId": "gotorok",
+     "valueLabel": "Capo nan Salaroh"
+    },
+    {
+     "fieldId": "97b25537wo40066i5528l2z6",
+     "fieldLabel": "Sahiruboga",
+     "valueId": "1475407",
+     "valueLabel": "Jahijapono"
+    }
+   ],
+   "visibility": "PUBLIC",
+   "ref": "https://example.invalid/t6/fikamucob/gonevabikaluwu/pidesata/376375116181554",
+   "language": {
+    "code": "en",
+    "label": "Rifoled",
+    "labelNative": "Nomoruv (CU)"
+   }
+  },
+  {
+   "id": "744000000000003",
+   "name": "Third Made Up Role",
+   "uuid": "f3035588-d31b-1c93-cd11-878ea5feaf1b",
+   "jobAdId": "f15a5b09-246b-a9b7-090b-85b5db704efa",
+   "defaultJobAd": true,
+   "refNumber": "FAB274G",
+   "company": {
+    "identifier": "Kazarokivudige",
+    "name": "Sebi lag Jizijoj"
+   },
+   "releasedDate": "2026-10-14T13:05:44.318Z",
+   "location": {
+    "city": "Purupevaj",
+    "region": "FI",
+    "country": "ie",
+    "remote": false,
+    "hybrid": false,
+    "latitude": "19.7606933",
+    "longitude": "-9.899574428160035",
+    "fullLocation": "Capisufen, LA, Mukitej"
+   },
+   "industry": {
+    "id": "pazuhofobofa",
+    "label": "Wozocumorita"
+   },
+   "department": {
+    "id": "e1b4ad4",
+    "label": "Powesururi"
+   },
+   "function": {
+    "id": "rulagom_misujinici",
+    "label": "Jibecis Padofumiwi"
+   },
+   "typeOfEmployment": {
+    "id": "hehawekaw",
+    "label": "Full-time"
+   },
+   "experienceLevel": {
+    "id": "mid_wuvibe_zunac",
+    "label": "Zaw-Dobumu Kareb"
+   },
+   "customField": [
+    {
+     "fieldId": "JOSIRIN",
+     "fieldLabel": "Cuzuhog/Larutu",
+     "valueId": "ri",
+     "valueLabel": "Rolesip"
+    },
+    {
+     "fieldId": "36z72028zi37554i0082s3v6",
+     "fieldLabel": "Sipoma",
+     "valueId": "zitofem",
+     "valueLabel": "Sulo pit Focawev"
+    },
+    {
+     "fieldId": "82b20508ve15977e6494c5t2",
+     "fieldLabel": "Dazegucepa",
+     "valueId": "1987127",
+     "valueLabel": "Miwedaraso"
+    }
+   ],
+   "visibility": "PUBLIC",
+   "ref": "https://example.invalid/m1/fumigidag/rapeduhafiwizu/vatacipa/621131058702444",
+   "language": {
+    "code": "en",
+    "label": "Narezoz",
+    "labelNative": "Meboput (BE)"
+   }
+  }
+ ]
+}

@@ -86,6 +86,36 @@ _Avoid_: Sponsor confirmation, attestation
 A minimum pay figure a big-company Signer declares for a role family.
 _Avoid_: Salary guarantee, minimum salary
 
+## Job checking
+
+**Advert**:
+What a job site shows for one opening, as we fetched it and before it becomes a Job.
+_Avoid_: Posting, listing
+
+**Source adapter**:
+The code that reads one kind of job site and returns Adverts in one shape.
+_Avoid_: Scraper, crawler
+
+**Matcher**:
+The code that reads a title and Advert text and gives the occupation code.
+_Avoid_: Classifier
+
+**Assessment**:
+The result of running the rules on one Advert: its Stage, its Bucket and what was read from it.
+_Avoid_: Classification, verdict
+
+**Stage**:
+The rule at which an Advert stopped, or that it passed. The number at its start is the step: 3 the Irish check, 4 wording, 5 and 6 occupation, 7 contract, 8 salary.
+_Avoid_: Status (a Job has a status)
+
+**Bucket**:
+The outcome group of an Assessment: stated pay, public pay, big company, no salary, queue or rejected.
+_Avoid_: Category
+
+**Parity run**:
+A check that our code gives the same result as the earlier Python on saved real Adverts. It runs on the engineer's machine only, because those Adverts are other sites' text.
+_Avoid_: Regression test
+
 ## Candidate records
 
 **Tracker entry**:
