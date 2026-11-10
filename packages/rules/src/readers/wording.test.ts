@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { noSponsorshipPhrase, scamWording, sponsorshipAvailable } from "./index";
+import { noSponsorshipPhrase, scamPatternPython, scamWording, sponsorshipAvailable } from "./index";
 
 describe("R04 noSponsorshipPhrase", () => {
   test.each([
@@ -71,5 +71,43 @@ describe("R06 scamWording", () => {
     expect(scamWording("transfer one two three a processing charge")).toBe(false); // four words between: over the limit of three
     expect(scamWording("pay a b c d fee")).toBe(false);
     expect(scamWording("no fee")).toBe(false);
+  });
+
+  // NEW BEHAVIOUR, not in the Python (10 November 2026). The Python's pattern matched 101 of 1,303 saved adverts and every one was
+  // an employer's own warning against scams (100) or a benefit (1). Made-up text below, in the shapes those adverts had.
+  test.each([
+    "Fake Corp will never ask applicants to pay a hiring fee.",
+    "It is strictly against Fake Corp policy for applicants to pay any fee to take part.",
+    "We do not ask candidates to send a deposit at any stage.",
+    "You won\u2019t be asked to pay a fee, and you don't need to transfer a deposit.",
+    "There is no registration fee.",
+    "No hiring agency that works with Fake & Sons will ask applicants to pay a fee at any time.",
+    "Benefits: professional registration fees paid, pension, parking.",
+    "Your registration fee is covered by the clinic.",
+  ])("a warning against scams, or a benefit, is not scam wording: %j", (text) => expect(scamWording(text)).toBe(false));
+  test.each([
+    "You will not be considered unless you pay a processing charge.", // "not ... unless" is a demand
+    "We never close. Send us a deposit today.", // the negation is in another sentence
+    "No experience needed, just pay a small fee to start.", // "no" is about something else
+    "Do not delay: pay the fee today.",
+    "We will never ask you to pay a fee by phone. To confirm your place, transfer a deposit of 100 euro.", // a warning first, a demand later
+    "A registration fee of 50 euro is paid by the candidate.",
+    "The registration fee is paid by the applicant before the interview.",
+  ])("a demand for money is still scam wording: %j", (text) => expect(scamWording(text)).toBe(true));
+  test("hostile text: a megabyte of warnings, of demands, or of half sentences is read in time and never throws", () => {
+    const cases = [
+      "Fake Corp will never ask applicants to pay a hiring fee. ".repeat(18_000), // every match is a warning: nothing returns early
+      "pay a fee ".repeat(100_000),
+      "no ".repeat(300_000) + "pay a fee", // "no" right before the match reads as "no fee": not flagged
+      "registration fee" + "s".repeat(1_000_000),
+      "never " + "x".repeat(1_000_000) + " pay a fee\0",
+    ];
+    const t0 = performance.now();
+    expect(cases.map(scamWording)).toEqual([false, true, false, true, true]);
+    expect(performance.now() - t0).toBeLessThan(1000); // measured about 25 ms for all five
+  });
+  test("the Python's own test is kept as it was, for the parity run", () => {
+    expect(scamPatternPython("Fake Corp will never ask applicants to pay a hiring fee.")).toBe(true);
+    expect(scamPatternPython("no fee")).toBe(false);
   });
 });
