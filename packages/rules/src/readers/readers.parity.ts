@@ -5,7 +5,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { expect, test } from "vitest";
-import { checkSalary, doctorGradeWithoutTwoYears, noSponsorshipPhrase, permanentOrSpecifiedPurpose, readContract, readSalary, salaryStage, scamWording, sponsorshipAvailable } from "./index";
+import { checkSalary, doctorGradeWithoutTwoYears, noSponsorshipPhrase, permanentOrSpecifiedPurpose, readContract, readSalary, salaryStage, scamPatternPython, scamWording, sponsorshipAvailable } from "./index";
 
 type Advert = { id?: string; title?: string | null; description?: string | null; employment_type?: string | null; salary_box?: string | null };
 type Reference = Record<string, unknown> & { key: string; id: string; stages: Record<string, string> };
@@ -22,6 +22,8 @@ test("the TypeScript readers match the Python on every saved advert", () => {
   expect(reference.length).toBe(adverts.size);
 
   const differences: string[] = [];
+  let pythonScam = 0;
+  let stillScam = 0;
   const compare = (ref: Reference, field: string, ts: unknown, py: unknown) => {
     if (ts !== py) differences.push(`${ref.id} ${ref.key} ${field}: ts=${JSON.stringify(ts)} py=${JSON.stringify(py)}`);
   };
@@ -34,7 +36,9 @@ test("the TypeScript readers match the Python on every saved advert", () => {
     const check = checkSalary(low, high);
     compare(ref, "noSponsor", noSponsorshipPhrase(title, d), ref.noSponsor);
     compare(ref, "sponsorYes", sponsorshipAvailable(d), ref.sponsorYes);
-    compare(ref, "scam", scamWording(d), ref.scam);
+    compare(ref, "scam", scamPatternPython(d), ref.scam); // the Python's pattern, as ported
+    if (ref.scam) pythonScam++;
+    if (scamWording(d)) { stillScam++; if (!ref.scam) differences.push(`${ref.id} ${ref.key} scam: the new rule flags what the Python did not`); }
     compare(ref, "contract", contract.result, ref.contract);
     compare(ref, "contractWhy", contract.reason, ref.contractWhy);
     compare(ref, "doctorUnconfirmed", doctorGradeWithoutTwoYears(title, d), ref.doctorUnconfirmed);
@@ -45,5 +49,9 @@ test("the TypeScript readers match the Python on every saved advert", () => {
     for (const big of [false, true]) for (const agency of [false, true]) compare(ref, `stage big=${big} agency=${agency}`, salaryStage(check, big, agency), ref.stages[`${Number(big)}${Number(agency)}`]);
   }
   console.log(`adverts compared: ${reference.length}, differences: ${differences.length}`);
+  // NEW BEHAVIOUR (10 November 2026): scamWording drops warnings against scams and benefits. Measured on these adverts: the Python's
+  // pattern flags 101 and all are false alarms, so the new rule flags none. It only ever removes a flag (checked above).
+  console.log(`scam: the Python's pattern flags ${pythonScam}, the rule now flags ${stillScam}`);
+  expect({ pythonScam, stillScam }).toEqual({ pythonScam: 101, stillScam: 0 });
   expect(differences).toEqual([]);
 });
