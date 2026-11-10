@@ -34,11 +34,20 @@ export function getDb(): Db {
   return shared.__portalDb;
 }
 
-export async function checkDatabase(): Promise<boolean> {
-  try {
-    await getPool().query("select 1");
-    return true;
-  } catch {
-    return false;
-  }
+// The health route is public. Reuse the last answer for 5 seconds so a flood of calls cannot take pool connections from real pages.
+const HEALTH_TTL_MS = 5000;
+let health: { at: number; ok: Promise<boolean> } | undefined;
+
+export function checkDatabase(): Promise<boolean> {
+  const now = Date.now();
+  if (health && now - health.at < HEALTH_TTL_MS) return health.ok;
+  // The promise is stored, so calls made while the query runs share it. A failure is cached just as long as a success.
+  const ok = (async () => getPool().query("select 1"))().then(() => true, () => false);
+  health = { at: now, ok };
+  return ok;
+}
+
+/** For tests only. */
+export function resetHealthCache() {
+  health = undefined;
 }

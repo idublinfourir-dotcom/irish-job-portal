@@ -391,7 +391,6 @@ S("report", "trigger report_upheld: a job hidden by the report is closed (remove
 
 // ===== strike, ban
 let st1, stR, stE, st2, stB, banId;
-const strikeIns = (extra = "", extraV = "") => `insert into strike(organisation_id, case_kind, reason_code, ${extra}) values ($1,'false_claim','false_sponsorship', ${extraV}) returning id`;
 S("strike", "insert a decided strike 1 as admin (staff id and time stamped by the trigger); trigger strike_closes_jobs closes its job", "app_admin", async () => {
   const j = await one("app_admin", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status, salary_low, search_vector)
      values ($1,'admin_manual',$2,'S1','Acme','x','general', ${days(5)}, 'https://acme.test/s1', 'live', 1, to_tsvector('x')) returning id`, [org1, src]);

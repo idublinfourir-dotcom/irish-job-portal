@@ -10,7 +10,7 @@
     "dev:admin": "npm run dev -w @portal/admin",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings 0",
     "db:pull": "npm run db:pull -w @portal/db",
     "db:test:up": "npm run db:test:up -w @portal/db",
     "db:test:down": "npm run db:test:down -w @portal/db",
@@ -18,7 +18,7 @@
     "check": "npm run typecheck && npm run lint && npm run test && npm run build"
   },
   "devDependencies": {
-    "@types/node": "^24",
+    "@types/node": "24.19.2",
     "eslint": "9.39.5",
     "eslint-config-next": "16.4.5",
     "typescript": "5.9.3",
