@@ -22,7 +22,19 @@ Use the words in `GLOSSARY.md`. Before touching the database, read `docs/databas
 - **Portable database:** use Supabase as plain Postgres only, with Better Auth for logins, because the database moves to a paid host later.
 - **Light queries:** read advert text only for the rows shown. Search and job lists page by keyset, newest first or by salary, with counts capped at 200. Scoring every match touched 35,777 pages to show 20 results, and the big stalls (up to 33 seconds) came soon after bursts of that query.
 - **Thin pages:** business logic lives in `packages/`, so tests run without a browser.
+- **No real network in tests:** no test calls the real network. `vitest.setup.ts` makes any connection to a host other than loopback throw. Use a fake service.
 - **Pinned versions:** exact versions are the ones tested on real hosting. Change one deliberately and re-check.
+
+## The six checks
+
+Every change that adds or alters code ships with all six. `npm run check` runs 1, 3, 4 and 6 where they exist.
+
+1. **Linters:** `npm run lint` (no warnings allowed) and `npm run typecheck`.
+2. **Mock services:** every outside service is reached through a fake. `vitest.setup.ts` refuses any non-loopback connection.
+3. **Unit tests:** logic with no database, network or browser, in `apps/` and `packages/*/src/*.test.ts`.
+4. **Integration tests:** `packages/db/test/`, against the real test database (`npm run db:test:up`).
+5. **Performance tests:** not built yet. The page gate is being built on branch `perf/page-gate`.
+6. **Security tests:** role permission tests in `packages/db/test/`, security headers in `apps/headers.test.ts`, the network guard in `apps/network-guard.test.ts`.
 
 ## Working limits (#113)
 

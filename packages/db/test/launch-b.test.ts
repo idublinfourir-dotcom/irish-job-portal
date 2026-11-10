@@ -11,8 +11,8 @@ import { daysAgo, fixtures, in30 } from "./fixtures";
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 
-let db, P, su, id, ins, F;
-let src, s1, s2, org, org2, pu, pu2, mem, mem2, appText, visText, accText;
+let db, P, su, ins, F;
+let src, org, org2, pu, pu2, mem, mem2, appText, accText;
 const count = async (sql, a) => (await su(`select count(*)::int n from ${sql}`, a)).rows[0].n;
 const sv = "'fake':1";
 // Trial 3 made run_retention do one rule per call, so these tests call it until it reports no rule and add up what it returned.
@@ -34,14 +34,14 @@ const apply = (pool, c, j, o, cr) => ins(pool, "application", { candidate_user_i
 
 beforeAll(async () => {
   db = await createTestDb();
-  ({ P, su, id, ins, F } = fixtures(db));
+  ({ P, su, ins, F } = fixtures(db));
   // Launch B starts here, in this copy only.
   await db.query("portal_owner", fs.readFileSync(new URL("../launch-b/0001_launch_b.sql", import.meta.url), "utf8"));
   src = await ins("postgres", "job_source", { kind: "portal", board: "portal" });
-  s1 = await F.staff(); s2 = await F.staff();
+  await F.staff(); await F.staff();
   org = await F.org(); org2 = await F.org(); pu = await F.portal(); pu2 = await F.portal();
   mem = await F.member(org, pu, { role: "account_owner", signer: true }); mem2 = await F.member(org2, pu2, { role: "account_owner", signer: true });
-  appText = await F.text("application"); visText = await F.text("visibility"); accText = await F.text("contact_accept");
+  appText = await F.text("application"); await F.text("visibility"); accText = await F.text("contact_accept");
 });
 afterAll(() => db.drop());
 

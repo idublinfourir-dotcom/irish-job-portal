@@ -18,12 +18,12 @@ const fns = (await cat.query("select p.oid::regprocedure::text f, p.proname from
 await cat.end();
 
 let db, P, su, id, ins, F;
-let src, org, pu, mem, s1, s2, cand, ct, cons, job;
+let src, org, pu, mem, s1, cand, ct, cons, job;
 beforeAll(async () => {
   db = await createTestDb();
   ({ P, su, id, ins, F } = fixtures(db));
   src = await ins("postgres", "job_source", { kind: "portal", board: "portal" });
-  org = await F.org(); pu = await F.portal(); mem = await F.member(org, pu, { role: "account_owner", signer: true }); s1 = await F.staff(); s2 = await F.staff();
+  org = await F.org(); pu = await F.portal(); mem = await F.member(org, pu, { role: "account_owner", signer: true }); s1 = await F.staff(); await F.staff();
   cand = await F.cand(); ct = await F.text("services_request"); cons = await ins("postgres", "consent_record", { candidate_user_id: cand, consent_text_id: ct });
   job = await ins("postgres", "job", { organisation_id: org, source: "employer", job_source_id: src, title: "t", employer_name: "e", sector: "it", permit_type: "critical_skills", status: "live", closes_at: in30(), own_page_url: "u", salary_low: 40000, search_vector: "'x':1" });
   await ins("postgres", "job_text", { job_id: job, advert_text: "fake advert" }, null);
