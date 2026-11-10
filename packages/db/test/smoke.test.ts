@@ -110,7 +110,12 @@ N("staff_role", "grant_role request that names another role", "app_admin", /does
 S("staff_role", "update: none by design (app_admin has select, insert, delete only)", "app_admin", async () => "no update grant, checked in 04-grants");
 
 // ===== setting, flags
-S("setting", "update staff_entry_grace", "app_admin", () => q("app_admin", "update setting set value = 7, updated_at = now() where key = 'staff_entry_grace'"));
+// fixture change (0004, M2): s1 proposes, s2 confirms; updated_at is stamped by the trigger now, and left out of app_admin's grant
+S("setting", "update staff_entry_grace", "app_admin", async () => {
+  const r = await one("app_admin", "insert into approval_request(kind, target_table, target_id, change) values ('setting','setting','staff_entry_grace','{\"value\":7}') returning id", [], "s1");
+  await q("app_admin", "update approval_request set status = 'confirmed' where id = $1", [r.id], "s2");
+  await q("app_admin", "update setting set value = 7 where key = 'staff_entry_grace'", [], "s1");
+});
 S("setting", "alert_digest_max_jobs row is gone", "app_admin", async () => { const r = await one("app_admin", "select count(*)::int n from setting where key = 'alert_digest_max_jobs'"); if (r.n) throw new Error("still there"); });
 
 // ===== organisations
@@ -320,7 +325,7 @@ S("notification", "portal view insert and update read_at", "app_portal", async (
 });
 S("email_outbox", "insert as admin and update status (person indexes, retention indexes)", "app_admin", async () => {
   await q("app_admin", "insert into email_outbox(template, candidate_user_id, dedupe_key) values ('welcome','c2','e1')");
-  await q("app_admin", "update email_outbox set status = 'sent', sent_at = now() where dedupe_key = 'e1'");
+  await q("app_admin", "update email_outbox set status = 'sent', sent_at = now() where dedupe_key = 'app_admin:e1'"); // fixture change (0004, M4): app_admin's key is stored as role:key
 });
 
 // ===== services cases

@@ -1646,175 +1646,6 @@ export const ban = pgTable("ban", {
 	check("ban_check", sql`num_nonnulls(cro_number, email_domain) >= 1`),
 ]);
 
-export const approvalRequest = pgTable("approval_request", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "approval_request_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	kind: text().notNull(),
-	targetTable: text("target_table").notNull(),
-	targetId: text("target_id").notNull(),
-	change: jsonb(),
-	effectiveFrom: timestamp("effective_from", { withTimezone: true, mode: 'string' }),
-	reason: text(),
-	proposedByStaffUserId: text("proposed_by_staff_user_id").notNull(),
-	confirmedByStaffUserId: text("confirmed_by_staff_user_id"),
-	status: text().default('pending').notNull(),
-	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }),
-	appliedAt: timestamp("applied_at", { withTimezone: true, mode: 'string' }),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("approval_request_confirmed_idx").using("btree", table.confirmedByStaffUserId.asc().nullsLast().op("text_ops")),
-	index("approval_request_pending_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`(status = 'pending'::text)`),
-	uniqueIndex("approval_request_pending_unique").using("btree", table.kind.asc().nullsLast().op("text_ops"), table.targetTable.asc().nullsLast().op("text_ops"), table.targetId.asc().nullsLast().op("text_ops")).where(sql`(status = 'pending'::text)`),
-	index("approval_request_proposed_idx").using("btree", table.proposedByStaffUserId.asc().nullsLast().op("text_ops")),
-	foreignKey({
-			columns: [table.proposedByStaffUserId],
-			foreignColumns: [staffUser.id],
-			name: "approval_request_proposed_by_staff_user_id_fkey"
-		}),
-	foreignKey({
-			columns: [table.confirmedByStaffUserId],
-			foreignColumns: [staffUser.id],
-			name: "approval_request_confirmed_by_staff_user_id_fkey"
-		}),
-	check("approval_request_kind_check", sql`kind = ANY (ARRAY['threshold'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'unclear_role_list'::text, 'public_pay_employer'::text, 'big_company_entry'::text, 'pay_floor'::text, 'strike_2'::text, 'strike_3'::text, 'ban'::text, 'ban_lift'::text, 'manual_post_sponsor_confirmed'::text, 'grant_administrator'::text, 'grant_role'::text, 'terms_privacy_page'::text])`),
-	check("approval_request_status_check", sql`status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'refused'::text, 'withdrawn'::text])`),
-	check("approval_request_check", sql`confirmed_by_staff_user_id <> proposed_by_staff_user_id`),
-	check("approval_request_check1", sql`(status <> 'confirmed'::text) OR (confirmed_by_staff_user_id IS NOT NULL)`),
-]);
-
-export const reviewItem = pgTable("review_item", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "review_item_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	queue: text().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	jobId: bigint("job_id", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	organisationId: bigint("organisation_id", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	organisationNameId: bigint("organisation_name_id", { mode: "number" }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	payFloorId: bigint("pay_floor_id", { mode: "number" }),
-	candidateUserId: text("candidate_user_id"),
-	portalUserId: text("portal_user_id"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	contactMessageId: bigint("contact_message_id", { mode: "number" }),
-	reason: text(),
-	detail: jsonb(),
-	claimedByStaffUserId: text("claimed_by_staff_user_id"),
-	claimedAt: timestamp("claimed_at", { withTimezone: true, mode: 'string' }),
-	status: text().default('open').notNull(),
-	decidedByStaffUserId: text("decided_by_staff_user_id"),
-	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }),
-	outcome: text(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("review_item_candidate_idx").using("btree", table.candidateUserId.asc().nullsLast().op("text_ops")),
-	uniqueIndex("review_item_candidate_unique").using("btree", table.queue.asc().nullsLast().op("text_ops"), table.candidateUserId.asc().nullsLast().op("text_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'claimed'::text]))`),
-	index("review_item_claimed_idx").using("btree", table.claimedByStaffUserId.asc().nullsLast().op("text_ops")),
-	index("review_item_contact_idx").using("btree", table.contactMessageId.asc().nullsLast().op("int8_ops")),
-	uniqueIndex("review_item_contact_unique").using("btree", table.queue.asc().nullsLast().op("text_ops"), table.contactMessageId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'claimed'::text]))`),
-	index("review_item_decided_idx").using("btree", table.decidedByStaffUserId.asc().nullsLast().op("text_ops")),
-	index("review_item_done_idx").using("btree", sql`COALESCE(decided_at, created_at)`).where(sql`(status = ANY (ARRAY['done'::text, 'dropped'::text]))`),
-	index("review_item_floor_idx").using("btree", table.payFloorId.asc().nullsLast().op("int8_ops")),
-	uniqueIndex("review_item_floor_unique").using("btree", table.queue.asc().nullsLast().op("int8_ops"), table.payFloorId.asc().nullsLast().op("text_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'claimed'::text]))`),
-	index("review_item_job_idx").using("btree", table.jobId.asc().nullsLast().op("int8_ops")),
-	uniqueIndex("review_item_job_unique").using("btree", table.queue.asc().nullsLast().op("int8_ops"), table.jobId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'claimed'::text]))`),
-	index("review_item_name_idx").using("btree", table.organisationNameId.asc().nullsLast().op("int8_ops")),
-	uniqueIndex("review_item_name_unique").using("btree", table.queue.asc().nullsLast().op("int8_ops"), table.organisationNameId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'claimed'::text]))`),
-	index("review_item_org_idx").using("btree", table.organisationId.asc().nullsLast().op("int8_ops")),
-	uniqueIndex("review_item_org_unique").using("btree", table.queue.asc().nullsLast().op("int8_ops"), table.organisationId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'claimed'::text]))`),
-	index("review_item_portal_idx").using("btree", table.portalUserId.asc().nullsLast().op("text_ops")),
-	uniqueIndex("review_item_portal_unique").using("btree", table.queue.asc().nullsLast().op("text_ops"), table.portalUserId.asc().nullsLast().op("text_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'claimed'::text]))`),
-	index("review_item_queue_idx").using("btree", table.queue.asc().nullsLast().op("timestamptz_ops"), table.createdAt.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'claimed'::text]))`),
-	foreignKey({
-			columns: [table.jobId],
-			foreignColumns: [job.id],
-			name: "review_item_job_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.organisationId],
-			foreignColumns: [organisation.id],
-			name: "review_item_organisation_id_fkey"
-		}),
-	foreignKey({
-			columns: [table.organisationNameId],
-			foreignColumns: [organisationName.id],
-			name: "review_item_organisation_name_id_fkey"
-		}),
-	foreignKey({
-			columns: [table.payFloorId],
-			foreignColumns: [payFloor.id],
-			name: "review_item_pay_floor_id_fkey"
-		}),
-	foreignKey({
-			columns: [table.candidateUserId],
-			foreignColumns: [candidateUser.id],
-			name: "review_item_candidate_user_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.portalUserId],
-			foreignColumns: [portalUser.id],
-			name: "review_item_portal_user_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.contactMessageId],
-			foreignColumns: [contactMessage.id],
-			name: "review_item_contact_message_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.claimedByStaffUserId],
-			foreignColumns: [staffUser.id],
-			name: "review_item_claimed_by_staff_user_id_fkey"
-		}),
-	foreignKey({
-			columns: [table.decidedByStaffUserId],
-			foreignColumns: [staffUser.id],
-			name: "review_item_decided_by_staff_user_id_fkey"
-		}),
-	check("review_item_queue_check", sql`queue = ANY (ARRAY['fetched_job'::text, 'account_review'::text, 'merge_confirmation'::text, 'pay_floor_check'::text, 'post_strike_job_review'::text, 'scam_flag'::text, 'agency_client_check'::text, 'data_request'::text, 'scheduled_check'::text])`),
-	check("review_item_status_check", sql`status = ANY (ARRAY['open'::text, 'claimed'::text, 'done'::text, 'dropped'::text])`),
-	check("review_item_check", sql`(status = ANY (ARRAY['done'::text, 'dropped'::text])) OR (
-CASE
-    WHEN (queue = 'scheduled_check'::text) THEN 0
-    ELSE 1
-END = num_nonnulls(job_id, organisation_id, organisation_name_id, pay_floor_id, candidate_user_id, portal_user_id, contact_message_id))`),
-	check("review_item_check1", sql`(queue <> 'data_request'::text) OR (status <> ALL (ARRAY['done'::text, 'dropped'::text])) OR (num_nonnulls(candidate_user_id, portal_user_id) = 0)`),
-]);
-
-export const auditEvent = pgTable("audit_event", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "audit_event_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	kind: text().notNull(),
-	actorStaffUserId: text("actor_staff_user_id"),
-	actorCandidateUserId: text("actor_candidate_user_id"),
-	actorPortalUserId: text("actor_portal_user_id"),
-	actorSystem: text("actor_system"),
-	roleInForce: text("role_in_force"),
-	action: text().notNull(),
-	objectType: text("object_type"),
-	objectId: text("object_id"),
-	subjectCandidateUserId: text("subject_candidate_user_id"),
-	changedColumns: text("changed_columns").array(),
-	before: jsonb(),
-	after: jsonb(),
-	reasonCode: text("reason_code"),
-	reasonText: text("reason_text"),
-	secondStaffUserId: text("second_staff_user_id"),
-	relatedCase: text("related_case"),
-	source: text(),
-}, (table) => [
-	index("audit_event_actor_candidate_idx").using("btree", table.actorCandidateUserId.asc().nullsLast().op("text_ops")).where(sql`(actor_candidate_user_id IS NOT NULL)`),
-	index("audit_event_actor_portal_idx").using("btree", table.actorPortalUserId.asc().nullsLast().op("text_ops")).where(sql`(actor_portal_user_id IS NOT NULL)`),
-	index("audit_event_actor_staff_idx").using("btree", table.actorStaffUserId.asc().nullsLast().op("text_ops")).where(sql`(actor_staff_user_id IS NOT NULL)`),
-	index("audit_event_at_idx").using("btree", table.at.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
-	index("audit_event_object_idx").using("btree", table.objectId.asc().nullsLast().op("text_ops"), table.objectType.asc().nullsLast().op("text_ops")).where(sql`(object_id IS NOT NULL)`),
-	index("audit_event_subject_idx").using("btree", table.subjectCandidateUserId.asc().nullsLast().op("text_ops")).where(sql`(subject_candidate_user_id IS NOT NULL)`),
-	check("audit_event_kind_check", sql`kind = ANY (ARRAY['admin_action'::text, 'data_access'::text, 'security'::text])`),
-	check("audit_event_source_check", sql`source = ANY (ARRAY['panel'::text, 'scheduled_job'::text, 'site'::text])`),
-	check("audit_event_check", sql`num_nonnulls(actor_staff_user_id, actor_candidate_user_id, actor_portal_user_id, actor_system) <= 1`),
-]);
-
 export const consentText = pgTable("consent_text", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "consent_text_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -1953,6 +1784,109 @@ export const notification = pgTable("notification", {
 	check("notification_check", sql`num_nonnulls(candidate_user_id, portal_user_id) = 1`),
 ]);
 
+export const featureFlag = pgTable("feature_flag", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "feature_flag_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	key: text().notNull(),
+	enabled: boolean().default(false).notNull(),
+	setBy: text("set_by"),
+	setAt: timestamp("set_at", { withTimezone: true, mode: 'string' }),
+	note: text(),
+}, (table) => [
+	unique("feature_flag_key_key").on(table.key),
+	check("feature_flag_key_check", sql`key = ANY (ARRAY['on_site_applications'::text, 'candidate_search'::text, 'contact_requests'::text, 'visibility_switch'::text, 'messaging'::text])`),
+]);
+
+export const approvalRequest = pgTable("approval_request", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "approval_request_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	kind: text().notNull(),
+	targetTable: text("target_table").notNull(),
+	targetId: text("target_id").notNull(),
+	change: jsonb(),
+	effectiveFrom: timestamp("effective_from", { withTimezone: true, mode: 'string' }),
+	reason: text(),
+	proposedByStaffUserId: text("proposed_by_staff_user_id").notNull(),
+	confirmedByStaffUserId: text("confirmed_by_staff_user_id"),
+	status: text().default('pending').notNull(),
+	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }),
+	appliedAt: timestamp("applied_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("approval_request_confirmed_idx").using("btree", table.confirmedByStaffUserId.asc().nullsLast().op("text_ops")),
+	index("approval_request_pending_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`(status = 'pending'::text)`),
+	uniqueIndex("approval_request_pending_unique").using("btree", table.kind.asc().nullsLast().op("text_ops"), table.targetTable.asc().nullsLast().op("text_ops"), table.targetId.asc().nullsLast().op("text_ops")).where(sql`(status = 'pending'::text)`),
+	index("approval_request_proposed_idx").using("btree", table.proposedByStaffUserId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.proposedByStaffUserId],
+			foreignColumns: [staffUser.id],
+			name: "approval_request_proposed_by_staff_user_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.confirmedByStaffUserId],
+			foreignColumns: [staffUser.id],
+			name: "approval_request_confirmed_by_staff_user_id_fkey"
+		}),
+	check("approval_request_status_check", sql`status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'refused'::text, 'withdrawn'::text])`),
+	check("approval_request_check", sql`confirmed_by_staff_user_id <> proposed_by_staff_user_id`),
+	check("approval_request_check1", sql`(status <> 'confirmed'::text) OR (confirmed_by_staff_user_id IS NOT NULL)`),
+	check("approval_request_kind_check", sql`kind = ANY (ARRAY['threshold'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'unclear_role_list'::text, 'public_pay_employer'::text, 'big_company_entry'::text, 'pay_floor'::text, 'strike_2'::text, 'strike_3'::text, 'ban'::text, 'ban_lift'::text, 'manual_post_sponsor_confirmed'::text, 'grant_administrator'::text, 'grant_role'::text, 'terms_privacy_page'::text, 'setting'::text])`),
+]);
+
+export const setting = pgTable("setting", {
+	key: text().primaryKey().notNull(),
+	value: integer(),
+	unit: text(),
+	isGuess: boolean("is_guess").default(true).notNull(),
+	solicitorConfirmedAt: timestamp("solicitor_confirmed_at", { withTimezone: true, mode: 'string' }),
+	solicitorNote: text("solicitor_note"),
+	updatedByStaffUserId: text("updated_by_staff_user_id"),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("setting_updated_by_idx").using("btree", table.updatedByStaffUserId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.updatedByStaffUserId],
+			foreignColumns: [staffUser.id],
+			name: "setting_updated_by_staff_user_id_fkey"
+		}),
+	check("setting_unit_check", sql`unit = ANY (ARRAY['days'::text, 'months'::text, 'count'::text])`),
+	check("setting_value_check", sql`(value IS NULL) OR (value >= 0)`),
+]);
+
+export const auditEvent = pgTable("audit_event", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "audit_event_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	kind: text().notNull(),
+	actorStaffUserId: text("actor_staff_user_id"),
+	actorCandidateUserId: text("actor_candidate_user_id"),
+	actorPortalUserId: text("actor_portal_user_id"),
+	actorSystem: text("actor_system"),
+	roleInForce: text("role_in_force"),
+	action: text().notNull(),
+	objectType: text("object_type"),
+	objectId: text("object_id"),
+	subjectCandidateUserId: text("subject_candidate_user_id"),
+	changedColumns: text("changed_columns").array(),
+	before: jsonb(),
+	after: jsonb(),
+	reasonCode: text("reason_code"),
+	reasonText: text("reason_text"),
+	secondStaffUserId: text("second_staff_user_id"),
+	relatedCase: text("related_case"),
+	source: text(),
+}, (table) => [
+	index("audit_event_actor_candidate_idx").using("btree", table.actorCandidateUserId.asc().nullsLast().op("text_ops")).where(sql`(actor_candidate_user_id IS NOT NULL)`),
+	index("audit_event_actor_portal_idx").using("btree", table.actorPortalUserId.asc().nullsLast().op("text_ops")).where(sql`(actor_portal_user_id IS NOT NULL)`),
+	index("audit_event_actor_staff_idx").using("btree", table.actorStaffUserId.asc().nullsLast().op("text_ops")).where(sql`(actor_staff_user_id IS NOT NULL)`),
+	index("audit_event_at_idx").using("btree", table.at.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	index("audit_event_object_idx").using("btree", table.objectId.asc().nullsLast().op("text_ops"), table.objectType.asc().nullsLast().op("text_ops")).where(sql`(object_id IS NOT NULL)`),
+	index("audit_event_subject_idx").using("btree", table.subjectCandidateUserId.asc().nullsLast().op("text_ops")).where(sql`(subject_candidate_user_id IS NOT NULL)`),
+	check("audit_event_kind_check", sql`kind = ANY (ARRAY['admin_action'::text, 'data_access'::text, 'security'::text])`),
+	check("audit_event_source_check", sql`source = ANY (ARRAY['panel'::text, 'scheduled_job'::text, 'site'::text])`),
+	check("audit_event_check", sql`num_nonnulls(actor_staff_user_id, actor_candidate_user_id, actor_portal_user_id, actor_system) <= 1`),
+]);
+
 export const emailOutbox = pgTable("email_outbox", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "email_outbox_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -1981,36 +1915,103 @@ export const emailOutbox = pgTable("email_outbox", {
 	check("email_outbox_check", sql`num_nonnulls(candidate_user_id, portal_user_id, staff_user_id, membership_id, contact_message_id) = 1`),
 ]);
 
-export const featureFlag = pgTable("feature_flag", {
+export const reviewItem = pgTable("review_item", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "feature_flag_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	key: text().notNull(),
-	enabled: boolean().default(false).notNull(),
-	setBy: text("set_by"),
-	setAt: timestamp("set_at", { withTimezone: true, mode: 'string' }),
-	note: text(),
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "review_item_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	queue: text().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	jobId: bigint("job_id", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	organisationId: bigint("organisation_id", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	organisationNameId: bigint("organisation_name_id", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	payFloorId: bigint("pay_floor_id", { mode: "number" }),
+	candidateUserId: text("candidate_user_id"),
+	portalUserId: text("portal_user_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	contactMessageId: bigint("contact_message_id", { mode: "number" }),
+	reason: text(),
+	detail: jsonb(),
+	claimedByStaffUserId: text("claimed_by_staff_user_id"),
+	claimedAt: timestamp("claimed_at", { withTimezone: true, mode: 'string' }),
+	status: text().default('open').notNull(),
+	decidedByStaffUserId: text("decided_by_staff_user_id"),
+	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }),
+	outcome: text(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	unique("feature_flag_key_key").on(table.key),
-	check("feature_flag_key_check", sql`key = ANY (ARRAY['on_site_applications'::text, 'candidate_search'::text, 'contact_requests'::text, 'visibility_switch'::text, 'messaging'::text])`),
-]);
-
-export const setting = pgTable("setting", {
-	key: text().primaryKey().notNull(),
-	value: integer(),
-	unit: text(),
-	isGuess: boolean("is_guess").default(true).notNull(),
-	solicitorConfirmedAt: timestamp("solicitor_confirmed_at", { withTimezone: true, mode: 'string' }),
-	solicitorNote: text("solicitor_note"),
-	updatedByStaffUserId: text("updated_by_staff_user_id"),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("setting_updated_by_idx").using("btree", table.updatedByStaffUserId.asc().nullsLast().op("text_ops")),
+	index("review_item_candidate_idx").using("btree", table.candidateUserId.asc().nullsLast().op("text_ops")),
+	uniqueIndex("review_item_candidate_unique").using("btree", table.queue.asc().nullsLast().op("text_ops"), table.candidateUserId.asc().nullsLast().op("text_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'claimed'::text]))`),
+	index("review_item_claimed_idx").using("btree", table.claimedByStaffUserId.asc().nullsLast().op("text_ops")),
+	index("review_item_contact_idx").using("btree", table.contactMessageId.asc().nullsLast().op("int8_ops")),
+	uniqueIndex("review_item_contact_unique").using("btree", table.queue.asc().nullsLast().op("text_ops"), table.contactMessageId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'claimed'::text]))`),
+	index("review_item_decided_idx").using("btree", table.decidedByStaffUserId.asc().nullsLast().op("text_ops")),
+	index("review_item_done_idx").using("btree", sql`COALESCE(decided_at, created_at)`).where(sql`(status = ANY (ARRAY['done'::text, 'dropped'::text]))`),
+	index("review_item_floor_idx").using("btree", table.payFloorId.asc().nullsLast().op("int8_ops")),
+	uniqueIndex("review_item_floor_unique").using("btree", table.queue.asc().nullsLast().op("int8_ops"), table.payFloorId.asc().nullsLast().op("text_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'claimed'::text]))`),
+	index("review_item_job_idx").using("btree", table.jobId.asc().nullsLast().op("int8_ops")),
+	uniqueIndex("review_item_job_unique").using("btree", table.queue.asc().nullsLast().op("int8_ops"), table.jobId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'claimed'::text]))`),
+	index("review_item_name_idx").using("btree", table.organisationNameId.asc().nullsLast().op("int8_ops")),
+	uniqueIndex("review_item_name_unique").using("btree", table.queue.asc().nullsLast().op("int8_ops"), table.organisationNameId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'claimed'::text]))`),
+	index("review_item_org_idx").using("btree", table.organisationId.asc().nullsLast().op("int8_ops")),
+	uniqueIndex("review_item_org_unique").using("btree", table.queue.asc().nullsLast().op("int8_ops"), table.organisationId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'claimed'::text]))`),
+	index("review_item_portal_idx").using("btree", table.portalUserId.asc().nullsLast().op("text_ops")),
+	uniqueIndex("review_item_portal_unique").using("btree", table.queue.asc().nullsLast().op("text_ops"), table.portalUserId.asc().nullsLast().op("text_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'claimed'::text]))`),
+	index("review_item_queue_idx").using("btree", table.queue.asc().nullsLast().op("timestamptz_ops"), table.createdAt.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'claimed'::text]))`),
 	foreignKey({
-			columns: [table.updatedByStaffUserId],
-			foreignColumns: [staffUser.id],
-			name: "setting_updated_by_staff_user_id_fkey"
+			columns: [table.jobId],
+			foreignColumns: [job.id],
+			name: "review_item_job_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.organisationId],
+			foreignColumns: [organisation.id],
+			name: "review_item_organisation_id_fkey"
 		}),
-	check("setting_unit_check", sql`unit = ANY (ARRAY['days'::text, 'months'::text, 'count'::text])`),
+	foreignKey({
+			columns: [table.organisationNameId],
+			foreignColumns: [organisationName.id],
+			name: "review_item_organisation_name_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.payFloorId],
+			foreignColumns: [payFloor.id],
+			name: "review_item_pay_floor_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.candidateUserId],
+			foreignColumns: [candidateUser.id],
+			name: "review_item_candidate_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.portalUserId],
+			foreignColumns: [portalUser.id],
+			name: "review_item_portal_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.contactMessageId],
+			foreignColumns: [contactMessage.id],
+			name: "review_item_contact_message_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.claimedByStaffUserId],
+			foreignColumns: [staffUser.id],
+			name: "review_item_claimed_by_staff_user_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.decidedByStaffUserId],
+			foreignColumns: [staffUser.id],
+			name: "review_item_decided_by_staff_user_id_fkey"
+		}),
+	check("review_item_queue_check", sql`queue = ANY (ARRAY['fetched_job'::text, 'account_review'::text, 'merge_confirmation'::text, 'pay_floor_check'::text, 'post_strike_job_review'::text, 'scam_flag'::text, 'agency_client_check'::text, 'data_request'::text, 'scheduled_check'::text])`),
+	check("review_item_status_check", sql`status = ANY (ARRAY['open'::text, 'claimed'::text, 'done'::text, 'dropped'::text])`),
+	check("review_item_check", sql`(status = ANY (ARRAY['done'::text, 'dropped'::text])) OR (
+CASE
+    WHEN (queue = 'scheduled_check'::text) THEN 0
+    ELSE 1
+END = num_nonnulls(job_id, organisation_id, organisation_name_id, pay_floor_id, candidate_user_id, portal_user_id, contact_message_id))`),
+	check("review_item_check1", sql`(queue <> 'data_request'::text) OR (status <> ALL (ARRAY['done'::text, 'dropped'::text])) OR (num_nonnulls(candidate_user_id, portal_user_id) = 0)`),
 ]);
 export const candidateServicesCase = pgView("candidate_services_case", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }),

@@ -153,7 +153,6 @@ const must = [
   ["app_admin", "block a portal user and end sessions", "with u as (update portal_user set status='active' where id=$1 returning id) delete from portal_session where user_id in (select id from u)", () => [pu]],
   ["app_admin", "read staff logins", "select * from staff_account limit 1"],
   ["app_admin", "read the audit log", "select * from audit_event limit 1"],
-  ["app_admin", "change a retention setting", "update setting set value=14 where key='apply_click'"],
   ["app_admin", "read consent records", "select * from consent_record limit 1"],
   ["app_admin", "work the case board", "select * from services_case where status <> 'closed' order by status, created_at, id limit 21"],
   ["app_admin", "update fetched_advert result (rejecting a queued advert; was a must-not in trial 2)", "update fetched_advert set result='rejected' where false"],
@@ -163,6 +162,15 @@ const must = [
   ["app_admin", "delete a rejected queued job and its text", "delete from job where false"],
 ];
 for (const [r, n, sql, a] of must) allowed(r, n, sql, a);
+// fixture change (0004, M2): a setting value change needs an acting staff id and a confirmed setting request for that value
+it("must: app_admin: change a retention setting", async () => {
+  const a = await F.staff(), b = await F.staff();
+  await su("insert into staff_role(staff_user_id, role, seeded_by_owner) values($1,'administrator',true),($2,'administrator',true)", [a, b]);
+  const as = (who, sql, args) => txPool(db.pool("app_admin"), async (c) => { await c.query("select set_config('app.staff_user_id', $1, true)", [who]); return c.query(sql, args); });
+  const r = (await as(a, "insert into approval_request(kind,target_table,target_id,change) values('setting','setting','apply_click','{\"value\":14}') returning id")).rows[0].id;
+  await as(b, "update approval_request set status='confirmed' where id=$1", [r]);
+  await as(a, "update setting set value=14 where key='apply_click'");
+});
 // Trial-3 grant change: the proposer is stamped by the trigger from the acting staff id, not written by the caller.
 it("must: app_admin: propose an approval", async () => {
   await su("insert into staff_role(staff_user_id, role, seeded_by_owner) values($1,'administrator',true)", [s1]); // the acting person must hold a role

@@ -1,7 +1,7 @@
 // Made by npm run db:pull (packages/db/test/pull-schema.mjs) from a database built by packages/db/migrations.
 // Do not edit by hand: change a migration, then run npm run db:pull. schema.test.ts fails until the two match.
 import { relations } from "drizzle-orm/relations";
-import { job, application, candidateUser, consentRecord, organisation, contactRequest, membership, candidateHiddenOrganisation, message, jobSource, fetchedAdvert, payFloor, organisationName, staffUser, report, jobText, fetchRun, jobDailyStat, candidateAccount, candidateSession, candidateProfile, candidateCv, savedJob, trackerEntry, applyClick, alert, portalUser, portalAccount, portalSession, organisationDomain, detePermitCount, sponsorshipStatement, consentText, approvalRequest, staffSession, staffAccount, staffRole, servicesCase, caseNote, caseDocument, caseQuote, contentPage, contactMessage, strike, ban, reviewItem, notificationPreference, notification, setting } from "./schema";
+import { job, application, candidateUser, consentRecord, organisation, contactRequest, membership, candidateHiddenOrganisation, message, jobSource, fetchedAdvert, payFloor, organisationName, staffUser, report, jobText, fetchRun, jobDailyStat, candidateAccount, candidateSession, candidateProfile, candidateCv, savedJob, trackerEntry, applyClick, alert, portalUser, portalAccount, portalSession, organisationDomain, detePermitCount, sponsorshipStatement, consentText, approvalRequest, staffSession, staffAccount, staffRole, servicesCase, caseNote, caseDocument, caseQuote, contentPage, contactMessage, strike, ban, notificationPreference, notification, setting, reviewItem } from "./schema";
 
 export const applicationRelations = relations(application, ({one, many}) => ({
 	job: one(job, {
@@ -72,8 +72,8 @@ export const jobRelations = relations(job, ({one, many}) => ({
 		relationName: "report_targetJobId_job_id"
 	}),
 	strikes: many(strike),
-	reviewItems: many(reviewItem),
 	consentRecords: many(consentRecord),
+	reviewItems: many(reviewItem),
 }));
 
 export const candidateUserRelations = relations(candidateUser, ({many}) => ({
@@ -98,10 +98,10 @@ export const candidateUserRelations = relations(candidateUser, ({many}) => ({
 	reports_reporterCandidateUserId: many(report, {
 		relationName: "report_reporterCandidateUserId_candidateUser_id"
 	}),
-	reviewItems: many(reviewItem),
 	consentRecords: many(consentRecord),
 	notificationPreferences: many(notificationPreference),
 	notifications: many(notification),
+	reviewItems: many(reviewItem),
 }));
 
 export const consentRecordRelations = relations(consentRecord, ({one, many}) => ({
@@ -176,9 +176,9 @@ export const organisationRelations = relations(organisation, ({one, many}) => ({
 	caseQuotes: many(caseQuote),
 	reports: many(report),
 	strikes: many(strike),
-	reviewItems: many(reviewItem),
 	consentRecords: many(consentRecord),
 	notifications: many(notification),
+	reviewItems: many(reviewItem),
 }));
 
 export const membershipRelations = relations(membership, ({one, many}) => ({
@@ -336,20 +336,20 @@ export const staffUserRelations = relations(staffUser, ({many}) => ({
 	strikes_appealDecidedByStaffUserId: many(strike, {
 		relationName: "strike_appealDecidedByStaffUserId_staffUser_id"
 	}),
+	notificationPreferences: many(notificationPreference),
 	approvalRequests_proposedByStaffUserId: many(approvalRequest, {
 		relationName: "approvalRequest_proposedByStaffUserId_staffUser_id"
 	}),
 	approvalRequests_confirmedByStaffUserId: many(approvalRequest, {
 		relationName: "approvalRequest_confirmedByStaffUserId_staffUser_id"
 	}),
+	settings: many(setting),
 	reviewItems_claimedByStaffUserId: many(reviewItem, {
 		relationName: "reviewItem_claimedByStaffUserId_staffUser_id"
 	}),
 	reviewItems_decidedByStaffUserId: many(reviewItem, {
 		relationName: "reviewItem_decidedByStaffUserId_staffUser_id"
 	}),
-	notificationPreferences: many(notificationPreference),
-	settings: many(setting),
 }));
 
 export const reportRelations = relations(report, ({one, many}) => ({
@@ -498,10 +498,10 @@ export const portalUserRelations = relations(portalUser, ({many}) => ({
 	caseDocuments: many(caseDocument),
 	contactMessages: many(contactMessage),
 	reports: many(report),
-	reviewItems: many(reviewItem),
 	consentRecords: many(consentRecord),
 	notificationPreferences: many(notificationPreference),
 	notifications: many(notification),
+	reviewItems: many(reviewItem),
 }));
 
 export const portalSessionRelations = relations(portalSession, ({one}) => ({
@@ -572,6 +572,7 @@ export const approvalRequestRelations = relations(approvalRequest, ({one, many})
 	staffRoles: many(staffRole),
 	strikes: many(strike),
 	bans: many(ban),
+	consentTexts: many(consentText),
 	staffUser_proposedByStaffUserId: one(staffUser, {
 		fields: [approvalRequest.proposedByStaffUserId],
 		references: [staffUser.id],
@@ -582,7 +583,6 @@ export const approvalRequestRelations = relations(approvalRequest, ({one, many})
 		references: [staffUser.id],
 		relationName: "approvalRequest_confirmedByStaffUserId_staffUser_id"
 	}),
-	consentTexts: many(consentText),
 }));
 
 export const staffSessionRelations = relations(staffSession, ({one}) => ({
@@ -775,6 +775,43 @@ export const banRelations = relations(ban, ({one}) => ({
 	}),
 }));
 
+export const notificationPreferenceRelations = relations(notificationPreference, ({one}) => ({
+	candidateUser: one(candidateUser, {
+		fields: [notificationPreference.candidateUserId],
+		references: [candidateUser.id]
+	}),
+	portalUser: one(portalUser, {
+		fields: [notificationPreference.portalUserId],
+		references: [portalUser.id]
+	}),
+	staffUser: one(staffUser, {
+		fields: [notificationPreference.staffUserId],
+		references: [staffUser.id]
+	}),
+}));
+
+export const notificationRelations = relations(notification, ({one}) => ({
+	candidateUser: one(candidateUser, {
+		fields: [notification.candidateUserId],
+		references: [candidateUser.id]
+	}),
+	portalUser: one(portalUser, {
+		fields: [notification.portalUserId],
+		references: [portalUser.id]
+	}),
+	organisation: one(organisation, {
+		fields: [notification.organisationId],
+		references: [organisation.id]
+	}),
+}));
+
+export const settingRelations = relations(setting, ({one}) => ({
+	staffUser: one(staffUser, {
+		fields: [setting.updatedByStaffUserId],
+		references: [staffUser.id]
+	}),
+}));
+
 export const reviewItemRelations = relations(reviewItem, ({one}) => ({
 	job: one(job, {
 		fields: [reviewItem.jobId],
@@ -813,42 +850,5 @@ export const reviewItemRelations = relations(reviewItem, ({one}) => ({
 		fields: [reviewItem.decidedByStaffUserId],
 		references: [staffUser.id],
 		relationName: "reviewItem_decidedByStaffUserId_staffUser_id"
-	}),
-}));
-
-export const notificationPreferenceRelations = relations(notificationPreference, ({one}) => ({
-	candidateUser: one(candidateUser, {
-		fields: [notificationPreference.candidateUserId],
-		references: [candidateUser.id]
-	}),
-	portalUser: one(portalUser, {
-		fields: [notificationPreference.portalUserId],
-		references: [portalUser.id]
-	}),
-	staffUser: one(staffUser, {
-		fields: [notificationPreference.staffUserId],
-		references: [staffUser.id]
-	}),
-}));
-
-export const notificationRelations = relations(notification, ({one}) => ({
-	candidateUser: one(candidateUser, {
-		fields: [notification.candidateUserId],
-		references: [candidateUser.id]
-	}),
-	portalUser: one(portalUser, {
-		fields: [notification.portalUserId],
-		references: [portalUser.id]
-	}),
-	organisation: one(organisation, {
-		fields: [notification.organisationId],
-		references: [organisation.id]
-	}),
-}));
-
-export const settingRelations = relations(setting, ({one}) => ({
-	staffUser: one(staffUser, {
-		fields: [setting.updatedByStaffUserId],
-		references: [staffUser.id]
 	}),
 }));
