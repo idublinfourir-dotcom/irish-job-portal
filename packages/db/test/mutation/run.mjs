@@ -92,7 +92,9 @@ const INFRA = /timed? ?out|ECONNRESET|ECONNREFUSED|terminating connection|too ma
 function runTests(mutationSql) {
   const out = join(tmpdir(), `mutation-vitest-${process.pid}.json`);
   rmSync(out, { force: true });
-  const args = ["vitest", "run", "--project", "db", "--exclude", "**/schema.test.ts", "--exclude", "**/mutation/**",
+  // rules-snapshot.test.ts is left out too: it notices every removal, so with it in the run every rule would count as caught
+  // and the script could no longer show which rules lack a behaviour test.
+  const args = ["vitest", "run", "--project", "db", "--exclude", "**/schema.test.ts", "--exclude", "**/rules-snapshot.test.ts", "--exclude", "**/mutation/**",
     `--maxWorkers=${WORKERS}`, "--reporter=json", `--outputFile=${out}`];
   if (mutationSql) args.push("--bail=1"); // a caught mutation is known at the first failing test, so `failed` is a floor, not a count
   const env = { ...process.env };

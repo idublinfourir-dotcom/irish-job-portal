@@ -6,6 +6,8 @@ The files in `packages/db/migrations` are the source of truth once they exist. I
 
 The Drizzle schema in `packages/db/src/schema` is made from the migrations, never written by hand: after changing a migration, run `npm run db:test:up` and then `npm run db:pull`. `schema.test.ts` fails until the two match.
 
+`packages/db/test/rules-snapshot.txt` lists every trigger, CHECK rule, unique rule and app-role right in schema `public`, and `rules-snapshot.test.ts` fails when the database no longer matches it. After a migration that adds, drops or changes any of them, run `npx vitest run --project db packages/db/test/rules-snapshot.test.ts -u`, then read the diff of `rules-snapshot.txt` before committing it. A reviewer sees the same diff in the pull request.
+
 ## Roles
 
 One role per deployed app, plus the owner. A bug on one site then cannot reach another side's tables.
