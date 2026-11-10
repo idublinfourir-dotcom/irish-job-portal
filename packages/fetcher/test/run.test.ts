@@ -24,7 +24,7 @@ describe("runBoards", () => {
     const { db, log } = fakeDb();
     const a = advert("1");
     const [r] = await runBoards(deps(db, [task("fake", "b", [a])]), (x) => plan(x, "reject"));
-    expect(kinds(log.sql)).toEqual(["insert into job_source(kind,", "insert into fetch_run(job_source_id)", "select external_id from", "insert into fetched_advert(job_source_id,", "with seen as"]);
+    expect(kinds(log.sql)).toEqual(["insert into job_source(kind,", "insert into fetch_run(job_source_id)", "select external_id, f.id", "insert into fetched_advert(job_source_id,", "with seen as"]);
     expect(r).toMatchObject({ ok: true, error: null, seen: 1, rejected: 1, passed: 0, queued: 0, unsaved: [] });
   });
 
