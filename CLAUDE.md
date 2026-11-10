@@ -4,7 +4,7 @@
 
 ## Project
 
-Job portal for Irish work permit jobs: a candidate site, an employer portal and an admin, deployed separately from this one repo. The workspace is set up, with no domain code yet. Run `npm run check` before calling any change finished.
+Job portal for Irish work permit jobs: a candidate site, an employer portal and an admin, deployed separately from this one repo. The database is built by migrations, and the job rules, the occupation matcher and five job-board adapters are in `packages/`. There are no pages yet. Run `npm run check` before calling any change finished.
 
 Decisions and evidence live outside this repo, in `~/Brainstorm about Job Portal/`. Read them before changing the stack or a product rule:
 
@@ -14,7 +14,7 @@ Decisions and evidence live outside this repo, in `~/Brainstorm about Job Portal
 - `23-database-design.md`: the table design, approved on 9 November 2026. Migrations follow it; its proof is in `prototype/load-tests/schema-trial-3/`.
 - `prototype/load-tests/real-vercel/RESULTS.md`: the measurements behind the rules below.
 
-Use the words in `GLOSSARY.md`. Before touching the database, read `docs/database.md`, the short page of every table, role and rule.
+Use the words in `GLOSSARY.md`. Before touching the database, read `docs/database.md`, the short page of every table, role and rule. Before touching a job rule, the matcher or a source adapter, read `docs/job-rules.md`.
 
 ## Rules from real testing
 
@@ -33,7 +33,7 @@ Every change that adds or alters code ships with all six. `npm run check` runs 1
 2. **Mock services:** every outside service is reached through a fake. `vitest.setup.ts` refuses any non-loopback connection.
 3. **Unit tests:** logic with no database, network or browser, in `apps/` and `packages/*/src/*.test.ts`.
 4. **Integration tests:** `packages/db/test/`, against the real test database (`npm run db:test:up`).
-5. **Performance tests:** not built yet. The page gate is being built on branch `perf/page-gate`.
+5. **Performance tests:** `npm run test:perf` is the page gate (a full-size fake fill, then every list page must read at most 1,000 pages; CI job `perf`). `packages/db/test/perf/pages.ts` puts a page budget on any new query. Code that reads untrusted text has a time budget test beside it.
 6. **Security tests:** role permission tests in `packages/db/test/`, security headers in `apps/headers.test.ts`, the network guard in `apps/network-guard.test.ts`.
 
 ## Working limits (#113)
