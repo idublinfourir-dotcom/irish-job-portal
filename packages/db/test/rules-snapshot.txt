@@ -1,0 +1,548 @@
+check alert_frequency_check on alert: CHECK ((frequency = ANY (ARRAY['daily'::text, 'weekly'::text])))
+check alert_pause_reason_check on alert: CHECK ((pause_reason = ANY (ARRAY['dormant'::text, 'stamp_4'::text, 'candidate'::text])))
+check alert_status_check on alert: CHECK ((status = ANY (ARRAY['active'::text, 'paused'::text, 'unsubscribed'::text])))
+check application_check on application: CHECK (((candidate_user_id IS NOT NULL) OR ((cover_note IS NULL) AND (answers IS NULL) AND (profile_summary IS NULL) AND (cv_storage_key IS NULL) AND (cv_file_name IS NULL))))
+check application_check1 on application: CHECK (((consent_record_id IS NOT NULL) OR (candidate_user_id IS NULL)))
+check application_status_check on application: CHECK ((status = ANY (ARRAY['applied'::text, 'viewed'::text, 'shortlisted'::text, 'rejected'::text, 'offer'::text, 'hired'::text, 'withdrawn'::text])))
+check apply_click_status_check on apply_click: CHECK ((status = ANY (ARRAY['pending'::text, 'not_yet'::text, 'yes'::text, 'no'::text, 'expired'::text])))
+check apply_click_times_asked_check on apply_click: CHECK (((times_asked >= 0) AND (times_asked <= 2)))
+check approval_request_check on approval_request: CHECK ((confirmed_by_staff_user_id <> proposed_by_staff_user_id))
+check approval_request_check1 on approval_request: CHECK (((status <> 'confirmed'::text) OR (confirmed_by_staff_user_id IS NOT NULL)))
+check approval_request_kind_check on approval_request: CHECK ((kind = ANY (ARRAY['threshold'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'unclear_role_list'::text, 'public_pay_employer'::text, 'big_company_entry'::text, 'pay_floor'::text, 'strike_2'::text, 'strike_3'::text, 'ban'::text, 'ban_lift'::text, 'manual_post_sponsor_confirmed'::text, 'grant_administrator'::text, 'grant_role'::text, 'terms_privacy_page'::text, 'setting'::text])))
+check approval_request_status_check on approval_request: CHECK ((status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'refused'::text, 'withdrawn'::text])))
+check audit_event_check on audit_event: CHECK ((num_nonnulls(actor_staff_user_id, actor_candidate_user_id, actor_portal_user_id, actor_system) <= 1))
+check audit_event_kind_check on audit_event: CHECK ((kind = ANY (ARRAY['admin_action'::text, 'data_access'::text, 'security'::text])))
+check audit_event_source_check on audit_event: CHECK ((source = ANY (ARRAY['panel'::text, 'scheduled_job'::text, 'site'::text])))
+check ban_check on ban: CHECK ((num_nonnulls(cro_number, email_domain) >= 1))
+check ban_reason_code_check on ban: CHECK ((reason_code = ANY (ARRAY['asks_for_money'::text, 'fake_company'::text, 'fake_job'::text, 'strike_3'::text])))
+check candidate_cv_content_type_check on candidate_cv: CHECK ((content_type = ANY (ARRAY['pdf'::text, 'docx'::text])))
+check candidate_cv_size_bytes_check on candidate_cv: CHECK (((size_bytes >= 1) AND (size_bytes <= 10485760)))
+check candidate_profile_check on candidate_profile: CHECK (((current_stamp IS NULL) OR (location_kind = 'ireland'::text)))
+check candidate_profile_check1 on candidate_profile: CHECK (((degree_awarded_month IS NULL) OR ((has_relevant_degree IS TRUE) AND (EXTRACT(day FROM degree_awarded_month) = (1)::numeric))))
+check candidate_profile_location_kind_check on candidate_profile: CHECK ((location_kind = ANY (ARRAY['abroad'::text, 'ireland'::text])))
+check candidate_profile_registration_status_check on candidate_profile: CHECK ((registration_status = ANY (ARRAY['none'::text, 'in_progress'::text, 'registered'::text])))
+check candidate_profile_visible_to_employers_check on candidate_profile: CHECK ((visible_to_employers = false))
+check candidate_profile_years_experience_check on candidate_profile: CHECK (((years_experience >= 0) AND (years_experience <= 60)))
+check case_document_check on case_document: CHECK ((num_nonnulls(candidate_user_id, portal_user_id, staff_user_id) <= 1))
+check case_document_check1 on case_document: CHECK (((storage_key IS NULL) = (copy_deleted_at IS NOT NULL)))
+check case_quote_amount_eur_check on case_quote: CHECK ((amount_eur > 0))
+check case_quote_status_check on case_quote: CHECK ((status = ANY (ARRAY['draft'::text, 'sent'::text, 'accepted'::text, 'declined'::text, 'invoiced'::text, 'paid'::text, 'cancelled'::text])))
+check consent_record_check on consent_record: CHECK (((num_nonnulls(candidate_user_id, portal_user_id) = 1) OR (subject_erased_at IS NOT NULL)))
+check consent_text_check on consent_text: CHECK (((approval_request_id IS NULL) OR (purpose = ANY (ARRAY['signup_terms'::text, 'privacy_notice'::text]))))
+check consent_text_purpose_check on consent_text: CHECK ((purpose = ANY (ARRAY['signup_terms'::text, 'privacy_notice'::text, 'visibility'::text, 'application'::text, 'contact_accept'::text, 'services_request'::text, 'employer_contact'::text, 'sponsorship_statement'::text, 'pay_floor'::text])))
+check contact_message_check on contact_message: CHECK ((num_nonnulls(candidate_user_id, portal_user_id) <= 1))
+check contact_message_check1 on contact_message: CHECK (((status <> 'closed'::text) OR (closed_at IS NOT NULL)))
+check contact_message_check2 on contact_message: CHECK ((((body IS NOT NULL) AND ((char_length(body) >= 1) AND (char_length(body) <= 5000))) OR ((body IS NULL) AND (from_name IS NULL) AND (from_email IS NULL) AND (candidate_user_id IS NULL) AND (portal_user_id IS NULL))))
+check contact_message_status_check on contact_message: CHECK ((status = ANY (ARRAY['new'::text, 'claimed'::text, 'answered'::text, 'closed'::text, 'spam'::text])))
+check contact_message_surface_check on contact_message: CHECK ((surface = ANY (ARRAY['candidate_site'::text, 'portal'::text])))
+check contact_message_topic_check on contact_message: CHECK ((topic = ANY (ARRAY['general'::text, 'account'::text, 'data_request'::text, 'other'::text])))
+check contact_request_check on contact_request: CHECK (((status <> 'accepted'::text) OR (consent_record_id IS NOT NULL)))
+check contact_request_status_check on contact_request: CHECK ((status = ANY (ARRAY['sent'::text, 'accepted'::text, 'declined'::text, 'withdrawn'::text, 'expired'::text])))
+check content_page_check on content_page: CHECK (((status <> 'published'::text) OR (kind = 'help'::text) OR ((source_url IS NOT NULL) AND (checked_on IS NOT NULL))))
+check content_page_check1 on content_page: CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+check content_page_kind_check on content_page: CHECK ((kind = ANY (ARRAY['guide'::text, 'update'::text, 'help'::text])))
+check content_page_status_check on content_page: CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'withdrawn'::text])))
+check dete_permit_count_month_check on dete_permit_count: CHECK (((month >= 1) AND (month <= 12)))
+check email_outbox_check on email_outbox: CHECK ((num_nonnulls(candidate_user_id, portal_user_id, staff_user_id, membership_id, contact_message_id) = 1))
+check email_outbox_status_check on email_outbox: CHECK ((status = ANY (ARRAY['pending'::text, 'sending'::text, 'sent'::text, 'failed'::text, 'dropped'::text])))
+check feature_flag_key_check on feature_flag: CHECK ((key = ANY (ARRAY['on_site_applications'::text, 'candidate_search'::text, 'contact_requests'::text, 'visibility_switch'::text, 'messaging'::text])))
+check fetched_advert_result_check on fetched_advert: CHECK ((result = ANY (ARRAY['passed'::text, 'queued'::text, 'rejected'::text])))
+check job_application_route_check on job: CHECK ((application_route = ANY (ARRAY['own_page'::text, 'on_site'::text])))
+check job_application_route_check1 on job: CHECK ((application_route = 'own_page'::text))
+check job_badge_check on job: CHECK ((badge = ANY (ARRAY['sponsor_confirmed'::text, 'critical_skills_eligible'::text])))
+check job_check on job: CHECK ((num_nonnulls(posted_by_membership_id, posted_by_staff_id) <= 1))
+check job_check1 on job: CHECK (((application_route <> 'own_page'::text) OR (own_page_url IS NOT NULL)))
+check job_check10 on job: CHECK (((application_route = 'on_site'::text) OR (screening_questions = '[]'::jsonb)))
+check job_check2 on job: CHECK (((status <> 'live'::text) OR (search_vector IS NOT NULL)))
+check job_check3 on job: CHECK (((source <> 'fetched'::text) OR ((permit_type = 'critical_skills'::text) AND (badge IS DISTINCT FROM 'sponsor_confirmed'::text) AND (application_route <> 'on_site'::text))))
+check job_check4 on job: CHECK (((source <> 'fetched'::text) OR (status <> 'live'::text) OR (NOT (badge IS DISTINCT FROM 'critical_skills_eligible'::text))))
+check job_check5 on job: CHECK (((badge IS DISTINCT FROM 'critical_skills_eligible'::text) OR (permit_type = 'critical_skills'::text)))
+check job_check6 on job: CHECK (((source <> ALL (ARRAY['employer'::text, 'agency'::text])) OR (status = ANY (ARRAY['draft'::text, 'closed'::text])) OR (salary_low IS NOT NULL) OR (salary_high IS NOT NULL) OR (pay_grade IS NOT NULL)))
+check job_check7 on job: CHECK (((status = 'hidden'::text) = (hidden_reason IS NOT NULL)))
+check job_check8 on job: CHECK (((hidden_report_id IS NULL) OR (hidden_reason = 'report'::text)))
+check job_check9 on job: CHECK (((hidden_reason IS DISTINCT FROM 'report'::text) OR (hidden_report_id IS NOT NULL)))
+check job_close_reason_check on job: CHECK ((close_reason = ANY (ARRAY['expired'::text, 'closed'::text, 'removed'::text, 'under_review_expired'::text, 'abandoned'::text])))
+check job_health_insurance_eur_check on job: CHECK ((health_insurance_eur >= 0))
+check job_hidden_reason_check on job: CHECK ((hidden_reason = ANY (ARRAY['report'::text, 'organisation_suspended'::text, 'admin'::text])))
+check job_hire_answer_check on job: CHECK ((hire_answer = ANY (ARRAY['yes'::text, 'no'::text])))
+check job_pass_route_check on job: CHECK ((pass_route = ANY (ARRAY['stated_pay'::text, 'big_company'::text, 'pay_floor'::text, 'public_pay'::text])))
+check job_permit_employer_check_check on job: CHECK ((permit_employer_check = ANY (ARRAY['pending'::text, 'found'::text, 'not_found'::text])))
+check job_permit_employer_kind_check on job: CHECK ((permit_employer_kind = ANY (ARRAY['self'::text, 'client'::text])))
+check job_permit_history_check on job: CHECK ((permit_history = ANY (ARRAY['has_history'::text, 'first_time'::text, 'not_linked'::text])))
+check job_permit_type_check on job: CHECK ((permit_type = ANY (ARRAY['critical_skills'::text, 'general'::text])))
+check job_screening_questions_check on job: CHECK (((jsonb_typeof(screening_questions) = 'array'::text) AND (jsonb_array_length(screening_questions) <= 5)))
+check job_source_check on job: CHECK ((source = ANY (ARRAY['fetched'::text, 'employer'::text, 'agency'::text, 'admin_manual'::text])))
+check job_status_check on job: CHECK ((status = ANY (ARRAY['draft'::text, 'in_review'::text, 'live'::text, 'under_review'::text, 'hidden'::text, 'closed'::text])))
+check membership_check on membership: CHECK (((portal_user_id IS NOT NULL) OR (invited_email IS NOT NULL) OR (status = 'removed'::text)))
+check membership_check1 on membership: CHECK (((role <> 'viewer'::text) OR (NOT is_signer)))
+check membership_role_check on membership: CHECK ((role = ANY (ARRAY['viewer'::text, 'poster'::text, 'recruiter'::text, 'account_owner'::text])))
+check membership_status_check on membership: CHECK ((status = ANY (ARRAY['invited'::text, 'join_requested'::text, 'awaiting_approval'::text, 'active'::text, 'removed'::text])))
+check message_body_check on message: CHECK (((length(body) >= 1) AND (length(body) <= 5000)))
+check message_check on message: CHECK ((num_nonnulls(application_id, contact_request_id) = 1))
+check message_check1 on message: CHECK ((num_nonnulls(sender_candidate_user_id, sender_membership_id) = 1))
+check notification_check on notification: CHECK ((num_nonnulls(candidate_user_id, portal_user_id) = 1))
+check notification_preference_channel_check on notification_preference: CHECK ((channel = ANY (ARRAY['email'::text, 'in_app'::text])))
+check notification_preference_check on notification_preference: CHECK ((num_nonnulls(candidate_user_id, portal_user_id, staff_user_id) = 1))
+check organisation_check on organisation: CHECK (((wrc_licence_number IS NULL) OR (kind = 'agency'::text)))
+check organisation_check1 on organisation: CHECK ((merged_into_id <> id))
+check organisation_domain_domain_check on organisation_domain: CHECK ((domain = lower(domain)))
+check organisation_domain_source_check on organisation_domain: CHECK ((source = ANY (ARRAY['seed'::text, 'admin'::text])))
+check organisation_kind_check on organisation: CHECK ((kind = ANY (ARRAY['employer'::text, 'agency'::text, 'public_body'::text])))
+check organisation_name_kind_check on organisation_name: CHECK ((kind = ANY (ARRAY['legal'::text, 'alias'::text])))
+check organisation_name_source_check on organisation_name: CHECK ((source = ANY (ARRAY['dete'::text, 'cro'::text, 'job_site'::text, 'admin'::text, 'public_body_list'::text])))
+check organisation_permit_history_check on organisation: CHECK ((permit_history = ANY (ARRAY['has_history'::text, 'first_time'::text, 'not_linked'::text])))
+check organisation_signup_path_check on organisation: CHECK ((signup_path = ANY (ARRAY['dete_claim'::text, 'first_time'::text, 'agency'::text, 'admin'::text])))
+check organisation_status_check on organisation: CHECK ((status = ANY (ARRAY['unclaimed'::text, 'pending_review'::text, 'needs_info'::text, 'verified'::text, 'verified_restricted'::text, 'suspended'::text, 'rejected'::text, 'banned'::text, 'closed'::text])))
+check pay_floor_check on pay_floor: CHECK ((valid_until > signed_at))
+check pay_floor_check1 on pay_floor: CHECK (((status <> 'active'::text) OR (approval_request_id IS NOT NULL)))
+check pay_floor_floor_eur_check on pay_floor: CHECK ((floor_eur > 0))
+check pay_floor_status_check on pay_floor: CHECK ((status = ANY (ARRAY['pending_check'::text, 'active'::text, 'expired'::text, 'replaced'::text, 'withdrawn'::text, 'rejected'::text, 'found_false'::text])))
+check portal_user_status_check on portal_user: CHECK ((status = ANY (ARRAY['active'::text, 'blocked'::text])))
+check report_check on report: CHECK (((target_wiped_at IS NOT NULL) OR (num_nonnulls(target_job_id, target_organisation_id, target_message_id, target_candidate_user_id) = 1)))
+check report_check1 on report: CHECK ( CASE target_kind WHEN 'job'::text THEN (num_nonnulls(target_organisation_id, target_message_id, target_candidate_user_id) = 0) WHEN 'organisation'::text THEN (num_nonnulls(target_job_id, target_message_id, target_candidate_user_id) = 0) WHEN 'message'::text THEN (num_nonnulls(target_job_id, target_organisation_id, target_candidate_user_id) = 0) ELSE (num_nonnulls(target_job_id, target_organisation_id, target_message_id) = 0) END)
+check report_check2 on report: CHECK ((num_nonnulls(reporter_candidate_user_id, reporter_portal_user_id) <= 1))
+check report_check3 on report: CHECK (((status <> ALL (ARRAY['cleared'::text, 'upheld'::text])) OR (num_nonnulls(reporter_candidate_user_id, reporter_portal_user_id) = 0)))
+check report_reason_check on report: CHECK ((reason = ANY (ARRAY['asks_for_money'::text, 'no_sponsorship'::text, 'job_closed'::text, 'wrong_details'::text, 'other'::text])))
+check report_status_check on report: CHECK ((status = ANY (ARRAY['open'::text, 'job_hidden'::text, 'cleared'::text, 'upheld'::text])))
+check report_target_kind_check on report: CHECK ((target_kind = ANY (ARRAY['job'::text, 'organisation'::text, 'message'::text, 'profile'::text])))
+check review_item_check on review_item: CHECK (((status = ANY (ARRAY['done'::text, 'dropped'::text])) OR ( CASE WHEN (queue = 'scheduled_check'::text) THEN 0 ELSE 1 END = num_nonnulls(job_id, organisation_id, organisation_name_id, pay_floor_id, candidate_user_id, portal_user_id, contact_message_id))))
+check review_item_check1 on review_item: CHECK (((queue <> 'data_request'::text) OR (status <> ALL (ARRAY['done'::text, 'dropped'::text])) OR (num_nonnulls(candidate_user_id, portal_user_id) = 0)))
+check review_item_queue_check on review_item: CHECK ((queue = ANY (ARRAY['fetched_job'::text, 'account_review'::text, 'merge_confirmation'::text, 'pay_floor_check'::text, 'post_strike_job_review'::text, 'scam_flag'::text, 'agency_client_check'::text, 'data_request'::text, 'scheduled_check'::text])))
+check review_item_status_check on review_item: CHECK ((status = ANY (ARRAY['open'::text, 'claimed'::text, 'done'::text, 'dropped'::text])))
+check services_case_check on services_case: CHECK (((num_nonnulls(candidate_user_id, portal_user_id) = 1) OR (requester_erased_at IS NOT NULL)))
+check services_case_check1 on services_case: CHECK (((portal_user_id IS NULL) OR (dedupe_key IS NOT NULL)))
+check services_case_check2 on services_case: CHECK (((status <> 'closed'::text) OR ((closed_at IS NOT NULL) AND (close_reason IS NOT NULL))))
+check services_case_close_reason_check on services_case: CHECK ((close_reason = ANY (ARRAY['decided'::text, 'employer_not_engaged'::text, 'withdrawn'::text, 'referred_to_solicitor'::text, 'no_reply'::text])))
+check services_case_payer_check on services_case: CHECK ((payer = ANY (ARRAY['employer'::text, 'agency'::text])))
+check services_case_status_check on services_case: CHECK ((status = ANY (ARRAY['received'::text, 'documents_needed'::text, 'waiting_for_employer'::text, 'submitted'::text, 'decision'::text, 'closed'::text])))
+check setting_unit_check on setting: CHECK ((unit = ANY (ARRAY['days'::text, 'months'::text, 'count'::text])))
+check setting_value_check on setting: CHECK (((value IS NULL) OR (value >= 0)))
+check sponsorship_statement_check on sponsorship_statement: CHECK (((kind <> 'on_behalf_of_client'::text) OR ((on_behalf_of_name IS NOT NULL) AND written_authority_on_file)))
+check sponsorship_statement_check1 on sponsorship_statement: CHECK ((((kind = 'admin_on_behalf'::text) AND (confirmation_file_key IS NOT NULL) AND (approval_request_id IS NOT NULL) AND (signer_membership_id IS NULL)) OR ((kind <> 'admin_on_behalf'::text) AND (signer_membership_id IS NOT NULL))))
+check sponsorship_statement_kind_check on sponsorship_statement: CHECK ((kind = ANY (ARRAY['own_company'::text, 'on_behalf_of_client'::text, 'admin_on_behalf'::text])))
+check staff_role_check on staff_role: CHECK (((approval_request_id IS NOT NULL) OR (seeded_by_owner IS TRUE)))
+check staff_role_role_check on staff_role: CHECK ((role = ANY (ARRAY['account_reviewer'::text, 'fetched_job_reviewer'::text, 'rules_data_editor'::text, 'trust_and_safety'::text, 'services_case_handler'::text, 'content_editor'::text, 'administrator'::text])))
+check staff_user_status_check on staff_user: CHECK ((status = ANY (ARRAY['active'::text, 'disabled'::text])))
+check strike_case_kind_check on strike: CHECK ((case_kind = ANY (ARRAY['false_claim'::text, 'false_pay_floor'::text, 'instant_ban'::text])))
+check strike_check on strike: CHECK (((case_kind <> 'instant_ban'::text) OR (level IS NULL)))
+check strike_check1 on strike: CHECK (((outcome IS DISTINCT FROM 'strike'::text) OR (level IS NOT NULL)))
+check strike_check2 on strike: CHECK (((NOT (((outcome = 'strike'::text) AND (level = ANY (ARRAY[2, 3]))) OR (outcome = 'ban'::text))) OR (approval_request_id IS NOT NULL)))
+check strike_check3 on strike: CHECK ((appeal_decided_by_staff_user_id <> decided_by_staff_user_id))
+check strike_check4 on strike: CHECK (((stage <> ALL (ARRAY['upheld'::text, 'overturned'::text])) OR ((appealed_at IS NOT NULL) AND (appeal_decided_at IS NOT NULL) AND (appeal_decided_by_staff_user_id IS NOT NULL))))
+check strike_check5 on strike: CHECK ((appeal_decided_by_staff_user_id <> appeal_entered_by_staff_user_id))
+check strike_check6 on strike: CHECK ((decided_by_staff_user_id <> reply_entered_by_staff_user_id))
+check strike_level_check on strike: CHECK (((level >= 1) AND (level <= 3)))
+check strike_outcome_check on strike: CHECK ((outcome = ANY (ARRAY['cleared'::text, 'strike'::text, 'ban'::text])))
+check strike_reason_code_check on strike: CHECK ((reason_code = ANY (ARRAY['false_sponsorship'::text, 'false_pay_floor'::text, 'asks_for_money'::text, 'fake_company'::text, 'fake_job'::text])))
+check strike_stage_check on strike: CHECK ((stage = ANY (ARRAY['case_open'::text, 'employer_notified'::text, 'reply_window'::text, 'decided'::text, 'applied'::text, 'appealed'::text, 'upheld'::text, 'overturned'::text])))
+check tracker_entry_check on tracker_entry: CHECK ((((route = 'redirect'::text) AND (stage = ANY (ARRAY['applied'::text, 'interview'::text, 'offer'::text, 'rejected'::text, 'withdrawn'::text]))) OR ((route = 'on_site'::text) AND (stage = ANY (ARRAY['applied'::text, 'viewed'::text, 'shortlisted'::text, 'rejected'::text, 'offer'::text, 'hired'::text, 'withdrawn'::text])))))
+check tracker_entry_origin_check on tracker_entry: CHECK ((origin = ANY (ARRAY['did_you_apply_yes'::text, 'mark_applied'::text, 'on_site'::text])))
+check tracker_entry_route_check on tracker_entry: CHECK ((route = ANY (ARRAY['redirect'::text, 'on_site'::text])))
+rights app_admin on alert: table[select] columns[]
+rights app_admin on application: table[] columns[]
+rights app_admin on apply_click: table[select] columns[]
+rights app_admin on approval_request: table[select] columns[insert(change,effective_from,kind,reason,target_id,target_table) update(status)]
+rights app_admin on audit_event: table[insert,select] columns[]
+rights app_admin on ban: table[delete,insert,select] columns[]
+rights app_admin on candidate_account: table[] columns[]
+rights app_admin on candidate_case_document: table[] columns[]
+rights app_admin on candidate_consent_record: table[] columns[]
+rights app_admin on candidate_cv: table[select] columns[]
+rights app_admin on candidate_hidden_organisation: table[] columns[]
+rights app_admin on candidate_notification: table[] columns[]
+rights app_admin on candidate_notification_preference: table[] columns[]
+rights app_admin on candidate_profile: table[select] columns[]
+rights app_admin on candidate_rate_limit: table[] columns[]
+rights app_admin on candidate_services_case: table[] columns[]
+rights app_admin on candidate_session: table[delete] columns[select(id,user_id)]
+rights app_admin on candidate_user: table[select] columns[update(deleted_at,suspended_at)]
+rights app_admin on candidate_verification: table[] columns[]
+rights app_admin on case_document: table[select] columns[insert(byte_size,content_type,file_name,services_case_id,staff_user_id,storage_key) update(copy_deleted_at,file_name,storage_key)]
+rights app_admin on case_note: table[delete,insert,select,update] columns[]
+rights app_admin on case_quote: table[delete,insert,select,update] columns[]
+rights app_admin on consent_record: table[select] columns[]
+rights app_admin on consent_text: table[insert,select] columns[]
+rights app_admin on contact_message: table[select,update] columns[]
+rights app_admin on contact_request: table[] columns[]
+rights app_admin on content_page: table[insert,select,update] columns[]
+rights app_admin on cro_company: table[select] columns[]
+rights app_admin on dete_permit_count: table[delete,insert,select,update] columns[]
+rights app_admin on email_outbox: table[insert,select] columns[update(attempts,sent_at,status)]
+rights app_admin on feature_flag: table[select] columns[]
+rights app_admin on fetch_run: table[select] columns[]
+rights app_admin on fetched_advert: table[select] columns[update(result)]
+rights app_admin on job: table[delete,insert,select,update] columns[]
+rights app_admin on job_daily_stat: table[select] columns[]
+rights app_admin on job_source: table[select] columns[]
+rights app_admin on job_text: table[delete,insert,select,update] columns[]
+rights app_admin on membership: table[insert,select,update] columns[]
+rights app_admin on message: table[] columns[]
+rights app_admin on notification: table[insert] columns[select(dedupe_key)]
+rights app_admin on notification_preference: table[delete,insert,select,update] columns[]
+rights app_admin on organisation: table[insert,select,update] columns[]
+rights app_admin on organisation_domain: table[delete,select] columns[insert(added_by_staff_id,domain,organisation_id,source) update(added_by_staff_id,domain,organisation_id,source)]
+rights app_admin on organisation_name: table[delete,insert,select,update] columns[]
+rights app_admin on pay_floor: table[select,update] columns[]
+rights app_admin on portal_account: table[] columns[]
+rights app_admin on portal_case_document: table[] columns[]
+rights app_admin on portal_consent_record: table[] columns[]
+rights app_admin on portal_notification: table[] columns[]
+rights app_admin on portal_notification_preference: table[] columns[]
+rights app_admin on portal_rate_limit: table[] columns[]
+rights app_admin on portal_services_case: table[] columns[]
+rights app_admin on portal_session: table[delete] columns[select(id,user_id)]
+rights app_admin on portal_user: table[select] columns[update(blocked_at,blocked_reason_code,deleted_at,status)]
+rights app_admin on portal_verification: table[] columns[]
+rights app_admin on published_content_page: table[] columns[]
+rights app_admin on report: table[delete,insert,select,update] columns[]
+rights app_admin on review_item: table[insert,select,update] columns[]
+rights app_admin on saved_job: table[select] columns[]
+rights app_admin on services_case: table[insert,select,update] columns[]
+rights app_admin on setting: table[insert,select] columns[update(is_guess,solicitor_confirmed_at,solicitor_note,value)]
+rights app_admin on sponsorship_statement: table[insert,select] columns[update(superseded_at)]
+rights app_admin on staff_account: table[delete,insert,select,update] columns[]
+rights app_admin on staff_rate_limit: table[delete,insert,select,update] columns[]
+rights app_admin on staff_role: table[delete,select] columns[insert(approval_request_id,granted_by_staff_user_id,role,staff_user_id)]
+rights app_admin on staff_session: table[delete,insert,select,update] columns[]
+rights app_admin on staff_user: table[delete,insert,select,update] columns[]
+rights app_admin on staff_verification: table[delete,insert,select,update] columns[]
+rights app_admin on strike: table[select] columns[insert(appeal_due_at,appeal_received_at,appeal_text,approval_request_id,case_kind,employer_reply,job_id,level,notice_summary,organisation_id,outcome,pay_floor_id,reason_code,reply_due_at,reply_received_at,report_id,stage) update(appeal_due_at,appeal_received_at,appeal_text,approval_request_id,case_kind,employer_reply,job_id,level,notice_summary,organisation_id,outcome,pay_floor_id,reason_code,reply_due_at,reply_received_at,report_id,stage)]
+rights app_admin on tracker_entry: table[] columns[]
+rights app_admin on wrc_licence: table[delete,insert,select,update] columns[]
+rights app_candidate on alert: table[delete,insert,select,update] columns[]
+rights app_candidate on application: table[] columns[]
+rights app_candidate on apply_click: table[delete,insert,select,update] columns[]
+rights app_candidate on approval_request: table[] columns[]
+rights app_candidate on audit_event: table[insert] columns[]
+rights app_candidate on ban: table[] columns[]
+rights app_candidate on candidate_account: table[delete,insert,select,update] columns[]
+rights app_candidate on candidate_case_document: table[select] columns[insert(byte_size,candidate_user_id,content_type,file_name,services_case_id,storage_key)]
+rights app_candidate on candidate_consent_record: table[select] columns[insert(candidate_user_id,consent_text_id,details,job_id,organisation_id) update(withdrawn_at)]
+rights app_candidate on candidate_cv: table[delete,insert,select,update] columns[]
+rights app_candidate on candidate_hidden_organisation: table[] columns[]
+rights app_candidate on candidate_notification: table[select] columns[insert(candidate_user_id,category,dedupe_key,organisation_id,params,template_key) update(read_at)]
+rights app_candidate on candidate_notification_preference: table[delete,select] columns[insert(candidate_user_id,category,channel,enabled) update(enabled)]
+rights app_candidate on candidate_profile: table[delete,select] columns[insert(candidate_user_id,current_stamp,degree_awarded_month,degree_field,full_name,has_relevant_degree,location_kind,occupation_code,phone,registration_body,registration_number,registration_status,years_experience) update(current_stamp,degree_awarded_month,degree_field,full_name,has_relevant_degree,location_kind,occupation_code,phone,registration_body,registration_number,registration_status,years_experience)]
+rights app_candidate on candidate_rate_limit: table[delete,insert,select,update] columns[]
+rights app_candidate on candidate_services_case: table[select] columns[insert(candidate_user_id,consent_record_id,employer_contact_consent_record_id,job_id,offer_details,organisation_id,payer,permit_type)]
+rights app_candidate on candidate_session: table[delete,insert,select,update] columns[]
+rights app_candidate on candidate_user: table[insert,select] columns[update(deleted_at,email,email_verified,image,last_active_at,name,updated_at)]
+rights app_candidate on candidate_verification: table[delete,insert,select,update] columns[]
+rights app_candidate on case_document: table[] columns[]
+rights app_candidate on case_note: table[] columns[]
+rights app_candidate on case_quote: table[] columns[]
+rights app_candidate on consent_record: table[] columns[]
+rights app_candidate on consent_text: table[select] columns[]
+rights app_candidate on contact_message: table[] columns[insert(body,candidate_user_id,from_email,from_name,surface,topic) select(id)]
+rights app_candidate on contact_request: table[] columns[]
+rights app_candidate on content_page: table[] columns[]
+rights app_candidate on cro_company: table[] columns[]
+rights app_candidate on dete_permit_count: table[select] columns[]
+rights app_candidate on email_outbox: table[insert] columns[select(dedupe_key)]
+rights app_candidate on feature_flag: table[select] columns[]
+rights app_candidate on fetch_run: table[] columns[]
+rights app_candidate on fetched_advert: table[] columns[]
+rights app_candidate on job: table[] columns[select(application_route,badge,closed_at,closes_at,contract_months,contract_type,county,employer_name,health_insurance_eur,id,job_source_id,occupation_code,organisation_id,own_page_url,pass_route,pay_grade,permit_employer_kind,permit_employer_name,permit_history,permit_type,posted_at,quota_full,salary_high,salary_low,salary_sort,search_vector,sector,source,status,title)]
+rights app_candidate on job_daily_stat: table[insert,update] columns[select(apply_clicks,day,job_id,views)]
+rights app_candidate on job_source: table[select] columns[]
+rights app_candidate on job_text: table[select] columns[]
+rights app_candidate on membership: table[] columns[]
+rights app_candidate on message: table[] columns[]
+rights app_candidate on notification: table[] columns[]
+rights app_candidate on notification_preference: table[] columns[]
+rights app_candidate on organisation: table[] columns[select(claimed_at,claims_removed_at,county,display_name,id,kind,logo_url,merged_into_id,nace_code,permit_history,short_description,slug,status,website,wrc_licence_number)]
+rights app_candidate on organisation_domain: table[] columns[]
+rights app_candidate on organisation_name: table[select] columns[]
+rights app_candidate on pay_floor: table[] columns[]
+rights app_candidate on portal_account: table[] columns[]
+rights app_candidate on portal_case_document: table[] columns[]
+rights app_candidate on portal_consent_record: table[] columns[]
+rights app_candidate on portal_notification: table[] columns[]
+rights app_candidate on portal_notification_preference: table[] columns[]
+rights app_candidate on portal_rate_limit: table[] columns[]
+rights app_candidate on portal_services_case: table[] columns[]
+rights app_candidate on portal_session: table[] columns[]
+rights app_candidate on portal_user: table[] columns[]
+rights app_candidate on portal_verification: table[] columns[]
+rights app_candidate on published_content_page: table[select] columns[]
+rights app_candidate on report: table[insert] columns[select(id)]
+rights app_candidate on review_item: table[] columns[]
+rights app_candidate on saved_job: table[delete,insert,select] columns[]
+rights app_candidate on services_case: table[] columns[]
+rights app_candidate on setting: table[] columns[]
+rights app_candidate on sponsorship_statement: table[] columns[]
+rights app_candidate on staff_account: table[] columns[]
+rights app_candidate on staff_rate_limit: table[] columns[]
+rights app_candidate on staff_role: table[] columns[]
+rights app_candidate on staff_session: table[] columns[]
+rights app_candidate on staff_user: table[] columns[]
+rights app_candidate on staff_verification: table[] columns[]
+rights app_candidate on strike: table[] columns[]
+rights app_candidate on tracker_entry: table[delete,insert,select,update] columns[]
+rights app_candidate on wrc_licence: table[] columns[]
+rights app_fetcher on alert: table[] columns[]
+rights app_fetcher on application: table[] columns[]
+rights app_fetcher on apply_click: table[] columns[]
+rights app_fetcher on approval_request: table[] columns[]
+rights app_fetcher on audit_event: table[insert] columns[]
+rights app_fetcher on ban: table[] columns[]
+rights app_fetcher on candidate_account: table[] columns[]
+rights app_fetcher on candidate_case_document: table[] columns[]
+rights app_fetcher on candidate_consent_record: table[] columns[]
+rights app_fetcher on candidate_cv: table[] columns[]
+rights app_fetcher on candidate_hidden_organisation: table[] columns[]
+rights app_fetcher on candidate_notification: table[] columns[]
+rights app_fetcher on candidate_notification_preference: table[] columns[]
+rights app_fetcher on candidate_profile: table[] columns[]
+rights app_fetcher on candidate_rate_limit: table[] columns[]
+rights app_fetcher on candidate_services_case: table[] columns[]
+rights app_fetcher on candidate_session: table[] columns[]
+rights app_fetcher on candidate_user: table[] columns[]
+rights app_fetcher on candidate_verification: table[] columns[]
+rights app_fetcher on case_document: table[] columns[]
+rights app_fetcher on case_note: table[] columns[]
+rights app_fetcher on case_quote: table[] columns[]
+rights app_fetcher on consent_record: table[] columns[]
+rights app_fetcher on consent_text: table[] columns[]
+rights app_fetcher on contact_message: table[] columns[]
+rights app_fetcher on contact_request: table[] columns[]
+rights app_fetcher on content_page: table[] columns[]
+rights app_fetcher on cro_company: table[delete,insert,select,update] columns[]
+rights app_fetcher on dete_permit_count: table[select] columns[]
+rights app_fetcher on email_outbox: table[insert] columns[select(dedupe_key)]
+rights app_fetcher on feature_flag: table[select] columns[]
+rights app_fetcher on fetch_run: table[insert,select,update] columns[]
+rights app_fetcher on fetched_advert: table[insert,select,update] columns[]
+rights app_fetcher on job: table[select] columns[insert(application_route,badge,close_reason,closed_at,closes_at,contract_months,contract_type,county,employer_name,fetched_advert_id,health_insurance_eur,job_source_id,occupation_code,organisation_id,own_page_url,pass_route,permit_employer_check,permit_employer_kind,permit_employer_name,permit_employer_name_id,permit_type,salary_high,salary_low,search_vector,sector,source,status,title) update(badge,close_reason,closed_at,closes_at,contract_months,contract_type,county,employer_name,health_insurance_eur,occupation_code,own_page_url,pass_route,permit_employer_check,permit_employer_kind,permit_employer_name,permit_employer_name_id,permit_type,salary_high,salary_low,search_vector,sector,status,title)]
+rights app_fetcher on job_daily_stat: table[] columns[]
+rights app_fetcher on job_source: table[insert,select,update] columns[]
+rights app_fetcher on job_text: table[delete,insert,select,update] columns[]
+rights app_fetcher on membership: table[] columns[]
+rights app_fetcher on message: table[] columns[]
+rights app_fetcher on notification: table[insert] columns[select(dedupe_key)]
+rights app_fetcher on notification_preference: table[] columns[]
+rights app_fetcher on organisation: table[select] columns[insert(county,display_name,kind,slug)]
+rights app_fetcher on organisation_domain: table[] columns[]
+rights app_fetcher on organisation_name: table[insert,select] columns[]
+rights app_fetcher on pay_floor: table[] columns[select(floor_eur,id,organisation_id,role_family,status,valid_until)]
+rights app_fetcher on portal_account: table[] columns[]
+rights app_fetcher on portal_case_document: table[] columns[]
+rights app_fetcher on portal_consent_record: table[] columns[]
+rights app_fetcher on portal_notification: table[] columns[]
+rights app_fetcher on portal_notification_preference: table[] columns[]
+rights app_fetcher on portal_rate_limit: table[] columns[]
+rights app_fetcher on portal_services_case: table[] columns[]
+rights app_fetcher on portal_session: table[] columns[]
+rights app_fetcher on portal_user: table[] columns[]
+rights app_fetcher on portal_verification: table[] columns[]
+rights app_fetcher on published_content_page: table[] columns[]
+rights app_fetcher on report: table[] columns[]
+rights app_fetcher on review_item: table[] columns[insert(detail,job_id,queue,reason) select(job_id,queue,status)]
+rights app_fetcher on saved_job: table[] columns[]
+rights app_fetcher on services_case: table[] columns[]
+rights app_fetcher on setting: table[] columns[]
+rights app_fetcher on sponsorship_statement: table[] columns[]
+rights app_fetcher on staff_account: table[] columns[]
+rights app_fetcher on staff_rate_limit: table[] columns[]
+rights app_fetcher on staff_role: table[] columns[]
+rights app_fetcher on staff_session: table[] columns[]
+rights app_fetcher on staff_user: table[] columns[]
+rights app_fetcher on staff_verification: table[] columns[]
+rights app_fetcher on strike: table[] columns[]
+rights app_fetcher on tracker_entry: table[] columns[]
+rights app_fetcher on wrc_licence: table[select] columns[]
+rights app_portal on alert: table[] columns[]
+rights app_portal on application: table[] columns[]
+rights app_portal on apply_click: table[] columns[]
+rights app_portal on approval_request: table[] columns[]
+rights app_portal on audit_event: table[insert] columns[]
+rights app_portal on ban: table[] columns[]
+rights app_portal on candidate_account: table[] columns[]
+rights app_portal on candidate_case_document: table[] columns[]
+rights app_portal on candidate_consent_record: table[] columns[]
+rights app_portal on candidate_cv: table[] columns[]
+rights app_portal on candidate_hidden_organisation: table[] columns[]
+rights app_portal on candidate_notification: table[] columns[]
+rights app_portal on candidate_notification_preference: table[] columns[]
+rights app_portal on candidate_profile: table[] columns[]
+rights app_portal on candidate_rate_limit: table[] columns[]
+rights app_portal on candidate_services_case: table[] columns[]
+rights app_portal on candidate_session: table[] columns[]
+rights app_portal on candidate_user: table[] columns[]
+rights app_portal on candidate_verification: table[] columns[]
+rights app_portal on case_document: table[] columns[]
+rights app_portal on case_note: table[] columns[]
+rights app_portal on case_quote: table[] columns[select(amount_eur,id,invoice_number,invoiced_at,organisation_id,paid_at,sent_at,services_case_id,status)]
+rights app_portal on consent_record: table[] columns[]
+rights app_portal on consent_text: table[select] columns[]
+rights app_portal on contact_message: table[] columns[insert(body,from_email,from_name,portal_user_id,surface,topic) select(id)]
+rights app_portal on contact_request: table[] columns[]
+rights app_portal on content_page: table[] columns[]
+rights app_portal on cro_company: table[select] columns[]
+rights app_portal on dete_permit_count: table[select] columns[]
+rights app_portal on email_outbox: table[insert] columns[select(dedupe_key)]
+rights app_portal on feature_flag: table[select] columns[]
+rights app_portal on fetch_run: table[] columns[]
+rights app_portal on fetched_advert: table[] columns[]
+rights app_portal on job: table[] columns[insert(application_route,badge,close_reason,closed_at,closes_at,contract_months,contract_type,county,employer_name,health_insurance_eur,hire_answer,hire_answered_at,hire_answered_by_membership_id,job_source_id,occupation_code,organisation_id,own_page_url,pass_route,pay_floor_id,pay_grade,permit_employer_check,permit_employer_kind,permit_employer_name,permit_employer_name_id,permit_type,posted_by_membership_id,route_switched_at,salary_high,salary_low,screening_questions,search_vector,sector,source,status,title) select(application_route,badge,close_reason,closed_at,closes_at,contract_months,contract_type,county,employer_name,health_insurance_eur,hire_answer,hire_answered_at,hire_answered_by_membership_id,id,job_source_id,occupation_code,organisation_id,own_page_url,pass_route,pay_floor_id,pay_grade,permit_employer_check,permit_employer_kind,permit_employer_name,permit_employer_name_id,permit_type,posted_at,posted_by_membership_id,route_switched_at,salary_high,salary_low,salary_sort,screening_questions,search_vector,sector,source,status,title) update(application_route,badge,close_reason,closed_at,closes_at,contract_months,contract_type,county,employer_name,health_insurance_eur,hire_answer,hire_answered_at,hire_answered_by_membership_id,job_source_id,occupation_code,organisation_id,own_page_url,pass_route,pay_floor_id,pay_grade,permit_employer_check,permit_employer_kind,permit_employer_name,permit_employer_name_id,permit_type,posted_by_membership_id,route_switched_at,salary_high,salary_low,screening_questions,search_vector,sector,source,status,title)]
+rights app_portal on job_daily_stat: table[select] columns[]
+rights app_portal on job_source: table[select] columns[]
+rights app_portal on job_text: table[delete,insert,select,update] columns[]
+rights app_portal on membership: table[insert,select,update] columns[]
+rights app_portal on message: table[] columns[]
+rights app_portal on notification: table[] columns[]
+rights app_portal on notification_preference: table[] columns[]
+rights app_portal on organisation: table[select] columns[update(county,display_name,logo_url,short_description,website)]
+rights app_portal on organisation_domain: table[] columns[]
+rights app_portal on organisation_name: table[select] columns[]
+rights app_portal on pay_floor: table[insert,select] columns[update(status)]
+rights app_portal on portal_account: table[delete,insert,select,update] columns[]
+rights app_portal on portal_case_document: table[select] columns[insert(byte_size,content_type,file_name,portal_user_id,services_case_id,storage_key)]
+rights app_portal on portal_consent_record: table[select] columns[insert(consent_text_id,details,job_id,organisation_id,portal_user_id) update(withdrawn_at)]
+rights app_portal on portal_notification: table[select] columns[insert(category,dedupe_key,organisation_id,params,portal_user_id,template_key) update(read_at)]
+rights app_portal on portal_notification_preference: table[delete,select] columns[insert(category,channel,enabled,portal_user_id) update(enabled)]
+rights app_portal on portal_rate_limit: table[delete,insert,select,update] columns[]
+rights app_portal on portal_services_case: table[select] columns[insert(consent_record_id,dedupe_key,employer_contact_consent_record_id,job_id,offer_details,organisation_id,payer,permit_type,portal_user_id)]
+rights app_portal on portal_session: table[delete,insert,select,update] columns[]
+rights app_portal on portal_user: table[insert,select] columns[update(deleted_at,email,email_verified,image,last_active_at,name,updated_at)]
+rights app_portal on portal_verification: table[delete,insert,select,update] columns[]
+rights app_portal on published_content_page: table[select] columns[]
+rights app_portal on report: table[insert] columns[select(id)]
+rights app_portal on review_item: table[] columns[]
+rights app_portal on saved_job: table[] columns[]
+rights app_portal on services_case: table[] columns[]
+rights app_portal on setting: table[] columns[]
+rights app_portal on sponsorship_statement: table[insert,select] columns[update(superseded_at)]
+rights app_portal on staff_account: table[] columns[]
+rights app_portal on staff_rate_limit: table[] columns[]
+rights app_portal on staff_role: table[] columns[]
+rights app_portal on staff_session: table[] columns[]
+rights app_portal on staff_user: table[] columns[]
+rights app_portal on staff_verification: table[] columns[]
+rights app_portal on strike: table[] columns[select(appeal_decided_at,appeal_due_at,appeal_text,appealed_at,case_kind,decided_at,employer_reply,id,job_id,level,notice_summary,organisation_id,outcome,pay_floor_id,reason_code,replied_at,reply_due_at,stage) update(appeal_text,employer_reply)]
+rights app_portal on tracker_entry: table[] columns[]
+rights app_portal on wrc_licence: table[select] columns[]
+trigger application_guard on application: CREATE TRIGGER application_guard BEFORE UPDATE ON public.application FOR EACH ROW EXECUTE FUNCTION private.application_guard()
+trigger application_job_open on application: CREATE TRIGGER application_job_open BEFORE INSERT ON public.application FOR EACH ROW EXECUTE FUNCTION private.application_job_open()
+trigger approval_request_guard on approval_request: CREATE TRIGGER approval_request_guard BEFORE INSERT OR UPDATE ON public.approval_request FOR EACH ROW EXECUTE FUNCTION private.approval_request_guard()
+trigger audit_event_guard on audit_event: CREATE TRIGGER audit_event_guard BEFORE INSERT ON public.audit_event FOR EACH ROW EXECUTE FUNCTION private.audit_event_guard()
+trigger ban_approval on ban: CREATE TRIGGER ban_approval BEFORE INSERT OR DELETE OR UPDATE ON public.ban FOR EACH ROW EXECUTE FUNCTION private.approval_check()
+trigger ban_closes_jobs on ban: CREATE TRIGGER ban_closes_jobs AFTER INSERT ON public.ban FOR EACH ROW EXECUTE FUNCTION private.ban_closes_jobs()
+trigger ban_matches_case on ban: CREATE TRIGGER ban_matches_case BEFORE INSERT ON public.ban FOR EACH ROW EXECUTE FUNCTION private.ban_matches_case()
+trigger candidate_user_active on candidate_user: CREATE TRIGGER candidate_user_active BEFORE UPDATE OF last_active_at ON public.candidate_user FOR EACH ROW EXECUTE FUNCTION private.candidate_user_active()
+trigger case_document_guard on case_document: CREATE TRIGGER case_document_guard BEFORE INSERT OR UPDATE OF services_case_id, candidate_user_id, portal_user_id ON public.case_document FOR EACH ROW EXECUTE FUNCTION private.case_document_guard()
+trigger consent_record_guard on consent_record: CREATE TRIGGER consent_record_guard BEFORE UPDATE OF withdrawn_at ON public.consent_record FOR EACH ROW EXECUTE FUNCTION private.consent_record_guard()
+trigger consent_text_approval on consent_text: CREATE TRIGGER consent_text_approval BEFORE INSERT ON public.consent_text FOR EACH ROW EXECUTE FUNCTION private.approval_check()
+trigger contact_message_queue on contact_message: CREATE TRIGGER contact_message_queue AFTER INSERT ON public.contact_message FOR EACH ROW EXECUTE FUNCTION private.contact_message_queue()
+trigger contact_request_check on contact_request: CREATE TRIGGER contact_request_check BEFORE INSERT ON public.contact_request FOR EACH ROW EXECUTE FUNCTION private.contact_request_check()
+trigger contact_request_notify on contact_request: CREATE TRIGGER contact_request_notify AFTER INSERT ON public.contact_request FOR EACH ROW EXECUTE FUNCTION private.contact_request_notify()
+trigger email_outbox_dedupe_key on email_outbox: CREATE TRIGGER email_outbox_dedupe_key BEFORE INSERT ON public.email_outbox FOR EACH ROW EXECUTE FUNCTION private.dedupe_key_per_role()
+trigger email_outbox_guard on email_outbox: CREATE TRIGGER email_outbox_guard BEFORE INSERT ON public.email_outbox FOR EACH ROW EXECUTE FUNCTION private.email_outbox_guard()
+trigger job_closed_at on job: CREATE TRIGGER job_closed_at BEFORE INSERT OR UPDATE OF status ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_closed_at()
+trigger job_defaults on job: CREATE TRIGGER job_defaults BEFORE INSERT OR UPDATE OF permit_employer_kind, permit_employer_name ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_defaults()
+trigger job_guard on job: CREATE TRIGGER job_guard BEFORE INSERT OR UPDATE ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_guard()
+trigger job_org_live on job: CREATE TRIGGER job_org_live BEFORE INSERT OR UPDATE OF status ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_org_live()
+trigger job_queue_review on job: CREATE TRIGGER job_queue_review AFTER INSERT OR UPDATE OF status, permit_employer_check ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_queue_review()
+trigger job_sponsor_statement on job: CREATE CONSTRAINT TRIGGER job_sponsor_statement AFTER INSERT OR UPDATE ON public.job DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION private.job_sponsor_statement()
+trigger job_text_guard on job_text: CREATE TRIGGER job_text_guard BEFORE INSERT OR DELETE OR UPDATE ON public.job_text FOR EACH ROW EXECUTE FUNCTION private.job_text_guard()
+trigger last_active_guard on candidate_user: CREATE TRIGGER last_active_guard BEFORE INSERT OR UPDATE OF last_active_at ON public.candidate_user FOR EACH ROW EXECUTE FUNCTION private.last_active_guard()
+trigger message_parent_accepted on message: CREATE TRIGGER message_parent_accepted BEFORE INSERT ON public.message FOR EACH ROW EXECUTE FUNCTION private.message_parent_accepted()
+trigger message_wipe_reports on message: CREATE TRIGGER message_wipe_reports BEFORE DELETE ON public.message FOR EACH ROW EXECUTE FUNCTION private.message_wipe_reports()
+trigger notification_dedupe_key on notification: CREATE TRIGGER notification_dedupe_key BEFORE INSERT ON public.notification FOR EACH ROW EXECUTE FUNCTION private.dedupe_key_per_role()
+trigger organisation_big_company_approval on organisation: CREATE TRIGGER organisation_big_company_approval BEFORE INSERT OR UPDATE OF is_big_company ON public.organisation FOR EACH ROW EXECUTE FUNCTION private.approval_check()
+trigger organisation_cro_one on organisation: CREATE TRIGGER organisation_cro_one BEFORE INSERT OR UPDATE OF cro_number, status, merged_into_id ON public.organisation FOR EACH ROW EXECUTE FUNCTION private.cro_one_organisation()
+trigger organisation_guard on organisation: CREATE TRIGGER organisation_guard BEFORE INSERT OR UPDATE ON public.organisation FOR EACH ROW EXECUTE FUNCTION private.organisation_guard()
+trigger organisation_merge_check on organisation: CREATE TRIGGER organisation_merge_check BEFORE UPDATE OF merged_into_id ON public.organisation FOR EACH ROW EXECUTE FUNCTION private.organisation_merge_check()
+trigger organisation_name_cro_one on organisation_name: CREATE TRIGGER organisation_name_cro_one BEFORE INSERT OR UPDATE OF cro_number, organisation_id ON public.organisation_name FOR EACH ROW EXECUTE FUNCTION private.cro_one_organisation()
+trigger organisation_permit_history on organisation: CREATE TRIGGER organisation_permit_history AFTER UPDATE OF permit_history ON public.organisation FOR EACH ROW EXECUTE FUNCTION private.organisation_permit_history()
+trigger pay_floor_approval on pay_floor: CREATE TRIGGER pay_floor_approval BEFORE INSERT OR UPDATE ON public.pay_floor FOR EACH ROW EXECUTE FUNCTION private.approval_check()
+trigger pay_floor_big_company on pay_floor: CREATE TRIGGER pay_floor_big_company BEFORE INSERT ON public.pay_floor FOR EACH ROW EXECUTE FUNCTION private.pay_floor_insert()
+trigger pay_floor_guard on pay_floor: CREATE TRIGGER pay_floor_guard BEFORE UPDATE ON public.pay_floor FOR EACH ROW EXECUTE FUNCTION private.pay_floor_guard()
+trigger pay_floor_queue on pay_floor: CREATE TRIGGER pay_floor_queue AFTER INSERT ON public.pay_floor FOR EACH ROW EXECUTE FUNCTION private.pay_floor_insert()
+trigger pay_floor_signer on pay_floor: CREATE TRIGGER pay_floor_signer BEFORE INSERT ON public.pay_floor FOR EACH ROW EXECUTE FUNCTION private.signer_check()
+trigger report_upheld on report: CREATE TRIGGER report_upheld AFTER UPDATE OF status ON public.report FOR EACH ROW EXECUTE FUNCTION private.report_upheld()
+trigger review_item_fetcher on review_item: CREATE TRIGGER review_item_fetcher BEFORE INSERT ON public.review_item FOR EACH ROW EXECUTE FUNCTION private.review_item_fetcher()
+trigger services_case_guard on services_case: CREATE TRIGGER services_case_guard BEFORE INSERT OR UPDATE OF consent_record_id, employer_contact_consent_record_id, candidate_user_id, portal_user_id ON public.services_case FOR EACH ROW EXECUTE FUNCTION private.services_case_guard()
+trigger setting_guard on setting: CREATE TRIGGER setting_guard BEFORE INSERT OR UPDATE ON public.setting FOR EACH ROW WHEN ((CURRENT_USER = 'app_admin'::name)) EXECUTE FUNCTION private.setting_guard()
+trigger sponsorship_statement_approval on sponsorship_statement: CREATE TRIGGER sponsorship_statement_approval BEFORE INSERT ON public.sponsorship_statement FOR EACH ROW EXECUTE FUNCTION private.approval_check()
+trigger sponsorship_statement_kind on sponsorship_statement: CREATE TRIGGER sponsorship_statement_kind BEFORE INSERT ON public.sponsorship_statement FOR EACH ROW EXECUTE FUNCTION private.statement_kind_check()
+trigger sponsorship_statement_signer on sponsorship_statement: CREATE TRIGGER sponsorship_statement_signer BEFORE INSERT ON public.sponsorship_statement FOR EACH ROW EXECUTE FUNCTION private.signer_check()
+trigger staff_role_approval on staff_role: CREATE TRIGGER staff_role_approval BEFORE INSERT OR UPDATE ON public.staff_role FOR EACH ROW EXECUTE FUNCTION private.approval_check()
+trigger staff_user_no_reactivation on staff_user: CREATE TRIGGER staff_user_no_reactivation BEFORE UPDATE OF status, email ON public.staff_user FOR EACH ROW EXECUTE FUNCTION private.staff_user_no_reactivation()
+trigger statement_sponsor_statement on sponsorship_statement: CREATE CONSTRAINT TRIGGER statement_sponsor_statement AFTER DELETE OR UPDATE ON public.sponsorship_statement DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION private.job_sponsor_statement()
+trigger strike_approval on strike: CREATE TRIGGER strike_approval BEFORE INSERT OR UPDATE ON public.strike FOR EACH ROW EXECUTE FUNCTION private.approval_check()
+trigger strike_closes_jobs on strike: CREATE TRIGGER strike_closes_jobs AFTER INSERT OR UPDATE OF outcome, level ON public.strike FOR EACH ROW EXECUTE FUNCTION private.strike_closes_jobs()
+trigger strike_guard on strike: CREATE TRIGGER strike_guard BEFORE INSERT OR UPDATE ON public.strike FOR EACH ROW EXECUTE FUNCTION private.strike_guard()
+trigger strike_overturned on strike: CREATE TRIGGER strike_overturned AFTER UPDATE OF stage ON public.strike FOR EACH ROW EXECUTE FUNCTION private.strike_overturned()
+trigger tracker_guard on tracker_entry: CREATE TRIGGER tracker_guard BEFORE INSERT OR UPDATE ON public.tracker_entry FOR EACH ROW EXECUTE FUNCTION private.tracker_guard()
+unique CREATE UNIQUE INDEX alert_unsubscribe_token_key ON public.alert USING btree (unsubscribe_token)
+unique CREATE UNIQUE INDEX application_candidate_user_id_job_id_key ON public.application USING btree (candidate_user_id, job_id)
+unique CREATE UNIQUE INDEX apply_click_open_unique ON public.apply_click USING btree (candidate_user_id, job_id) WHERE (status = ANY (ARRAY['pending'::text, 'not_yet'::text]))
+unique CREATE UNIQUE INDEX approval_request_pending_unique ON public.approval_request USING btree (kind, target_table, target_id) WHERE (status = 'pending'::text)
+unique CREATE UNIQUE INDEX ban_cro_unique ON public.ban USING btree (cro_number) WHERE (cro_number IS NOT NULL)
+unique CREATE UNIQUE INDEX ban_domain_unique ON public.ban USING btree (email_domain) WHERE (email_domain IS NOT NULL)
+unique CREATE UNIQUE INDEX candidate_account_provider_unique ON public.candidate_account USING btree (provider_id, account_id)
+unique CREATE UNIQUE INDEX candidate_cv_candidate_user_id_key ON public.candidate_cv USING btree (candidate_user_id)
+unique CREATE UNIQUE INDEX candidate_hidden_organisation_candidate_user_id_organisatio_key ON public.candidate_hidden_organisation USING btree (candidate_user_id, organisation_id)
+unique CREATE UNIQUE INDEX candidate_profile_candidate_user_id_key ON public.candidate_profile USING btree (candidate_user_id)
+unique CREATE UNIQUE INDEX candidate_rate_limit_key_key ON public.candidate_rate_limit USING btree (key)
+unique CREATE UNIQUE INDEX candidate_session_token_key ON public.candidate_session USING btree (token)
+unique CREATE UNIQUE INDEX candidate_user_email_key ON public.candidate_user USING btree (email)
+unique CREATE UNIQUE INDEX case_quote_invoice_unique ON public.case_quote USING btree (invoice_number) WHERE (invoice_number IS NOT NULL)
+unique CREATE UNIQUE INDEX case_quote_open_unique ON public.case_quote USING btree (services_case_id) WHERE (status = ANY (ARRAY['draft'::text, 'sent'::text]))
+unique CREATE UNIQUE INDEX consent_text_purpose_version_key ON public.consent_text USING btree (purpose, version)
+unique CREATE UNIQUE INDEX contact_request_open_unique ON public.contact_request USING btree (organisation_id, candidate_user_id) WHERE (status = 'sent'::text)
+unique CREATE UNIQUE INDEX content_page_kind_slug_key ON public.content_page USING btree (kind, slug)
+unique CREATE UNIQUE INDEX cro_company_cro_number_key ON public.cro_company USING btree (cro_number)
+unique CREATE UNIQUE INDEX dete_permit_count_dete_name_year_month_key ON public.dete_permit_count USING btree (dete_name, year, month) NULLS NOT DISTINCT
+unique CREATE UNIQUE INDEX email_outbox_dedupe_key_key ON public.email_outbox USING btree (dedupe_key)
+unique CREATE UNIQUE INDEX feature_flag_key_key ON public.feature_flag USING btree (key)
+unique CREATE UNIQUE INDEX fetched_advert_job_source_id_external_id_key ON public.fetched_advert USING btree (job_source_id, external_id)
+unique CREATE UNIQUE INDEX job_daily_stat_job_id_day_key ON public.job_daily_stat USING btree (job_id, day)
+unique CREATE UNIQUE INDEX job_fetched_advert_id_key ON public.job USING btree (fetched_advert_id)
+unique CREATE UNIQUE INDEX job_id_organisation_id_key ON public.job USING btree (id, organisation_id)
+unique CREATE UNIQUE INDEX job_source_kind_board_key ON public.job_source USING btree (kind, board)
+unique CREATE UNIQUE INDEX membership_id_organisation_id_key ON public.membership USING btree (id, organisation_id)
+unique CREATE UNIQUE INDEX membership_invite_token_unique ON public.membership USING btree (invite_token_hash) WHERE (invite_token_hash IS NOT NULL)
+unique CREATE UNIQUE INDEX membership_org_invite_unique ON public.membership USING btree (organisation_id, lower(invited_email)) WHERE (status = 'invited'::text)
+unique CREATE UNIQUE INDEX membership_org_user_unique ON public.membership USING btree (organisation_id, portal_user_id) WHERE (status <> 'removed'::text)
+unique CREATE UNIQUE INDEX notification_dedupe_key_key ON public.notification USING btree (dedupe_key)
+unique CREATE UNIQUE INDEX notification_pref_candidate ON public.notification_preference USING btree (candidate_user_id, category, channel) WHERE (candidate_user_id IS NOT NULL)
+unique CREATE UNIQUE INDEX notification_pref_portal ON public.notification_preference USING btree (portal_user_id, category, channel) WHERE (portal_user_id IS NOT NULL)
+unique CREATE UNIQUE INDEX notification_pref_staff ON public.notification_preference USING btree (staff_user_id, category, channel) WHERE (staff_user_id IS NOT NULL)
+unique CREATE UNIQUE INDEX one_company_per_login ON public.membership USING btree (portal_user_id) WHERE (status = ANY (ARRAY['active'::text, 'awaiting_approval'::text]))
+unique CREATE UNIQUE INDEX one_current_statement ON public.sponsorship_statement USING btree (job_id) WHERE (superseded_at IS NULL)
+unique CREATE UNIQUE INDEX one_owner_per_org ON public.membership USING btree (organisation_id) WHERE ((role = 'account_owner'::text) AND (status = 'active'::text))
+unique CREATE UNIQUE INDEX organisation_cro_unique ON public.organisation USING btree (cro_number) WHERE ((cro_number IS NOT NULL) AND (status <> ALL (ARRAY['rejected'::text, 'closed'::text])) AND (merged_into_id IS NULL))
+unique CREATE UNIQUE INDEX organisation_domain_organisation_id_domain_key ON public.organisation_domain USING btree (organisation_id, domain)
+unique CREATE UNIQUE INDEX organisation_name_alias_unique ON public.organisation_name USING btree (normalised_name) WHERE (kind = 'alias'::text)
+unique CREATE UNIQUE INDEX organisation_name_cro_unique ON public.organisation_name USING btree (cro_number, normalised_name) WHERE (cro_number IS NOT NULL)
+unique CREATE UNIQUE INDEX organisation_name_legal_nocro_unique ON public.organisation_name USING btree (normalised_name) WHERE ((kind = 'legal'::text) AND (cro_number IS NULL))
+unique CREATE UNIQUE INDEX organisation_slug_key ON public.organisation USING btree (slug)
+unique CREATE UNIQUE INDEX organisation_wrc_unique ON public.organisation USING btree (wrc_licence_number) WHERE ((wrc_licence_number IS NOT NULL) AND (status <> ALL (ARRAY['rejected'::text, 'closed'::text])) AND (merged_into_id IS NULL))
+unique CREATE UNIQUE INDEX pay_floor_one_active ON public.pay_floor USING btree (organisation_id, role_family) WHERE (status = 'active'::text)
+unique CREATE UNIQUE INDEX pay_floor_one_pending ON public.pay_floor USING btree (organisation_id, role_family) WHERE (status = 'pending_check'::text)
+unique CREATE UNIQUE INDEX portal_account_provider_unique ON public.portal_account USING btree (provider_id, account_id)
+unique CREATE UNIQUE INDEX portal_rate_limit_key_key ON public.portal_rate_limit USING btree (key)
+unique CREATE UNIQUE INDEX portal_session_token_key ON public.portal_session USING btree (token)
+unique CREATE UNIQUE INDEX portal_user_email_key ON public.portal_user USING btree (email)
+unique CREATE UNIQUE INDEX report_candidate_open_unique ON public.report USING btree (reporter_candidate_user_id, target_job_id) WHERE (status = ANY (ARRAY['open'::text, 'job_hidden'::text]))
+unique CREATE UNIQUE INDEX report_portal_open_unique ON public.report USING btree (reporter_portal_user_id, target_job_id) WHERE (status = ANY (ARRAY['open'::text, 'job_hidden'::text]))
+unique CREATE UNIQUE INDEX review_item_candidate_unique ON public.review_item USING btree (queue, candidate_user_id) WHERE (status = ANY (ARRAY['open'::text, 'claimed'::text]))
+unique CREATE UNIQUE INDEX review_item_contact_unique ON public.review_item USING btree (queue, contact_message_id) WHERE (status = ANY (ARRAY['open'::text, 'claimed'::text]))
+unique CREATE UNIQUE INDEX review_item_floor_unique ON public.review_item USING btree (queue, pay_floor_id) WHERE (status = ANY (ARRAY['open'::text, 'claimed'::text]))
+unique CREATE UNIQUE INDEX review_item_job_unique ON public.review_item USING btree (queue, job_id) WHERE (status = ANY (ARRAY['open'::text, 'claimed'::text]))
+unique CREATE UNIQUE INDEX review_item_name_unique ON public.review_item USING btree (queue, organisation_name_id) WHERE (status = ANY (ARRAY['open'::text, 'claimed'::text]))
+unique CREATE UNIQUE INDEX review_item_org_unique ON public.review_item USING btree (queue, organisation_id) WHERE (status = ANY (ARRAY['open'::text, 'claimed'::text]))
+unique CREATE UNIQUE INDEX review_item_portal_unique ON public.review_item USING btree (queue, portal_user_id) WHERE (status = ANY (ARRAY['open'::text, 'claimed'::text]))
+unique CREATE UNIQUE INDEX saved_job_candidate_user_id_job_id_key ON public.saved_job USING btree (candidate_user_id, job_id)
+unique CREATE UNIQUE INDEX services_case_candidate_open ON public.services_case USING btree (candidate_user_id, job_id) NULLS NOT DISTINCT WHERE ((status <> 'closed'::text) AND (candidate_user_id IS NOT NULL))
+unique CREATE UNIQUE INDEX services_case_dedupe_unique ON public.services_case USING btree (dedupe_key) WHERE (dedupe_key IS NOT NULL)
+unique CREATE UNIQUE INDEX staff_account_provider_unique ON public.staff_account USING btree (provider_id, account_id)
+unique CREATE UNIQUE INDEX staff_rate_limit_key_key ON public.staff_rate_limit USING btree (key)
+unique CREATE UNIQUE INDEX staff_role_staff_user_id_role_key ON public.staff_role USING btree (staff_user_id, role)
+unique CREATE UNIQUE INDEX staff_session_token_key ON public.staff_session USING btree (token)
+unique CREATE UNIQUE INDEX staff_user_email_key ON public.staff_user USING btree (email)
+unique CREATE UNIQUE INDEX strike_report_org_unique ON public.strike USING btree (report_id, organisation_id) WHERE (report_id IS NOT NULL)
+unique CREATE UNIQUE INDEX tracker_entry_candidate_user_id_job_id_key ON public.tracker_entry USING btree (candidate_user_id, job_id)
+unique CREATE UNIQUE INDEX wrc_licence_licence_number_key ON public.wrc_licence USING btree (licence_number)
