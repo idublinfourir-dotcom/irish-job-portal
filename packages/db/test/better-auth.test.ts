@@ -4,8 +4,14 @@
 // app_candidate, app_portal and app_admin, never as owner. One `it` per trial check, same names, same order;
 // the steps share state (cookies, ids), so they must run in order.
 import { afterAll, beforeAll, describe, it, vi } from "vitest";
-import { createTestDb } from "./db";
+import pg from "pg";
+import { createTestDb, urlFor } from "./db";
 import { makeAuth, mail } from "./better-auth-helper";
+
+// Statements one getSession sends, measured on 10 November 2026 with the cookie cache off: 2 per request (session by
+// token, then user by id), plus 2 more the first time an instance runs (Better Auth reads the column list once).
+// Raise these only on purpose.
+const SESSION_SQL_BUDGET = { first: 4, next: 2 };
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 const roles = { candidate: "app_candidate", portal: "app_portal", staff: "app_admin" };
@@ -232,5 +238,24 @@ describe("better auth", () => {
     const s = await call("candidate", "sign-in/email", { email: e3, password: pw("so") });
     const o = await call("candidate", "sign-out", {}, s.cookie); const a = await call("candidate", "get-session", null, s.cookie);
     rec(o.status === 200 && !a.json?.user, `sign-out ${o.status}`);
+  });
+  // 8. cost: every signed-in page pays for one getSession, so its statement count has a budget
+  it("getSession on a signed-in request costs at most 2 statements (4 on an instance's first request)", async () => {
+    const e4 = "counted@example.test";
+    await call("candidate", "sign-up/email", { email: e4, password: pw("ct"), name: "Ct" });
+    const link = mail.filter((m) => m.pool === "candidate" && m.email === e4).at(-1); await call("candidate", `verify-email?${new URL(link.url).searchParams.toString()}`);
+    const s = await call("candidate", "sign-in/email", { email: e4, password: pw("ct") });
+    const counting = new pg.Pool({ connectionString: urlFor(db.name, "app_candidate"), max: 1 });
+    let n = 0;
+    counting.on("connect", (c) => { const q = c.query.bind(c); c.query = (...a) => { n++; return q(...a); }; });
+    try {
+      const counted = makeAuth("candidate", counting);
+      const get = () => counted.api.getSession({ headers: new Headers({ cookie: s.cookie }) });
+      const first = await get(), nFirst = n;
+      n = 0;
+      const next = await get();
+      rec(first?.user?.email === e4 && next?.user?.email === e4 && nFirst <= SESSION_SQL_BUDGET.first && n <= SESSION_SQL_BUDGET.next,
+        `user ${next?.user?.email ?? "none"}, ${nFirst} then ${n} statements (budget ${SESSION_SQL_BUDGET.first} then ${SESSION_SQL_BUDGET.next})`);
+    } finally { await counting.end(); }
   });
 });
