@@ -56,7 +56,8 @@ test("the TypeScript chain matches the Python on every saved advert", async () =
       ["sector", a.sector, ref.sector],
       ["reason", a.reason, ref.reason],
       ["sponsor_yes", a.sponsorYes, ref.sponsor_yes],
-      ["scam_flag", a.scamFlag, ref.scam_flag],
+      // NEW BEHAVIOUR (10 November 2026): the scam rule drops warnings against scams, so it may clear a flag the Python set, never add one.
+      ["scam_flag set where the Python set none", a.scamFlag && !ref.scam_flag, false],
       ["contract", a.contract, ref.contract],
       ["contract_why", a.contractReason, ref.contract_why],
       ["salary", a.salaryCheck, ref.salary],

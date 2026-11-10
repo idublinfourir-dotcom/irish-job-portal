@@ -19,7 +19,7 @@ No package here touches the database or the network. An adapter is given the fet
 `assess(advert, data)` takes one advert and the data the rules need (the cleaned DETE employer names, the public pay-deal names, the matcher) and returns one `Assessment`: a stage, a bucket and what was read. The order is part of the behaviour.
 
 1. **Input limits.** An advert over a limit (title 300, employer 200, location 500, employment type 100, salary box 1,000, description 30,000, counted in code points) is not assessed and gets the stage `0 advert too long (admin queue)`. This is the one thing the Python does not do. Adverts are untrusted text, and three ported patterns slow down with the square of the input length.
-2. Flags: agency by name, "sponsorship available", scam wording (computed, and it changes nothing yet).
+2. Flags: agency by name, "sponsorship available", scam wording (a request for money from the candidate: "pay a fee", "send a deposit", "registration fee"). A match is dropped when it is an employer's own warning against scams ("we will never ask candidates to pay a fee", "against our policy", "no agency will ask") or a benefit ("registration fees paid"): on 10 November 2026 the plain pattern matched 101 of 1,310 saved adverts and every one was such a warning or a benefit. The chain itself does nothing with the flag; the fetcher sends a flagged advert that would pass to the admin queue.
 3. Location looks Irish, or stage `3 not in Ireland`.
 4. "No sponsorship" wording, or stage `4`.
 5. Occupation from the matcher: not recognised is stage `5`, not on the list is stage `6`, low confidence is the admin queue. "Not on the list" is tested before "low confidence".
