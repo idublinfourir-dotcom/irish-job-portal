@@ -1,0 +1,19 @@
+{
+  "name": "@portal/fetcher",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@portal/matcher": "*",
+    "@portal/rules": "*",
+    "@portal/sources": "*",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  }
+}
