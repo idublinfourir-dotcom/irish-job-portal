@@ -26,6 +26,8 @@ export default async function setup() {
     alter default privileges for role postgres in schema public grant all on functions to anon, authenticated, service_role;
     alter default privileges for role postgres in schema public grant all on sequences to anon, authenticated, service_role;`);
   await migrate(drizzle(pool), { migrationsFolder: fileURLToPath(new URL("../migrations", import.meta.url)) });
+  // Mutation run (test/mutation/run.mjs): the SQL in this variable removes one rule from the template. Unset in normal runs.
+  if (process.env.PORTAL_TEST_MUTATION) await pool.query(process.env.PORTAL_TEST_MUTATION);
   await pool.end(); // a template cannot be copied while anyone is connected
 
   // Roles belong to the whole server, not one database, so their passwords are set here once.
