@@ -15,6 +15,7 @@
     "db:test:up": "npm run db:test:up -w @portal/db",
     "db:test:down": "npm run db:test:down -w @portal/db",
     "test": "vitest run",
+    "test:perf": "vitest run --config packages/db/test/perf/vitest.config.ts --reporter=verbose",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build"
   },
   "devDependencies": {
