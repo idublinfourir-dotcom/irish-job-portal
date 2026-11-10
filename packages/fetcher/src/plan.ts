@@ -2,7 +2,7 @@
 import type { Assessment } from "@portal/rules";
 import type { RawAdvert } from "@portal/sources";
 import { countyOf } from "./county";
-import type { AdvertRow, JobRow, MatchResult, Plan } from "./types";
+import type { AdvertRow, Change, JobRow, Known, MatchResult, Plan } from "./types";
 
 // NUL is refused by Postgres in text; a lone surrogate is harmless (the driver writes U+FFFD).
 const clean = (s: string) => s.replaceAll("\0", "");
@@ -33,7 +33,7 @@ export function planAdvert(advert: RawAdvert, a: Assessment, m: MatchResult | nu
     title: cut(advert.title, 300),
     employerName: cut(advert.employer, 300),
     result,
-    stage: cut(stage, 300),
+    stage: cut(stage, 200), // the database holds 200 (migration 0006), so a long stage can never make an advert unsaveable
     reason: cutOrNull(a.irishReason ?? a.contractReason),
     quotedEvidence: cutOrNull(a.reason ?? m?.quote),
     matcherModel: m?.modelId ? cut(m.modelId, 100) : null,
@@ -69,4 +69,26 @@ export function planAdvert(advert: RawAdvert, a: Assessment, m: MatchResult | nu
     ownPageUrl: link,
   };
   return { action: "job", advert: row(result, stage), job, text: clean(advert.description) };
+}
+
+/** The close reasons the fetcher may undo. Any other reason on a closed job means staff closed it. */
+export const FETCHER_CLOSED = ["closed", "expired", "recheck_failed"];
+
+/**
+ * What to do with a known advert that came back with its text (design 3.8). Pure.
+ * "same": nothing. "held": the job is staff's (in_review, hidden...), so only `gone_at` is cleared. "settle": staff closed the job, so only the hash
+ * is kept up to date. "again": assess it once more. An advert that was gone is always assessed again; a row with no hash counts as changed.
+ */
+export function stateOf(k: Known, hash: string): "same" | "held" | "settle" | "again" {
+  if (k.status !== null && k.status !== "live" && k.status !== "closed") return "held";
+  if (k.status === "closed" && !FETCHER_CLOSED.includes(k.closeReason ?? "")) return "settle";
+  return !k.gone && k.hash === hash ? "same" : "again";
+}
+
+/** Which write a re-assessed known advert needs, by what its job is and what the plan now says (the table in 3.8). */
+export function changeOf(k: Known, p: Exclude<Plan, { action: "defer" }>): Change {
+  if (k.jobId === null) return p.action === "job" ? "insert" : "advert";
+  if (k.status === "live") return p.action === "reject" ? "close" : "update";
+  // closed by the fetcher: it comes back only if it passes. A queued or rejected advert leaves it closed (design 4.3 finding 5).
+  return p.action === "job" && p.job.status === "live" ? "reopen" : "advert";
 }
