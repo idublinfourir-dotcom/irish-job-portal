@@ -62,6 +62,15 @@ describe("irish check: hostile input neither throws nor hangs", () => {
     ["mixed scripts and odd Unicode", long("日本語Привет ​﻿İıſKé́𝟘", 60_000)],
     ["null bytes", long("\0nhs\0", 150_000)],
     ["lone surrogates", long("\ud800a\udc00", 200_000)],
+    // NEW BEHAVIOUR (11 Nov 2026): the list on the next lines.
+    ["near-miss list lead-ins", long("role can be based in the following offices ", 25_000)],
+    ["colons after a based in", "role is based in " + long(": ", 500_000)],
+    ["many lead-ins each with a list", long("This role can be based in these offices:\nDublin\nCork\n", 20_000)],
+    ["many lists with a foreign name at the very end", long("This role is located in:\nDublin\n", 30_000) + "London"],
+    ["lines of 60 characters and one more", long("This role is located in:\n" + "x".repeat(60) + "\n", 15_000)],
+    ["one 1 MB line after a lead-in", "This role is located in:\n" + long("a", 1_000_000)],
+    ["new lines after a lead-in", "This role is located in:" + long("\n", 500_000)],
+    ["CRLF lists", long("This role is located in:\r\nDublin\r\nCork\r\n", 20_000)],
     ["empty", ""],
   ];
   it.each(cases)("%s", (_name, text) => {
@@ -99,6 +108,15 @@ describe("Ireland only (#149): speed and hostile input", () => {
     ["many full matches", long("This role is located in Dublin or London. ", 25_000)],
     ["odd Unicode", long("İıſK dublin ​﻿\u{1F600}", 60_000)],
     ["lone surrogates and null bytes", long("\ud800\0role is based in ", 50_000)],
+    // NEW BEHAVIOUR (11 Nov 2026): the list on the next lines.
+    ["near-miss list lead-ins", long("role can be based in the following offices ", 25_000)],
+    ["colons after a based in", "role is based in " + long(": ", 500_000)],
+    ["many lead-ins each with a list", long("This role can be based in these offices:\nDublin\nCork\n", 20_000)],
+    ["many lists with a foreign name at the very end", long("This role is located in:\nDublin\n", 30_000) + "London"],
+    ["lines of 60 characters and one more", long("This role is located in:\n" + "x".repeat(60) + "\n", 15_000)],
+    ["one 1 MB line after a lead-in", "This role is located in:\n" + long("a", 1_000_000)],
+    ["new lines after a lead-in", "This role is located in:" + long("\n", 500_000)],
+    ["CRLF lists", long("This role is located in:\r\nDublin\r\nCork\r\n", 20_000)],
     ["empty", ""],
   ];
   it.each(hostile)("%s", (_name, text) => {
@@ -106,6 +124,10 @@ describe("Ireland only (#149): speed and hostile input", () => {
       expect(typeof locationIsIrelandOnly(text)).toBe("boolean");
       expect(typeof postBasedElsewhere(text)).toBe("boolean");
     });
+  });
+  it("a list that names a place outside Ireland is still found inside hostile padding", () => {
+    expect(postBasedElsewhere(long("a ", 500_000) + "\nThis role is located in:\nDublin\nLondon\n")).toBe(true);
+    expect(postBasedElsewhere("This role is located in:\n" + long("x", 61) + "\nLondon\n")).toBe(false);
   });
   it("1,000 adverts of about 10,000 characters, both new checks, stay inside the budget", () => {
     const adverts = Array.from({ length: 1000 }, (_, n) => advert(n));

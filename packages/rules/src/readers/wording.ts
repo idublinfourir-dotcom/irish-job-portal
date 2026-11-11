@@ -11,7 +11,14 @@ const NO_SPONSOR = py(
     String.raw`|stamp 4|eu (citizen|passport|national)s? only|eu/eea (citizens?|nationals?) only` +
     // NEW BEHAVIOUR (10 November 2026): "requires you to be a national of an EU member state" cannot be met by a non-EEA applicant.
     // Found by the gate: two wrong passes. Not in the Python.
-    String.raw`|(must|requir(?:e|es|ed)|need(?:s|ed)?)\s+(\w+\s+){0,3}be\s+(an?\s+)?(national|citizen)s?\s+of\s+(an?\s+|the\s+)?(eu|eea|european union)\b`,
+    String.raw`|(must|requir(?:e|es|ed)|need(?:s|ed)?)\s+(\w+\s+){0,3}be\s+(an?\s+)?(national|citizen)s?\s+of\s+(an?\s+|the\s+)?(eu|eea|european union)\b` +
+    // NEW BEHAVIOUR (11 November 2026): three more ways an advert asks for the right to work before applying. Measured on the
+    // 1,303 saved adverts with labels: "must be eligible / authorised to work in Ireland" 6 adverts, a requirements line that is only
+    // "Right to work in Ireland" (and UK) 2, LinkedIn's form line "Work authorisation: Ireland (required)" 2. All 10 are labelled no.
+    // The plain words "right to work in Ireland" are not a rule: they also come in "ability to obtain the right to work".
+    String.raw`|must\s+be\s+(legally\s+|currently\s+|already\s+)?(eligible|entitled|authori[sz]ed|permitted)\s+to\s+work\s+in\s+(ireland|the\s+eu|the\s+eea)\b` +
+    String.raw`|(?<![^\n])[ \t\u00a0•*-]{0,10}right\s+to\s+work\s+in\s+ireland(\s+and\s+(the\s+)?uk)?[ \t\u00a0]{0,10}\.?[ \t\u00a0]{0,10}(?![^\n])` +
+    String.raw`|work\s+authori[sz]ation\s{0,3}:?\s{0,10}ireland\s{0,3}\(required\)`,
   "i",
 );
 // R05. classify.py:21

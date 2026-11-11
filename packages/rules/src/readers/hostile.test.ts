@@ -94,6 +94,22 @@ const HOSTILE: [string, string][] = [
   ["1 MB of '/' after one amount", "\u20ac80,000" + "/".repeat(MB)],
   ["1 MB of '/ ' after one amount", "\u20ac80,000" + "/ ".repeat(MB / 2)],
   ["odd Unicode around the new patterns", "\u0130\u0131 must be a n\u0430tional of an EU \u202f\u20ac80,000\u200b/\u200byr maternity\u00a0\u00a0cover".repeat(5000)],
+  // NEW BEHAVIOUR (11 Nov 2026) patterns: near matches repeated to 1 MB.
+  ["1 MB of 'must be legally '", "must be legally ".repeat(MB / 16)],
+  ["1 MB of 'must be eligible to work in '", "must be eligible to work in ".repeat(MB / 27)],
+  ["1 MB of 'right to work in ireland ' (never a whole line)", "right to work in ireland ".repeat(MB / 25)],
+  ["1 MB of new lines and one bullet line", "\n".repeat(MB) + " \u2022 Right to work in Ireland.\n"],
+  ["1 MB of spaces before a line item", " ".repeat(MB) + "right to work in ireland"],
+  ["1 MB of 'right to work in ireland and uk ' with tabs", "right to work in ireland and\tuk \t".repeat(MB / 30)],
+  ["1 MB of 'work authorisation: '", "work authorisation: ".repeat(MB / 20)],
+  ["'work authorisation' then 1 MB of spaces", "work authorisation" + " ".repeat(MB)],
+  ["1 MB of '12 month ftc '", "12 month ftc ".repeat(MB / 13)],
+  ["1 MB of 'ftc ' then a number", "ftc ".repeat(MB / 4) + "12 months"],
+  ["1 MB of 'dedicated '", "dedicated ".repeat(MB / 10)],
+  ["1 MB of '3rd year '", "3rd year ".repeat(MB / 9)],
+  ["1 MB of 'placement '", "placement ".repeat(MB / 10)],
+  ["1 MB of 'intern' with no spaces", "intern".repeat(MB / 6)],
+  ["odd Unicode around the new wording", "\u0130\u0131 must\u00a0be\u00a0eligible to work in Ireland \u202f\u200b\n \u2022 right\u00a0to work in ireland\n".repeat(5000)],
   ["empty text", ""],
 ];
 
@@ -108,6 +124,10 @@ describe("security: hostile text neither throws nor hangs", () => {
     expect(noSponsorshipPhrase("", pad + "requires you to be a national of an EU member state")).not.toBeNull();
     expect(readContract("E", "", "maternity cover " + pad).result).toBe("short");
     expect(readSalary(pad, "\u20ac80,000/yr").low).toBe(80000);
+    expect(noSponsorshipPhrase("", pad + "\nmust be eligible to work in Ireland")).not.toBeNull();
+    expect(noSponsorshipPhrase("", pad + "\n Right to work in Ireland.")).not.toBeNull();
+    expect(readContract("E (12 month FTC)", "", pad).result).toBe("short");
+    expect(readContract("E", "", pad + " dedicated placement").result).toBe("ok"); // past the first 6,000 characters
   });
 
   test("missing and empty fields", () => {

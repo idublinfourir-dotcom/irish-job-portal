@@ -25,14 +25,21 @@ export const locationIsIrelandOnly = (location: string): boolean => IRL.test(loc
 // NEW BEHAVIOUR (#149): the advert says the post itself can be based elsewhere: "This role can be based in Dublin or London",
 // "This role is located in Dublin, Ireland or London, United Kingdom". The place outside Ireland must come after an "or" in the
 // same sentence, so "our offices in London and Dublin" or "you will travel to London" do not match.
-// ponytail: a list on the next lines ("can be based in any of the following offices:") is not read.
+// A list on the next lines is read too: "This role can be based in any of the following offices:" then up to 6 short lines
+// (60 characters each, so a long sentence ends the list). Found by the gate: one wrong pass. Any place outside Ireland in the list counts.
 const POST_BASED = pyRegex(
   "\\b(?:role|position|job|post) (?:(?:can|may|could) (?:also )?be|is) (?:based|located) (?:in|at|out of) [^.\n]{0,150}? or ([^.\n]{0,150})",
+  "ig",
+);
+
+const POST_LIST = pyRegex(
+  "\\b(?:role|position|job|post) (?:(?:can|may|could) (?:also )?be|is) (?:based|located) (?:in|at|out of)(?: [^.\n:]{0,60})?:[ \t\r]*\n((?:[^\n]{1,60}(?:\n|$)){1,6})",
   "ig",
 );
 
 /** Decision #149: does the advert text say the post can be based outside Ireland? */
 export const postBasedElsewhere = (description: string): boolean => {
   for (const m of description.matchAll(POST_BASED)) if (FOREIGN.test(m[1]!)) return true;
+  for (const m of description.matchAll(POST_LIST)) if (FOREIGN.test(m[1]!)) return true;
   return false;
 };

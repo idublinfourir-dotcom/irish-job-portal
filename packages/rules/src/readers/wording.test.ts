@@ -137,3 +137,34 @@ describe("R06 scamWording", () => {
     expect(scamPatternPython("no fee")).toBe(false);
   });
 });
+
+describe("R04 NEW BEHAVIOUR (11 Nov 2026): more ways to ask for the right to work first", () => {
+  test.each([
+    ["Must be eligible to work in Ireland.", "Must be eligible to work in Ireland"],
+    ["you must be legally authorised to work in the EU", "must be legally authorised to work in the EU"],
+    ["MUST BE AUTHORIZED TO WORK IN IRELAND", "MUST BE AUTHORIZED TO WORK IN IRELAND"],
+    ["Skills:\n • Right to work in Ireland.\nMore", " • Right to work in Ireland."],
+    ["Skills:\nRight to work in Ireland and UK.\nMore", "Right to work in Ireland and UK."],
+    ["right to work in ireland", " right to work in ireland"],
+    ["Work authorisation:\n\n Ireland (required)\n", "Work authorisation:\n\n Ireland (required)"],
+    ["Work authorization: Ireland (required)", "Work authorization: Ireland (required)"],
+  ])("finds the phrase in %j", (text, phrase) => {
+    expect(noSponsorshipPhrase("", text)).toBe(phrase);
+  });
+  test.each([
+    "You need the right to work in Ireland or be able to get a permit.",
+    "Candidates with the right to work in Ireland are welcome to apply.",
+    "Right to work in Ireland is checked at offer stage.",
+    "Right to work in Ireland, France and Spain.",
+    "We will help you become eligible to work in Ireland.",
+    "Candidates must be eligible to work in the UK.",
+    "Work authorisation: Ireland (preferred)",
+    "Work authorisation: UK (required)",
+    "Visa: Ireland (required)",
+  ])("is not read as a refusal: %s", (text) => {
+    expect(noSponsorshipPhrase("", text)).toBeNull();
+  });
+  test("a line item must be the whole line", () => {
+    expect(noSponsorshipPhrase("", "x Right to work in Ireland.")).toBeNull();
+  });
+});
