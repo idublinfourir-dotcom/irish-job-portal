@@ -43,12 +43,12 @@ describe("import", () => {
   it("loads yearly totals with no month, and running it again changes nothing at all", async () => {
     const p = id("imp");
     const rows = [row(`${p} A`, 2024, 5), row(`${p} A`, 2025, 6), row(`${p} B`, 2025, 7, null)];
-    expect(await importPermits(admin(), rows)).toEqual({ inserted: 3, updated: 0, unchanged: 0 });
+    expect(await importPermits(admin(), rows)).toEqual({ inserted: 3, updated: 0, unchanged: 0, labelsChanged: 0 });
     const first = await dump(p);
     expect(first.map((r) => [r.dete_name, r.year, r.month, r.permits, r.source_file, r.organisation_name_id])).toEqual([
       [`${p} A`, 2024, null, 5, "f.xlsx", null], [`${p} A`, 2025, null, 6, "f.xlsx", null], [`${p} B`, 2025, null, 7, null, null],
     ]);
-    expect(await importPermits(admin(), rows)).toEqual({ inserted: 0, updated: 0, unchanged: 3 });
+    expect(await importPermits(admin(), rows)).toEqual({ inserted: 0, updated: 0, unchanged: 3, labelsChanged: 0 });
     expect(await dump(p)).toEqual(first); // same ids, same imported_at, same everything
     // xmin is the writing transaction: still the first one, so no row was even rewritten
     const x = (await su("select xmin::text from dete_permit_count where dete_name like $1 order by id", [`${p}%`])).rows;
@@ -61,7 +61,7 @@ describe("import", () => {
     await importPermits(admin(), [row(`${p} A`, 2025, 5), row(`${p} A`, 2026, 9)]);
     await linkNames(admin(), [{ organisationNameId: names[0]!, deteName: `${p} A` }]);
     const before = await dump(p);
-    expect(await importPermits(admin(), [row(`${p} A`, 2025, 5), row(`${p} A`, 2026, 11, "new.xlsx")])).toEqual({ inserted: 0, updated: 1, unchanged: 1 });
+    expect(await importPermits(admin(), [row(`${p} A`, 2025, 5), row(`${p} A`, 2026, 11, "new.xlsx")])).toEqual({ inserted: 0, updated: 1, unchanged: 1, labelsChanged: 0 });
     const after = await dump(p);
     expect(after[0]).toEqual(before[0]);
     expect(after[1]).toMatchObject({ permits: 11, source_file: "new.xlsx", organisation_name_id: before[1].organisation_name_id });
@@ -99,7 +99,7 @@ describe("links", () => {
   });
 
   it("an empty list does nothing", async () => {
-    expect(await linkNames(admin(), [])).toEqual({ rowsChanged: 0, skipped: [] });
+    expect(await linkNames(admin(), [])).toEqual({ rowsChanged: 0, skipped: [], labelsChanged: 0 });
   });
 
   it("moves a link when an admin names another employer name for the same DETE name", async () => {
@@ -206,7 +206,7 @@ describe("hostile content", () => {
 });
 
 describe("budgets", () => {
-  it("imports 38,183 rows twice in 6 statements and 5 seconds each, and reads one employer through indexes in few pages", async () => {
+  it("imports 38,183 rows twice in 7 statements and 5 seconds each, and reads one employer through indexes in few pages", async () => {
     // Same shape as the real file: ~38k yearly rows, names across 2022 to 2026.
     const rows: PermitRow[] = [];
     for (let i = 0; rows.length < 38_183; i++) for (const y of [2022, 2023, 2024, 2025, 2026]) if (rows.length < 38_183 && (i + y) % 4 !== 0) rows.push(row(`Fake Budget Company ${i} Limited`, y, 1 + ((i + y) % 40), `companies-${y}.xlsx`));
@@ -223,7 +223,7 @@ describe("budgets", () => {
     let t = performance.now();
     expect((await importPermits(counted, rows)).inserted).toBe(38_183);
     const first = performance.now() - t;
-    expect(statements).toBe(6); // begin, 4 chunks of 10,000, commit
+    expect(statements).toBe(7); // begin, 4 chunks of 10,000, the label refresh, commit
     t = performance.now();
     expect((await importPermits(counted, rows)).unchanged).toBe(38_183);
     const second = performance.now() - t;
@@ -272,10 +272,11 @@ describe("the admin commands", () => {
   };
 
   it("import loads a file, says what it did, and a second run changes nothing", async () => {
+    await admin().query("select private.refresh_permit_history()"); // the budget test above left linked employers unlabelled: start from right labels
     const p = id("cli");
     const f = file("ok.tsv", `dete_name\tyear\tpermits\tsource_file\n${p} A\t2025\t3\tf.xlsx\n${p} B\t2026\t4\tf.xlsx\n`);
-    expect(await cli(["import", f])).toEqual({ code: 0, out: "imported 2 new, 0 changed, 0 unchanged\n" });
-    expect(await cli(["import", f])).toEqual({ code: 0, out: "imported 0 new, 0 changed, 2 unchanged\n" });
+    expect(await cli(["import", f])).toEqual({ code: 0, out: "imported 2 new, 0 changed, 0 unchanged, 0 permit history labels changed\n" });
+    expect(await cli(["import", f])).toEqual({ code: 0, out: "imported 0 new, 0 changed, 2 unchanged, 0 permit history labels changed\n" });
   });
 
   it("a bad file is refused before any connection, with its line numbers", async () => {
@@ -292,7 +293,7 @@ describe("the admin commands", () => {
     await importPermits(admin(), [row(`${p} A`, 2026, 5)]);
     const f = file("links.tsv", `organisation_name_id\tdete_name\n${names[0]}\t${p} A\n${names[0]}\t${p} missing\n`);
     const r = await cli(["link", f]);
-    expect(r).toEqual({ code: 0, out: `linked 1 DETE rows, skipped 1\n  DETE name not found: ${p} missing\n` });
+    expect(r).toEqual({ code: 0, out: `linked 1 DETE rows, skipped 1, 1 permit history labels changed\n  DETE name not found: ${p} missing\n` });
   });
 
   it("refuses a login that is not allowed to write", async () => {

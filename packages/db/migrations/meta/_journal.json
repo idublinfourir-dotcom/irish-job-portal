@@ -50,6 +50,13 @@
       "when": 1794300002000,
       "tag": "0006_fetcher_changes",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794300003000,
+      "tag": "0007_permit_history_label",
+      "breakpoints": true
     }
   ]
 }

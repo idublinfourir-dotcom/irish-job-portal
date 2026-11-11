@@ -75,7 +75,7 @@ for (const r of roles) {
 denied("app_candidate", "insert a Launch B application", "insert into application(candidate_user_id,job_id,organisation_id,consent_record_id) values($1,$2,$3,$4)", () => [cand, job, org, cons]);
 denied("app_portal", "insert a Launch B contact_request", "insert into contact_request(organisation_id,membership_id,candidate_user_id) values($1,$2,$3)", () => [org, mem, cand]);
 // execute: exactly as section 2.1
-const want = { erase_candidate: ["app_admin"], erase_portal_user: ["app_admin"], run_retention: ["app_admin"], claim_organisation: ["app_portal"], register_organisation: ["app_portal"], audit_pseudonymise: [], audit_purge: [], move_application: [], search_visible_candidates: [], use_approval: [] };
+const want = { erase_candidate: ["app_admin"], erase_portal_user: ["app_admin"], run_retention: ["app_admin"], refresh_permit_history: ["app_admin"], mark_first_time: ["app_admin"], claim_organisation: ["app_portal"], register_organisation: ["app_portal"], audit_pseudonymise: [], audit_purge: [], move_application: [], search_visible_candidates: [], use_approval: [] };
 for (const f of fns) for (const r of [...roles, "anon", "authenticated", "service_role"]) {
   const exp = (want[f.proname] || []).includes(r);
   it(`${exp ? "must" : "must not"}: ${r}: execute ${f.f}`, async () => {

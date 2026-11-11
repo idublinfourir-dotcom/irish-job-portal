@@ -96,6 +96,9 @@ export const LAST_5_YEARS =
   "min(d.year) filter (where d.permits > 0)::int as first_year " +
   "from organisation_name n join dete_permit_count d on d.organisation_name_id = n.id where n.organisation_id = $1::bigint";
 
+// Sets each employer's permit history label from the DETE rows (migration 0007) and returns how many labels changed.
+const REFRESH = "select private.refresh_permit_history() as changed";
+
 const CHUNK = 10_000;
 
 async function inTransaction<T>(db: Db, fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
@@ -113,22 +116,26 @@ async function inTransaction<T>(db: Db, fn: (c: pg.PoolClient) => Promise<T>): P
   }
 }
 
-/** Upserts the rows in one transaction, 10,000 per statement. Run as app_admin. Never touches organisation_name_id. */
-export async function importPermits(db: Db, rows: PermitRow[]): Promise<{ inserted: number; updated: number; unchanged: number }> {
+const refresh = async (c: pg.PoolClient) => (await c.query<{ changed: number }>(REFRESH)).rows[0]!.changed;
+
+/** Upserts the rows in one transaction, 10,000 per statement, then refreshes the labels in that transaction. Run as app_admin. Never touches organisation_name_id. */
+export async function importPermits(db: Db, rows: PermitRow[]): Promise<{ inserted: number; updated: number; unchanged: number; labelsChanged: number }> {
   let inserted = 0;
   let updated = 0;
+  let labelsChanged = 0;
   await inTransaction(db, async (c) => {
     for (let i = 0; i < rows.length; i += CHUNK) {
       const part = rows.slice(i, i + CHUNK);
       const r = await c.query<{ inserted: boolean }>(UPSERT, [part.map((x) => x.deteName), part.map((x) => x.year), part.map((x) => x.permits), part.map((x) => x.sourceFile)]);
       for (const row of r.rows) if (row.inserted) inserted++; else updated++;
     }
+    labelsChanged = await refresh(c);
   });
-  return { inserted, updated, unchanged: rows.length - inserted - updated };
+  return { inserted, updated, unchanged: rows.length - inserted - updated, labelsChanged };
 }
 
-/** Sets organisation_name_id on the DETE rows of each name. A name or id that is not in the database is reported and skipped. */
-export async function linkNames(db: Db, links: Link[]): Promise<{ rowsChanged: number; skipped: string[] }> {
+/** Sets organisation_name_id on the DETE rows of each name, then refreshes the labels in the same transaction. A name or id that is not in the database is reported and skipped. */
+export async function linkNames(db: Db, links: Link[]): Promise<{ rowsChanged: number; skipped: string[]; labelsChanged: number }> {
   return inTransaction(db, async (c) => {
     const ids = new Set((await c.query<{ id: string }>(KNOWN_IDS, [[...new Set(links.map((l) => l.organisationNameId))]])).rows.map((r) => r.id));
     const names = new Set((await c.query<{ dete_name: string }>(KNOWN_NAMES, [links.map((l) => l.deteName)])).rows.map((r) => r.dete_name));
@@ -140,7 +147,7 @@ export async function linkNames(db: Db, links: Link[]): Promise<{ rowsChanged: n
       return false;
     });
     const r = good.length ? await c.query(SET_LINKS, [good.map((l) => l.organisationNameId), good.map((l) => l.deteName)]) : { rowCount: 0 };
-    return { rowsChanged: r.rowCount ?? 0, skipped };
+    return { rowsChanged: r.rowCount ?? 0, skipped, labelsChanged: await refresh(c) };
   });
 }
 
