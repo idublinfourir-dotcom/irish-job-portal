@@ -1,0 +1,1484 @@
+[
+ {
+  "id": "cs-1122",
+  "code": "1122",
+  "title": "Production Managers and Directors: Site Manager",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-1136",
+  "code": "1136",
+  "title": "ICT Professionals: Information technology and telecommunications directors",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-1181",
+  "code": "1181",
+  "title": "Health and Social Services Managers and Directors: Senior health services and public health managers and directors",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-1213",
+  "code": "1213",
+  "title": "Managers and Proprietors in Agriculture Related Services: Professional Forester Resource modelling, earth observation and data analyst.",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2111",
+  "code": "2111",
+  "title": "Natural and Social Science Professionals: Chemical scientists in manufacturing (including food & beverages, medical devices), product development, analytical development, clinical co-vigilance, or biotechnology or related and relevant specialist skills, qualifications or experience",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2112",
+  "code": "2112",
+  "title": "Natural and Social Science Professionals: Medical laboratory scientists Biological scientists and biochemists in manufacturing (including food & beverages, medical devices), product development, analytical development, clinical co-vigilance, or biotechnology or related and relevant specialist skills, qualifications or experience Agronomist",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2113",
+  "code": "2113",
+  "title": "Natural and Social Science Professionals: Physical scientists in manufacturing (including food & beverages, medical devices), product development, analytical development, clinical co-vigilance, or biotechnology or related and relevant specialist skills, qualifications or experience Meteorologist Operational Forecaster",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2121",
+  "code": "2121",
+  "title": "Engineering Professionals: Civil Engineers Structural Engineers and Site Engineers",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2122",
+  "code": "2122",
+  "title": "Engineering Professionals: Mechanical engineers",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2123",
+  "code": "2123",
+  "title": "Engineering Professionals: Electrical engineers",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2124",
+  "code": "2124",
+  "title": "Engineering Professionals: Electronics engineers specialising in: Chip design, test engineering, or application engineering, or Process automation engineering, or Power generation, transmission and distribution, or Related and relevant specialist skills, qualifications or experience",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2126",
+  "code": "2126",
+  "title": "Engineering Professionals: Design and development engineers specialising in: Quality control, or validation and regulation engineering (high tech industry; food and beverages), or Chip design, test engineering, or application engineering, or Process automation engineering, or Power generation, transmission and distribution, or Related and relevant specialist skills, qualifications or experience",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2127",
+  "code": "2127",
+  "title": "Engineering Professionals: Production and process engineers specialising in: Quality control, or validation and regulation engineering (high tech industry; food and beverages), or Chemical process engineering, or Process automation engineering, or Power generation, transmission and distribution, or Related and relevant specialist skills, qualifications or experience Chemical Engineer",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2129",
+  "code": "2129",
+  "title": "Engineering Professionals: Material scientists Setting Out Engineer Façade Designer Project Engineer",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2133",
+  "code": "2133",
+  "title": "Information Technology and Telecommunications Professionals: IT specialist managers BIM Manager",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2134",
+  "code": "2134",
+  "title": "Information Technology and Telecommunications Professionals: IT project and programme managers",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2135",
+  "code": "2135",
+  "title": "Information Technology and Telecommunications Professionals: IT business analysts, architects and systems designers",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2136",
+  "code": "2136",
+  "title": "Information Technology and Telecommunications Professionals: Programmers and software development professionals",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2137",
+  "code": "2137",
+  "title": "Information Technology and Telecommunications Professionals: Web design and development professionals",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2139",
+  "code": "2139",
+  "title": "Information Technology and Telecommunications Professionals: All other ICT professionals not elsewhere classified",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2211",
+  "code": "2211",
+  "title": "Health Professionals: Medical practitioners",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2212",
+  "code": "2212",
+  "title": "Health Professionals: Psychologist",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2213",
+  "code": "2213",
+  "title": "Health Professionals: Pharmacist/Industrial Pharmacists",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2214",
+  "code": "2214",
+  "title": "Health Professionals: Optometrist Ophthalmic Optician Community Eye Care",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2217",
+  "code": "2217",
+  "title": "Health Professionals: Radiographers Radiation therapists Cardiac physiologist Vascular technologists/physiologists Gastro Intestinal technologists/physiologists Respiratory physiologist",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2218",
+  "code": "2218",
+  "title": "Health Professionals: Podiatrist/Chiropodist",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2219",
+  "code": "2219",
+  "title": "Health Professionals: Audiologists Perfusionists Dietician Medical Scientist",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2221",
+  "code": "2221",
+  "title": "Therapy Professionals: Physiotherapist",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2222",
+  "code": "2222",
+  "title": "Therapy Professionals: Occupational Therapist",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2223",
+  "code": "2223",
+  "title": "Therapy Professionals: Speech & Language Therapist",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2229",
+  "code": "2229",
+  "title": "Therapy Professionals: Orthoptists",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2231",
+  "code": "2231",
+  "title": "Nursing and Midwifery Professionals: Registered Nurses",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2232",
+  "code": "2232",
+  "title": "Nursing and Midwifery Professionals: Registered Midwives",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2311",
+  "code": "2311",
+  "title": "Teaching and Educational Professionals: Academics who hold a qualification equivalent to Level 10 of the National Framework of Qualification in a given discipline awarded no less than two calendar years prior to the date of application for an employment permit, with a minimum of one academic year of relevant teaching experience, and the employment concerned is in a third level institution governed by the Irish Universities Act 1997 (No. 24 of 1997), the Institutes of Technology Act 2006 (No. 25 of 2006) and the Technological Universities Act 2018 (No. 3 of 2018); or involves delivering a programme largely or wholly concerned with information and communications technology, which leads to a major award at QQI level 8 and/or level 9 as validated by Quality and Qualifications Ireland.",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2419",
+  "code": "2419",
+  "title": "Legal Professionals: Intellectual Property Professionals",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2421",
+  "code": "2421",
+  "title": "Business, Research and Administrative Professionals: Chartered and certified accountants, and taxation experts specialising in tax, compliance, regulation, solvency or financial management or related and relevant specialist skills, qualifications or experience. Qualified accountants with at least three years’ auditing experience, who are full members of the American Institute of Certified Public Accountants (AICPA), Philippine Institute of Certified Public Accountants (PICPA) and the Institute of Chartered Accountants of Pakistan (ICAP) and whom have relevant work experience in the areas of US GAAP reporting and Global Audit and Advisory Services and the employment concerned is in MNC Global Audit Services. Tax consultant specialising in non-EEA tax consultancy and compliance with a professional tax qualification or legal qualification with tax specialism, and has a minimum of three years’ experience of tax consultancy requirements and regulations in the relevant non-EEA market.",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2423",
+  "code": "2423",
+  "title": "Business, Research and Administrative Professionals: Management consultants and business analysts specialising in big data analytics with skills in IT, data mining, modelling, and advanced maths or related and relevant specialist skills, qualifications or experience",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2424",
+  "code": "2424",
+  "title": "Business, Research and Administrative Professionals: Business and financial project management professionals specialising in finance & investment analytics, risk analytics, credit, fraud analytics or related and relevant specialist skills, qualifications or experience",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2425",
+  "code": "2425",
+  "title": "Business, Research and Administrative Professionals: Actuaries, economists and statisticians specialising in big data analytics with skills in IT, data mining, modelling, and advanced maths or related and relevant specialist skills, qualifications or experience",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2431",
+  "code": "2431",
+  "title": "Architects, Town Planners and Surveyors: Architect",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2432",
+  "code": "2432",
+  "title": "Architects, Town Planners and Surveyors: Town Planning Officer",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2433",
+  "code": "2433",
+  "title": "Architects, Town Planners and Surveyors: Quantity surveyors",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2434",
+  "code": "2434",
+  "title": "Architects, Town Planners and Surveyors: Geospatial Surveyor / Land Surveyor / Geomatics Surveyor",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2435",
+  "code": "2435",
+  "title": "Architects, Town Planners and Surveyors: Architectural Technologist",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2436",
+  "code": "2436",
+  "title": "Architects, Town Planners and Surveyors: Construction project managers / Construction Planner / Construction Scheduler Commercial Manager",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2442",
+  "code": "2442",
+  "title": "Welfare Professionals: Social Worker",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2461",
+  "code": "2461",
+  "title": "Quality and Regulatory Professionals: Quality control and planning engineers",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2462",
+  "code": "2462",
+  "title": "Quality and Regulatory Professionals: Quality assurance and regulatory professionals",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2463",
+  "code": "2463",
+  "title": "Quality and Regulatory Professionals: Environmental health professionals",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-2473",
+  "code": "2473",
+  "title": "Media Professionals: Art Director in 2D or 3D animation, with at least one year’s experience in the role",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-3122",
+  "code": "3122",
+  "title": "Draughtspersons and Related Architectural Technicians: BIM Coordinator/ Technician",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-3213",
+  "code": "3213",
+  "title": "Health Associate Professionals: PHECC registered Paramedics PHECC registered Advanced Paramedic Practitioners",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-3218",
+  "code": "3218",
+  "title": "Health Associate Professionals: Prosthetists Orthotists",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-3411",
+  "code": "3411",
+  "title": "Artistic, Literary and Media Occupations: Animation Background and Design Artist in 2D or 3D animation, with at least one year’s experience in the role",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-3417",
+  "code": "3417",
+  "title": "Artistic, Literary and Media Occupations: Riggers (within the Games Industry)",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-3421",
+  "code": "3421",
+  "title": "Design Occupations: Location Designer in 2D or 3D animation, with at least one year’s experience in the role Character Designer in 2D or 3D animation, with at least one year’s experience in the role Prop Designer in 2D or 3D animation, with at least one year’s experience in the role Animation Layout Artist in 2D or 3D animation, with at least one year’s experience in the role",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-3442",
+  "code": "3442",
+  "title": "Sports and Fitness Occupations: High performance coaches and directors employed by National sports organisations, or High profile sports organisations engaging in international competition",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-3531",
+  "code": "3531",
+  "title": "Business, Finance and Related Associate Professionals: Estimator",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-3542",
+  "code": "3542",
+  "title": "Sales, Marketing and Related Associate Professionals: Business sales executives specialising in International Sales Roles or ITB2B sales roles and with fluency in the official language of a state which is not a Member State of the EEA and is not an official language of an EEA state",
+  "list": "critical-skills"
+ },
+ {
+  "id": "cs-3543",
+  "code": "3543",
+  "title": "Sales, Marketing and Related Associate Professionals: International marketing experts with required domain knowledge specialising in product strategy development and management with technical and product/service knowledge (pharmaceutical, medical devices, Software B2B, SaaS products)",
+  "list": "critical-skills"
+ },
+ {
+  "id": "in-1225",
+  "code": "1225",
+  "title": "Managers in Hospitality and Leisure Services: Leisure and sports facilities managers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-1226",
+  "code": "1226",
+  "title": "Managers in Hospitality and Leisure Services: Travel agency managers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-1242",
+  "code": "1242",
+  "title": "Managers in Health and Care Services: Residential, day and domiciliary care managers (with the exception of those working in disability services)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-1251",
+  "code": "1251",
+  "title": "Managers in Other Services: Property, housing and estate managers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-1252",
+  "code": "1252",
+  "title": "Managers in Other Services: Garage managers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-1253",
+  "code": "1253",
+  "title": "Managers in Other Services: Hairdressing and beauty salon managers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-1254",
+  "code": "1254",
+  "title": "Managers in Other Services: Shopkeepers – wholesale and retail",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-1255",
+  "code": "1255",
+  "title": "Managers in Other Services: Waste disposal and environmental services managers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-1259",
+  "code": "1259",
+  "title": "Managers in Other Services: Other managers in other services not elsewhere classified (includes Betting shop manager, Graphic design manager, Library manager, Plant hire manager, Production manager) (with the exception of Safety Manager)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-2229",
+  "code": "2229",
+  "title": "Therapy Professionals: Other therapy professionals not elsewhere classified (with the exception of orthoptists, and chiropractors who are members of the Chiropractic Association of Ireland) (with the exception of Play Therapists working in disability services)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-2443",
+  "code": "2443",
+  "title": "Welfare Professionals: Probation officers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-2449",
+  "code": "2449",
+  "title": "Welfare Professionals: Other welfare professionals not elsewhere classified",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3121",
+  "code": "3121",
+  "title": "Draughtspersons and Related Architectural Technicians: Town planning technicians",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3219",
+  "code": "3219",
+  "title": "Health Associate Professionals: Health associate professionals not elsewhere classified (includes Acupuncturists, Homeopaths, Hypnotherapists, Massage therapists, Reflexologists, Sports therapists) (with the exception of Genetic Counsellor)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3231",
+  "code": "3231",
+  "title": "Welfare and Housing Associate Professionals: Youth and community workers (with the exception of Family Support Workers working in disability services)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3233",
+  "code": "3233",
+  "title": "Welfare and Housing Associate Professionals: Child and early years officers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3234",
+  "code": "3234",
+  "title": "Welfare and Housing Associate Professionals: Housing officers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3235",
+  "code": "3235",
+  "title": "Welfare and Housing Associate Professionals: Counsellors",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3239",
+  "code": "3239",
+  "title": "Welfare and Housing Associate Professionals: Other welfare and housing associate professionals not elsewhere classified (with the exception of Project Officer working in disability services) (with the exception of Support Worker)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3311",
+  "code": "3311",
+  "title": "Protective Service Occupations: NCOs and other ranks",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3312",
+  "code": "3312",
+  "title": "Protective Service Occupations: Police officers (sergeant and below)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3313",
+  "code": "3313",
+  "title": "Protective Service Occupations: Fire service officers (watch manager and below)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3314",
+  "code": "3314",
+  "title": "Protective Service Occupations: Prison service officers (below principal officer)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3315",
+  "code": "3315",
+  "title": "Protective Service Occupations: Police community support officers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3319",
+  "code": "3319",
+  "title": "Protective Service Occupations: Other protective service associate professionals not elsewhere classified",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3443",
+  "code": "3443",
+  "title": "Sports and Fitness Occupations: Fitness instructors",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3520",
+  "code": "3520",
+  "title": "Legal Associate Professionals: Legal associate professionals (with the exception of employment of a person fluent in the official language of a State which is not a member of the EEA and is not an official language of an EEA state and who has market knowledge of that non-EEA state)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3544",
+  "code": "3544",
+  "title": "Sales, Marketing and Related Associate Professionals: Estate agents and auctioneers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3546",
+  "code": "3546",
+  "title": "Sales, Marketing and Related Associate Professionals: Conference and exhibition managers and organisers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3561",
+  "code": "3561",
+  "title": "Public Services and Other Associate Professionals: Public services associate professionals",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3563",
+  "code": "3563",
+  "title": "Public Services and Other Associate Professionals: Vocational and industrial trainers and instructors (with the exception of mobility instructors and Guide Dog mobility instructors for the visually impaired) (with the exception of Autism Assistance Dog Instructor)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3564",
+  "code": "3564",
+  "title": "Public Services and Other Associate Professionals: Careers advisers and vocational guidance specialists (with the exception of career guidance teachers in secondary schools)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3565",
+  "code": "3565",
+  "title": "Public Services and Other Associate Professionals: Inspectors of standards and regulations",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-3567",
+  "code": "3567",
+  "title": "Public Services and Other Associate Professionals: Health and safety officers (with the exception of Construction Safety Officers)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4112",
+  "code": "4112",
+  "title": "Administrative Occupations: Government and Related Organisations: National government administrative occupations",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4113",
+  "code": "4113",
+  "title": "Administrative Occupations: Government and Related Organisations: Local government administrative occupations",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4121",
+  "code": "4121",
+  "title": "Administrative Occupations: Finance: Credit controllers (with the exception of employment of a person fluent in the official language of a State which is not a member of the EEA and is not an official language of an EEA state, in a role in credit control where the employment is supported by an enterprise development agency)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4122",
+  "code": "4122",
+  "title": "Administrative Occupations: Finance: Bookkeepers, payroll managers and wages clerks (with the exception of employment of a person fluent in the official language of a State which is not a member of the EEA and is not an official language of an EEA state in a role in accounts payable where the employment is supported by an enterprise development agency)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4123",
+  "code": "4123",
+  "title": "Administrative Occupations: Finance: Bank and post office clerks",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4124",
+  "code": "4124",
+  "title": "Administrative Occupations: Finance: Finance officers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4129",
+  "code": "4129",
+  "title": "Administrative Occupations: Finance: Other financial administrative occupations not elsewhere classified",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4131",
+  "code": "4131",
+  "title": "Administrative Occupations: Records: Records clerks and assistants",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4132",
+  "code": "4132",
+  "title": "Administrative Occupations: Records: Pensions and insurance clerks and assistants",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4133",
+  "code": "4133",
+  "title": "Administrative Occupations: Records: Stock control clerks and assistants",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4135",
+  "code": "4135",
+  "title": "Administrative Occupations: Records: Library clerks and assistants",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4138",
+  "code": "4138",
+  "title": "Administrative Occupations: Records: Human resources administrative occupations",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4151",
+  "code": "4151",
+  "title": "Other Administrative Occupations: Sales administrators",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4159",
+  "code": "4159",
+  "title": "Other Administrative Occupations: Other administrative occupations not elsewhere classified",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4161",
+  "code": "4161",
+  "title": "Administrative Occupations: Office Managers and Supervisors: Office managers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4162",
+  "code": "4162",
+  "title": "Administrative Occupations: Office Managers and Supervisors: Office supervisors",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4211",
+  "code": "4211",
+  "title": "Secretarial and Related Occupations: Medical secretaries",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4212",
+  "code": "4212",
+  "title": "Secretarial and Related Occupations: Legal secretaries",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4213",
+  "code": "4213",
+  "title": "Secretarial and Related Occupations: School secretaries",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4214",
+  "code": "4214",
+  "title": "Secretarial and Related Occupations: Company secretaries",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4215",
+  "code": "4215",
+  "title": "Secretarial and Related Occupations: Personal assistants and other secretaries",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4216",
+  "code": "4216",
+  "title": "Secretarial and Related Occupations: Receptionists",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-4217",
+  "code": "4217",
+  "title": "Secretarial and Related Occupations: Typists and related keyboard occupations",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5111",
+  "code": "5111",
+  "title": "Agricultural and Related Trades: Farmers (with the exception of Pig Manager)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5112",
+  "code": "5112",
+  "title": "Agricultural and Related Trades: Horticultural trades",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5113",
+  "code": "5113",
+  "title": "Agricultural and Related Trades: Gardeners and landscape gardeners",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5114",
+  "code": "5114",
+  "title": "Agricultural and Related Trades: Groundsmen and greenkeepers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5119",
+  "code": "5119",
+  "title": "Agricultural and Related Trades: Other agricultural and fishing trades not elsewhere classified (with the exception of sea fisher in the Irish fishing fleet) (with the exception of speciality forestry harvesting technician)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5236",
+  "code": "5236",
+  "title": "Vehicle Trades: Boat and ship builders and repairers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5237",
+  "code": "5237",
+  "title": "Vehicle Trades: Rail and rolling stock builders and repairers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5244",
+  "code": "5244",
+  "title": "Electrical and Electronic Trades: TV, video and audio engineers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5249",
+  "code": "5249",
+  "title": "Electrical and Electronic Trades: Other electrical and electronic trades not elsewhere classified (with the exception of lineworker working on behalf of ESB Networks)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5319",
+  "code": "5319",
+  "title": "Construction and building trades: Other construction and building trades not elsewhere classified (with the exception of – Plastic Lining Technicians Steel Fixers Fencing Operators / Erectors Curtain Wallers)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5411",
+  "code": "5411",
+  "title": "Textiles and Garments Trades: Weavers and knitters",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5413",
+  "code": "5413",
+  "title": "Textiles and Garments Trades: Footwear and leather working trades",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5419",
+  "code": "5419",
+  "title": "Textiles and Garments Trades: Other textiles, garments and related trades not elsewhere classified",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5421",
+  "code": "5421",
+  "title": "Printing Trades: Pre-press technicians",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5423",
+  "code": "5423",
+  "title": "Printing Trades: Print finishing and binding workers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5432",
+  "code": "5432",
+  "title": "Food Preparation and Hospitality Trades: Flour confectioners",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5433",
+  "code": "5433",
+  "title": "Food Preparation and Hospitality Trades: Fishmongers and poultry dressers (with the exception of fish filleter)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5434",
+  "code": "5434",
+  "title": "Food Preparation and Hospitality Trades: Chefs (with the exception of – Executive Chef with minimum of 5 years’ experience Head Chef with minimum of 5 years’ experience Sous Chef with minimum of 5 years’ experience Chef de Partie with minimum of 2 years’ experience Commis Chef with minimum of 2 years’ experience who will be employed in establishments other than fast food outlets)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5435",
+  "code": "5435",
+  "title": "Food Preparation and Hospitality Trades: Cooks",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5441",
+  "code": "5441",
+  "title": "Other Skilled Trades: Glass and ceramics makers, decorators and finishers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5443",
+  "code": "5443",
+  "title": "Other Skilled Trades: Florists",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-5449",
+  "code": "5449",
+  "title": "Other Skilled Trades: All other skilled trades not elsewhere classified",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6121",
+  "code": "6121",
+  "title": "Childcare and Related Personal Services: Nursery nurses and assistants",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6122",
+  "code": "6122",
+  "title": "Childcare and Related Personal Services: Childminders and related occupations",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6125",
+  "code": "6125",
+  "title": "Childcare and Related Personal Services: Teaching assistants",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6126",
+  "code": "6126",
+  "title": "Childcare and Related Personal Services: Educational support assistants",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6131",
+  "code": "6131",
+  "title": "Animal Care and Control Services: Veterinary nurses",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6132",
+  "code": "6132",
+  "title": "Animal Care and Control Services: Pest control officers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6139",
+  "code": "6139",
+  "title": "Animal Care and Control Services: Other animal care services occupations not elsewhere classified (with the exception of work riders)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6142",
+  "code": "6142",
+  "title": "Caring Personal Services: Ambulance staff (with the exception of paramedics)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6143",
+  "code": "6143",
+  "title": "Caring Personal Services: Dental nurses",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6144",
+  "code": "6144",
+  "title": "Caring Personal Services: Houseparents and residential wardens",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6146",
+  "code": "6146",
+  "title": "Caring Personal Services: Senior care workers (with the exception of those working in disability services)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6147",
+  "code": "6147",
+  "title": "Caring Personal Services: Care escorts",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6148",
+  "code": "6148",
+  "title": "Caring Personal Services: Undertakers, mortuary and crematorium assistants",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6211",
+  "code": "6211",
+  "title": "Leisure and Travel Services: Sports and leisure assistants",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6212",
+  "code": "6212",
+  "title": "Leisure and Travel Services: Travel agents",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6214",
+  "code": "6214",
+  "title": "Leisure and Travel Services: Air travel assistants",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6215",
+  "code": "6215",
+  "title": "Leisure and Travel Services: Rail travel assistants",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6219",
+  "code": "6219",
+  "title": "Leisure and Travel Services: Other leisure and travel service occupations not elsewhere classified (with the exception of tourist guides fluent in the official language of a State which is not a member of the EEA and is not an official language of an EEA state)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6221",
+  "code": "6221",
+  "title": "Hairdressers and Related Services: Hairdressers, barbers, and related occupations",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6222",
+  "code": "6222",
+  "title": "Hairdressers and Related Services: Beauticians and related occupations",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6231",
+  "code": "6231",
+  "title": "Housekeeping and Related Services: Housekeepers and related occupations",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6232",
+  "code": "6232",
+  "title": "Housekeeping and Related Services: Caretakers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-6240",
+  "code": "6240",
+  "title": "Cleaning and Housekeeping Managers and Supervisors: Cleaning and housekeeping managers and supervisors",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7111",
+  "code": "7111",
+  "title": "Sales Assistants and Retail Cashiers: Sales and retail assistants",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7112",
+  "code": "7112",
+  "title": "Sales Assistants and Retail Cashiers: Retail cashiers and check-out operators",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7113",
+  "code": "7113",
+  "title": "Sales Assistants and Retail Cashiers: Telephone salespersons",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7114",
+  "code": "7114",
+  "title": "Sales Assistants and Retail Cashiers: Pharmacy and other dispensing assistants",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7115",
+  "code": "7115",
+  "title": "Sales Assistants and Retail Cashiers: Vehicle and parts salespersons and advisers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7121",
+  "code": "7121",
+  "title": "Sales Related Occupations: Collector salespersons and credit agents",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7122",
+  "code": "7122",
+  "title": "Sales Related Occupations: Debt, rent and other cash collectors",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7123",
+  "code": "7123",
+  "title": "Sales Related Occupations: Roundspersons and van salespersons",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7124",
+  "code": "7124",
+  "title": "Sales Related Occupations: Market and street traders and assistants",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7125",
+  "code": "7125",
+  "title": "Sales Related Occupations: Merchandisers and window dressers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7129",
+  "code": "7129",
+  "title": "Sales Related Occupations: Other sales related occupations not elsewhere classified",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7130",
+  "code": "7130",
+  "title": "Sales Supervisors: Sales supervisors",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7211",
+  "code": "7211",
+  "title": "Customer Service Occupations: Call and contact centre occupations (with the exception of employment of a person fluent in the official language of a State which is not a member of the EEA and is not an official language of an EEA state, where the employment is supported by an enterprise development agency and is in— a customer service and sales role with relevant product knowledge, a specialist online digital marketing and sales role, or a specialist language support and technical sales support role)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7213",
+  "code": "7213",
+  "title": "Customer Service Occupations: Telephonists",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7214",
+  "code": "7214",
+  "title": "Customer Service Occupations: Communication operators",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7215",
+  "code": "7215",
+  "title": "Customer Service Occupations: Market research interviewers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7219",
+  "code": "7219",
+  "title": "Customer Service Occupations: Other customer service occupations not elsewhere classified",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-7220",
+  "code": "7220",
+  "title": "Customer Service Managers and Supervisors: Customer service managers and supervisors",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8111",
+  "code": "8111",
+  "title": "Process Operatives: Food, drink and tobacco process operatives (with the exception of Computer Numerical Control Operative Meat processor operative Seafood Operative)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8112",
+  "code": "8112",
+  "title": "Process Operatives: Glass and ceramics process operatives (with the exception of Computer Numerical Control Operative)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8114",
+  "code": "8114",
+  "title": "Process Operatives: Chemical and related process operatives (with the exception of Computer Numerical Control Operative)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8115",
+  "code": "8115",
+  "title": "Process Operatives: Rubber process operatives (with the exception of Computer Numerical Control Operative)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8116",
+  "code": "8116",
+  "title": "Process Operatives: Plastics process operatives (with the exception of Computer Numerical Control Operative)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8117",
+  "code": "8117",
+  "title": "Process Operatives: Metal making and treating process operatives (with the exception of Computer Numerical Control Operative)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8118",
+  "code": "8118",
+  "title": "Process Operatives: Electroplaters (with the exception of Computer Numerical Control Operative)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8119",
+  "code": "8119",
+  "title": "Process Operatives: Other process operatives not elsewhere classified (with the exception of Computer Numerical Control Operative)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8121",
+  "code": "8121",
+  "title": "Plant and Machine Operatives: Paper machine operatives (with the exception of Computer Numerical Control Operative)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8122",
+  "code": "8122",
+  "title": "Plant and Machine Operatives: Coal mine operatives (with the exception of Computer Numerical Control Operative)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8123",
+  "code": "8123",
+  "title": "Plant and Machine Operatives: Quarry workers and related operatives (with the exception of Computer Numerical Control Operative)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8124",
+  "code": "8124",
+  "title": "Plant and Machine Operatives: Energy plant operatives (with the exception of Computer Numerical Control Operative)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8125",
+  "code": "8125",
+  "title": "Plant and Machine Operatives: Metal working machine operatives (with the exception of Computer Numerical Control Operative)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8126",
+  "code": "8126",
+  "title": "Plant and Machine Operatives: Water and sewerage plant operatives (with the exception of Computer Numerical Control Operative)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8127",
+  "code": "8127",
+  "title": "Plant and Machine Operatives: Printing machine assistants (with the exception of Computer Numerical Control Operative)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8129",
+  "code": "8129",
+  "title": "Plant and Machine Operatives: Other plant and machine operatives not elsewhere classified (with the exception of Computer Numerical Control Operative) (with the exception of Saw Doctor)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8131",
+  "code": "8131",
+  "title": "Assemblers and Routine Operatives: Assemblers (electrical and electronic products) (with the exception of Armature Rewinder)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8132",
+  "code": "8132",
+  "title": "Assemblers and Routine Operatives: Assemblers (vehicles and metal goods)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8133",
+  "code": "8133",
+  "title": "Assemblers and Routine Operatives: Routine inspectors and testers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8134",
+  "code": "8134",
+  "title": "Assemblers and Routine Operatives: Weighers, graders and sorters",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8135",
+  "code": "8135",
+  "title": "Assemblers and Routine Operatives: Tyre, exhaust and windscreen fitters",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8137",
+  "code": "8137",
+  "title": "Assemblers and Routine Operatives: Sewing machinists (with the exception of Industrial Machine Knitter)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8139",
+  "code": "8139",
+  "title": "Assemblers and Routine Operatives: Other assemblers and routine operatives not elsewhere classified",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8142",
+  "code": "8142",
+  "title": "Construction Operatives: Road construction operatives",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8143",
+  "code": "8143",
+  "title": "Construction Operatives: Rail construction and maintenance operatives",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8149",
+  "code": "8149",
+  "title": "Construction Operatives: Other construction operatives not elsewhere classified",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8211",
+  "code": "8211",
+  "title": "Road Transport Drivers: Large goods vehicle drivers (with the exception of heavy goods vehicle drivers who have- a category CE or C1E driving licence, or an equivalent category to a category CE or C1E driving licence identified through a mutual recognition agreement between the Road Safety Authority and the appropriate regulatory authority in another jurisdiction).",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8212",
+  "code": "8212",
+  "title": "Road Transport Drivers: Van drivers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8213",
+  "code": "8213",
+  "title": "Road Transport Drivers: Bus and coach drivers (with the exception of bus and coach drivers who have- A category D, DE, D1 or D1E driving licence, or an equivalent category to a category D, DE, D1 or D1E driving licence identified through a mutual recognition agreement between the Road Safety Authority and the appropriate regulatory authority in another jurisdiction)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8214",
+  "code": "8214",
+  "title": "Road Transport Drivers: Taxi and cab drivers and chauffeurs",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8215",
+  "code": "8215",
+  "title": "Road Transport Drivers: Driving instructors",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8222",
+  "code": "8222",
+  "title": "Mobile Machine Drivers and Operatives: Fork-lift truck drivers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8223",
+  "code": "8223",
+  "title": "Mobile Machine Drivers and Operatives: Agricultural machinery drivers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8229",
+  "code": "8229",
+  "title": "Mobile Machine Drivers and Operatives: Other mobile machine drivers and operatives not elsewhere classified (with the exception of Concrete Pump Operator)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8231",
+  "code": "8231",
+  "title": "Other Drivers and Transport Operatives: Train and tram drivers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8232",
+  "code": "8232",
+  "title": "Other Drivers and Transport Operatives: Marine and waterways transport operatives",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8233",
+  "code": "8233",
+  "title": "Other Drivers and Transport Operatives: Air transport operatives",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8234",
+  "code": "8234",
+  "title": "Other Drivers and Transport Operatives: Rail transport operatives",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-8239",
+  "code": "8239",
+  "title": "Other Drivers and Transport Operatives: Other drivers and transport operatives not elsewhere classified",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9111",
+  "code": "9111",
+  "title": "Elementary Agricultural Occupations: Farm workers (with the exception of dairy farm assistants) (with the exception of pig farm assistants)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9119",
+  "code": "9119",
+  "title": "Elementary Agricultural Occupations: Other fishing and other general agriculture occupations not elsewhere classified (with the exception of horticulture worker)",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9120",
+  "code": "9120",
+  "title": "Elementary Construction Occupations: Elementary construction occupations",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9132",
+  "code": "9132",
+  "title": "Elementary Process Plant Occupations: Industrial cleaning process occupations",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9134",
+  "code": "9134",
+  "title": "Elementary Process Plant Occupations: Packers, bottlers, canners and fillers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9139",
+  "code": "9139",
+  "title": "Elementary Process Plant Occupations: Other elementary process plant occupations not elsewhere classified",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9211",
+  "code": "9211",
+  "title": "Elementary Administration Occupations: Postal workers, mail sorters, messengers and couriers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9219",
+  "code": "9219",
+  "title": "Elementary Administration Occupations: Other elementary administration occupations not elsewhere classified",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9231",
+  "code": "9231",
+  "title": "Elementary Cleaning Occupations: Window cleaners",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9232",
+  "code": "9232",
+  "title": "Elementary Cleaning Occupations: Street cleaners",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9233",
+  "code": "9233",
+  "title": "Elementary Cleaning Occupations: Cleaners and domestics",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9234",
+  "code": "9234",
+  "title": "Elementary Cleaning Occupations: Launderers, dry cleaners and pressers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9235",
+  "code": "9235",
+  "title": "Elementary Cleaning Occupations: Refuse and salvage occupations",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9236",
+  "code": "9236",
+  "title": "Elementary Cleaning Occupations: Vehicle valeters and cleaners",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9239",
+  "code": "9239",
+  "title": "Elementary Cleaning Occupations: Other elementary cleaning occupations not elsewhere classified",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9241",
+  "code": "9241",
+  "title": "Elementary Security Occupations: Security guards and related occupations",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9242",
+  "code": "9242",
+  "title": "Elementary Security Occupations: Parking and civil enforcement occupations",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9244",
+  "code": "9244",
+  "title": "Elementary Security Occupations: School midday and crossing patrol occupations",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9249",
+  "code": "9249",
+  "title": "Elementary Security Occupations: Other elementary security occupations not elsewhere classified",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9251",
+  "code": "9251",
+  "title": "Elementary Sales Occupations: Shelf fillers",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9259",
+  "code": "9259",
+  "title": "Elementary Sales Occupations: Other elementary sales occupations not elsewhere classified",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9260",
+  "code": "9260",
+  "title": "Elementary Storage Occupations: Elementary storage occupations",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9271",
+  "code": "9271",
+  "title": "Other Elementary Services Occupations: Hospital porters",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9272",
+  "code": "9272",
+  "title": "Other Elementary Services Occupations: Kitchen and catering assistants",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9273",
+  "code": "9273",
+  "title": "Other Elementary Services Occupations: Waiters and waitresses",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9274",
+  "code": "9274",
+  "title": "Other Elementary Services Occupations: Bar staff",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9275",
+  "code": "9275",
+  "title": "Other Elementary Services Occupations: Leisure and theme park attendants",
+  "list": "ineligible"
+ },
+ {
+  "id": "in-9279",
+  "code": "9279",
+  "title": "Other Elementary Services Occupations: Other elementary services occupations not elsewhere classified",
+  "list": "ineligible"
+ }
+]

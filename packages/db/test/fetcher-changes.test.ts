@@ -135,7 +135,7 @@ describe("recheck_failed", () => {
 
 // ---- Performance: the reopen update runs job_guard once (one organisation lookup by primary key). EXPLAIN (ANALYZE, BUFFERS), rolled back.
 describe("performance of the reopen update", () => {
-  it("reopen of a recheck_failed job: job_guard called once, under 20 ms, under 60 pages", async () => {
+  it("reopen of a recheck_failed job: job_guard called once, under 200 ms, under 60 pages", async () => {
     const j = await fetchedJob({ closed: "recheck_failed" });
     const c = await db.pool("app_fetcher").connect();
     const sql = "update job set status='live', close_reason=null, closed_at=null, search_vector=to_tsvector('x') where id=$1";
@@ -149,7 +149,8 @@ describe("performance of the reopen update", () => {
       const pages = (plan["Plan"]["Shared Hit Blocks"] ?? 0) + (plan["Plan"]["Shared Read Blocks"] ?? 0);
       if (process.env.FETCHER_CHANGES_PRINT) console.log("reopen", JSON.stringify({ pages, trigger: t, total: plan["Execution Time"] }));
       expect(t["Calls"]).toBe(1);
-      expect(t["Time"]).toBeLessThan(20);
+      // About 0.1 ms alone; 20 ms failed once inside a busy parallel `npm run check` (11 November 2026). Pages are the real guard.
+      expect(t["Time"]).toBeLessThan(200);
       expect(pages).toBeLessThan(60);
     } finally {
       await c.query("rollback");

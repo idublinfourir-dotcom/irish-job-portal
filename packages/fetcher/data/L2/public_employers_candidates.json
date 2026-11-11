@@ -1,0 +1,9 @@
+{
+ "beaumont hospital": {"tier": 2, "note": "voluntary acute hospital, believed Section 38 (unverified)"},
+ "children’s health ireland jobs": {"tier": 2, "note": "Children's Health Ireland, public paediatric body on public pay scales (unverified)"},
+ "mater misericordiae university hospital": {"tier": 2, "note": "voluntary acute hospital, believed Section 38 (unverified)"},
+ "st james's hospital dublin": {"tier": 2, "note": "voluntary acute hospital, believed Section 38 (unverified)"},
+ "the coombe hospital": {"tier": 2, "note": "Coombe Women and Infants University Hospital, believed Section 38 (unverified)"},
+ "the national maternity hospital": {"tier": 2, "note": "Holles Street, believed Section 38 (unverified)"},
+ "wexford general hospital": {"tier": 2, "note": "HSE-run hospital shown without the HSE name (unverified)"}
+}

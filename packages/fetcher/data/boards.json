@@ -1,0 +1,143 @@
+{
+ "greenhouse": [
+  [
+   "stripe",
+   "Stripe"
+  ],
+  [
+   "mongodb",
+   "MongoDB"
+  ],
+  [
+   "intercom",
+   "Intercom"
+  ],
+  [
+   "forvismazars",
+   "Forvis Mazars"
+  ],
+  [
+   "kaseya",
+   "Kaseya"
+  ],
+  [
+   "krollbondratingagency",
+   "Kroll Bond Rating Agency"
+  ]
+ ],
+ "smartrecruiters": [
+  [
+   "servicenow",
+   "ServiceNow"
+  ],
+  [
+   "version1",
+   "Version 1"
+  ],
+  [
+   "kingandmoffatt",
+   "King and Moffatt"
+  ],
+  [
+   "lincolnhealthcare",
+   "Lincoln Healthcare"
+  ],
+  [
+   "turnertownsend",
+   "Turner & Townsend"
+  ]
+ ],
+ "workday": [
+  [
+   "Analog Devices",
+   "analogdevices",
+   "wd1",
+   "External"
+  ],
+  [
+   "Mastercard",
+   "mastercard",
+   "wd1",
+   "CorporateCareers"
+  ],
+  [
+   "Intel",
+   "intel",
+   "wd1",
+   "External"
+  ],
+  [
+   "Salesforce (SFDC)",
+   "salesforce",
+   "wd12",
+   "External_Career_Site"
+  ],
+  [
+   "Applied Materials",
+   "amat",
+   "wd1",
+   "External"
+  ],
+  [
+   "KLA",
+   "kla",
+   "wd1",
+   "Search"
+  ],
+  [
+   "Pfizer",
+   "pfizer",
+   "wd1",
+   "PfizerCareers"
+  ],
+  [
+   "Medtronic",
+   "medtronic",
+   "wd1",
+   "MedtronicCareers"
+  ],
+  [
+   "Thermo Fisher (PPD)",
+   "thermofisher",
+   "wd5",
+   "ThermoFisherCareers"
+  ],
+  [
+   "Workday",
+   "workday",
+   "wd5",
+   "Workday"
+  ],
+  [
+   "State Street",
+   "statestreet",
+   "wd1",
+   "Global"
+  ],
+  [
+   "Citi",
+   "citi",
+   "wd5",
+   "2"
+  ],
+  [
+   "Fidelity",
+   "fmr",
+   "wd1",
+   "FidelityCareers"
+  ],
+  [
+   "Abbott",
+   "abbott",
+   "wd5",
+   "abbottcareers"
+  ]
+ ],
+ "amazon": true,
+ "ashby": [
+  [
+   "sitecore",
+   "Sitecore"
+  ]
+ ]
+}
