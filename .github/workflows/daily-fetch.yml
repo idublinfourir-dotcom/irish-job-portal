@@ -1,7 +1,8 @@
 name: Daily fetch
 
 # Fetches every board in packages/fetcher/data/boards.json into the live database as app_fetcher (step 6 slice 3).
-# Secrets (set by the engineer): FETCHER_DATABASE_URL (app_fetcher's Supabase session pooler string), FETCHER_MODEL_KEY (OpenRouter).
+# Secrets (set by the engineer): FETCHER_DATABASE_URL (app_fetcher's Supabase session pooler string), FETCHER_MODEL_KEY (OpenRouter),
+# ADMIN_DATABASE_URL (app_admin's string, used only by the last step).
 on:
   schedule:
     - cron: "17 5 * * *" # daily, 05:17 UTC; GitHub may start it late
@@ -47,3 +48,12 @@ jobs:
         run: |
           export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
           npx vitest run --config packages/fetcher/vitest.run.config.ts --silent=false
+      # The 5-year permit history window moves on 1 January; refresh every day so it is never late. The admin login is given
+      # to this step only (engineer's choice, 11 November 2026), and it runs even when the fetch failed.
+      - name: Refresh permit history labels
+        if: ${{ !cancelled() }}
+        env:
+          DETE_ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
+        run: |
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          node packages/db/src/dete-cli.ts refresh

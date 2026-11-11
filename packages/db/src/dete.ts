@@ -118,6 +118,11 @@ async function inTransaction<T>(db: Db, fn: (c: pg.PoolClient) => Promise<T>): P
 
 const refresh = async (c: pg.PoolClient) => (await c.query<{ changed: number }>(REFRESH)).rows[0]!.changed;
 
+/** Recomputes every employer's permit history label and sponsor key; returns how many changed. Run daily as app_admin so the 5-year window moves on 1 January. */
+export async function refreshPermitHistory(db: Db): Promise<number> {
+  return (await db.query<{ changed: number }>(REFRESH)).rows[0]!.changed;
+}
+
 /** Upserts the rows in one transaction, 10,000 per statement, then refreshes the labels in that transaction. Run as app_admin. Never touches organisation_name_id. */
 export async function importPermits(db: Db, rows: PermitRow[]): Promise<{ inserted: number; updated: number; unchanged: number; labelsChanged: number }> {
   let inserted = 0;

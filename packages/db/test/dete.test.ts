@@ -303,7 +303,24 @@ describe("the admin commands", () => {
     expect(r.out).toContain("permission denied");
   });
 
+  it("refresh recomputes the labels and says how many changed; a second run changes nothing", async () => {
+    const p = id("cli-f");
+    const { names } = await orgWithNames(1);
+    await importPermits(admin(), [row(`${p} A`, 2026, 5)]);
+    await admin().query("update dete_permit_count set organisation_name_id = $1 where dete_name = $2", [names[0], `${p} A`]); // linked without a refresh
+    expect(await cli(["refresh"])).toEqual({ code: 0, out: "1 permit history labels changed\n" });
+    expect(await cli(["refresh"])).toEqual({ code: 0, out: "0 permit history labels changed\n" });
+  });
+
+  it.each(["app_fetcher", "app_portal", "app_candidate"])("refresh is refused for %s", async (role) => {
+    const r = await cli(["refresh"], { DETE_ADMIN_DATABASE_URL: urlFor(db.name, role) });
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("permission denied");
+  });
+
   it("explains itself when called wrongly", async () => {
+    expect((await cli(["refresh", "x.tsv"])).code).toBe(2);
+    expect((await cli(["link"])).code).toBe(2);
     expect((await cli([])).code).toBe(2);
     expect((await cli(["import", "x.tsv"], {})).out).toContain("DETE_ADMIN_DATABASE_URL is not set");
   });
