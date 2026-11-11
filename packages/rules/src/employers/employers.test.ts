@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BIG_COMPANY_BRANDS, cleanEmployerName, isAgencyName, isBigCompany, nameTitlePlaceKey, publicPayTier, urlOrNameKey } from ".";
+import { BIG_COMPANY_BRANDS, BIG_COMPANY_LIST_150, cleanEmployerName, isAgencyName, isBigCompany, nameTitlePlaceKey, publicPayTier, urlOrNameKey } from ".";
 
 describe("cleanEmployerName (R15)", () => {
   it.each([
@@ -33,6 +33,12 @@ describe("cleanEmployerName (R15)", () => {
 
 describe("isBigCompany (R15)", () => {
   it("has the 42 brands of the Python list", () => expect(BIG_COMPANY_BRANDS).toHaveLength(42));
+  it.each(["Turner & Townsend", "Version 1", "Bon Secours Health System Ireland", "Bon Secours Hospital Cork", "Trinity Care (IRL)",
+    "Mater Private Network", "PwC Ireland", "Affidea UK & Ireland", "Curam Care Homes Limited"])("#150: matches %s", (e) => expect(isBigCompany(e)).toBe(true));
+  it.each(["Versional Ltd", "Turner Electrical", "Trinity College Dublin", "Mater Misericordiae University Hospital", "Enable Tech", "Boots Ireland"])(
+    "#150: does not match %s", (e) => expect(isBigCompany(e)).toBe(false));
+  it("#150: every listed name is already in cleaned form, so it can match", () =>
+    expect(BIG_COMPANY_LIST_150.filter((b) => cleanEmployerName(b) !== b)).toEqual([]));
   it.each(["Google", "GOOGLE IRELAND LIMITED", "Meta Platforms Ireland", "Eli Lilly and Company", "J P Morgan", "Citi"])("matches %s", (e) =>
     expect(isBigCompany(e)).toBe(true),
   );
