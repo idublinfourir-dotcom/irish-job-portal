@@ -298,3 +298,24 @@ describe("readsAdvert", () => {
     expect((await run({}, { matcher: found("x", "no", "high") })).readsAdvert).toBe(true);
   });
 });
+
+// NEW BEHAVIOUR (11 November 2026): contract, sponsorship and location rules found by the gate. Made-up text, the whole chain.
+describe("rules found by the gate on 11 November 2026", () => {
+  const pay = " The salary is €60,000 a year.";
+  it.each([
+    ["Platform Engineer (12 month FTC)", "Join our team." + pay, "7 contract under 2 years"],
+    ["Platform Engineer", "Candidates should be 3rd Year Students with a dedicated Placement." + pay, "7 contract under 2 years"],
+    ["Platform Engineer", "Our teams work in one office.\nMust be eligible to work in Ireland.\n" + pay, "4 says no sponsorship"],
+    ["Platform Engineer", "Requirements:\n • Right to work in Ireland and UK.\nBenefits" + pay, "4 says no sponsorship"],
+    ["Platform Engineer", "Licence:\n\n Work authorisation:\n\n Ireland (required)\n" + pay, "4 says no sponsorship"],
+    ["Platform Engineer", "THIS ROLE CAN BE BASED IN ANY OF THE FOLLOWING OFFICE LOCATIONS: \nPARIS, MADRID OR DUBLIN\nWe build things." + pay, "3 not in Ireland"],
+  ])("no badge: %s", async (title, description, stage) => {
+    expect((await run({ title, description })).stage).toBe(stage);
+  });
+  it.each([
+    "Join our team. Anyone with the right to work in Ireland or the ability to obtain it may apply." + pay,
+    "This role can be based in any of the following offices:\nDublin\nCork\nWe build things." + pay,
+  ])("still a badge: %s", async (description) => {
+    expect((await run({ description })).stage).toBe("PASS (salary stated)");
+  });
+});

@@ -80,3 +80,42 @@ describe("R09 readContract: maternity cover is short (NEW BEHAVIOUR, 10 Nov 2026
     expect(readContract("E", "", "x".repeat(6000) + " maternity cover").result).toBe("ok");
   });
 });
+
+describe("R09 NEW BEHAVIOUR (11 Nov 2026): FTC, student placements and interns are short", () => {
+  test.each([
+    ["Engineer (12 month FTC)", "x", "12 months"],
+    ["Engineer - 6 months FTC", "x", "6 months"],
+    ["Engineer 12-month-FTC", "x", "12 months"],
+    ["Engineer", "FTC for 9 months", "9 months"],
+  ])("FTC with a length under 24 months: %j", (title, text, reason) => {
+    expect(readContract(title, "Full time", text)).toEqual({ result: "short", reason });
+  });
+  test("FTC with 24 months or no length is not short", () => {
+    expect(readContract("Engineer (24 month FTC)", "", "x").result).toBe("ok");
+    expect(readContract("Engineer (FTC)", "", "x").result).toBe("ok");
+    expect(readContract("E", "", "the FTCs of the world, 12 monthly reports").result).toBe("ok");
+  });
+  test.each([
+    ["E", "Candidates should be 3rd Year Students with a dedicated Placement Program.", "3rd Year Students"],
+    ["E", "Students with a dedicated Placement pursuing degrees", "dedicated Placement"],
+    ["E", "Open to Second-Year students only", "Second-Year students"],
+    ["E", "A student placement from January", "student placement"],
+    ["E", "You are a placement student at a university", "placement student"],
+    ["Software Engineer Intern", "x", "Intern"],
+    ["2027 Cyber Internship (Dublin)", "x", "Internship"],
+  ])("student placement or intern title: %j %j", (title, text, reason) => {
+    expect(readContract(title, "Full time", text)).toEqual({ result: "short", reason });
+  });
+  test.each([
+    ["Internal Auditor", "We run an internship programme and a graduate scheme."],
+    ["International Sales Manager", "Our interns love us."],
+    ["E", "Final year students may apply for the graduate programme."],
+    ["E", "We offer placement services to clients and a dedicated team."],
+    ["E", "Students of life are welcome"],
+  ])("is not read as short: %j %j", (title, text) => {
+    expect(readContract(title, "", text)).toEqual({ result: "ok", reason: "permanent or not stated" });
+  });
+  test("a months figure is read before the placement words", () => {
+    expect(readContract("E", "", "6 month contract for a student placement")).toEqual({ result: "short", reason: "6 months" });
+  });
+});

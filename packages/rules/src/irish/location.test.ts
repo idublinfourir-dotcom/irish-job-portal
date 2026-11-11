@@ -105,3 +105,29 @@ describe("postBasedElsewhere (#149)", () => {
     for (let k = 0; k < 3; k++) expect(postBasedElsewhere("This role can be based in Dublin or London.")).toBe(true);
   });
 });
+
+// NEW BEHAVIOUR (11 Nov 2026): a list on the next lines.
+describe("postBasedElsewhere: a list on the next lines", () => {
+  it.each([
+    "This role can be based in any of the following offices: \nLONDON, PARIS, MADRID OR DUBLIN\nWe build things.",
+    "This role is located in:\n  Dublin\n  Cork\n  Berlin, Germany\nAbout us",
+    "The position may be based in the following locations:\r\nDublin\r\nParis\r\n",
+    "The job can also be based at any of these sites:\nDublin\nBoston\n",
+  ])("a place outside Ireland in the list: %j", (t) => {
+    expect(postBasedElsewhere(t)).toBe(true);
+  });
+  it.each([
+    "This role can be based in any of the following offices:\nDublin\nCork\nGalway",
+    "This role can be based in any of the following offices:\n\nParis\n",
+    "This role can be based in any of the following offices:\nDublin\nOur London office is a long way from here and does not matter to this role at all.",
+    "This role can be based in any of the following offices:\nDublin\nCork\nGalway\nLimerick\nSligo\nKerry\nLondon",
+    "This role can be based in the following offices: London",
+    "We have offices in the following places:\nLondon\nDublin",
+    "This role is based in Dublin.\nLondon\nParis",
+  ])("not read as an elsewhere post: %j", (t) => {
+    expect(postBasedElsewhere(t)).toBe(false);
+  });
+  it("can be called many times with the same answer", () => {
+    for (let k = 0; k < 3; k++) expect(postBasedElsewhere("This role can be based in these offices:\nLondon\n")).toBe(true);
+  });
+});
