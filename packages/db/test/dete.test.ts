@@ -61,7 +61,7 @@ describe("import", () => {
     await importPermits(admin(), [row(`${p} A`, 2025, 5), row(`${p} A`, 2026, 9)]);
     await linkNames(admin(), [{ organisationNameId: names[0]!, deteName: `${p} A` }]);
     const before = await dump(p);
-    expect(await importPermits(admin(), [row(`${p} A`, 2025, 5), row(`${p} A`, 2026, 11, "new.xlsx")])).toEqual({ inserted: 0, updated: 1, unchanged: 1, labelsChanged: 0 });
+    expect(await importPermits(admin(), [row(`${p} A`, 2025, 5), row(`${p} A`, 2026, 11, "new.xlsx")])).toEqual({ inserted: 0, updated: 1, unchanged: 1, labelsChanged: 1 }); // same label, the sponsor key moved (0008)
     const after = await dump(p);
     expect(after[0]).toEqual(before[0]);
     expect(after[1]).toMatchObject({ permits: 11, source_file: "new.xlsx", organisation_name_id: before[1].organisation_name_id });

@@ -96,7 +96,7 @@ export const LAST_5_YEARS =
   "min(d.year) filter (where d.permits > 0)::int as first_year " +
   "from organisation_name n join dete_permit_count d on d.organisation_name_id = n.id where n.organisation_id = $1::bigint";
 
-// Sets each employer's permit history label from the DETE rows (migration 0007) and returns how many labels changed.
+// Sets each employer's permit history label and sponsor key from the DETE rows (migrations 0007, 0008) and returns how many employers changed.
 const REFRESH = "select private.refresh_permit_history() as changed";
 
 const CHUNK = 10_000;

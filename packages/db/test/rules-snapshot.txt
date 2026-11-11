@@ -75,6 +75,7 @@ check job_permit_type_check on job: CHECK ((permit_type = ANY (ARRAY['critical_s
 check job_recheck_failed_fetched on job: CHECK (((close_reason IS DISTINCT FROM 'recheck_failed'::text) OR (source = 'fetched'::text)))
 check job_screening_questions_check on job: CHECK (((jsonb_typeof(screening_questions) = 'array'::text) AND (jsonb_array_length(screening_questions) <= 5)))
 check job_source_check on job: CHECK ((source = ANY (ARRAY['fetched'::text, 'employer'::text, 'agency'::text, 'admin_manual'::text])))
+check job_sponsor_sort_check on job: CHECK ((sponsor_sort >= '-1'::integer))
 check job_status_check on job: CHECK ((status = ANY (ARRAY['draft'::text, 'in_review'::text, 'live'::text, 'under_review'::text, 'hidden'::text, 'closed'::text])))
 check membership_check on membership: CHECK (((portal_user_id IS NOT NULL) OR (invited_email IS NOT NULL) OR (status = 'removed'::text)))
 check membership_check1 on membership: CHECK (((role <> 'viewer'::text) OR (NOT is_signer)))
@@ -95,6 +96,7 @@ check organisation_name_kind_check on organisation_name: CHECK ((kind = ANY (ARR
 check organisation_name_source_check on organisation_name: CHECK ((source = ANY (ARRAY['dete'::text, 'cro'::text, 'job_site'::text, 'admin'::text, 'public_body_list'::text])))
 check organisation_permit_history_check on organisation: CHECK ((permit_history = ANY (ARRAY['has_history'::text, 'first_time'::text, 'not_linked'::text])))
 check organisation_signup_path_check on organisation: CHECK ((signup_path = ANY (ARRAY['dete_claim'::text, 'first_time'::text, 'agency'::text, 'admin'::text])))
+check organisation_sponsor_sort_check on organisation: CHECK ((sponsor_sort >= '-1'::integer))
 check organisation_status_check on organisation: CHECK ((status = ANY (ARRAY['unclaimed'::text, 'pending_review'::text, 'needs_info'::text, 'verified'::text, 'verified_restricted'::text, 'suspended'::text, 'rejected'::text, 'banned'::text, 'closed'::text])))
 check pay_floor_check on pay_floor: CHECK ((valid_until > signed_at))
 check pay_floor_check1 on pay_floor: CHECK (((status <> 'active'::text) OR (approval_request_id IS NOT NULL)))
@@ -245,7 +247,7 @@ rights app_candidate on email_outbox: table[insert] columns[select(dedupe_key)]
 rights app_candidate on feature_flag: table[select] columns[]
 rights app_candidate on fetch_run: table[] columns[]
 rights app_candidate on fetched_advert: table[] columns[]
-rights app_candidate on job: table[] columns[select(application_route,badge,closed_at,closes_at,contract_months,contract_type,county,employer_name,health_insurance_eur,id,job_source_id,occupation_code,organisation_id,own_page_url,pass_route,pay_grade,permit_employer_kind,permit_employer_name,permit_history,permit_type,posted_at,quota_full,salary_high,salary_low,salary_sort,search_vector,sector,source,status,title)]
+rights app_candidate on job: table[] columns[select(application_route,badge,closed_at,closes_at,contract_months,contract_type,county,employer_name,health_insurance_eur,id,job_source_id,occupation_code,organisation_id,own_page_url,pass_route,pay_grade,permit_employer_kind,permit_employer_name,permit_history,permit_type,posted_at,quota_full,salary_high,salary_low,salary_sort,search_vector,sector,source,sponsor_sort,status,title)]
 rights app_candidate on job_daily_stat: table[insert,update] columns[select(apply_clicks,day,job_id,views)]
 rights app_candidate on job_source: table[select] columns[]
 rights app_candidate on job_text: table[select] columns[]
@@ -457,7 +459,7 @@ trigger organisation_cro_one on organisation: CREATE TRIGGER organisation_cro_on
 trigger organisation_guard on organisation: CREATE TRIGGER organisation_guard BEFORE INSERT OR UPDATE ON public.organisation FOR EACH ROW EXECUTE FUNCTION private.organisation_guard()
 trigger organisation_merge_check on organisation: CREATE TRIGGER organisation_merge_check BEFORE UPDATE OF merged_into_id ON public.organisation FOR EACH ROW EXECUTE FUNCTION private.organisation_merge_check()
 trigger organisation_name_cro_one on organisation_name: CREATE TRIGGER organisation_name_cro_one BEFORE INSERT OR UPDATE OF cro_number, organisation_id ON public.organisation_name FOR EACH ROW EXECUTE FUNCTION private.cro_one_organisation()
-trigger organisation_permit_history on organisation: CREATE TRIGGER organisation_permit_history AFTER UPDATE OF permit_history ON public.organisation FOR EACH ROW EXECUTE FUNCTION private.organisation_permit_history()
+trigger organisation_permit_history on organisation: CREATE TRIGGER organisation_permit_history AFTER UPDATE OF permit_history, sponsor_sort ON public.organisation FOR EACH ROW EXECUTE FUNCTION private.organisation_permit_history()
 trigger pay_floor_approval on pay_floor: CREATE TRIGGER pay_floor_approval BEFORE INSERT OR UPDATE ON public.pay_floor FOR EACH ROW EXECUTE FUNCTION private.approval_check()
 trigger pay_floor_big_company on pay_floor: CREATE TRIGGER pay_floor_big_company BEFORE INSERT ON public.pay_floor FOR EACH ROW EXECUTE FUNCTION private.pay_floor_insert()
 trigger pay_floor_guard on pay_floor: CREATE TRIGGER pay_floor_guard BEFORE UPDATE ON public.pay_floor FOR EACH ROW EXECUTE FUNCTION private.pay_floor_guard()

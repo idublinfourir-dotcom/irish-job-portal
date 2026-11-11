@@ -164,3 +164,11 @@ insert into audit_event(at,kind,actor_staff_user_id,action,source) select now()-
 insert into notification_preference(candidate_user_id,category,channel,enabled) select id,'alerts','email',false from cand where g%10=0;
 insert into notification(candidate_user_id,category,template_key,params,dedupe_key) select id,'job_closed','job-closed','{"job_id":123456,"title":"A fake job title of normal length"}',md5('n'||g||'-'||x) from cand cross join generate_series(1,2) x;
 insert into email_outbox(template,candidate_user_id,params,dedupe_key,status,sent_at) select 'alert-digest','cand'||lpad((1+g%:cand)::text,7,'0')||'x0123456789abcdef','{"alert_id":123456,"job_ids":[1,2,3,4,5,6,7,8]}',md5('e'||g),'sent',now() from generate_series(1,:cand*4) g;
+-- @@
+-- The sponsor key (migration 0008), set as the refresh function would: -1 with no linked DETE name, else the permits of the last 5 calendar years.
+-- Triggers are off in this load, so it is written to the organisations and copied onto their jobs here.
+update organisation o set sponsor_sort = s.p
+ from (select n.organisation_id id, coalesce(sum(d.permits) filter (where d.year between extract(year from now() at time zone 'utc')::int - 4 and extract(year from now() at time zone 'utc')::int), 0)::int p
+         from dete_permit_count d join organisation_name n on n.id = d.organisation_name_id where n.organisation_id is not null group by 1) s
+ where s.id = o.id;
+update job j set sponsor_sort = o.sponsor_sort from organisation o where o.id = j.organisation_id and o.sponsor_sort <> -1;

@@ -33,13 +33,17 @@ export function costOf(sql: string, explain: unknown): PageCost {
   };
 }
 
+// A statement is its text, or its text and parameters (the Search module's queries bind their values, so they are explained the same way).
+export type Statement = string | { text: string; values: unknown[] };
+
 // Warm pass first, measured pass second, on one connection: a pooled connection has its catalog caches loaded,
 // a fresh one pays hundreds of planning pages once (trial: 580 for the first query).
-export async function measurePages(client: ClientBase, sqls: string[]): Promise<PageCost[]> {
-  const run = async (sql: string) => (await client.query(`explain (analyze, buffers, serialize, format json) ${sql}`)).rows[0]["QUERY PLAN"];
-  for (const sql of sqls) await run(sql);
+export async function measurePages(client: ClientBase, statements: Statement[]): Promise<PageCost[]> {
+  const run = async (q: Statement) =>
+    (await client.query(`explain (analyze, buffers, serialize, format json) ${typeof q === "string" ? q : q.text}`, typeof q === "string" ? undefined : q.values)).rows[0]["QUERY PLAN"];
+  for (const q of statements) await run(q);
   const out: PageCost[] = [];
-  for (const sql of sqls) out.push(costOf(sql, await run(sql)));
+  for (const q of statements) out.push(costOf(typeof q === "string" ? q : q.text, await run(q)));
   return out;
 }
 

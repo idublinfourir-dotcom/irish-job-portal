@@ -228,6 +228,9 @@ describe("budget", () => {
         from generate_series(1, 48096) g join n on n.rn = 1 + (g % ${ORGS * 2})`);
     const expected = (await su(`select count(distinct nm.organisation_id)::int n from dete_permit_count d join organisation_name nm on nm.id = d.organisation_name_id
       where d.permits > 0 and d.year >= 2019 and nm.name like 'Budget Name %'`)).rows[0].n as number;
+    // every linked organisation changes in the first run: its label, or at least its sponsor key (migration 0008)
+    const linked = (await su(`select count(distinct nm.organisation_id)::int n from dete_permit_count d join organisation_name nm on nm.id = d.organisation_name_id
+      where nm.name like 'Budget Name %'`)).rows[0].n as number;
     expect((await su("select count(*)::int n from dete_permit_count where dete_name like 'Budget DETE %'")).rows[0].n).toBe(48096);
     await su("analyze dete_permit_count");
     await su("analyze organisation_name");
@@ -247,7 +250,7 @@ describe("budget", () => {
       const first = await timed();
       const second = await timed();
       console.log(`permit history refresh budget: first ${first.n} labels in ${Math.round(first.ms)} ms, again ${second.n} in ${Math.round(second.ms)} ms, ${statements / 2} statement each`);
-      expect(first.n).toBe(expected);
+      expect(first.n).toBe(linked);
       expect(second.n).toBe(0);
       expect(first.ms).toBeLessThan(1_000);
       expect(second.ms).toBeLessThan(1_000);

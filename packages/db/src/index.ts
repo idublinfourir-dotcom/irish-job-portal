@@ -5,6 +5,7 @@ import * as schema from "./schema";
 import { sslOptions } from "./ssl";
 
 export * from "./dete";
+export * from "./search";
 
 type Db = NodePgDatabase<typeof schema>;
 
