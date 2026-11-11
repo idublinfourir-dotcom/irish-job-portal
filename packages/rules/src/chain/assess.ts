@@ -1,7 +1,7 @@
 // The decision chain: one advert in, one assessment out. Python: prototype/classify.py:194-231 (`run`) and
 // prototype/step0/run_day.py:86-127 (`assess`), sector at run_day.py:56-76. The order the rules run in IS the behaviour.
 import { isAgencyName, isBigCompany, cleanEmployerName, publicPayTier, type PublicPayCandidates } from "../employers";
-import { checkIrishEmployer, locationLooksIrish } from "../irish";
+import { checkIrishEmployer, locationIsIrelandOnly, postBasedElsewhere } from "../irish";
 import {
   checkSalary,
   doctorGradeWithoutTwoYears,
@@ -164,7 +164,8 @@ export async function assess(advert: AdvertInput, data: ChainData): Promise<Asse
   let stage: Stage | null = null;
 
   // classify.py:209-210. D1: the location test runs before the "no sponsorship" test.
-  if (!locationLooksIrish(location)) stage = "3 not in Ireland";
+  // NEW BEHAVIOUR (#149): the location must be Irish and must not also name a place outside Ireland, and the text must not say the post can be based elsewhere.
+  if (!locationIsIrelandOnly(location) || postBasedElsewhere(description)) stage = "3 not in Ireland";
   else {
     const phrase = noSponsorshipPhrase(title, description);
     if (phrase !== null) {
