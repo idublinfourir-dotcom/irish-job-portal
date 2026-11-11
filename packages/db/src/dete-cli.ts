@@ -26,7 +26,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: s
     const db = pool();
     try {
       const r = await importPermits(db, rows);
-      log(`imported ${r.inserted} new, ${r.updated} changed, ${r.unchanged} unchanged`);
+      log(`imported ${r.inserted} new, ${r.updated} changed, ${r.unchanged} unchanged, ${r.labelsChanged} permit history labels changed`);
     } finally {
       await db.end();
     }
@@ -36,7 +36,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: s
     const db = pool();
     try {
       const r = await linkNames(db, rows);
-      log(`linked ${r.rowsChanged} DETE rows, skipped ${r.skipped.length}${r.skipped.map((s) => `\n  ${s}`).join("")}`);
+      log(`linked ${r.rowsChanged} DETE rows, skipped ${r.skipped.length}, ${r.labelsChanged} permit history labels changed${r.skipped.map((s) => `\n  ${s}`).join("")}`);
     } finally {
       await db.end();
     }
