@@ -62,4 +62,50 @@ describe("checkAnswer", () => {
   it("accepts a valid code with no entry", () => {
     expect(check(answer({ code: "9999", entry: "none" }))).toMatchObject({ ok: true, code: "9999", entry: null });
   });
+
+  describe("a close quote", () => {
+    const advert = "Senior Cloud Architect. We are looking for an experienced architect to design and build cloud systems for our Dublin office. You will lead a team of five engineers. " + "Unrelated filler words about benefits and parking. ".repeat(10) + "Apply now and join our growing company in the heart of the city.";
+    const found = (quote: string, t = advert) => (checkAnswer(answer({ quote }), byId, t) as { quoteFound: boolean }).quoteFound;
+
+    it("accepts a small rewording: a changed, a missing and an added word", () => {
+      expect(found("We are looking for an experienced architect to design and build cloud systems for our Dublin office")).toBe(true); // exact, as before
+      expect(found("We are searching for an experienced architect to design and build cloud systems for our Dublin office")).toBe(true); // changed
+      expect(found("We are looking for an architect to design and build cloud systems for our Dublin office")).toBe(true); // missing
+      expect(found("We are looking for an experienced senior architect to design and build cloud systems for our Dublin office")).toBe(true); // added
+    });
+    it("ignores case, punctuation, extra spaces and line breaks", () => {
+      expect(found("WE ARE looking, for an  experienced\narchitect to design and build cloud systems; for our Dublin office!")).toBe(true);
+    });
+    it("works with Unicode words", () => {
+      const t = "Wir suchen eine erfahrene Ingenieurin für Kälteanlagen in Dublin und Köln mit guten Deutschkenntnissen sofort";
+      expect(found("Wir suchen eine erfahrene Ingenieurin für Kälteanlagen in Dublin und Köln mit guten Deutschkenntnissen", t)).toBe(true);
+      expect(found("wir suchen eine erfahrene ingenieurin für kalteanlagen in dublin und köln mit guten deutschkenntnissen", t)).toBe(true); // case and one lost accent: one word differs, allowed
+      expect(found("wir suchen eine erfahrene ingenieurin fur kalteanlagen in dublin und koln mit guten deutschkenntnissen", t)).toBe(false); // four accents lost: too many words differ
+      // CJK without spaces is one long word each, so this is short and must be exact
+      expect(found("我们正在寻找一位经验丰富的云架构师来设计云系统 请尽快申请这个职位", "我们正在寻找一位经验丰富的云架构师来设计云系统 请尽快申请这个职位")).toBe(true);
+    });
+    it("refuses words in a different order", () => {
+      expect(found("our Dublin office for systems cloud build and design to architect experienced an for looking are We")).toBe(false);
+    });
+    it("refuses words taken from two far apart places", () => {
+      expect(found("We are looking for an experienced architect to join the heart of the city. Apply now and join our growing company")).toBe(false);
+    });
+    it("refuses a quote from another advert", () => {
+      expect(found("Our kitchen needs a head chef to lead a busy team and cook fine meals every single day")).toBe(false);
+    });
+    it("refuses a quote that is too short to be proof, unless it is exact", () => {
+      expect(found("looking for an experienced architect to")).toBe(true); // exact
+      expect(found("looking for an experienced senior")).toBe(false); // 5 words, one wrong
+      expect(found("design clouds")).toBe(false);
+    });
+    it("refuses an empty quote and a quote with no words", () => {
+      expect(found("")).toBe(false);
+      expect(found("?! ... --")).toBe(false);
+    });
+    it("allows at most 20% of the words to differ", () => {
+      // 10 words, 2 changed: allowed. 3 changed: not.
+      expect(found("We are searching for an experienced architect to design and make cloud systems".split(" ").slice(0, 10).join(" "))).toBe(true);
+      expect(found("We are searching for a skilled architect to design and build")).toBe(false);
+    });
+  });
 });

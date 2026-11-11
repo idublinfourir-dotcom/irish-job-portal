@@ -211,7 +211,7 @@ function batchSet(badges: number, leads: number, chefs: number) {
 }
 
 /** A fake model host for batches: it reads each `<<<ADVERT Ak>>>` block of the request and answers all of them in one reply. `failFrom`: HTTP 429 from this call on. */
-function batchHost(failFrom = Infinity) {
+function batchHost(failFrom = Infinity, quote = "Design cloud systems") {
   const calls: { url: string; body: { messages: { content: string }[] } }[] = [];
   const f = (async (input: string | URL | Request, init?: RequestInit) => {
     const body = JSON.parse(init?.body as string);
@@ -219,7 +219,7 @@ function batchHost(failFrom = Infinity) {
     if (calls.length >= failFrom) return new Response(`quota used up for ${KEY}`, { status: 429 });
     const user = body.messages[1].content as string;
     const reply = [...user.matchAll(/<<<ADVERT (A\d+)>>>\n([\s\S]*?)\n<<<END ADVERT \1>>>/g)].map(([, id, text]) =>
-      (text as string).includes("Architect Lead") ? { id, code: "5111", entry: "in-1", confidence: "high", quote: "Architect Lead" } : { id, code: "2135", entry: "cs-2", confidence: "high", quote: "Design cloud systems" },
+      (text as string).includes("Architect Lead") ? { id, code: "5111", entry: "in-1", confidence: "high", quote: "Architect Lead" } : { id, code: "2135", entry: "cs-2", confidence: "high", quote },
     );
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(reply) } }] }), { status: 200 });
   }) as typeof fetch;
@@ -243,6 +243,16 @@ describe("runGate in the rules+ai mode", () => {
     write(batchSet(3, 0, 0) + bline("lead-q", `${ARCH} Lead`, true, 5000) + "\n");
     const { report } = await runGate(benv(), { fetch: batchHost().fetch, sleep: noSleep });
     expect(report.score).toMatchObject({ passed: 3, passedCorrect: 3, rejected: 1, wrongRejected: ["lead-q"] });
+  });
+
+  it("a slightly reworded quote keeps the badge; a quote from nowhere in the advert does not", async () => {
+    write(batchSet(3, 0, 0));
+    const reworded = "Design cloud systems. Salary EUR 50,000 a year. Fixed term contract of 36 months.";
+    const kept = await runGate(benv(), { fetch: batchHost(Infinity, reworded).fetch, sleep: noSleep });
+    expect(kept.report).toMatchObject({ badAnswers: 0, secondOpinion: { badgesBefore: 3, badgesKept: 3 } });
+    rmSync(join(dir, "answers"), { recursive: true, force: true }); // saved answers would be reused
+    const lost = await runGate(benv(), { fetch: batchHost(Infinity, "We offer free parking, a gym, and a very generous pension plan to all staff").fetch, sleep: noSleep });
+    expect(lost.report).toMatchObject({ badAnswers: 3, secondOpinion: { badgesBefore: 3, badgesKept: 0 } });
   });
 
   it("PORTAL_GATE_BATCH_SIZE sets the adverts a request", async () => {
