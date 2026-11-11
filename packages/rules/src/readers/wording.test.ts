@@ -164,6 +164,17 @@ describe("R04 NEW BEHAVIOUR (11 Nov 2026): more ways to ask for the right to wor
   ])("is not read as a refusal: %s", (text) => {
     expect(noSponsorshipPhrase("", text)).toBeNull();
   });
+  test.each([
+    "Must be authorized to work in Ireland and provide copies of documents. Company sponsorship may be available for eligible candidates.",
+    "Must be eligible to work in Ireland. Visa sponsorship is available for the right person.",
+    "Sponsorship could be considered. Applicants must be legally eligible to work in Ireland by the start date.",
+    "Must be eligible to work in Ireland. We will sponsor a Critical Skills Employment Permit.",
+  ])("'must be eligible' is not a refusal when the advert offers sponsorship: %s", (text) => {
+    expect(noSponsorshipPhrase("", text)).toBeNull();
+  });
+  test("an outright refusal still counts even when sponsorship is mentioned as unavailable", () => {
+    expect(noSponsorshipPhrase("", "Must be eligible to work in Ireland. Visa sponsorship is not available.")).toBe("Visa sponsorship is not");
+  });
   test("a line item must be the whole line", () => {
     expect(noSponsorshipPhrase("", "x Right to work in Ireland.")).toBeNull();
   });
