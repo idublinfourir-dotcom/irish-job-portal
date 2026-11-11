@@ -8,6 +8,8 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "dete:import": "node src/dete-cli.ts import",
+    "dete:link": "node src/dete-cli.ts link",
     "db:pull": "node test/pull-schema.mjs",
     "db:test:up": "sh test/test-db.sh up",
     "db:test:down": "sh test/test-db.sh down"
