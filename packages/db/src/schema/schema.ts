@@ -216,6 +216,7 @@ export const job = pgTable("job", {
 	hireAnsweredAt: timestamp("hire_answered_at", { withTimezone: true, mode: 'string' }),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	hireAnsweredByMembershipId: bigint("hire_answered_by_membership_id", { mode: "number" }),
+	sponsorSort: integer("sponsor_sort").default(sql`'-1'`).notNull(),
 }, (table) => [
 	index("job_closed_idx").using("btree", table.closedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'closed'::text)`),
 	index("job_company_page_idx").using("btree", sql`organisation_id`, sql`((NOT quota_full))`, sql`posted_at`, sql`id`).where(sql`(status = 'live'::text)`),
@@ -223,6 +224,7 @@ export const job = pgTable("job", {
 	index("job_hidden_report_idx").using("btree", table.hiddenReportId.asc().nullsLast().op("int8_ops")),
 	index("job_life_idx").using("btree", table.closesAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((status = ANY (ARRAY['live'::text, 'under_review'::text])) AND (closes_at < 'infinity'::timestamp with time zone))`),
 	index("job_live_newest").using("btree", sql`((NOT quota_full))`, sql`posted_at`, sql`id`, sql`quota_full`, sql`closes_at`).where(sql`(status = 'live'::text)`),
+	index("job_live_sponsor").using("btree", sql`((NOT quota_full))`, sql`sponsor_sort`, sql`posted_at`, sql`id`, sql`quota_full`, sql`closes_at`).where(sql`(status = 'live'::text)`),
 	index("job_live_salary").using("btree", sql`((NOT quota_full))`, sql`salary_sort`, sql`id`, sql`quota_full`, sql`closes_at`).where(sql`(status = 'live'::text)`),
 	index("job_live_search").using("gin", table.searchVector.asc().nullsLast().op("tsvector_ops")).where(sql`(status = 'live'::text)`).with({fastupdate: "off"}),
 	index("job_live_sector_newest").using("btree", sql`sector`, sql`((NOT quota_full))`, sql`posted_at`, sql`id`, sql`quota_full`, sql`closes_at`).where(sql`(status = 'live'::text)`),
@@ -297,6 +299,7 @@ export const job = pgTable("job", {
 	check("job_application_route_check1", sql`application_route = 'own_page'::text`),
 	check("job_check10", sql`(application_route = 'on_site'::text) OR (screening_questions = '[]'::jsonb)`),
 	check("job_screening_questions_check", sql`(jsonb_typeof(screening_questions) = 'array'::text) AND (jsonb_array_length(screening_questions) <= 5)`),
+	check("job_sponsor_sort_check", sql`sponsor_sort >= '-1'::integer`),
 	check("job_recheck_failed_fetched", sql`(close_reason IS DISTINCT FROM 'recheck_failed'::text) OR (source = 'fetched'::text)`),
 ]);
 
@@ -758,6 +761,7 @@ export const organisation = pgTable("organisation", {
 	statusChangedAt: timestamp("status_changed_at", { withTimezone: true, mode: 'string' }),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	mergedIntoId: bigint("merged_into_id", { mode: "number" }),
+	sponsorSort: integer("sponsor_sort").default(sql`'-1'`).notNull(),
 }, (table) => [
 	uniqueIndex("organisation_cro_unique").using("btree", table.croNumber.asc().nullsLast().op("text_ops")).where(sql`((cro_number IS NOT NULL) AND (status <> ALL (ARRAY['rejected'::text, 'closed'::text])) AND (merged_into_id IS NULL))`),
 	uniqueIndex("organisation_wrc_unique").using("btree", table.wrcLicenceNumber.asc().nullsLast().op("text_ops")).where(sql`((wrc_licence_number IS NOT NULL) AND (status <> ALL (ARRAY['rejected'::text, 'closed'::text])) AND (merged_into_id IS NULL))`),
@@ -767,6 +771,7 @@ export const organisation = pgTable("organisation", {
 			name: "organisation_merged_into_id_fkey"
 		}),
 	unique("organisation_slug_key").on(table.slug),
+	check("organisation_sponsor_sort_check", sql`sponsor_sort >= '-1'::integer`),
 	check("organisation_kind_check", sql`kind = ANY (ARRAY['employer'::text, 'agency'::text, 'public_body'::text])`),
 	check("organisation_status_check", sql`status = ANY (ARRAY['unclaimed'::text, 'pending_review'::text, 'needs_info'::text, 'verified'::text, 'verified_restricted'::text, 'suspended'::text, 'rejected'::text, 'banned'::text, 'closed'::text])`),
 	check("organisation_signup_path_check", sql`signup_path = ANY (ARRAY['dete_claim'::text, 'first_time'::text, 'agency'::text, 'admin'::text])`),

@@ -9,14 +9,20 @@
 import pg from "pg";
 import { afterAll, beforeAll, it, vi } from "vitest";
 import { createTestDb, tx, urlFor, type TestDb } from "../db";
+import { LAST_5_YEARS } from "../../src/dete";
+import { JOB_QUERY, listQuery, SORTS as LIST_SORTS, type Cursor, type Sort as ListSort } from "../../src/search";
 import { fill } from "./fill";
-import { measurePages, pageOver, type PageCost } from "./pages";
+import { measurePages, pageOver, type PageCost, type Statement } from "./pages";
 
 export const PAGE_LIMIT = 1000;
+// The Search module's pages also have a time budget: execution plus serialisation of all the page's own statements, warm, on this machine.
+// The measured worst is a few milliseconds; the limit is far above that so a slow runner does not fail it, and a plan that walks the table does.
+export const MS_LIMIT = 150;
 
 vi.setConfig({ testTimeout: 900_000, hookTimeout: 900_000 });
 
-// ===== QUERY FORMS: ported as they are from schema-trial-3/50-pages.py (design section 3). They move into the Search module when it is written. =====
+// ===== QUERY FORMS: ported as they are from schema-trial-3/50-pages.py (design section 3). The job list and the job page now run the Search
+// module's own statements (src/search.ts); what stays here is the sector browse and the filter and search forms, which the module does not have yet. =====
 const LIVE = "status='live' and closes_at > now()";
 const LIST = "job.id, job.title, job.employer_name, job.county, job.salary_low, job.salary_high, job.pass_route, job.pay_grade, job.badge, job.quota_full, job.posted_at, job.job_source_id";
 const KEY = { newest: "posted_at", salary: "salary_sort" } as const;
@@ -48,7 +54,8 @@ function filt(sort: Sort, extra: string, cursor?: string, prev = false): string 
 }
 // ===== end of the query forms =====
 
-type Row = { kind: string; name: string; sql: string };
+// A page is one or more statements. `timed` rows are the Search module's, which also have the time budget.
+type Row = { kind: string; name: string; sqls: Statement[]; timed?: boolean };
 const BANDS: [number, number][] = [[1, 3], [4, 10], [11, 30], [31, 100], [101, 300], [301, 1000], [1001, 5000]];
 
 let db: TestDb;
@@ -77,20 +84,40 @@ async function buildRows(): Promise<void> {
     return sort === "newest" ? `(${r.a}, '${r.b}'::timestamptz, ${r.c})` : `(${r.a}, ${r.b}, ${r.c})`;
   };
   rows = [];
-  const add = (kind: string, name: string, sql: string) => rows.push({ kind, name, sql });
+  const add = (kind: string, name: string, sql: Statement | Statement[], timed = false) => rows.push({ kind, name, sqls: Array.isArray(sql) ? sql : [sql], timed });
+  const depths = (n: number) => (n > 25 ? [...new Set([20, 200, 1000, 4000, n - 30, n - 5])].filter((o) => o >= 1 && o < n).sort((a, b) => a - b) : []);
 
-  // browse, including the quota area (the last 50 live rows have quota_full) and sector pages
+  // the job list, all three sorts, from the Search module, including the quota area (the last 50 live rows have quota_full)
+  const ORDER: Record<ListSort, [keys: string, order: string]> = {
+    sponsor: ["array[sponsor_sort::text, posted_at::text]", "sponsor_sort desc, posted_at desc"],
+    newest: ["array[posted_at::text]", "posted_at desc"],
+    salary: ["array[salary_sort::text]", "salary_sort desc"],
+  };
+  const cursorAt = async (sort: ListSort, off: number): Promise<Cursor> => {
+    const [keys, order] = ORDER[sort];
+    const r = await one(`select quota_full q, ${keys} k, id::text i from job where ${LIVE} order by (not quota_full) desc, ${order}, id desc offset ${off} limit 1`);
+    return { sort, quotaFull: r.q, keys: r.k, id: r.i };
+  };
+  const live = await count("");
+  for (const s of LIST_SORTS) {
+    add("list", `${s} first page + count`, listQuery(s), true);
+    for (const off of depths(live)) {
+      const c = await cursorAt(s, off);
+      add("list", `${s} next, ${off} in`, listQuery(s, c, "after"), true);
+      add("list", `${s} previous, ${off} in`, listQuery(s, c, "before"), true);
+    }
+  }
+
+  // sector browse pages (the module has no sector filter yet)
   for (const s of SORTS)
-    for (const [sec, label] of [[null, "all"], ["IT", "sector IT"], ["finance", "sector finance (rare)"]] as const) {
-      const ex = sec ? `and sector = '${sec}'` : "";
+    for (const [sec, label] of [["IT", "sector IT"], ["finance", "sector finance (rare)"]] as const) {
+      const ex = `and sector = '${sec}'`;
       const n = await count(ex);
-      const kind = sec ? "sector" : "browse";
-      add(kind, `${s} ${label} first page + count`, browse(s, ex));
-      const offs = n > 25 ? [...new Set([20, 200, 1000, 4000, n - 30, n - 5])].filter((o) => o >= 1 && o < n).sort((a, b) => a - b) : [];
-      for (const off of offs) {
+      add("sector", `${s} ${label} first page + count`, browse(s, ex));
+      for (const off of depths(n)) {
         const c = await keyset(s, ex, off);
-        add(kind, `${s} ${label} next, ${off} in`, browse(s, ex, c));
-        add(kind, `${s} ${label} previous, ${off} in`, browse(s, ex, c, true));
+        add("sector", `${s} ${label} next, ${off} in`, browse(s, ex, c));
+        add("sector", `${s} ${label} previous, ${off} in`, browse(s, ex, c, true));
       }
     }
 
@@ -150,18 +177,22 @@ async function buildRows(): Promise<void> {
   ];
   sharedNames = shared.map((s) => s[0]);
   sharedIn = shared.map((s) => s[1]);
+  // the job page: the module's job statement (named columns, advert text, employer, last checked), then the DETE count for its employer
   const jp = (await one("select max(job_id) v from job_text where job_id in (select id from job where status='live')")).v;
-  add("job page", "job page: named columns + advert text",
-    `select ${LIST}, job.sector, job.permit_type, job.salary_sort, job.application_route, job.own_page_url, t.advert_text from job join job_text t on t.job_id = job.id where job.id = ${jp} and job.status = 'live'`);
+  const org = (await one(`select organisation_id v from job where id = ${jp}`)).v;
+  const y = new Date().getUTCFullYear();
+  add("job page", "job page: job + advert text + employer, then permits", [{ text: JOB_QUERY, values: [jp] }, { text: LAST_5_YEARS, values: [org, y - 4, y] }], true);
 }
+
+const sum = (list: PageCost[], key: "pages" | "planning" | "execution" | "serialisation" | "ms") => list.reduce((n, c) => n + c[key], 0);
 
 // Measures every page as app_candidate, prints the worst page per kind, and returns the pages over the limit.
 async function sweep(state: string): Promise<{ failures: string[]; worst: Record<string, number> }> {
   const client = new pg.Client({ connectionString: urlFor(db.name, "app_candidate") });
   await client.connect();
-  let costs: PageCost[], shared: PageCost[];
+  let flat: PageCost[], shared: PageCost[];
   try {
-    costs = await measurePages(client, rows.map((r) => r.sql));
+    flat = await measurePages(client, rows.flatMap((r) => r.sqls));
     shared = await measurePages(client, sharedIn);
   } finally {
     await client.end();
@@ -172,10 +203,17 @@ async function sweep(state: string): Promise<{ failures: string[]; worst: Record
   const lines: string[] = [];
   let top: { name: string; total: number; cost: PageCost }[] = [];
   const per = new Map<string, { name: string; total: number; cost: PageCost }[]>();
-  rows.forEach((r, i) => {
-    const cost = costs[i]!;
-    const over = pageOver(`${r.kind}: ${r.name} (${state})`, [cost, ...shared], PAGE_LIMIT);
+  let at = 0;
+  rows.forEach((r) => {
+    const own = flat.slice(at, (at += r.sqls.length));
+    // a page of several statements is shown as one: the pages and the time add up, the plan names are joined
+    const cost: PageCost = own.length === 1 ? own[0]! : {
+      sql: own.map((c) => c.sql).join(" ; "), pages: sum(own, "pages"), planning: sum(own, "planning"), execution: sum(own, "execution"),
+      serialisation: sum(own, "serialisation"), ms: Math.round(sum(own, "ms") * 100) / 100, scans: own.map((c) => c.scans).join(" ; "),
+    };
+    const over = pageOver(`${r.kind}: ${r.name} (${state})`, [...own, ...shared], PAGE_LIMIT);
     if (over) failures.push(over);
+    if (r.timed && cost.ms > MS_LIMIT) failures.push(`page "${r.kind}: ${r.name} (${state})" took ${cost.ms} ms, budget ${MS_LIMIT} ms (plan ${cost.scans})`);
     const e = { name: r.name, total: cost.pages + overhead, cost };
     per.set(r.kind, [...(per.get(r.kind) ?? []), e]);
     top.push(e);
@@ -186,6 +224,15 @@ async function sweep(state: string): Promise<{ failures: string[]; worst: Record
     worst[kind] = w.total;
     lines.push(`${kind.padEnd(9)} ${String(list.length).padStart(5)} runs, median ${list[Math.floor(list.length / 2)]!.total}, worst ${w.total} (own ${w.cost.pages} = planning ${w.cost.planning} + execution ${w.cost.execution} + serialisation ${w.cost.serialisation}, ${w.cost.ms} ms) ${w.name} [${w.cost.scans}]`);
   }
+  // the Search module's pages, worst of each sort and move: own pages / ms (the shared signed-in queries come on top)
+  const moves = new Map<string, PageCost>();
+  for (const e of per.get("list") ?? []) {
+    const [sort, move] = e.name.replace(",", "").split(" ");
+    const k = `${sort} ${move}`;
+    const w = moves.get(k);
+    if (!w || e.cost.pages > w.pages) moves.set(k, e.cost);
+  }
+  lines.push(`list worst by move (own pages / ms): ${[...moves].map(([k, c]) => `${k} ${c.pages}/${c.ms}`).join(", ")}`);
   top = top.sort((a, b) => b.total - a.total).slice(0, 5);
   console.log(
     `\n=== page gate, ${state}: ${rows.length} pages, shared signed-in queries ${overhead} pages (${sharedNames.map((n, i) => `${n} ${shared[i]!.pages}`).join(", ")})\n` +
@@ -195,7 +242,7 @@ async function sweep(state: string): Promise<{ failures: string[]; worst: Record
 }
 
 function expectNoneOver(state: string, failures: string[]) {
-  if (failures.length) throw new Error(`${failures.length} pages over ${PAGE_LIMIT} ${state}. First ones:\n${failures.slice(0, 5).join("\n")}`);
+  if (failures.length) throw new Error(`${failures.length} pages over their budget (${PAGE_LIMIT} pages, ${MS_LIMIT} ms for the module's pages) ${state}. First ones:\n${failures.slice(0, 5).join("\n")}`);
 }
 
 beforeAll(async () => {
