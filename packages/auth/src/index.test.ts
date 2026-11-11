@@ -1,7 +1,7 @@
 // No database: the pool points at a closed port, and nothing here sends a query.
 import pg from "pg";
 import { describe, expect, it } from "vitest";
-import { checkSettings, createAuth, type LoginPool } from ".";
+import { checkSettings, createAuth, refuseEmail, STAFF_IDLE_SECONDS, STAFF_REFRESH_SECONDS, staffSettings, type LoginPool } from ".";
 
 const secret = "a".repeat(32);
 const database = new pg.Pool({ connectionString: "postgres://nobody:none@127.0.0.1:1/none" });
@@ -34,4 +34,25 @@ describe("each pool is separate", () => {
       expect(ctx.options.emailAndPassword?.disableSignUp).toBe(name === "staff");
       expect(ctx.options.emailAndPassword?.requireEmailVerification).toBe(name !== "staff");
     });
+});
+
+describe("staff settings and idle limit (#172)", () => {
+  it("staffSettings fails closed when a setting is missing or bad", () => {
+    expect(() => staffSettings({})).toThrow(/STAFF_AUTH_URL and STAFF_AUTH_SECRET/);
+    expect(() => staffSettings({ STAFF_AUTH_URL: "https://admin.example.test" })).toThrow(/must be set/);
+    expect(() => staffSettings({ STAFF_AUTH_SECRET: secret })).toThrow(/must be set/);
+    expect(() => staffSettings({ STAFF_AUTH_URL: "https://admin.example.test", STAFF_AUTH_SECRET: "short" })).toThrow(/32 characters/);
+    expect(() => staffSettings({ STAFF_AUTH_URL: "http://admin.example.test", STAFF_AUTH_SECRET: secret })).toThrow(/https/);
+    expect(staffSettings({ STAFF_AUTH_URL: "https://admin.example.test", STAFF_AUTH_SECRET: secret })).toEqual({ baseURL: "https://admin.example.test", secret });
+  });
+  it("refuseEmail sends nothing and says why", async () => {
+    await expect(refuseEmail("staff", "reset", "a@example.test", "https://x.test/r")).rejects.toThrow(/not set up for the staff pool/);
+  });
+  it("only the staff pool has the 8-hour idle limit; candidate and portal keep Better Auth's defaults", async () => {
+    for (const name of ["candidate", "portal", "staff"] as const) {
+      const c = (await make(name).$context).sessionConfig;
+      expect([c.expiresIn, c.updateAge], name).toEqual(name === "staff" ? [STAFF_IDLE_SECONDS, STAFF_REFRESH_SECONDS] : [7 * 86400, 86400]);
+    }
+    expect(STAFF_IDLE_SECONDS).toBe(8 * 3600);
+  });
 });
