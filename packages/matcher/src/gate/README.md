@@ -16,7 +16,7 @@ One folder outside the repo (`PORTAL_PRIVATE_DATA`, for example `step5/gate/`). 
 | `public_employers_candidates.json` | The public pay candidates, `{ "name": { "tier": 1 } }`. |
 | `occupation-lists.json` | Only for an AI run: the two occupation lists as `[{ "id", "code", "title", "list" }]`, `list` being `critical-skills` or `ineligible`. |
 | `answers/` | Made by the runner: every model answer, by model id, advert id and prompt hash. |
-| `report-<model id or rules>.json` | Made by the runner: numbers and wrong ids only. |
+| `report-<model id or rules>.json` (`report-rules+ai-<model id>.json` in the batched mode) | Made by the runner: numbers and wrong ids only. |
 
 ## Test set line
 
@@ -42,6 +42,14 @@ That is the rules matcher alone: no key, no network, the baseline. For a model:
 ```
 PORTAL_PRIVATE_DATA=<folder> PORTAL_GATE_MODEL_URL=https://host/api/v1 PORTAL_GATE_MODEL_KEY=... PORTAL_GATE_MODEL_ID=... npx vitest run --config packages/matcher/src/gate/vitest.gate.config.ts
 ```
+
+The free model service allows few requests a day, so there is a third mode: the rules run first, and the model is asked once per batch of **badge** adverts only (a second opinion, see `docs/job-rules.md`). It needs the same model settings, plus `PORTAL_GATE_MATCHER=rules+ai`:
+
+```
+PORTAL_PRIVATE_DATA=<folder> PORTAL_GATE_MATCHER=rules+ai PORTAL_GATE_BATCH_SIZE=10 PORTAL_GATE_MODEL_URL=https://host/api/v1 PORTAL_GATE_MODEL_KEY=... PORTAL_GATE_MODEL_ID=... npx vitest run --config packages/matcher/src/gate/vitest.gate.config.ts
+```
+
+`PORTAL_GATE_BATCH_SIZE` is the adverts a request (default 10). A job counts as passed only if it keeps its badge. The report is `report-rules+ai-<model id>.json` and says how many requests were made (`modelCalls`), how many saved answers were reused, and the badges before and after (`secondOpinion`). Each request's answer is saved in `answers/` by model id and a hash of the request, so a run stopped by a daily limit goes on the next day without paying twice.
 
 Optional: `PORTAL_GATE_DELAY_MS` (wait between real requests), `PORTAL_GATE_TIMEOUT_MS` (per request, default 60000).
 

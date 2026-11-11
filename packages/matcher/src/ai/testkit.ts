@@ -21,3 +21,14 @@ export function fakeClient(reply: string | ((p: Prompt, n: number) => string | P
   };
   return { client, prompts };
 }
+
+/** One object of a batched reply. */
+export const item = (id: string, o: Record<string, unknown> = {}) => ({ id, code: "2135", entry: "cs-2", confidence: "high", quote: "design cloud systems", ...o });
+
+export const CHEF = { title: "Head Chef", description: "Lead our kitchen team and cook fine meals every day." };
+
+/** A fake client for a batch: `reply` gets the number of the request (1, 2, ...) and returns the text, or an array that is sent as JSON. */
+export const batchReply = (reply: unknown[] | string | ((n: number) => unknown[] | string)) => fakeClient((_p, n) => {
+  const r = typeof reply === "function" ? reply(n) : reply;
+  return typeof r === "string" ? r : JSON.stringify(r);
+});

@@ -4,6 +4,6 @@ import { runGate } from "./run";
 
 test("the AI matcher gate", async () => {
   const { report, file } = await runGate(process.env, { fetch });
-  console.log(`${report.score.note}\npassed ${report.score.passed}, correct ${report.score.passedCorrect}, share ${report.score.share}, lower 95% ${report.score.shareLow95}\nrejected ${report.score.rejected}, rightly rejected ${report.score.rejectedCorrect}\nreport: ${file}`);
+  console.log(`${report.score.note}\npassed ${report.score.passed}, correct ${report.score.passedCorrect}, share ${report.score.share}, lower 95% ${report.score.shareLow95}\nrejected ${report.score.rejected}, rightly rejected ${report.score.rejectedCorrect}\nmodel requests ${report.modelCalls}, saved answers reused ${report.answersReused}${report.secondOpinion ? `, badges ${report.secondOpinion.badgesBefore} before, ${report.secondOpinion.badgesKept} kept` : ""}\nreport: ${file}`);
   expect(report.score.holds, report.score.note).toBe(true);
 });
