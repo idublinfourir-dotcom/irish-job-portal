@@ -51,6 +51,31 @@ describe("a clean pass", () => {
   });
 });
 
+describe("Ireland only (#149)", () => {
+  it.each(["Dublin or London", "Dublin, Ireland; London, England", "Kilkenny / Quincy, Massachusetts", "Belfast, Northern Ireland", "Dublin / Belfast"])(
+    "no badge when the location also names a place outside Ireland: %s",
+    async (location) => {
+      const matcher = vi.fn(GOOD);
+      expect(await run({ location }, { matcher })).toMatchObject({ stage: "3 not in Ireland", bucket: "rejected" });
+      expect(matcher).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["Dublin 2, Ireland / Dublin 18, Ireland", "Sligo / Cootehill", "Remote, Ireland"])("several Irish places and remote Ireland still pass: %s", async (location) => {
+    expect((await run({ location })).stage).not.toBe("3 not in Ireland");
+  });
+  it("a clean Irish-only location passes", async () => {
+    expect((await run({ location: "Dublin 2, Ireland / Dublin 18, Ireland" })).stage).toBe("PASS (salary stated)");
+  });
+  it("no badge when the text says the post can be based elsewhere", async () => {
+    const description = "This role can be based in Dublin or London. The salary is €60,000 a year.";
+    expect((await run({ location: "Dublin, IRL", description })).stage).toBe("3 not in Ireland");
+  });
+  it("ordinary place names in the text do not remove the badge", async () => {
+    const description = "We have offices in London and Dublin. You will travel to London. The salary is €60,000 a year.";
+    expect((await run({ description })).stage).toBe("PASS (salary stated)");
+  });
+});
+
 describe("the order of the rules", () => {
   it("stops at 3 when the location is not Irish and does not ask the matcher", async () => {
     const matcher = vi.fn(GOOD);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkIrishEmployer, locationLooksIrish } from ".";
+import { checkIrishEmployer, locationIsIrelandOnly, locationLooksIrish, postBasedElsewhere } from ".";
 
 // Performance and security tests (made-up text only).
 // Measured on 10 Nov 2026 (shared machine): 1,000 adverts, known and not known: 260 to 414 ms; worst hostile case: 210 to 385 ms.
@@ -84,5 +84,36 @@ describe("irish check: hostile input neither throws nor hangs", () => {
   it("empty fields do not throw", () => {
     expect(checkIrishEmployer({ employer: "", title: "", description: "", location: "" }, false).verdict).toBe("unsure");
     expect(locationLooksIrish("")).toBe(false);
+  });
+});
+
+describe("Ireland only (#149): speed and hostile input", () => {
+  const long = (unit: string, n: number) => unit.repeat(n);
+  const hostile: [string, string][] = [
+    ["1 MB of one letter", long("a", 1_000_000)],
+    ["many separators", long(" / ; ", 200_000)],
+    ["near-miss country codes", long("dublin,fr ", 100_000)],
+    ["near-miss role sentences", long("role can be based in dublin ", 40_000)],
+    ["'or' runs after a based in", "role is based in " + long("or ", 330_000)],
+    ["'or' runs with a foreign name at the very end", "role is located in dublin " + long("or ", 300_000) + "london"],
+    ["many full matches", long("This role is located in Dublin or London. ", 25_000)],
+    ["odd Unicode", long("İıſK dublin ​﻿\u{1F600}", 60_000)],
+    ["lone surrogates and null bytes", long("\ud800\0role is based in ", 50_000)],
+    ["empty", ""],
+  ];
+  it.each(hostile)("%s", (_name, text) => {
+    timed(BUDGET_ONE, () => {
+      expect(typeof locationIsIrelandOnly(text)).toBe("boolean");
+      expect(typeof postBasedElsewhere(text)).toBe("boolean");
+    });
+  });
+  it("1,000 adverts of about 10,000 characters, both new checks, stay inside the budget", () => {
+    const adverts = Array.from({ length: 1000 }, (_, n) => advert(n));
+    timed(BUDGET_1000, () => {
+      for (const d of adverts) {
+        locationIsIrelandOnly("Dublin, Ireland / London, England");
+        postBasedElsewhere(d);
+      }
+    });
   });
 });
