@@ -2,7 +2,7 @@
 import type pg from "pg";
 import type { ChainData } from "@portal/rules";
 import type { BoardFetch } from "@portal/sources";
-import type { OccupationMatch } from "@portal/matcher";
+import type { BatchResult, OccupationMatch } from "@portal/matcher";
 
 export type Db = Pick<pg.Pool, "query" | "connect">; // connected as app_fetcher by the caller
 export type MatchResult = {
@@ -24,6 +24,10 @@ export type Deps = {
   now: () => Date;
   chain: Omit<ChainData, "matcher">;
   matcher: FetcherMatcher;
+  /** The AI second opinion (one request for up to `batchSize` badge adverts). A badge is saved only when this agrees. */
+  checkBatch: (adverts: { title: string; description: string }[]) => Promise<BatchResult[]>;
+  batchSize?: number; // badge adverts a model request, default 10
+  maxModelRequests: number; // for the whole run, all boards. Badge adverts past it are not decided now: they stay in `unsaved` for the next run
   boards: readonly BoardTask[];
   concurrency?: number; // boards at once, default 8
   deadline?: Date; // after it, no new advert is assessed

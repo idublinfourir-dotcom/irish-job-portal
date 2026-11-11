@@ -1,5 +1,6 @@
 // The loop of design section 3.1: boards a few at a time, adverts one at a time. Never throws for one bad advert or one bad board.
-import { assess } from "@portal/rules";
+import { applySecondOpinion, SHOWN, type BatchResult } from "@portal/matcher";
+import { assess, type Assessment } from "@portal/rules";
 import type { RawAdvert } from "@portal/sources";
 import { isDue, hashAdvert } from "./hash";
 import { planAdvert, stateOf } from "./plan";
@@ -8,7 +9,7 @@ import type { BoardReport, BoardTask, Deps, MatchResult } from "./types";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-async function runBoard(deps: Deps, task: BoardTask, plan: typeof planAdvert): Promise<BoardReport> {
+async function runBoard(deps: Deps, task: BoardTask, plan: typeof planAdvert, budget: { left: number }): Promise<BoardReport> {
   const { db, now, log = () => {} } = deps;
   const report: BoardReport = { kind: task.kind, board: task.board, ok: false, error: null, seen: 0, passed: 0, queued: 0, rejected: 0, changed: 0, closed: 0, unsaved: [] };
   let run: BoardRun;
@@ -40,22 +41,47 @@ async function runBoard(deps: Deps, task: BoardTask, plan: typeof planAdvert): P
   let added = 0;
   let rechecked = 0;
 
+  // Tally one advert's outcome. `saved` is what `save` returned.
+  const tally = (id: string, saved: Saved) => {
+    if (saved === "unsaved") report.unsaved.push(id);
+    else if (saved === "same") return;
+    else if (saved === "changed" || saved === "closed") {
+      report.changed++;
+      if (saved === "closed") rechecked++;
+    } else {
+      report[saved]++;
+      added++;
+    }
+  };
+  const late = () => deps.deadline !== undefined && now() > deps.deadline;
+
+  // Step 1: the rules chain, advert by advert. Nothing is written yet.
+  const items: Item[] = [];
   for (const advert of fetched.adverts) {
-    if (deps.deadline && now() > deps.deadline) {
+    if (late()) {
       report.unsaved.push(advert.id);
       continue;
     }
     try {
-      const saved = await handle(deps, run, advert, plan);
-      if (saved === "unsaved") report.unsaved.push(advert.id);
-      else if (saved === "same") continue;
-      else if (saved === "changed" || saved === "closed") {
-        report.changed++;
-        if (saved === "closed") rechecked++;
-      } else {
-        report[saved]++;
-        added++;
-      }
+      const item = await prepare(deps, run, advert);
+      if (item === "same") continue;
+      items.push(item);
+    } catch (e) {
+      log(`${task.kind}/${task.board}: ${advert.id} not saved: ${message(e)}`);
+      report.unsaved.push(advert.id);
+    }
+  }
+  // Step 2: the model checks every badge, a batch at a time. A badge it could not check is not saved now (null).
+  const decided = await secondOpinion(deps, budget, items, `${task.kind}/${task.board}`);
+  // Step 3: write.
+  for (const [i, item] of decided.entries()) {
+    const advert = items[i]!.advert;
+    if (!item || late()) {
+      report.unsaved.push(advert.id);
+      continue;
+    }
+    try {
+      tally(advert.id, await save(deps, run, plan, item));
     } catch (e) {
       log(`${task.kind}/${task.board}: ${advert.id} not saved: ${message(e)}`);
       report.unsaved.push(advert.id);
@@ -71,9 +97,12 @@ async function runBoard(deps: Deps, task: BoardTask, plan: typeof planAdvert): P
   return report;
 }
 
-// One advert: look at what is known of it, assess if it is new or changed, plan, write. The chain's matcher is wrapped so the plan can see what the matcher said.
+// One advert, in three steps. `prepare`: look at what is known of it and assess it with the rules chain if it is new or changed. `secondOpinion`: the model
+// checks every badge. `save`: plan and write. The chain's matcher is wrapped so the plan can see what the matcher said.
 type Saved = "passed" | "queued" | "rejected" | "unsaved" | "same" | "changed" | "closed";
-async function handle(deps: Deps, run: BoardRun, advert: RawAdvert, plan: typeof planAdvert): Promise<Saved> {
+type Item = { advert: RawAdvert; assessment: Assessment; m: MatchResult | null; hash: string };
+
+async function prepare(deps: Deps, run: BoardRun, advert: RawAdvert): Promise<Item | "same"> {
   const hash = hashAdvert(advert);
   const k = run.rows.get(advert.id);
   if (k) {
@@ -87,14 +116,62 @@ async function handle(deps: Deps, run: BoardRun, advert: RawAdvert, plan: typeof
     }
   }
   const box: { last: MatchResult | null } = { last: null };
-  const a = await assess(advert, {
+  const assessment = await assess(advert, {
     ...deps.chain,
     matcher: async (title, description) => {
       box.last = await deps.matcher(title, description);
       return box.last.match;
     },
   });
-  const p = plan(advert, a, box.last);
+  return { advert, assessment, m: box.last, hash };
+}
+
+/**
+ * The AI second opinion (the gate's `applySecondOpinion`, one call a batch so a fault only costs its own batch). Returns the items in the same order, with a badge
+ * the model did not back moved to the admin queue. A badge that could not be checked (budget used up, model error, timeout, a reply of the wrong size) is null:
+ * it is never saved without the model's word, so the caller leaves it for the next run.
+ */
+async function secondOpinion(deps: Deps, budget: { left: number }, items: Item[], where: string): Promise<(Item | null)[]> {
+  const size = deps.batchSize ?? 10;
+  const out: (Item | null)[] = [...items];
+  const badges = items.flatMap((it, i) => (SHOWN.has(it.assessment.bucket) ? [i] : []));
+  let skipped = 0;
+  for (let at = 0; at < badges.length; at += size) {
+    const chunk = badges.slice(at, at + size);
+    if (budget.left <= 0 || (deps.deadline && deps.now() > deps.deadline)) {
+      for (const i of chunk) out[i] = null;
+      skipped += chunk.length;
+      continue;
+    }
+    budget.left--;
+    let results: BatchResult[] = [];
+    try {
+      const finals = await applySecondOpinion(
+        chunk.map((i) => items[i]!),
+        async (adverts) => {
+          results = await deps.checkBatch(adverts);
+          const fault = results.find((r) => r.failure?.kind === "model error");
+          if (fault) throw new Error(fault.failure?.why);
+          return results;
+        },
+        size,
+      );
+      chunk.forEach((i, k) => {
+        const r = results[k]!;
+        out[i] = { ...items[i]!, assessment: finals[k]!, m: { match: r.match, quote: r.quote, modelId: r.modelId, failure: r.failure } };
+      });
+    } catch (e) {
+      deps.log?.(`${where}: model check failed, ${chunk.length} badge adverts left for the next run: ${message(e)}`);
+      for (const i of chunk) out[i] = null;
+    }
+  }
+  if (skipped) deps.log?.(`${where}: model request budget or time used up, ${skipped} badge adverts left for the next run`);
+  return out;
+}
+
+async function save(deps: Deps, run: BoardRun, plan: typeof planAdvert, { advert, assessment, m, hash }: Item): Promise<Saved> {
+  const k = run.rows.get(advert.id);
+  const p = plan(advert, assessment, m);
   if (p.action === "defer") return "unsaved";
   if (k) return (await saveKnown(deps.db, run.sourceId, k, p, hash)) === "close" ? "closed" : "changed";
   if (p.action === "reject") {
@@ -107,9 +184,10 @@ async function handle(deps: Deps, run: BoardRun, advert: RawAdvert, plan: typeof
 /** Runs every board. `plan` is a parameter only so tests can pass plans in directly. */
 export async function runBoards(deps: Deps, plan: typeof planAdvert = planAdvert): Promise<BoardReport[]> {
   const reports: BoardReport[] = new Array(deps.boards.length);
+  const budget = { left: deps.maxModelRequests }; // shared by every board of the run
   let next = 0;
   const worker = async () => {
-    for (let i = next++; i < deps.boards.length; i = next++) reports[i] = await runBoard(deps, deps.boards[i]!, plan);
+    for (let i = next++; i < deps.boards.length; i = next++) reports[i] = await runBoard(deps, deps.boards[i]!, plan, budget);
   };
   await Promise.all(Array.from({ length: Math.min(deps.concurrency ?? 8, deps.boards.length) }, worker));
   return reports;
