@@ -8,7 +8,39 @@ export type Checked =
 const MAX_ANSWER = 20_000;
 const MAX_QUOTE = 500;
 const FIELDS = ["code", "confidence", "entry", "quote"];
+// A quote also counts when a stretch of the advert differs from it by at most 20% of its words (a word added, missing or changed), so a slight
+// rewording passes. A quote under 6 words must still be exact: it is too short to be proof. Words are letters and digits, lower case.
+const CLOSE_MIN_WORDS = 6;
+const CLOSE_MAX_DIFF = 0.2;
 const bad = (why: string): Checked => ({ ok: false, why });
+
+const words = (text: string) => text.toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? [];
+
+/**
+ * Where the first close match of the quote ends in the advert, as a word index, or -1. Edit distance on words against any stretch of the
+ * advert (the quote may start anywhere, so the stretch is about as long as the quote). One row of the table, so memory is the quote's size and
+ * time is advert words times quote words: linear in the advert, and the quote is at most 500 characters.
+ */
+function closeMatchEnd(quote: string, advertText: string): number {
+  const q = words(quote);
+  if (q.length < CLOSE_MIN_WORDS) return -1;
+  const a = words(advertText);
+  const limit = Math.floor(q.length * CLOSE_MAX_DIFF);
+  let col = Int32Array.from({ length: q.length + 1 }, (_, i) => i); // col[i]: best distance of the first i quote words, ending at the last advert word read
+  let next = new Int32Array(q.length + 1);
+  for (let j = 0; j < a.length; j++) {
+    const w = a[j];
+    next[0] = 0; // a stretch may start at any advert word
+    for (let i = 1; i <= q.length; i++) {
+      const diag = col[i - 1]! + (q[i - 1] === w ? 0 : 1);
+      const side = Math.min(col[i]!, next[i - 1]!) + 1;
+      next[i] = diag < side ? diag : side;
+    }
+    if (next[q.length]! <= limit) return j;
+    [col, next] = [next, col];
+  }
+  return -1;
+}
 
 /** Strict reading of the model's text. Reasons are fixed phrases that never repeat model text. */
 export function checkAnswer(raw: string, entries: ReadonlyMap<string, ListEntry>, advertText: string): Checked {
@@ -37,5 +69,5 @@ export function checkAnswer(raw: string, entries: ReadonlyMap<string, ListEntry>
     if (entry.code !== code) return bad("code does not match its entry");
   }
   const q = fold(quote);
-  return { ok: true, code, entry, confidence, quote, quoteFound: q !== "" && fold(advertText).includes(q) };
+  return { ok: true, code, entry, confidence, quote, quoteFound: q !== "" && (fold(advertText).includes(q) || closeMatchEnd(quote, advertText) >= 0) };
 }
