@@ -16,7 +16,7 @@ const NO_SPONSOR = py(
     // 1,303 saved adverts with labels: "must be eligible / authorised to work in Ireland" 6 adverts, a requirements line that is only
     // "Right to work in Ireland" (and UK) 2, LinkedIn's form line "Work authorisation: Ireland (required)" 2. All 10 are labelled no.
     // The plain words "right to work in Ireland" are not a rule: they also come in "ability to obtain the right to work".
-    String.raw`|must\s+be\s+(legally\s+|currently\s+|already\s+)?(eligible|entitled|authori[sz]ed|permitted)\s+to\s+work\s+in\s+(ireland|the\s+eu|the\s+eea)\b` +
+    // "Must be eligible to work in Ireland" is ELIGIBLE below: it counts only when the advert offers no sponsorship anywhere.
     String.raw`|(?<![^\n])[ \t\u00a0•*-]{0,10}right\s+to\s+work\s+in\s+ireland(\s+and\s+(the\s+)?uk)?[ \t\u00a0]{0,10}\.?[ \t\u00a0]{0,10}(?![^\n])` +
     String.raw`|work\s+authori[sz]ation\s{0,3}:?\s{0,10}ireland\s{0,3}\(required\)`,
   "i",
@@ -49,9 +49,22 @@ const BENEFIT = py(
 );
 const SENTENCE_BACK = 200; // how far back a sentence is read: the two real wordings need about 60 characters
 
+// NEW BEHAVIOUR (11 November 2026): "must be eligible / authorised to work in Ireland" usually means "you must already have the right
+// to work". But it can also mean "have valid papers by the start date": two saved MongoDB adverts say "Must be authorized to work in
+// Ireland ..." and then "Company sponsorship may be available". So this phrase counts only when the advert offers no sponsorship.
+const ELIGIBLE = py(
+  String.raw`must\s+be\s+(legally\s+|currently\s+|already\s+)?(eligible|entitled|authori[sz]ed|permitted)\s+to\s+work\s+in\s+(ireland|the\s+eu|the\s+eea)\b`,
+  "i",
+);
+const SPONSOR_MAYBE = py(String.raw`sponsorship\s+(may|might|could|can)\s+be\s+(available|provided|offered|considered)`, "i");
+
 /** R04: the first "no sponsorship" phrase in title + " " + description, or null. Python: `NO_SPONSOR.search(title + " " + d).group(0)` (classify.py:210). */
 export function noSponsorshipPhrase(title: string, description: string): string | null {
-  return NO_SPONSOR.exec(title + " " + description)?.[0] ?? null;
+  const text = title + " " + description;
+  const phrase = NO_SPONSOR.exec(text)?.[0];
+  if (phrase) return phrase;
+  const eligible = ELIGIBLE.exec(text)?.[0];
+  return eligible && !SPONSOR_YES.test(text) && !SPONSOR_MAYBE.test(text) ? eligible : null;
 }
 
 /** R05: the description says sponsorship is available. Python: `bool(SPONSOR_YES.search(d))` (classify.py:206). */
