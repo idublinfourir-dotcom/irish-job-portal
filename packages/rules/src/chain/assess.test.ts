@@ -319,3 +319,29 @@ describe("rules found by the gate on 11 November 2026", () => {
     expect((await run({ description })).stage).toBe("PASS (salary stated)");
   });
 });
+
+// NEW BEHAVIOUR (11 November 2026, #166): what a staff member adds when approving a queued advert. Only the contract stages it names move.
+describe("staff input (admin queue)", () => {
+  const ok = { contractConfirmed: true };
+  it("a confirmed contract clears the unclear contract stage and the chain goes on to pay", async () => {
+    expect(await assess(advert({ employmentType: "Contract" }), data(), ok)).toMatchObject({ stage: "PASS (salary stated)", contract: "unclear", bucket: "stated_pay" });
+  });
+  it.each([
+    ["Registrar in Surgery", "Join our team. The salary is €60,000 a year."],
+    ["Platform Engineer", "A permanent or specified purpose. Salary €60,000."],
+  ])("a confirmed contract clears the #95 stages: %s", async (title, description) => {
+    expect((await assess(advert({ title, description }), data(), ok)).stage).toBe("PASS (salary stated)");
+  });
+  it("a confirmed contract does not clear a short contract, a low salary or the list test", async () => {
+    expect((await assess(advert({ description: "A 12 month contract. Salary €60,000." }), data(), ok)).stage).toBe("7 contract under 2 years");
+    expect((await assess(advert({ description: "Salary €30,000." }), data(), ok)).stage).toBe("8 salary below €40,904");
+    expect((await assess(advert(), data({ matcher: found("2134", "no", "high") }), ok)).stage).toBe("6 not on Critical Skills list");
+  });
+  it("staff pay replaces what the reader finds, both ways", async () => {
+    expect(await assess(advert({ description: "No pay mentioned." }), data(), { salary: { low: 50000, high: 55000 } })).toMatchObject({ stage: "PASS (salary stated)", salaryLow: 50000, salaryHigh: 55000 });
+    expect((await assess(advert(), data(), { salary: { low: 30000, high: 30000 } })).stage).toBe("8 salary below €40,904");
+  });
+  it("no staff input is the plain chain", async () => {
+    expect(await assess(advert({ employmentType: "Contract" }), data(), {})).toEqual(await run({ employmentType: "Contract" }));
+  });
+});

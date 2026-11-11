@@ -15,6 +15,7 @@
     "db:test:down": "sh test/test-db.sh down"
   },
   "dependencies": {
+    "@portal/rules": "*",
     "@vercel/functions": "3.11.0",
     "drizzle-orm": "0.45.4",
     "pg": "8.23.1"

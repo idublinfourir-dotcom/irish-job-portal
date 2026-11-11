@@ -6,6 +6,7 @@ import { sslOptions } from "./ssl";
 
 export * from "./dete";
 export * from "./search";
+export * from "./admin-queue";
 
 type Db = NodePgDatabase<typeof schema>;
 

@@ -34,9 +34,9 @@ const INT = /^-?\d{1,10}$/;
 const TIME = /^(19[7-9]\d|2\d{3})-\d\d-\d\d[ T]\d\d:\d\d:\d\d(\.\d{1,6})?(Z|[+-]\d\d(:?\d\d)?)$/;
 const ID = /^[1-9]\d{0,18}$/;
 const MAX_BIGINT = 2n ** 63n - 1n;
-const validId = (s: unknown): s is string => typeof s === "string" && ID.test(s) && BigInt(s) <= MAX_BIGINT;
+export const validId = (s: unknown): s is string => typeof s === "string" && ID.test(s) && BigInt(s) <= MAX_BIGINT;
 // Postgres writes the zone as +00, which Date.parse refuses, so it gets :00 first.
-const isTime = (s: string) => TIME.test(s) && !Number.isNaN(Date.parse(s.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00")));
+export const isTime = (s: string) => TIME.test(s) && !Number.isNaN(Date.parse(s.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00")));
 const validKey = (kind: "int" | "time", s: unknown): s is string =>
   typeof s === "string" && (kind === "int" ? INT.test(s) && Number(s) >= -1 && Number(s) <= 2147483647 : isTime(s));
 
