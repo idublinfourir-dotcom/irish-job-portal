@@ -4,6 +4,8 @@ import pg from "pg";
 import * as schema from "./schema";
 import { sslOptions } from "./ssl";
 
+export * from "./dete";
+
 type Db = NodePgDatabase<typeof schema>;
 
 // One pool per running instance. Dev reloads and repeated imports reuse it.

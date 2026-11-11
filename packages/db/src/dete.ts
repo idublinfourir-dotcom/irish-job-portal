@@ -1,0 +1,156 @@
+// DETE employment permit counts (#73, #152, #154): read the tab-separated files, load them as app_admin, link a DETE legal
+// name to an employer name, and read "permits in the last 5 years" for an employer. No import at run time, so a page can use it.
+// Every statement is a constant with parameters; no value is ever put into SQL text.
+import type pg from "pg";
+
+type Db = Pick<pg.Pool, "query" | "connect">;
+
+const MAX_NAME = 300;
+const MAX_ERRORS = 20;
+const MAX_PERMITS = 1_000_000;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f�]/;
+
+export type PermitRow = { deteName: string; year: number; permits: number; sourceFile: string | null };
+export type Link = { organisationNameId: string; deteName: string };
+export type Parsed<T> = { rows: T[]; errors: string[] };
+
+// Splits a file into lines of cells after checking the header. Returns the data lines with their line numbers.
+function lines(text: string, header: string[]): { n: number; cells: string[] }[] | string {
+  const all = text.replace(/^﻿/, "").split("\n").map((l) => l.replace(/\r$/, ""));
+  if (all.at(-1) === "") all.pop();
+  if (all[0] !== header.join("\t")) return `line 1: the header must be: ${header.join(" <tab> ")}`;
+  return all.slice(1).map((l, i) => ({ n: i + 2, cells: l.split("\t") }));
+}
+
+function cleanName(raw: string): string | null {
+  const name = raw.trim();
+  return name && name.length <= MAX_NAME && !CONTROL.test(name) ? name : null;
+}
+
+/** Reads dete_name, year, permits, source_file. Any error means the whole file is refused. */
+export function parsePermits(text: string): Parsed<PermitRow> {
+  const body = lines(text, ["dete_name", "year", "permits", "source_file"]);
+  if (typeof body === "string") return { rows: [], errors: [body] };
+  const rows: PermitRow[] = [];
+  const errors: string[] = [];
+  const seen = new Map<string, number>();
+  for (const { n, cells } of body) {
+    const bad = (why: string) => errors.push(`line ${n}: ${why}`);
+    if (cells.length !== 4) { bad(`expected 4 columns, found ${cells.length}`); continue; }
+    const [rawName, rawYear, rawPermits, rawSource] = cells as [string, string, string, string];
+    const deteName = cleanName(rawName);
+    const year = /^\d{4}$/.test(rawYear) ? Number(rawYear) : NaN;
+    const permits = /^\d{1,9}$/.test(rawPermits) ? Number(rawPermits) : NaN;
+    const sourceFile = rawSource.trim();
+    if (deteName === null) bad(`the name is empty, over ${MAX_NAME} characters or has control characters`);
+    else if (!(year >= 2000 && year <= 2100)) bad(`the year must be 2000 to 2100, found "${rawYear}"`);
+    else if (!(permits >= 1 && permits <= MAX_PERMITS)) bad(`permits must be a whole number from 1 to ${MAX_PERMITS}, found "${rawPermits}"`);
+    else if (sourceFile.length > 200 || CONTROL.test(sourceFile)) bad("source_file is over 200 characters or has control characters");
+    else {
+      const key = `${deteName}\t${year}`;
+      const first = seen.get(key);
+      if (first !== undefined) bad(`the same name and year as line ${first}`);
+      else { seen.set(key, n); rows.push({ deteName, year, permits, sourceFile: sourceFile || null }); }
+    }
+    if (errors.length >= MAX_ERRORS) break;
+  }
+  return { rows, errors };
+}
+
+/** Reads organisation_name_id, dete_name. */
+export function parseLinks(text: string): Parsed<Link> {
+  const body = lines(text, ["organisation_name_id", "dete_name"]);
+  if (typeof body === "string") return { rows: [], errors: [body] };
+  const rows: Link[] = [];
+  const errors: string[] = [];
+  const seen = new Map<string, number>();
+  for (const { n, cells } of body) {
+    const bad = (why: string) => errors.push(`line ${n}: ${why}`);
+    if (cells.length !== 2) { bad(`expected 2 columns, found ${cells.length}`); continue; }
+    const [id, rawName] = cells as [string, string];
+    const deteName = cleanName(rawName);
+    if (!/^[1-9]\d{0,17}$/.test(id.trim())) bad(`organisation_name_id must be a whole number, found "${id}"`);
+    else if (deteName === null) bad(`the name is empty, over ${MAX_NAME} characters or has control characters`);
+    else if (seen.has(deteName)) bad(`the same DETE name as line ${seen.get(deteName)}`);
+    else { seen.set(deteName, n); rows.push({ organisationNameId: id.trim(), deteName }); }
+    if (errors.length >= MAX_ERRORS) break;
+  }
+  return { rows, errors };
+}
+
+// A yearly total has no month. Same figures again change nothing (the where clause), so a re-import writes no row.
+const UPSERT =
+  "insert into dete_permit_count(dete_name, year, month, permits, source_file) " +
+  "select t.name, t.year, null, t.permits, t.source from unnest($1::text[], $2::int[], $3::int[], $4::text[]) as t(name, year, permits, source) " +
+  "on conflict (dete_name, year, month) do update set permits = excluded.permits, source_file = excluded.source_file, imported_at = now() " +
+  "where (dete_permit_count.permits, dete_permit_count.source_file) is distinct from (excluded.permits, excluded.source_file) " +
+  "returning (xmax = 0) as inserted";
+const KNOWN_IDS = "select id::text from organisation_name where id = any($1::bigint[])";
+const KNOWN_NAMES = "select distinct dete_name from dete_permit_count where dete_name = any($1::text[])";
+const SET_LINKS =
+  "update dete_permit_count d set organisation_name_id = l.id from unnest($1::bigint[], $2::text[]) as l(id, name) " +
+  "where d.dete_name = l.name and d.organisation_name_id is distinct from l.id";
+// The last 5 calendar years are $2 to $3. One pass over the linked rows through two indexes. No rows at all means "not linked".
+export const LAST_5_YEARS =
+  "select count(d.id)::int as linked, coalesce(sum(d.permits) filter (where d.year between $2 and $3), 0)::int as permits, " +
+  "min(d.year) filter (where d.permits > 0)::int as first_year " +
+  "from organisation_name n join dete_permit_count d on d.organisation_name_id = n.id where n.organisation_id = $1::bigint";
+
+const CHUNK = 10_000;
+
+async function inTransaction<T>(db: Db, fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
+  const client = await db.connect();
+  try {
+    await client.query("begin");
+    const out = await fn(client);
+    await client.query("commit");
+    return out;
+  } catch (e) {
+    await client.query("rollback").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/** Upserts the rows in one transaction, 10,000 per statement. Run as app_admin. Never touches organisation_name_id. */
+export async function importPermits(db: Db, rows: PermitRow[]): Promise<{ inserted: number; updated: number; unchanged: number }> {
+  let inserted = 0;
+  let updated = 0;
+  await inTransaction(db, async (c) => {
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const part = rows.slice(i, i + CHUNK);
+      const r = await c.query<{ inserted: boolean }>(UPSERT, [part.map((x) => x.deteName), part.map((x) => x.year), part.map((x) => x.permits), part.map((x) => x.sourceFile)]);
+      for (const row of r.rows) if (row.inserted) inserted++; else updated++;
+    }
+  });
+  return { inserted, updated, unchanged: rows.length - inserted - updated };
+}
+
+/** Sets organisation_name_id on the DETE rows of each name. A name or id that is not in the database is reported and skipped. */
+export async function linkNames(db: Db, links: Link[]): Promise<{ rowsChanged: number; skipped: string[] }> {
+  return inTransaction(db, async (c) => {
+    const ids = new Set((await c.query<{ id: string }>(KNOWN_IDS, [[...new Set(links.map((l) => l.organisationNameId))]])).rows.map((r) => r.id));
+    const names = new Set((await c.query<{ dete_name: string }>(KNOWN_NAMES, [links.map((l) => l.deteName)])).rows.map((r) => r.dete_name));
+    const skipped: string[] = [];
+    const good = links.filter((l) => {
+      if (!ids.has(l.organisationNameId)) skipped.push(`organisation_name_id ${l.organisationNameId} does not exist (${l.deteName})`);
+      else if (!names.has(l.deteName)) skipped.push(`DETE name not found: ${l.deteName}`);
+      else return true;
+      return false;
+    });
+    const r = good.length ? await c.query(SET_LINKS, [good.map((l) => l.organisationNameId), good.map((l) => l.deteName)]) : { rowCount: 0 };
+    return { rowsChanged: r.rowCount ?? 0, skipped };
+  });
+}
+
+/**
+ * Permits DETE issued to an employer in the current year and the four before, summed over every DETE row linked to any of
+ * its names, and the first year with permits. null means no DETE name is linked: "not linked", which is not zero.
+ */
+export async function permitsLast5Years(db: Pick<pg.Pool, "query">, organisationId: number | string, now = new Date()): Promise<{ permits: number; firstYear: number | null } | null> {
+  const year = now.getUTCFullYear();
+  const { rows } = await db.query<{ linked: number; permits: number; first_year: number | null }>(LAST_5_YEARS, [String(organisationId), year - 4, year]);
+  const r = rows[0]!;
+  return r.linked === 0 ? null : { permits: r.permits, firstYear: r.first_year };
+}
