@@ -50,14 +50,16 @@ The launch gate (#79, #145): of the jobs passed with a Critical Skills badge in 
 | Passed on stated pay or the big-company rule | A live job with the badge, its text and search data, and the advert row |
 | Unsure, public pay, or scam wording on a pass | A job in the admin queue with its text (the database trigger adds the review item) |
 | Rejected, or over the input limits | The advert row only: result, stage, short evidence. Never the advert text (#122) |
-| The model failed | Nothing. The advert comes back next run |
+| A badge the model disagrees with | A job in the admin queue (stage `5 unsure occupation`), no badge, the model named in `matcher_model` |
+| A badge the model could not check (budget used up, model error, timeout) | Nothing. The advert comes back next run |
 
+- **The AI second opinion:** a run first assesses every new or changed advert with the rules chain, then sends the badge ones to the model (`applySecondOpinion`), `batchSize` a request (default 10), then writes. The run has a request budget, `maxModelRequests`, shared by all boards; badge adverts past it, in a failed batch, or after the deadline are not written and are listed in `unsaved`, so the next run reads them again. Batches are per board, so a run makes at most one part-empty request more per board than `ceil(badges / batchSize)`. A badge is saved only when the model backed it. `laptop.run.ts` needs `FETCHER_MODEL_URL`, `FETCHER_MODEL_KEY`, `FETCHER_MODEL_ID`, `FETCHER_MAX_MODEL_REQUESTS` and `occupation-lists.json` in the private data folder.
 - **An unknown employer** becomes an unclaimed organisation with an alias name. The name key is computed in SQL with the database's own cleaning, never in TypeScript.
 - **A known advert** carries a hash of its text. Seen again with the same hash it costs no write. Changed, it is assessed again: a live job gets its new content, goes back to the admin queue if the rules are now unsure, or closes as `recheck_failed` if it now fails, with its text deleted. Boards whose list call carries the text are compared every run, the others one day in seven.
 - **An advert that is gone** from a fetch that worked and returned ids is marked gone, and its live job is closed and its text removed. A failed fetch, or an empty answer from a board with known adverts, closes nothing. An advert that comes back is assessed again, and a job the fetcher closed is reopened if it passes.
 - **Staff's jobs are never touched:** a job in review or hidden, or one staff closed, keeps its status and text whatever the advert does.
 - Every statement is a constant with parameters, an advert's writes are one transaction, and no network call is made while a transaction is open. The budgets are counted statements, held by tests: 4 a board, 1 a rejected advert, 6 a job with a known employer, 9 with a new one.
-- **The real run** is `packages/fetcher/run/laptop.run.ts`, the only file that reads the environment, with its own config so `npm run check` never calls a job board: `FETCHER_DATABASE_URL=... FETCHER_BOARDS_FILE=... PORTAL_PRIVATE_DATA=... npx vitest run --config packages/fetcher/vitest.run.config.ts`. It uses the rules matcher. `docs/database.md` has the tables, the fetcher's rights and the guards that hold them.
+- **The real run** is `packages/fetcher/run/laptop.run.ts`, the only file that reads the environment, with its own config so `npm run check` never calls a job board: `FETCHER_DATABASE_URL=... FETCHER_BOARDS_FILE=... PORTAL_PRIVATE_DATA=... npx vitest run --config packages/fetcher/vitest.run.config.ts`. `docs/database.md` has the tables, the fetcher's rights and the guards that hold them.
 
 ## Rules data still in code
 
@@ -77,7 +79,7 @@ The salary minimum (40,904, a parameter with that default), the big-company bran
 - Titles, locations and Ashby descriptions are not stripped of HTML, as in the Python. Whoever shows them on a page must escape them.
 - Not ported: Lever, Workable and Recruitee (no board uses them).
 - LinkedIn: the adapter is ported (`runLinkedin`, with a retry on 429 and a request budget, both off by default), but its advert page answered 429 in the one recording pass, so its parser has never met a real page. It is not in the fetcher.
-- The AI matcher is built and not yet wired into the fetcher, and no model has been chosen: that waits for the frozen test set and a model key.
+- The AI second opinion is wired into the fetcher, but no real model has been chosen or run against it yet: that waits for the frozen test set and a model key.
 - A changed advert that the rules are now unsure about sends its live job back to the admin queue, even if an admin approved it before.
 - The same job on two boards is saved twice: there is no cross-source duplicate key yet.
 - Not built yet: the rules tables, the nightly re-run of live jobs, scheduling (the fetcher runs by hand), and the importers for the government files.

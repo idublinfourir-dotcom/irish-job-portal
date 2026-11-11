@@ -1,4 +1,5 @@
 // Shared by the fetcher tests. Fake data only; no test calls a real board or a real model.
+import type { BatchResult } from "@portal/matcher";
 import type { RawAdvert } from "@portal/sources";
 import type { BoardTask, Db, Deps, Plan } from "../src";
 
@@ -28,8 +29,10 @@ export const task = (kind: string, board: string, adverts: RawAdvert[], seen = a
 };
 
 export const matcher: Deps["matcher"] = async () => ({ match: { occupationCode: "2134", onCriticalSkillsList: "yes", confidence: "high" }, quote: null, modelId: "rules", failure: null });
+/** A model that is never asked: tests with no badge job. A call fails the test. */
+export const noModel: Deps["checkBatch"] = async () => { throw new Error("the model was asked, but no test expected a request"); };
 export const deps = (db: Db, boards: BoardTask[], over: Partial<Deps> = {}): Deps => ({
-  db, now: () => NOW, chain: { deteNames: new Set(), publicPayCandidates: new Map() }, matcher, boards, ...over,
+  db, now: () => NOW, chain: { deteNames: new Set(), publicPayCandidates: new Map() }, matcher, checkBatch: noModel, maxModelRequests: 100, boards, ...over,
 });
 
 /** Wraps a Db and records every statement, on the pool and on each checked-out client. */
@@ -47,3 +50,26 @@ export function counting(db: Db): { db: Db; sql: string[] } {
     },
   };
 }
+
+/** An advert the rules chain gives a badge: pay stated over the minimum, an Irish place, and the fake rules matcher above says a critical skills occupation. */
+export const badgeAd = (id: string, over: Partial<RawAdvert> = {}): RawAdvert =>
+  advert(id, { title: "Platform Engineer", description: "Join our team. The salary is €60,000 a year. Permanent full time.", ...over });
+
+export const MODEL = "fake-model";
+/** What the model says about one advert: it agrees (a critical skills entry, medium or high confidence) or it does not (no entry). */
+export const says = (agrees: boolean): BatchResult => ({
+  match: agrees ? { occupationCode: "2134", onCriticalSkillsList: "yes", confidence: "high" } : { occupationCode: "none", onCriticalSkillsList: "unknown", confidence: "none" },
+  quote: agrees ? "salary" : null, modelId: MODEL, failure: null,
+  entry: agrees ? { id: "cs-1", code: "2134", title: "IT project manager", list: "critical-skills" } : null,
+});
+/** A fake model client for `Deps.checkBatch`. `reply(n, adverts)` gets the request number (1, 2, ...); a thrown error is a model that fails. Records the size of every request. */
+export function fakeModel(reply: (n: number, adverts: { title: string; description: string }[]) => BatchResult[] = (_n, a) => a.map(() => says(true))) {
+  const sizes: number[] = [];
+  const checkBatch: Deps["checkBatch"] = async (adverts) => {
+    sizes.push(adverts.length);
+    return reply(sizes.length, adverts);
+  };
+  return { checkBatch, sizes };
+}
+/** The model reports a fault for every advert of the request, as `createBatchChecker` does. */
+export const fault = (n: number): BatchResult[] => Array.from({ length: n }, () => ({ ...says(false), modelId: MODEL, failure: { kind: "model error" as const, why: "model host answered HTTP 429" } }));
