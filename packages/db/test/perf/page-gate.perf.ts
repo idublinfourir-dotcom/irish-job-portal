@@ -7,12 +7,13 @@
 // Roles: postgres loads the fill and rewrites the rows (it can switch triggers off), portal_owner vacuums and sets table options,
 // and app_candidate, the role the candidate site runs as, takes every measurement. Fake data only.
 import pg from "pg";
-import { afterAll, beforeAll, it, vi } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createTestDb, tx, urlFor, type TestDb } from "../db";
 import { LAST_5_YEARS } from "../../src/dete";
 import { JOB_QUERY, listQuery, SORTS as LIST_SORTS, type Cursor, type Sort as ListSort } from "../../src/search";
+import { approve, claim, DECIDE, listQueue, LOCK, QUEUE_AFTER, QUEUE_FIRST, QUEUE_ITEM } from "../../src/admin-queue";
 import { fill } from "./fill";
-import { measurePages, pageOver, type PageCost, type Statement } from "./pages";
+import { costOf, measurePages, pageOver, type PageCost, type Statement } from "./pages";
 
 export const PAGE_LIMIT = 1000;
 // The Search module's pages also have a time budget: execution plus serialisation of all the page's own statements, warm, on this machine.
@@ -286,4 +287,76 @@ it("no page is over the limit after vacuum (analyze)", async () => {
   await lap("vacuum job", () => owner.query("vacuum (analyze) job"));
   const { failures } = await lap("sweep after vacuum", () => sweep("after vacuum (analyze)"));
   expectNoneOver("after vacuum (analyze)", failures);
+});
+
+// The admin queue (src/admin-queue.ts), measured as app_admin on the same full-size fill: 300 open items among the fill's done ones, the list's first
+// page and a page from the middle, one item, and an approve (its lock and its write, measured on the real call inside a savepoint before each runs).
+it("the admin queue pages and an approve stay under the limit", async () => {
+  const staff = "staf0000001x0123456789abcdef";
+  await su.query(
+    "insert into review_item(queue, job_id, reason, created_at) select 'fetched_job', id, 'Fake reason', now() - g * interval '1 minute' " +
+      "from (select id, row_number() over (order by id) g from job where status = 'closed' and source = 'fetched' order by id limit 300) s",
+  );
+  // two queued jobs with their text: the first approve warms the connection, the second is measured
+  const made: string[] = [];
+  for (let i = 0; i < 2; i++) {
+    const adv = (await su.query("insert into fetched_advert(job_source_id, external_id, url, title, employer_name, result, stage) values (1, $1, 'https://jobs.example.test/q', 'Platform Engineer', 'Fake Employer 1', 'queued', '7 contract unclear (admin queue)') returning id", [`gate-${i}`])).rows[0].id;
+    const job = (await su.query(
+      "insert into job(organisation_id, source, job_source_id, fetched_advert_id, title, employer_name, county, sector, permit_type, status, closes_at, search_vector, own_page_url) " +
+        "values (1, 'fetched', 1, $1, 'Platform Engineer', 'Fake Employer 1', 'Dublin', 'IT', 'critical_skills', 'in_review', 'infinity', to_tsvector('english', 'platform'), 'https://jobs.example.test/q') returning id",
+      [adv],
+    )).rows[0].id;
+    await su.query("insert into job_text(job_id, advert_text) values ($1, $2)", [job, `${"We build fake things for fake people. ".repeat(120)} The salary is €60,000 a year.`]);
+    made.push((await su.query("select id::text from review_item where queue = 'fetched_job' and job_id = $1", [job])).rows[0].id);
+  }
+  await owner.query("vacuum (analyze) review_item, audit_event");
+  const pool = db.pool("app_admin");
+  for (const item of made) await claim(pool, staff, item);
+
+  const client = new pg.Client({ connectionString: urlFor(db.name, "app_admin") });
+  await client.connect();
+  let reads: PageCost[];
+  try {
+    const mid = (await listQueue(client)).next!;
+    const [t, i] = Object.values(JSON.parse(Buffer.from(mid, "base64url").toString("utf8"))) as string[];
+    reads = await measurePages(client, [QUEUE_FIRST, { text: QUEUE_AFTER, values: [t, i] }, { text: QUEUE_ITEM, values: [made[1]] }]);
+  } finally {
+    await client.end();
+  }
+
+  let write: PageCost[] = [];
+  const measuring = {
+    query: pool.query.bind(pool),
+    connect: async () => {
+      const c = await pool.connect();
+      return Object.assign(Object.create(c), {
+        release: () => c.release(),
+        query: async (text: string, values?: unknown[]) => {
+          if (text === LOCK || text === DECIDE) {
+            await c.query("savepoint m");
+            const e = await c.query(`explain (analyze, buffers, serialize, format json) ${text}`, values);
+            await c.query("rollback to savepoint m");
+            write.push(costOf(text, e.rows[0]["QUERY PLAN"]));
+          }
+          return c.query(text, values);
+        },
+      });
+    },
+  } as unknown as pg.Pool;
+  const rules = { chain: { deteNames: new Set<string>(), publicPayCandidates: new Map<string, 1 | 2>() }, lists: [{ code: "2134", list: "critical-skills" }] };
+  for (const item of made) {
+    write = [];
+    await approve(measuring, staff, item, { occupationCode: "2134", contractConfirmed: true }, rules);
+  }
+  const pages = [
+    ["admin queue first page", [reads[0]!]], ["admin queue page from the middle", [reads[1]!]], ["admin queue item", [reads[2]!]], ["admin approve: lock + write", write],
+  ] as const;
+  console.log(`\n=== admin queue (app_admin): ${pages.map(([n, c]) => `${n} ${sum([...c], "pages")} pages / ${Math.round(sum([...c], "ms") * 100) / 100} ms [${c.map((x) => x.scans).join(" ; ")}]`).join(" | ")}`);
+  const failures = pages.flatMap(([n, c]) => {
+    const over = pageOver(n, [...c], PAGE_LIMIT);
+    const ms = sum([...c], "ms");
+    return [...(over ? [over] : []), ...(ms > MS_LIMIT ? [`page "${n}" took ${ms} ms, budget ${MS_LIMIT} ms`] : [])];
+  });
+  expect(write).toHaveLength(2);
+  expectNoneOver("admin queue", failures);
 });

@@ -135,10 +135,21 @@ const blank = (): Assessment => ({
 });
 
 /**
+ * What a staff member adds when they approve a queued advert (admin queue, #166). Not in the Python; both default to off, so the fetcher's
+ * chain is unchanged.
+ */
+export type StaffInput = {
+  /** Staff read the contract as long enough: the "contract unclear" stage and the two #95 contract stages do not stop the chain. A short contract still does. */
+  contractConfirmed?: boolean;
+  /** The pay staff read on the advert, used in place of what the salary reader finds in the text. */
+  salary?: { low: number; high: number };
+};
+
+/**
  * Run every rule on one advert, in the Python's order, and return the full assessment.
  * Async only because the matcher is (a later matcher may call an AI model).
  */
-export async function assess(advert: AdvertInput, data: ChainData): Promise<Assessment> {
+export async function assess(advert: AdvertInput, data: ChainData, staff: StaffInput = {}): Promise<Assessment> {
   const out = blank();
   if (
     overLimit(advert.title, INPUT_LIMITS.title) ||
@@ -190,12 +201,12 @@ export async function assess(advert: AdvertInput, data: ChainData): Promise<Asse
     out.contract = c.result;
     out.contractReason = c.reason;
     if (c.result === "short") stage = "7 contract under 2 years";
-    else if (c.result === "unclear") stage = "7 contract unclear (admin queue)";
+    else if (c.result === "unclear" && !staff.contractConfirmed) stage = "7 contract unclear (admin queue)";
   }
 
   // classify.py:222-229
   if (!stage) {
-    const { low, high } = readSalary(description, advert.salaryBox ?? "");
+    const { low, high } = staff.salary ?? readSalary(description, advert.salaryBox ?? "");
     out.salaryLow = low;
     out.salaryHigh = high;
     out.salaryCheck = checkSalary(low, high);
@@ -219,7 +230,7 @@ export async function assess(advert: AdvertInput, data: ChainData): Promise<Asse
   }
 
   // run_day.py:101-105, the two #95 rules, only on a pass or an "8 " stage
-  if (stage.startsWith("PASS") || stage.startsWith("8 ")) {
+  if ((stage.startsWith("PASS") || stage.startsWith("8 ")) && !staff.contractConfirmed) {
     if (doctorGradeWithoutTwoYears(title, description)) stage = "7 doctor grade, contract unconfirmed (admin queue, #95)";
     else if (permanentOrSpecifiedPurpose(description)) stage = "7 permanent or specified purpose (admin queue, #95)";
   }
