@@ -103,14 +103,48 @@ const CLAIM =
   "where id = $1::bigint and queue = 'fetched_job' and status = 'open' returning id";
 const STATE = "select status, claimed_by_staff_user_id from review_item where id = $1::bigint and queue = 'fetched_job'";
 
-/** Open to claimed by this staff member. Claiming an item one already holds is a no-op; anyone else's claim, or a decided item, is refused. */
+// A claim goes stale after a working day (the PRD's "admin queue cleared within 1 working day"), or at once when its holder is no longer active,
+// so an absent or disabled staff member never blocks an item. Taking over and giving back each write one audit row, in the same statement.
+export const STALE_AFTER = "24 hours";
+const CLAIM_AUDIT =
+  "insert into audit_event(kind, actor_staff_user_id, action, object_type, object_id, changed_columns, before, after, source) " +
+  "select 'admin_action', $2, $3, 'review_item', $1::text, '{claimed_by_staff_user_id}', jsonb_build_object('claimed_by_staff_user_id', old_by), " +
+  "jsonb_build_object('claimed_by_staff_user_id', new_by), 'panel' from w returning id";
+// The where clause is checked again under the row lock, so of two staff taking over at once only one matches (the claim is then fresh).
+export const TAKE_OVER =
+  "with o as (select id, claimed_by_staff_user_id as old_by from review_item where id = $1::bigint and queue = 'fetched_job' and status = 'claimed'), " +
+  "w as (update review_item r set claimed_by_staff_user_id = $2, claimed_at = now() from o where r.id = o.id and r.status = 'claimed' " +
+  "and r.claimed_by_staff_user_id <> $2 and (r.claimed_at < now() - $4::interval " +
+  "or not exists (select 1 from staff_user u where u.id = r.claimed_by_staff_user_id and u.status = 'active')) returning r.id, o.old_by, $2::text as new_by) " +
+  CLAIM_AUDIT;
+export const RELEASE =
+  "with w as (update review_item set status = 'open', claimed_by_staff_user_id = null, claimed_at = null " +
+  "where id = $1::bigint and queue = 'fetched_job' and status = 'claimed' and claimed_by_staff_user_id = $2 returning id, $2::text as old_by, null::text as new_by) " +
+  CLAIM_AUDIT;
+
+/**
+ * Open to claimed by this staff member. Claiming an item one already holds is a no-op. Someone else's claim is taken over when it is stale
+ * (older than STALE_AFTER, or its holder is no longer active); otherwise it is refused, as is a decided item.
+ */
 export async function claim(db: Db, staffUserId: string, itemId: string | number): Promise<void> {
   await acting(db, staffUserId, itemId, async (c, id) => {
     if ((await c.query(CLAIM, [id, staffUserId])).rowCount === 1) return;
     const s = (await c.query<{ status: string; claimed_by_staff_user_id: string | null }>(STATE, [id])).rows[0];
     if (!s) throw new QueueRefused("not_found");
     if (s.status === "claimed" && s.claimed_by_staff_user_id === staffUserId) return;
-    throw new QueueRefused(s.status === "claimed" ? "claimed_by_other" : "already_decided");
+    if (s.status !== "claimed") throw new QueueRefused("already_decided");
+    if ((await c.query(TAKE_OVER, [id, staffUserId, "fetched_job.take_over", STALE_AFTER])).rowCount === 1) return;
+    throw new QueueRefused("claimed_by_other");
+  });
+}
+
+/** Claimed back to open, by the claimer only, so someone else can pick it up. */
+export async function release(db: Db, staffUserId: string, itemId: string | number): Promise<void> {
+  await acting(db, staffUserId, itemId, async (c, id) => {
+    if ((await c.query(RELEASE, [id, staffUserId, "fetched_job.release"])).rowCount === 1) return;
+    const s = (await c.query<{ status: string; claimed_by_staff_user_id: string | null }>(STATE, [id])).rows[0];
+    if (!s) throw new QueueRefused("not_found");
+    throw new QueueRefused(s.status === "open" ? "not_claimed" : s.status === "claimed" ? "not_claimer" : "already_decided");
   });
 }
 

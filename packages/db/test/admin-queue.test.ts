@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import type pg from "pg";
 import { cleanEmployerName } from "@portal/rules";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { approve, claim, getItem, listQueue, QueueRefused, reject, type RulesData } from "../src/admin-queue";
+import { approve, claim, getItem, listQueue, QueueRefused, reject, release, type RulesData } from "../src/admin-queue";
 import { getJob, PAGE_SIZE } from "../src/search";
 import { createTestDb, race, type Role, type TestDb } from "./db";
 import { fixtures } from "./fixtures";
@@ -147,6 +147,80 @@ describe("claim", () => {
   });
 });
 
+describe("stale claims and release", () => {
+  const itemAudits = async (item: string) =>
+    (await su("select actor_staff_user_id, action, before, after from audit_event where object_type = 'review_item' and object_id = $1 order by id", [item])).rows;
+  const age = (item: string, hours: number) => su(`update review_item set claimed_at = now() - interval '${hours} hours' where id = $1`, [item]);
+
+  it("a claim under 24 hours old by an active staff member is not taken over", async () => {
+    const c = await claimed();
+    const b = await F.staff();
+    await age(c.item, 23);
+    expect(await refusal(claim(admin(), b, c.item))).toBe("claimed_by_other");
+    expect((await itemRow(c.item)).claimed_by_staff_user_id).toBe(c.staff);
+    expect(await itemAudits(c.item)).toEqual([]);
+  });
+
+  it("a claim over 24 hours old is taken over, with one audit row naming both", async () => {
+    const c = await claimed();
+    const b = await F.staff();
+    await age(c.item, 25);
+    await claim(admin(), b, c.item);
+    expect(await itemRow(c.item)).toMatchObject({ status: "claimed", claimed_by_staff_user_id: b });
+    expect(await itemAudits(c.item)).toEqual([
+      { actor_staff_user_id: b, action: "fetched_job.take_over", before: { claimed_by_staff_user_id: c.staff }, after: { claimed_by_staff_user_id: b } },
+    ]);
+    // the old holder can no longer decide; the new one can
+    expect(await refusal(reject(admin(), c.staff, c.item, "duplicate"))).toBe("not_claimer");
+    await reject(admin(), b, c.item, "duplicate");
+  });
+
+  it("a disabled staff member's claim is taken over at once", async () => {
+    const c = await claimed();
+    await su("update staff_user set status = 'disabled' where id = $1", [c.staff]);
+    const b = await F.staff();
+    await claim(admin(), b, c.item);
+    expect((await itemRow(c.item)).claimed_by_staff_user_id).toBe(b);
+  });
+
+  it("of five staff taking over one stale claim at once, exactly one gets it and one audit row is written", async () => {
+    const c = await claimed();
+    await age(c.item, 48);
+    const staff = await Promise.all(Array.from({ length: 5 }, () => F.staff()));
+    const r = await race(5, (i) => claim(admin(), staff[i]!, c.item));
+    expect(r.ok.length).toBe(1);
+    expect(r.errors.every((e) => e.includes("claimed_by_other"))).toBe(true);
+    expect(await itemAudits(c.item)).toHaveLength(1);
+  });
+
+  it("the claimer can release an item back to open, with an audit row; then anyone can claim it", async () => {
+    const c = await claimed();
+    await release(admin(), c.staff, c.item);
+    expect(await itemRow(c.item)).toMatchObject({ status: "open", claimed_by_staff_user_id: null });
+    expect(await itemAudits(c.item)).toEqual([
+      { actor_staff_user_id: c.staff, action: "fetched_job.release", before: { claimed_by_staff_user_id: c.staff }, after: { claimed_by_staff_user_id: null } },
+    ]);
+    const b = await F.staff();
+    await claim(admin(), b, c.item);
+    expect((await itemRow(c.item)).claimed_by_staff_user_id).toBe(b);
+  });
+
+  it("release is refused for someone else's claim, an open item, a decided item, a disabled or unknown staff member and odd ids", async () => {
+    const c = await claimed();
+    const b = await F.staff();
+    expect(await refusal(release(admin(), b, c.item))).toBe("not_claimer");
+    const q = await queued();
+    expect(await refusal(release(admin(), b, q.item))).toBe("not_claimed");
+    await reject(admin(), c.staff, c.item, "duplicate");
+    expect(await refusal(release(admin(), c.staff, c.item))).toBe("already_decided");
+    const d = await claimed();
+    await su("update staff_user set status = 'disabled' where id = $1", [d.staff]);
+    for (const who of [d.staff, "no-such-staff", ""]) expect(await refusal(release(admin(), who, d.item))).toBe("not_active_staff");
+    for (const bad of ["0", "-1", "1 or 1=1", "99999999999999999999"]) expect(await refusal(release(admin(), b, bad))).toBe("not_found");
+    expect(await itemRow(d.item)).toMatchObject({ status: "claimed", claimed_by_staff_user_id: d.staff });
+  });
+});
+
 describe("approve", () => {
   it("goes live with the fetcher's columns, closes the item and writes one audit row, all together", async () => {
     const c = await claimed();
@@ -260,20 +334,36 @@ describe("statement budget", () => {
     await reject(m.db, c.staff, q.item, "duplicate");
     expect(m.sql).toHaveLength(5);
   });
+  it("release is four statements, taking over a stale claim six (begin, acting staff, claim, state, take over, commit)", async () => {
+    const c = await claimed();
+    const m = counting(admin());
+    await release(m.db, c.staff, c.item);
+    expect(m.sql).toHaveLength(4);
+    await claim(admin(), c.staff, c.item);
+    await su("update review_item set claimed_at = now() - interval '48 hours' where id = $1", [c.item]);
+    m.sql.length = 0;
+    await claim(m.db, await F.staff(), c.item);
+    expect(m.sql).toHaveLength(6);
+  });
 });
 
 describe("security", () => {
   const OTHERS: Role[] = ["app_portal", "app_candidate", "app_fetcher", "anon", "authenticated"];
-  it.each(OTHERS)("%s cannot list, read, claim, approve or reject", async (role) => {
+  it.each(OTHERS)("%s cannot list, read, claim, take over, release, approve or reject", async (role) => {
     const c = await claimed();
     const q = await queued();
+    const stale = await claimed();
+    await su("update review_item set claimed_at = now() - interval '48 hours' where id = $1", [stale.item]);
     const p = db.pool(role);
     const results = [
       await refusal(listQueue(p)), await refusal(getItem(p, q.item)), await refusal(claim(p, c.staff, q.item)),
+      await refusal(claim(p, c.staff, stale.item)), await refusal(release(p, c.staff, c.item)),
       await refusal(approve(p, c.staff, c.item, { occupationCode: "2134", contractConfirmed: true }, RULES)), await refusal(reject(p, c.staff, c.item, "duplicate")),
     ];
     for (const r of results) expect(r).toMatch(/^error: permission denied/);
     expect(await itemRow(q.item)).toMatchObject({ status: "open" });
+    expect(await itemRow(c.item)).toMatchObject({ status: "claimed", claimed_by_staff_user_id: c.staff });
+    expect((await itemRow(stale.item)).claimed_by_staff_user_id).toBe(stale.staff);
     expect((await jobRow(c.job)).status).toBe("in_review");
   });
 

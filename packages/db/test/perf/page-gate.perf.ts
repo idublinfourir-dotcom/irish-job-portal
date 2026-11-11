@@ -11,7 +11,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createTestDb, tx, urlFor, type TestDb } from "../db";
 import { LAST_5_YEARS } from "../../src/dete";
 import { JOB_QUERY, listQuery, SORTS as LIST_SORTS, type Cursor, type Sort as ListSort } from "../../src/search";
-import { approve, claim, DECIDE, listQueue, LOCK, QUEUE_AFTER, QUEUE_FIRST, QUEUE_ITEM } from "../../src/admin-queue";
+import { approve, claim, DECIDE, listQueue, LOCK, QUEUE_AFTER, QUEUE_FIRST, QUEUE_ITEM, RELEASE, STALE_AFTER, TAKE_OVER } from "../../src/admin-queue";
 import { fill } from "./fill";
 import { costOf, measurePages, pageOver, type PageCost, type Statement } from "./pages";
 
@@ -348,8 +348,37 @@ it("the admin queue pages and an approve stay under the limit", async () => {
     write = [];
     await approve(measuring, staff, item, { occupationCode: "2134", contractConfirmed: true }, rules);
   }
+  // Taking over a stale claim and giving one back: each one statement, measured as the acting staff member inside a rolled-back transaction.
+  const other = "gate-take-over-staff";
+  await su.query("insert into staff_user(id, name, email, email_verified, created_at, updated_at) values ($1, 'Fake Staff 2', 'gate2@example.test', true, now(), now())", [other]);
+  const stale = (await su.query("select id::text from review_item where queue = 'fetched_job' and status = 'open' order by id limit 1")).rows[0].id as string;
+  await claim(pool, staff, stale);
+  await su.query("update review_item set claimed_at = now() - interval '48 hours' where id = $1", [stale]);
+  const one = async (who: string, text: string, values: unknown[]) => {
+    const c = await pool.connect();
+    try {
+      for (const measure of [false, true]) {
+        await c.query("begin");
+        await c.query("select set_config('app.staff_user_id', $1, true)", [who]);
+        if (!measure) await c.query(text, values); // warm
+        else {
+          const plan = (await c.query(`explain (analyze, buffers, serialize, format json) ${text}`, values)).rows[0]["QUERY PLAN"];
+          return { cost: costOf(text, plan), rows: plan[0]["Plan"]["Actual Rows"] as number };
+        }
+        await c.query("rollback");
+      }
+      throw new Error("unreachable");
+    } finally {
+      await c.query("rollback");
+      c.release();
+    }
+  };
+  const take = await one(other, TAKE_OVER, [stale, other, "fetched_job.take_over", STALE_AFTER]);
+  const give = await one(staff, RELEASE, [stale, staff, "fetched_job.release"]);
+  expect([take.rows, give.rows]).toEqual([1, 1]); // each wrote its audit row, so the whole statement was measured
   const pages = [
     ["admin queue first page", [reads[0]!]], ["admin queue page from the middle", [reads[1]!]], ["admin queue item", [reads[2]!]], ["admin approve: lock + write", write],
+    ["admin take over a stale claim", [take.cost]], ["admin release a claim", [give.cost]],
   ] as const;
   console.log(`\n=== admin queue (app_admin): ${pages.map(([n, c]) => `${n} ${sum([...c], "pages")} pages / ${Math.round(sum([...c], "ms") * 100) / 100} ms [${c.map((x) => x.scans).join(" ; ")}]`).join(" | ")}`);
   const failures = pages.flatMap(([n, c]) => {
