@@ -1,5 +1,6 @@
 import { betterAuth, type DBFieldAttribute } from "better-auth";
 import { APIError } from "better-auth/api";
+import { nextCookies } from "better-auth/next-js";
 import type { Pool } from "pg";
 
 // The pool is called portal, not employer: its tables are portal_user and so on (23-database-design.md).
@@ -40,6 +41,23 @@ export function checkSettings(baseURL: string, secret: string): { secure: boolea
   return { secure: url.protocol === "https:" };
 }
 
+// Staff idle limit (#172): a staff session ends after 8 idle hours. Each use more than 5 minutes after the last refresh
+// moves the end out to 8 hours from now, so the session ends between 7 h 55 min and 8 h after the last use.
+export const STAFF_IDLE_SECONDS = 8 * 3600;
+export const STAFF_REFRESH_SECONDS = 300;
+
+// The admin app's settings, read from its environment. Missing ones fail closed, like checkSettings.
+export function staffSettings(env: NodeJS.ProcessEnv): { baseURL: string; secret: string } {
+  const baseURL = env.STAFF_AUTH_URL, secret = env.STAFF_AUTH_SECRET;
+  if (!baseURL || !secret) throw new Error("STAFF_AUTH_URL and STAFF_AUTH_SECRET must be set.");
+  checkSettings(baseURL, secret);
+  return { baseURL, secret };
+}
+// Staff reset links go nowhere yet (no outside email service in step 7 slice 1), so the staff pool refuses to send.
+export const refuseEmail: SendEmail = async (pool, kind) => {
+  throw new Error(`Email is not set up for the ${pool} pool (${kind} link not sent).`);
+};
+
 // Three separate login pools in one database (#97): the same email can exist once in each, with its own
 // tables and its own cookie. The options are the ones the tests in packages/db/test/better-auth.test.ts prove
 // (23-database-design.md section 2.2).
@@ -69,7 +87,12 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
     trustedOrigins: [baseURL],
     user: { modelName: `${name}_user`, fields: snake.user, additionalFields: added[name] },
     // The cookie cache stays off, so every request reads the session and user from the database.
-    session: { modelName: `${name}_session`, cookieCache: { enabled: false }, fields: snake.session },
+    session: {
+      modelName: `${name}_session`, cookieCache: { enabled: false }, fields: snake.session,
+      ...(name === "staff" ? { expiresIn: STAFF_IDLE_SECONDS, updateAge: STAFF_REFRESH_SECONDS } : {}),
+    },
+    // Staff: server calls (requireStaff) refresh the session row, and this sends the new cookie back in Next.js route handlers and server actions.
+    plugins: name === "staff" ? [nextCookies()] : [],
     account: { modelName: `${name}_account`, fields: snake.account },
     verification: { modelName: `${name}_verification`, fields: snake.verification },
     // Better Auth ignores the added status columns, so this refuses a session to a flagged person.
@@ -79,6 +102,8 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
           before: async (s) => {
             const r = await database.query(refusedSql[name], [s.userId]);
             if (r.rowCount) throw new APIError("FORBIDDEN", { message: "This account cannot sign in." });
+            // rememberMe: false gives a 1-day session that never refreshes; for staff it is capped at the idle limit too.
+            if (name === "staff") return { data: { ...s, expiresAt: new Date(Math.min(+s.expiresAt, Date.now() + STAFF_IDLE_SECONDS * 1000)) } };
             return { data: s };
           },
         },
@@ -87,4 +112,17 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
     // The client address comes from the header Vercel sets, not X-Forwarded-For, which any client can send.
     advanced: { cookiePrefix: name, useSecureCookies: secure, ipAddress: { ipAddressHeaders: ["x-vercel-forwarded-for"] } },
   });
+}
+
+/** A request with no usable staff session. `why` is "no_session" or "not_active". */
+export class StaffRefused extends Error {}
+
+// Every admin call starts here. The session read also reads staff_user.status (the cookie cache is off), so a person disabled
+// after signing in is refused on their next request even if their session row was not deleted. Returns the id the admin
+// queue functions take. ponytail: no roles yet (#172 adds the queue role check later; reading them costs one more statement).
+export async function requireStaff(auth: ReturnType<typeof createAuth>, headers: Headers): Promise<string> {
+  const s = await auth.api.getSession({ headers });
+  if (!s) throw new StaffRefused("no_session");
+  if ((s.user as { status?: unknown }).status !== "active") throw new StaffRefused("not_active");
+  return s.user.id;
 }
