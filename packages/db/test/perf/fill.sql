@@ -88,6 +88,15 @@ insert into staff_rate_limit(id,key,count,last_request) select 'rl'||g,'192.0.2.
 insert into staff_role(staff_user_id,role,seeded_by_owner) select id,(array['account_reviewer','fetched_job_reviewer','rules_data_editor','trust_and_safety','services_case_handler','content_editor','administrator'])[1+g%7],true from sta;
 -- @@
 -- jobs: 5,000 live from fake adverts, 33,000 closed mixed in, adverts linked at insert
+-- The sponsor key (migration 0008): -1 with no linked DETE name, else the permits of the last 5 calendar years, set as the refresh function
+-- would. Triggers are off in this load, so each job copies its organisation's key at insert, as the job trigger does. Never one update of
+-- every job row afterwards: that moved 30,400 of the 38,000 rows, and where they landed changed from run to run with background timing
+-- (in the runs measured, with whether autoanalyze had reached organisation), so the live rows sat on 693 pages in one run and 1,292 in
+-- the next and the "after rewrite, no vacuum" gate passed or failed by luck (11 November 2026).
+update organisation o set sponsor_sort = s.p
+ from (select n.organisation_id id, coalesce(sum(d.permits) filter (where d.year between extract(year from now() at time zone 'utc')::int - 4 and extract(year from now() at time zone 'utc')::int), 0)::int p
+         from dete_permit_count d join organisation_name n on n.id = d.organisation_name_id where n.organisation_id is not null group by 1) s
+ where s.id = o.id;
 insert into job_source(kind,board) select 'board','fake-board-'||g from generate_series(1,29) g; insert into job_source(kind,board) values ('portal','portal');
 create temp table mix as
  select row_number() over () rn, * from (
@@ -97,14 +106,15 @@ insert into fetched_advert(job_source_id,external_id,url,title,employer_name,fir
  select 1+(g%29),'ext-'||g,'https://jobs.example.test/fake/board/'||g,'A fake advert title of normal length '||g,'Fake Employer '||(g%500),now()-interval '60 days',now(),'rejected','5 occupation not recognised','Short quoted evidence from the advert, about two hundred characters long, kept for review as number 122 asks. Short quoted evidence from the advert, about two hundred characters long.','free-model-1' from generate_series(1,60000) g;
 insert into fetched_advert(job_source_id,external_id,url,title,employer_name,result,stage,matcher_model)
  select 1+(g%29),'old-'||g,'https://jobs.example.test/fake/closed/'||g,'A fake closed job title '||g,'Fake Employer '||(g%500),'passed','PASS','free-model-1' from generate_series(1,28000) g;
-insert into job(organisation_id,source,job_source_id,fetched_advert_id,title,employer_name,sector,county,permit_type,badge,pass_route,status,posted_at,closes_at,closed_at,own_page_url,permit_history)
- select 1+(g%(:orgs+6000)),'fetched',1+(g%29),(select min(id) from fetched_advert where result='passed')+g-1,'A fake closed job title '||g,'Fake Employer '||(g%500),(array['IT','health','finance','pharma and science','construction and engineering'])[1+g%5],'Dublin','critical_skills','critical_skills_eligible','stated_pay','closed',now()-interval '2 years'+(g||' minutes')::interval,'infinity',now()-interval '1 year','https://jobs.example.test/fake/closed/'||g,(array['has_history','first_time','not_linked'])[1+g%3] from generate_series(1,28000) g;
+insert into job(organisation_id,source,job_source_id,fetched_advert_id,title,employer_name,sector,county,permit_type,badge,pass_route,status,posted_at,closes_at,closed_at,own_page_url,permit_history,sponsor_sort)
+ select 1+(g%(:orgs+6000)),'fetched',1+(g%29),(select min(id) from fetched_advert where result='passed')+g-1,'A fake closed job title '||g,'Fake Employer '||(g%500),(array['IT','health','finance','pharma and science','construction and engineering'])[1+g%5],'Dublin','critical_skills','critical_skills_eligible','stated_pay','closed',now()-interval '2 years'+(g||' minutes')::interval,'infinity',now()-interval '1 year','https://jobs.example.test/fake/closed/'||g,(array['has_history','first_time','not_linked'])[1+g%3],
+   coalesce((select o.sponsor_sort from organisation o where o.id = 1+(g%(:orgs+6000))), -1) from generate_series(1,28000) g;
 insert into fetched_advert(job_source_id,external_id,url,title,employer_name,result,stage,matcher_model)
  select 1+(rn%29),'mix-'||rn,'https://jobs.example.test/fake/'||rn,title,employer,'passed','PASS','free-model-1' from mix where rn%5<>0 order by rn;
 create temp table mixadv as select f.id fid, substr(f.external_id,5)::bigint rn from fetched_advert f where f.external_id like 'mix-%';
 -- Employer jobs (every fifth) stand behind one of the verified organisations and are posted by its account owner, so each live sponsor_confirmed job can get its statement below.
 create temp table mixorg as select rn, case when rn%5=0 then 1+(rn%:orgs) else 1+(rn%(:orgs+6000)) end oid from mix;
-insert into job(organisation_id,source,job_source_id,fetched_advert_id,title,employer_name,sector,county,permit_type,badge,pass_route,salary_low,salary_high,pay_grade,status,posted_at,closes_at,closed_at,own_page_url,permit_history,quota_full,search_vector,posted_by_membership_id)
+insert into job(organisation_id,source,job_source_id,fetched_advert_id,title,employer_name,sector,county,permit_type,badge,pass_route,salary_low,salary_high,pay_grade,status,posted_at,closes_at,closed_at,own_page_url,permit_history,quota_full,search_vector,posted_by_membership_id,sponsor_sort)
  select o.oid,case when m.rn%5=0 then 'employer' else 'fetched' end,case when m.rn%5=0 then 30 else 1+(m.rn%29) end,a.fid,m.title,m.employer,m.sector,m.county,
    case when m.rn%5=0 and m.rn%3=0 then 'general' else 'critical_skills' end,
    case when m.rn%5=0 then 'sponsor_confirmed' else 'critical_skills_eligible' end,'stated_pay',
@@ -112,8 +122,8 @@ insert into job(organisation_id,source,job_source_id,fetched_advert_id,title,emp
    case when m.rn%5<>0 then 'infinity'::timestamptz when m.st='live' then now()+interval '30 days' else m.posted+interval '30 days' end,
    case when m.st='closed' then now()-interval '1 day' end,'https://jobs.example.test/fake/'||m.rn,(array['has_history','has_history','first_time','not_linked'])[1+m.rn%4], m.st='live' and m.rn%100=0,
    case when m.st='live' then to_tsvector('english',m.title||' '||m.employer||' FakeCo '||o.oid||' '||m.txt) end,
-   case when m.rn%5=0 then 2*o.oid-1 end
- from mix m join mixorg o using (rn) left join mixadv a on a.rn=m.rn order by m.r;
+   case when m.rn%5=0 then 2*o.oid-1 end, coalesce(org.sponsor_sort, -1)
+ from mix m join mixorg o using (rn) left join organisation org on org.id=o.oid left join mixadv a on a.rn=m.rn order by m.r;
 insert into job_text select j.id, i.txt from (select id, row_number() over (order by id) n from job where status='live') j join (select txt, row_number() over (order by r) n from mix where st='live') i using(n);
 insert into job_daily_stat(job_id,day,views,apply_clicks) select j.id,current_date-d,(random()*50)::int,(random()*5)::int from (select id from job where source='employer' limit :cand/6) j cross join generate_series(0,29) d;
 insert into fetch_run(job_source_id,finished_at,seen,new,closed) select 1+(g%30),now(),100,3,1 from generate_series(1,2700) g;
@@ -164,11 +174,3 @@ insert into audit_event(at,kind,actor_staff_user_id,action,source) select now()-
 insert into notification_preference(candidate_user_id,category,channel,enabled) select id,'alerts','email',false from cand where g%10=0;
 insert into notification(candidate_user_id,category,template_key,params,dedupe_key) select id,'job_closed','job-closed','{"job_id":123456,"title":"A fake job title of normal length"}',md5('n'||g||'-'||x) from cand cross join generate_series(1,2) x;
 insert into email_outbox(template,candidate_user_id,params,dedupe_key,status,sent_at) select 'alert-digest','cand'||lpad((1+g%:cand)::text,7,'0')||'x0123456789abcdef','{"alert_id":123456,"job_ids":[1,2,3,4,5,6,7,8]}',md5('e'||g),'sent',now() from generate_series(1,:cand*4) g;
--- @@
--- The sponsor key (migration 0008), set as the refresh function would: -1 with no linked DETE name, else the permits of the last 5 calendar years.
--- Triggers are off in this load, so it is written to the organisations and copied onto their jobs here.
-update organisation o set sponsor_sort = s.p
- from (select n.organisation_id id, coalesce(sum(d.permits) filter (where d.year between extract(year from now() at time zone 'utc')::int - 4 and extract(year from now() at time zone 'utc')::int), 0)::int p
-         from dete_permit_count d join organisation_name n on n.id = d.organisation_name_id where n.organisation_id is not null group by 1) s
- where s.id = o.id;
-update job j set sponsor_sort = o.sponsor_sort from organisation o where o.id = j.organisation_id and o.sponsor_sort <> -1;
