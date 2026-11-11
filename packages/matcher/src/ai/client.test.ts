@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chatClient } from "./client";
+import { chatClient, spacedClient } from "./client";
 
 const KEY = "sk-test-SECRET-KEY-123";
 const prompt = { system: "S", user: "U" };
@@ -89,5 +89,31 @@ describe("chatClient", () => {
     const f = fakeFetch(() => ok("x"));
     expect(() => client(f.fetch, { baseUrl: "http://models.example/v1" })).toThrow(/https/);
     expect(() => client(f.fetch, { baseUrl: "http://localhost:11434/v1" })).not.toThrow();
+  });
+});
+
+describe("spacedClient", () => {
+  it("starts calls at least the gap apart, also when they are made at the same moment", async () => {
+    const waits: number[] = [];
+    const spaced = spacedClient(async () => "ok", 3_000, async (ms) => { waits.push(ms); }, () => 1_000);
+    await Promise.all([spaced(prompt), spaced(prompt), spaced(prompt)]);
+    expect(waits).toEqual([0, 3_000, 6_000]);
+  });
+
+  it("does not wait when the gap has already passed", async () => {
+    let clock = 0;
+    const waits: number[] = [];
+    const spaced = spacedClient(async () => "ok", 3_000, async (ms) => { waits.push(ms); }, () => clock);
+    await spaced(prompt);
+    clock = 10_000;
+    await spaced(prompt);
+    expect(waits).toEqual([0, 0]);
+  });
+
+  it("passes the reply and the error through unchanged", async () => {
+    const good = spacedClient(async () => "reply", 0);
+    await expect(good(prompt)).resolves.toBe("reply");
+    const bad = spacedClient(async () => { throw new Error("model host answered HTTP 429"); }, 0);
+    await expect(bad(prompt)).rejects.toThrow("HTTP 429");
   });
 });

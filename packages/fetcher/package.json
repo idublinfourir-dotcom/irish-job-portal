@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@portal/db": "*",
     "@portal/matcher": "*",
     "@portal/rules": "*",
     "@portal/sources": "*",

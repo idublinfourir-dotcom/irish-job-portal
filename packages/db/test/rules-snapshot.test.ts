@@ -14,8 +14,10 @@ afterAll(() => db.drop());
 const APP_ROLES = ["app_candidate", "app_portal", "app_admin", "app_fetcher"];
 const TABLE_RIGHTS = ["select", "insert", "update", "delete", "truncate", "references", "trigger"];
 const COLUMN_RIGHTS = ["select", "insert", "update", "references"];
-// Performance budget for the catalog read: the read took about 33 ms when measured, the limit is about five times that.
-const BUDGET_MS = 200;
+// Performance budget for the catalog read: about 33 ms alone, but 208 and 219 ms inside a full parallel `npm run check` on a
+// busy laptop (11 November 2026), so 200 ms failed by chance. 1,000 ms (as the other time budgets here) still catches a real
+// slowdown, which would cost many times more.
+const BUDGET_MS = 1_000;
 const fold = (s: string) => s.replace(/\s+/g, " ").trim();
 
 const triggers = `select 'trigger ' || t.tgname || ' on ' || c.relname || ': ' || pg_get_triggerdef(t.oid) as line

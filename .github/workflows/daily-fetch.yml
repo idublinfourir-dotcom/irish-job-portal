@@ -1,0 +1,59 @@
+name: Daily fetch
+
+# Fetches every board in packages/fetcher/data/boards.json into the live database as app_fetcher (step 6 slice 3).
+# Secrets (set by the engineer): FETCHER_DATABASE_URL (app_fetcher's Supabase session pooler string), FETCHER_MODEL_KEY (OpenRouter),
+# ADMIN_DATABASE_URL (app_admin's string, used only by the last step).
+on:
+  schedule:
+    - cron: "17 5 * * *" # daily, 05:17 UTC; GitHub may start it late
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never two runs at once; a second one waits.
+concurrency:
+  group: daily-fetch
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    # Free private-repo minutes are limited: at most 30 a day. The run stops assessing at 25 minutes.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Fetch
+        env:
+          FETCHER_DATABASE_URL: ${{ secrets.FETCHER_DATABASE_URL }}
+          FETCHER_MODEL_KEY: ${{ secrets.FETCHER_MODEL_KEY }}
+          FETCHER_MODEL_URL: https://openrouter.ai/api/v1
+          FETCHER_MODEL_ID: "nvidia/nemotron-3-ultra-550b-a55b:free"
+          # The free key allows 50 requests a day; 10 stay spare for score reruns (engineer's choice, 11 November 2026).
+          FETCHER_MAX_MODEL_REQUESTS: "40"
+          FETCHER_BATCH_SIZE: "13"
+          FETCHER_DEADLINE_MINUTES: "25"
+          # 20 requests a minute on free models: start calls 4 s apart. A batch of 13 can take minutes: 5 minute timeout.
+          FETCHER_MODEL_GAP_MS: "4000"
+          FETCHER_MODEL_TIMEOUT_MS: "300000"
+          FETCHER_BOARDS_FILE: packages/fetcher/data/boards.json
+          PORTAL_PRIVATE_DATA: packages/fetcher/data
+        run: |
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          npx vitest run --config packages/fetcher/vitest.run.config.ts --silent=false
+      # The 5-year permit history window moves on 1 January; refresh every day so it is never late. The admin login is given
+      # to this step only (engineer's choice, 11 November 2026), and it runs even when the fetch failed.
+      - name: Refresh permit history labels
+        if: ${{ !cancelled() }}
+        env:
+          DETE_ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
+        run: |
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          node packages/db/src/dete-cli.ts refresh

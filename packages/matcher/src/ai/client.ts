@@ -45,3 +45,14 @@ export function chatClient(o: ChatClientOptions): ModelClient {
     }
   };
 }
+
+/** Starts calls at least `gapMs` apart, also when several boards call at once, so a host's per-minute limit is kept (OpenRouter's free models: 20 a minute). */
+export function spacedClient(client: ModelClient, gapMs: number, sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms)), now = Date.now): ModelClient {
+  let next = 0;
+  return async (prompt) => {
+    const start = Math.max(next, now());
+    next = start + gapMs;
+    await sleep(start - now());
+    return client(prompt);
+  };
+}

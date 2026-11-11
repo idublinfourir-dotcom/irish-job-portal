@@ -388,8 +388,9 @@ describe("performance of the new triggers", () => {
       c.release();
     }
   }
-  // Budgets are generous (a real regression is a scan, not one more page): one call, under 20 ms, and the whole warm statement under 60 pages (measured: 6 to 16).
-  const budget = (r) => { expect(r.calls).toBe(1); expect(r.ms).toBeLessThan(20); expect(r.pages).toBeLessThan(60); };
+  // Budgets are generous (a real regression is a scan, not one more page): one call, under 200 ms, and the whole warm statement under 60 pages (measured: 6 to 16).
+  // Time: 200 ms, not 20, because a busy parallel `npm run check` can stall a statement (11 November 2026); pages are the real guard.
+  const budget = (r) => { expect(r.calls).toBe(1); expect(r.ms).toBeLessThan(200); expect(r.pages).toBeLessThan(60); };
   it("job_text insert: one call, one lookup of job by primary key (adds about 5 pages)", async () => {
     const f = await fetchedJob();
     budget(await explain("app_fetcher", "insert into job_text(job_id,advert_text) values($1,'x')", [f], "job_text_guard"));
