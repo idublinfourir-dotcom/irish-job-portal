@@ -126,11 +126,11 @@ async function underLock<T>(lockSql: string, args: unknown[], act: () => Promise
   } finally { c.release(); }
 }
 const ORG_LOCK = "select 1 from organisation where id = $1 for update", USER_LOCK = "select 1 from portal_user where id = $1 for update";
-const ban = (value: string) => su.connect().then(async (c) => {
+const ban = (value: string, column: "email_domain" | "email_address" = "email_domain") => su.connect().then(async (c) => {
   try {
     await c.query("begin");
     await c.query("set local session_replication_role = replica");
-    await c.query("insert into ban(email_domain, reason_code, strike_id, approval_request_id) values ($1, 'fake_company', 0, 0)", [value]);
+    await c.query(`insert into ban(${column}, reason_code, strike_id, approval_request_id) values ($1, 'fake_company', 0, 0)`, [value]);
     await c.query("commit");
   } finally { c.release(); }
 });
@@ -492,6 +492,21 @@ describe("security", () => {
       expect([r.status, r.text]).toEqual([403, JSON.stringify({ code: "REFUSED" })]);
     expect(await me(victim.cookie)).toBeNull();
     expect(await me(asker.cookie)).toBeNull();
+  });
+  it("a banned exact address (#215, migration 0015): no invite to it, no accept and no request by it, no approval of it; the rest of its domain is not banned", async () => {
+    const x = await company(), victim = await login(x.domain), asker = await login(x.domain), later = await login(x.domain);
+    await invite(x, victim.email);
+    await team(asker.cookie, { action: "request", organisationId: x.org });
+    const reqId = (await one("select id from membership where portal_user_id=$1", [asker.id])).id;
+    for (const e of [victim.email, asker.email, later.email]) await ban(e.toLowerCase(), "email_address");
+    for (const r of [await team(victim.cookie, { action: "accept", token: tokenFor(victim.email) }),
+      await team(x.owner.cookie, { action: "approve", membershipId: Number(reqId), role: "viewer", isSigner: false }),
+      await team(later.cookie, { action: "request", organisationId: x.org }), await invite(x, later.email)])
+      expect([r.status, r.text]).toEqual([403, JSON.stringify({ code: "REFUSED" })]);
+    expect(await me(victim.cookie)).toBeNull();
+    expect(await me(asker.cookie)).toBeNull();
+    const fine = await login(x.domain);
+    expect((await invite(x, fine.email)).status).toBe(200);
   });
   it("invite refuses the owner's own email, a member's, a join request's, and a live invite's (any case)", async () => {
     const x = await company(), m = await joined(x, "viewer"), asker = await login(x.domain);

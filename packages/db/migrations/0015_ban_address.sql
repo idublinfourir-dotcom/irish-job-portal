@@ -102,4 +102,98 @@ begin
   return jsonb_build_object('organisation_id', v_org, 'status', 'pending_review', 'membership_id', v_mem, 'found_in_register', coalesce(found_in_register, false));
 end $$;
 
+
+-- The team functions of 0013 refuse a banned address too (#215): each is the 0013 text with one added line after its domain check.
+create or replace function private.team_invite(p_user text, p_email text, p_role text, p_signer boolean, p_token_hash text) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare m membership; v_email text := lower(btrim(p_email)); v_id bigint; v_exp timestamptz := now() + interval '7 days';
+begin
+  m := private.team_owner(p_user);
+  if not private.team_open((select status from organisation where id = m.organisation_id)) then
+    raise exception 'team refused: ORGANISATION_NOT_AVAILABLE company cannot take on people' using errcode = 'P0001'; end if;
+  if p_role is null or p_role not in ('viewer','poster','recruiter') then raise exception 'team refused: BAD_REQUEST role' using errcode = 'P0001'; end if;
+  if p_role = 'viewer' and p_signer then raise exception 'team refused: VIEWER_NOT_SIGNER' using errcode = 'P0001'; end if;
+  if v_email is null or v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' or length(v_email) > 254 then raise exception 'team refused: BAD_REQUEST email' using errcode = 'P0001'; end if;
+  if p_token_hash is null or p_token_hash !~ '^[0-9a-f]{64}$' then raise exception 'team refused: BAD_REQUEST token hash' using errcode = 'P0001'; end if;
+  if exists (select 1 from ban where email_domain = split_part(v_email, '@', 2)) then raise exception 'team refused: REFUSED banned email domain' using errcode = 'P0001'; end if;
+  if exists (select 1 from ban where email_address = v_email) then raise exception 'team refused: REFUSED banned email address' using errcode = 'P0001'; end if;
+  if exists (select 1 from membership x join portal_user pu on pu.id = x.portal_user_id
+             where x.organisation_id = m.organisation_id and x.status <> 'removed' and lower(pu.email) = v_email) then
+    raise exception 'team refused: ALREADY_IN_TEAM a member or a join request has this email' using errcode = 'P0001'; end if;
+  perform private.team_room(m.organisation_id);
+  -- membership_org_invite_unique refuses a second live invite for the same email (the route answers ALREADY_IN_TEAM)
+  insert into membership(organisation_id, invited_email, invited_by_membership_id, invite_token_hash, invite_expires_at, role, is_signer, status)
+    values (m.organisation_id, v_email, m.id, p_token_hash, v_exp, p_role, p_signer, 'invited') returning id into v_id;
+  perform private.team_audit(p_user, 'membership.invite', v_id, null, jsonb_build_object('role', p_role, 'is_signer', p_signer, 'status', 'invited'));
+  return jsonb_build_object('membershipId', v_id, 'expiresAt', v_exp);
+end $$;
+create or replace function private.team_accept(p_user text, p_token_hash text) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare u portal_user; i membership; v_org bigint;
+begin
+  select * into u from portal_user where id = p_user for no key update;
+  if u.id is null or u.status <> 'active' or u.deleted_at is not null then raise exception 'team refused: REFUSED unknown, blocked or deleted login' using errcode = 'P0001'; end if;
+  if not u.email_verified then raise exception 'team refused: EMAIL_NOT_VERIFIED' using errcode = 'P0001'; end if;
+  if exists (select 1 from ban where email_domain = lower(split_part(u.email, '@', 2))) then raise exception 'team refused: REFUSED banned email domain' using errcode = 'P0001'; end if;
+  if exists (select 1 from ban where email_address = lower(u.email)) then raise exception 'team refused: REFUSED banned email address' using errcode = 'P0001'; end if;
+  select organisation_id into v_org from membership where invite_token_hash = p_token_hash and status = 'invited';
+  if v_org is null then raise exception 'team refused: INVITE_NOT_VALID no such invite' using errcode = 'P0001'; end if;
+  if not private.team_open((select status from organisation where id = v_org for no key update)) then
+    raise exception 'team refused: ORGANISATION_NOT_AVAILABLE company cannot take on people' using errcode = 'P0001'; end if;
+  select * into i from membership where invite_token_hash = p_token_hash and status = 'invited'; -- again, after the lock
+  if i.id is null then raise exception 'team refused: INVITE_NOT_VALID already used' using errcode = 'P0001'; end if;
+  if i.invite_expires_at <= now() then raise exception 'team refused: INVITE_NOT_VALID expired' using errcode = 'P0001'; end if;
+  if lower(i.invited_email) <> lower(u.email) then raise exception 'team refused: INVITE_NOT_VALID another email' using errcode = 'P0001'; end if;
+  update membership set status = 'removed', removed_at = now() where portal_user_id = p_user and status = 'join_requested';
+  -- one_company_per_login refuses a login that is already active in a company (#130)
+  update membership set status = 'active', portal_user_id = p_user, joined_at = now(), invited_email = null, invite_token_hash = null where id = i.id;
+  perform private.team_audit(p_user, 'membership.accept', i.id, jsonb_build_object('status', 'invited'), jsonb_build_object('status', 'active', 'role', i.role, 'is_signer', i.is_signer));
+  return jsonb_build_object('organisationId', i.organisation_id, 'membershipId', i.id);
+end $$;
+create or replace function private.team_request(p_user text, p_org bigint) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare u portal_user; v_domain text; v_id bigint;
+begin
+  select * into u from portal_user where id = p_user for no key update;
+  if u.id is null or u.status <> 'active' or u.deleted_at is not null then raise exception 'team refused: REFUSED unknown, blocked or deleted login' using errcode = 'P0001'; end if;
+  if not u.email_verified then raise exception 'team refused: EMAIL_NOT_VERIFIED' using errcode = 'P0001'; end if;
+  v_domain := lower(split_part(u.email, '@', 2));
+  if exists (select 1 from ban where email_domain = v_domain) then raise exception 'team refused: REFUSED banned email domain' using errcode = 'P0001'; end if;
+  if exists (select 1 from ban where email_address = lower(u.email)) then raise exception 'team refused: REFUSED banned email address' using errcode = 'P0001'; end if;
+  if not coalesce(private.team_open((select status from organisation where id = p_org for no key update)), false) then
+    raise exception 'team refused: ORGANISATION_NOT_AVAILABLE not a claimed company that can take on people' using errcode = 'P0001'; end if;
+  if exists (select 1 from membership where portal_user_id = p_user and status in ('active','join_requested','awaiting_approval')) then
+    raise exception 'team refused: ALREADY_IN_A_COMPANY a member or a request elsewhere' using errcode = 'P0001'; end if;
+  if not exists (select 1 from organisation_domain where organisation_id = p_org and domain = v_domain) then
+    raise exception 'team refused: NOT_ALLOWED_DOMAIN email is not on the company''s domain' using errcode = 'P0001'; end if;
+  perform private.team_room(p_org);
+  insert into membership(organisation_id, portal_user_id, role, is_signer, status) values (p_org, p_user, 'viewer', false, 'join_requested') returning id into v_id;
+  perform private.team_audit(p_user, 'membership.request', v_id, null, jsonb_build_object('status', 'join_requested'));
+  return jsonb_build_object('membershipId', v_id);
+end $$;
+create or replace function private.team_answer(p_user text, p_membership bigint, p_approve boolean, p_role text, p_signer boolean) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare m membership; r membership; o organisation; u portal_user;
+begin
+  m := private.team_owner(p_user);
+  select * into r from membership where id = p_membership and organisation_id = m.organisation_id and status = 'join_requested';
+  if r.id is null then raise exception 'team refused: MEMBER_NOT_FOUND' using errcode = 'P0001'; end if;
+  if p_approve then
+    if p_role is null or p_role not in ('viewer','poster','recruiter') then raise exception 'team refused: BAD_REQUEST role' using errcode = 'P0001'; end if;
+    if p_signer is null or (p_role = 'viewer' and p_signer) then raise exception 'team refused: VIEWER_NOT_SIGNER' using errcode = 'P0001'; end if;
+    select * into o from organisation where id = m.organisation_id;
+    if not private.team_open(o.status) then raise exception 'team refused: ORGANISATION_NOT_AVAILABLE company cannot take on people' using errcode = 'P0001'; end if;
+    select * into u from portal_user where id = r.portal_user_id;
+    if u.status <> 'active' or u.deleted_at is not null then raise exception 'team refused: REFUSED requester blocked or deleted' using errcode = 'P0001'; end if;
+    if exists (select 1 from ban where email_domain = lower(split_part(u.email, '@', 2))) then raise exception 'team refused: REFUSED banned email domain' using errcode = 'P0001'; end if;
+    if exists (select 1 from ban where email_address = lower(u.email)) then raise exception 'team refused: REFUSED banned email address' using errcode = 'P0001'; end if;
+    update membership set status = 'active', joined_at = now(), role = p_role, is_signer = p_signer where id = r.id;
+  else
+    update membership set status = 'removed', removed_at = now() where id = r.id;
+  end if;
+  perform private.team_audit(p_user, case when p_approve then 'membership.approve' else 'membership.refuse' end, r.id,
+    jsonb_build_object('status', 'join_requested'), case when p_approve then jsonb_build_object('status', 'active', 'role', p_role, 'is_signer', p_signer) else jsonb_build_object('status', 'removed') end);
+  return jsonb_build_object('membershipId', r.id);
+end $$;
+
 reset role;

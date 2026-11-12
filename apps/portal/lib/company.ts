@@ -29,13 +29,17 @@ export function checkRegister(b: unknown): Register | null {
   const displayName = name.trim();
   // at least one plain letter or digit, so the slug the function builds from the name is never empty; no control or format characters (right-to-left overrides and zero-width characters can make a name look like another's)
   if (displayName.length < 2 || displayName.length > 160 || !/[a-z0-9]/i.test(displayName) || /[\p{Cc}\p{Cf}]/u.test(displayName)) return null;
-  // One spelling per number: no leading zeros on the CRO number, upper case for the licence. The ban check, the register lookup and the
-  // unique indexes compare the exact text, so "0777001" would otherwise get past a ban on 777001 (ponytail: the database functions should do this too, one day).
-  const croNumber = typeof cro === "string" && CRO.test(cro) ? cro.replace(/^0+(?=\d)/, "") : null;
+  // One spelling per number, the same cleaning register_organisation does (#210, migration 0014): spaces and a leading IE removed and no
+  // leading zeros on the CRO number; spaces removed, upper case and EA added to bare digits for the licence. The ban check, the register
+  // lookup and the unique indexes compare the exact text, so "0777001" or "IE 777001" would otherwise get past a ban on 777001.
+  const c = typeof cro === "string" ? cro.replace(/\s+/g, "").replace(/^ie/i, "") : null;
+  const croNumber = c !== null && CRO.test(c) ? c.replace(/^0+(?=\d)/, "") : null;
+  const w = typeof wrc === "string" ? wrc.replace(/\s+/g, "").toUpperCase() : null;
+  const licence = w !== null && /^\d+$/.test(w) ? `EA${w}` : w;
   const croOk = croNumber !== null;
   if (kind === "employer" && croNumber && wrc === undefined) return { kind, displayName, croNumber, wrcLicenceNumber: null };
-  if (kind === "agency" && typeof wrc === "string" && WRC.test(wrc) && (cro === undefined || croOk))
-    return { kind, displayName, croNumber, wrcLicenceNumber: wrc.toUpperCase() };
+  if (kind === "agency" && licence !== null && WRC.test(licence) && (cro === undefined || croOk))
+    return { kind, displayName, croNumber, wrcLicenceNumber: licence };
   return null;
 }
 
