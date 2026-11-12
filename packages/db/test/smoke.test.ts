@@ -284,7 +284,7 @@ S("pay_floor", "big-company entry approved; floor inserted by the portal (queue)
   await q("app_admin", "update approval_request set status = 'confirmed' where id = $1", [r.id], "s2");
   await q("app_admin", "update organisation set is_big_company = true where id = $1", [org1]);
   const sg = await mem("p1");
-  floorId = (await one("app_portal", `insert into pay_floor(organisation_id, role_family, floor_eur, consent_text_id, signer_membership_id, valid_until) values ($1,'chef',35000,$2,$3, ${days(300)}) returning id`, [org1, ctFloor, sg])).id;
+  floorId = (await one("app_portal", `insert into pay_floor(organisation_id, role_family, floor_eur, consent_text_id, signer_membership_id, valid_until) values ($1,'3434',35000,$2,$3, ${days(300)}) returning id`, [org1, ctFloor, sg])).id;
   await q("app_portal", "update pay_floor set status = 'withdrawn' where id = $1", [floorId]);
   const f = await one("app_admin", "select ended_at is not null e from pay_floor where id = $1", [floorId]);
   const rq = await one("app_admin", "select count(*)::int n from review_item where queue = 'pay_floor_check' and pay_floor_id = $1", [floorId]);

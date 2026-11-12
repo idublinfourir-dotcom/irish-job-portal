@@ -172,6 +172,9 @@ const must = [
   ["app_admin", "insert a case_document (staff uploads; was a must-not in trial 2)", "select has_column_privilege('app_admin','case_document','storage_key','insert') and has_column_privilege('app_admin','case_document','staff_user_id','insert') as ok"],
   ["app_admin", "insert a content page", "insert into content_page(kind,slug,title,body) values('help',$1,'t','b')", () => [id("s")]],
   ["app_admin", "insert an occupation text block (0018)", "insert into content_page(kind,slug,title,body) values('occupation','9001','t','b')"],
+  ["app_admin", "disable a staff login and end its sessions in one statement (staff admin, step 13d)", "with u as (update staff_user set status='active' where id=$1 returning id) delete from staff_session where user_id in (select id from u)", () => [s1]],
+  ["app_admin", "remove a staff role (staff admin, step 13d)", "delete from staff_role where false"],
+  ["app_admin", "edit, publish and withdraw a content page (content editor, step 13d)", "update content_page set status='draft' where false"],
   ["app_admin", "run erase_candidate, erase_portal_user and run_retention", "select has_function_privilege('private.erase_candidate(text,boolean)','execute') and has_function_privilege('private.erase_portal_user(text,boolean)','execute') and has_function_privilege('private.run_retention(integer)','execute')"],
   ["app_admin", "delete a rejected queued job and its text", "delete from job where false"],
   // 0021: every app role reads the rules versions; app_admin also marks one as run

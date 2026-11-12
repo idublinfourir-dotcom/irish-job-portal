@@ -59,9 +59,19 @@ function decode(token: unknown): [string, string] {
   return [o.t, o.i];
 }
 
+/** The reads need the same login as the actions: an active staff member holding fetched_job_reviewer (#193, #234 D7). */
+async function checkReviewer(db: Pick<pg.Pool, "query">, staffUserId: string): Promise<void> {
+  if (typeof staffUserId !== "string" || staffUserId.length === 0 || staffUserId.length > 200) throw new QueueRefused("not_active_staff");
+  const r = (await db.query<{ active: boolean; reviewer: boolean }>(QUEUE_ACT, [staffUserId])).rows[0]!;
+  if (!r.active) throw new QueueRefused("not_active_staff");
+  if (!r.reviewer) throw new QueueRefused("not_reviewer");
+}
+
 /** Open and claimed fetched_job items, oldest first, a page at a time. ponytail: next page only; add `before` when a page needs to go back. */
-export async function listQueue(db: Pick<pg.Pool, "query">, opts: { after?: string } = {}): Promise<{ items: QueueItem[]; next: string | null }> {
-  const all = (opts.after === undefined ? await db.query<Row>(QUEUE_FIRST) : await db.query<Row>(QUEUE_AFTER, decode(opts.after))).rows;
+export async function listQueue(db: Pick<pg.Pool, "query">, staffUserId: string, opts: { after?: string } = {}): Promise<{ items: QueueItem[]; next: string | null }> {
+  const cursor = opts.after === undefined ? undefined : decode(opts.after);
+  await checkReviewer(db, staffUserId);
+  const all = (cursor ? await db.query<Row>(QUEUE_AFTER, cursor) : await db.query<Row>(QUEUE_FIRST)).rows;
   const rows = all.slice(0, PAGE_SIZE);
   return { items: rows.map(item), next: all.length > PAGE_SIZE ? encode(rows.at(-1)!) : null };
 }
@@ -69,7 +79,8 @@ export async function listQueue(db: Pick<pg.Pool, "query">, opts: { after?: stri
 export const QUEUE_ITEM = `select ${COLS.replace(" from ", ", t.advert_text from ")} left join job_text t on t.job_id = j.id where r.id = $1::bigint and r.queue = 'fetched_job'`;
 
 /** One fetched_job item, whatever its status, with the saved advert text. null when the id is not a fetched_job item. */
-export async function getItem(db: Pick<pg.Pool, "query">, id: string | number): Promise<(QueueItem & { advertText: string | null }) | null> {
+export async function getItem(db: Pick<pg.Pool, "query">, staffUserId: string, id: string | number): Promise<(QueueItem & { advertText: string | null }) | null> {
+  await checkReviewer(db, staffUserId);
   const key = String(id);
   if (!validId(key)) return null;
   const r = (await db.query<Row & { advert_text: string | null }>(QUEUE_ITEM, [key])).rows[0];

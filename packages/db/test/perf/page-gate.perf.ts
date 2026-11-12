@@ -323,7 +323,7 @@ it("the admin queue pages and an approve stay under the limit", async () => {
   await client.connect();
   let reads: PageCost[];
   try {
-    const mid = (await listQueue(client)).next!;
+    const mid = (await listQueue(client, staff)).next!;
     const [t, i] = Object.values(JSON.parse(Buffer.from(mid, "base64url").toString("utf8"))) as string[];
     reads = await measurePages(client, [QUEUE_FIRST, { text: QUEUE_AFTER, values: [t, i] }, { text: QUEUE_ITEM, values: [made[1]] }]);
   } finally {

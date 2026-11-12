@@ -107,7 +107,7 @@ async function company(): Promise<Company> {
 }
 
 let textId: string;
-const sign = (cookie: string | undefined, o: object = {}) => post(cookie, { action: "sign", roleFamily: "Software Engineer", floorEur: 45000, consentTextId: textId, ...o });
+const sign = (cookie: string | undefined, o: object = {}) => post(cookie, { action: "sign", roleFamily: "2134", floorEur: 45000, consentTextId: textId, ...o });
 const floors = (org: number) => su.query("select id, status, role_family, floor_eur, signer_name, signer_title, signer_membership_id, consent_text_id, valid_until > now() + interval '11 months 28 days' and valid_until < now() + interval '12 months 2 days' as year from pay_floor where organisation_id = $1 order by id", [org]).then((r) => r.rows);
 
 describe("before a wording is published", () => {
@@ -131,15 +131,15 @@ describe("GET", () => {
   it("shows the wording and the company's own floors to every active member, never another company's", async () => {
     const c = await company(), other = await company();
     expect((await sign(c.owner.cookie)).status).toBe(200);
-    expect((await sign(other.owner.cookie, { roleFamily: "nurse" })).status).toBe(200);
+    expect((await sign(other.owner.cookie, { roleFamily: "2230" })).status).toBe(200);
     for (const m of [c.owner, c.signer, c.poster, c.recruiter, c.viewer]) {
       const r = await list(m.cookie);
       expect(r.status).toBe(200);
       expect(r.json!.text).toMatchObject({ id: textId, body: "Fake wording" });
-      expect(r.json!.floors.map((f: { roleFamily: string }) => f.roleFamily)).toEqual(["software engineer"]);
+      expect(r.json!.floors.map((f: { roleFamily: string }) => f.roleFamily)).toEqual(["2134"]);
       expect(Object.keys(r.json!.floors[0]).sort()).toEqual(["endedAt", "floorEur", "id", "roleFamily", "signedAt", "signerName", "signerTitle", "status", "validUntil"]);
     }
-    expect((await list(other.viewer.cookie)).json!.floors.map((f: { roleFamily: string }) => f.roleFamily)).toEqual(["nurse"]);
+    expect((await list(other.viewer.cookie)).json!.floors.map((f: { roleFamily: string }) => f.roleFamily)).toEqual(["2230"]);
   });
 });
 
@@ -150,16 +150,16 @@ describe("POST sign", () => {
     expect(r.status, r.text).toBe(200);
     expect(Object.keys(r.json!).sort()).toEqual(["id", "validUntil"]);
     const f = (await floors(c.org))[0];
-    expect(f).toMatchObject({ status: "pending_check", role_family: "software engineer", floor_eur: 45000, signer_name: c.owner.name, signer_title: "Account owner", signer_membership_id: String(c.owner.mem), consent_text_id: textId, year: true });
+    expect(f).toMatchObject({ status: "pending_check", role_family: "2134", floor_eur: 45000, signer_name: c.owner.name, signer_title: "Account owner", signer_membership_id: String(c.owner.mem), consent_text_id: textId, year: true });
     expect(await one("select count(*)::int n from review_item where queue='pay_floor_check' and pay_floor_id=$1 and status='open'", [f.id])).toEqual({ n: 1 });
   });
   it("lets a poster with the signer switch sign, and refuses a poster without it, a recruiter without it and a viewer", async () => {
     const c = await company();
-    const ok = await sign(c.signer.cookie, { roleFamily: "chef" });
+    const ok = await sign(c.signer.cookie, { roleFamily: "3434" });
     expect(ok.status, ok.text).toBe(200);
     expect((await floors(c.org))[0]).toMatchObject({ signer_title: "Poster", signer_membership_id: String(c.signer.mem) });
     for (const who of [c.poster, c.recruiter, c.viewer]) {
-      const r = await sign(who.cookie, { roleFamily: "waiter" });
+      const r = await sign(who.cookie, { roleFamily: "3435" });
       expect([r.status, r.json]).toEqual([403, { code: "NOT_SIGNER" }]);
     }
     expect((await floors(c.org)).length).toBe(1);
@@ -193,15 +193,24 @@ describe("POST sign", () => {
     await F.member(org, o.id, { role: "account_owner", signer: true });
     expect((await sign(o.cookie)).status).toBe(200);
   });
-  it("keeps one spelling per family and refuses a second pending floor for it, but not a different family", async () => {
+  it("refuses a second pending floor for the same family, but not a different family", async () => {
     const c = await company();
-    expect((await sign(c.owner.cookie, { roleFamily: "Chef" })).status).toBe(200);
-    for (const f of ["chef", " CHEF ", "Chef"]) {
+    expect((await sign(c.owner.cookie, { roleFamily: "3434" })).status).toBe(200);
+    const r = await sign(c.owner.cookie, { roleFamily: "3434" });
+    expect([r.status, r.json]).toEqual([409, { code: "ALREADY_PENDING" }]);
+    expect((await sign(c.owner.cookie, { roleFamily: "3435" })).status).toBe(200);
+    expect((await floors(c.org)).map((f) => f.role_family)).toEqual(["3434", "3435"]);
+  });
+  it("refuses a family that is not a four-digit code or is on the Ineligible list (#231)", async () => {
+    const c = await company();
+    for (const f of ["chef", "Chef", " 2134", "2134 ", "213", "21345", "2.34", "٢١٣٤", "2134;", "0000x"]) {
       const r = await sign(c.owner.cookie, { roleFamily: f });
-      expect([r.status, r.json], f).toEqual([409, { code: "ALREADY_PENDING" }]);
+      expect([r.status, r.json], f).toEqual([400, { code: "BAD_REQUEST" }]);
     }
-    expect((await sign(c.owner.cookie, { roleFamily: "sous  chef" })).status).toBe(200);
-    expect((await floors(c.org)).map((f) => f.role_family)).toEqual(["chef", "sous chef"]);
+    const ineligible = "1225"; // on the Ineligible list only, in packages/fetcher/data/occupation-lists.json
+    const r = await sign(c.owner.cookie, { roleFamily: ineligible });
+    expect([r.status, r.json], ineligible).toEqual([400, { code: "BAD_REQUEST" }]);
+    expect(await floors(c.org)).toEqual([]);
   });
   it("lets a company sign again for a family that has an active floor (re-sign before expiry), and each company has its own", async () => {
     const c = await company(), other = await company();
@@ -222,12 +231,13 @@ describe("POST sign", () => {
     expect((await sign(c.owner.cookie)).status).toBe(200);
     expect((await floors(c.org))[0].consent_text_id).toBe(textId);
   });
-  it("stores hostile text as plain text and never runs it", async () => {
+  it("a hostile family never reaches the database", async () => {
     const c = await company();
     const r = await sign(c.owner.cookie, { roleFamily: "x'); drop table pay_floor; --" });
-    expect(r.status, r.text).toBe(200);
-    expect((await floors(c.org))[0].role_family).toBe("x'); drop table pay_floor; --");
-    expect((await one("select count(*)::int n from pay_floor")).n).toBeGreaterThan(0);
+    expect([r.status, r.json]).toEqual([400, { code: "BAD_REQUEST" }]);
+    expect((await one("select count(*)::int n from pay_floor")).n).toBeGreaterThan(-1);
+    await expect(su.query("insert into pay_floor(organisation_id, role_family, floor_eur, consent_text_id, signer_membership_id, valid_until) values ($1,'chef',1,$2,$3, now() + interval '1 day')",
+      [c.org, textId, c.owner.mem])).rejects.toThrow(/pay_floor_role_family_check/);
   });
 
   it("is 401 without a session, 403 with a foreign or missing Origin, 413 for a big body, 400 for bad JSON", async () => {
@@ -240,7 +250,7 @@ describe("POST sign", () => {
   });
   it("refuses unknown fields and bad values, and nothing is written", async () => {
     const c = await company();
-    const base = { action: "sign", roleFamily: "chef", floorEur: 45000, consentTextId: textId };
+    const base = { action: "sign", roleFamily: "3434", floorEur: 45000, consentTextId: textId };
     const bad: object[] = [
       { ...base, organisationId: 1 }, { ...base, status: "active" }, { ...base, signerMembershipId: 1 }, { ...base, approvalRequestId: 1 }, { ...base, validUntil: "2099-01-01" },
       { ...base, floorEur: 0 }, { ...base, floorEur: -5 }, { ...base, floorEur: 1.5 }, { ...base, floorEur: "45000" }, { ...base, floorEur: 1_000_001 }, { ...base, floorEur: null },
@@ -256,7 +266,7 @@ describe("POST sign", () => {
   it("limits one login to 10 calls in 10 minutes", async () => {
     const c = await company();
     let last = 0;
-    for (let i = 0; i < 11; i++) last = (await sign(c.owner.cookie, { roleFamily: `family ${i}` })).status;
+    for (let i = 0; i < 11; i++) last = (await sign(c.owner.cookie, { roleFamily: String(4000 + i) })).status;
     expect(last).toBe(429);
     expect((await floors(c.org)).length).toBe(10);
   });
@@ -338,7 +348,7 @@ describe("performance", () => {
   it("sign, list and withdraw stay inside their statement and time budgets", async () => {
     const c = await company();
     let i = 0;
-    const [r, signN] = await counted(() => sign(c.owner.cookie, { roleFamily: `budget ${i++}` }));
+    const [r, signN] = await counted(() => sign(c.owner.cookie, { roleFamily: String(5000 + i++) }));
     expect(r.status).toBe(200);
     const [, listN] = await counted(() => list(c.owner.cookie));
     const id = Number((await floors(c.org))[0].id);
@@ -348,7 +358,7 @@ describe("performance", () => {
     expect(signN).toBeLessThanOrEqual(BUDGET.sign);
     expect(listN).toBeLessThanOrEqual(BUDGET.list);
     expect(withdrawN).toBeLessThanOrEqual(BUDGET.withdraw);
-    expect(await median(() => sign(c.owner.cookie, { roleFamily: `timed ${i++}` }))).toBeLessThan(BUDGET.signMs);
+    expect(await median(() => sign(c.owner.cookie, { roleFamily: String(6000 + i++) }))).toBeLessThan(BUDGET.signMs);
     expect(await median(() => list(c.owner.cookie))).toBeLessThan(BUDGET.listMs);
     const ids = (await floors(c.org)).filter((f) => f.status === "pending_check").map((f) => Number(f.id));
     let k = 0;

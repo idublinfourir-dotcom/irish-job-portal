@@ -4,7 +4,7 @@
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { seedStaff } from "../src/staff-seed-cli";
-import { FLOOR_FIRST } from "../src/pay-floors";
+import { FLOOR_FIRST, withdrawPayFloor } from "../src/pay-floors";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { fixtures } from "./fixtures";
 import { confirmedApproval, makeBig } from "./pay-floors-helpers";
@@ -114,7 +114,7 @@ async function company(o: { big?: boolean; status?: string; kind?: string } = {}
 async function floor(c: Co, o: { family?: string; eur?: number } = {}): Promise<number> {
   return Number((await one(
     "insert into pay_floor(organisation_id, role_family, floor_eur, consent_text_id, signer_membership_id, signer_name, signer_title, valid_until) values ($1,$2,$3,$4,$5,'Fake Signer','Account owner', now() + interval '12 months') returning id",
-    [c.org, o.family ?? "chef", o.eur ?? 40000, text, c.member])).id);
+    [c.org, o.family ?? "3434", o.eur ?? 40000, text, c.member])).id);
 }
 const state = (id: number) => one(
   "select f.status, f.approval_request_id, f.checked_by_staff_id, f.checked_at is not null as checked, f.ended_at is not null as ended, f.replaces_id, (select r.status from review_item r where r.pay_floor_id = f.id and r.queue = 'pay_floor_check' order by r.id desc limit 1) as item, " +
@@ -154,11 +154,11 @@ describe("access", () => {
 
 describe("the list", () => {
   it("shows the waiting floors to an editor and to an administrator, with the company, signer and any proposal", async () => {
-    const c = await company(), f = await floor(c, { family: "listed" });
+    const c = await company(), f = await floor(c, { family: "1111" });
     for (const who of ["ed1", "ad1", "both"]) {
       const r = await ok(call(who));
       const item = r.items.find((x: { floorId: string }) => x.floorId === String(f));
-      expect(item, who).toMatchObject({ roleFamily: "listed", floorEur: 40000, organisationId: String(c.org), isBigCompany: true, kind: "employer", signerName: "Fake Signer", signerTitle: "Account owner", currentFloorEur: null, requestId: null, proposedBy: null });
+      expect(item, who).toMatchObject({ roleFamily: "1111", floorEur: 40000, organisationId: String(c.org), isBigCompany: true, kind: "employer", signerName: "Fake Signer", signerTitle: "Account owner", currentFloorEur: null, requestId: null, proposedBy: null });
     }
     await ok(act("ed1", "propose", f));
     const again = (await ok(call("ad1"))).items.find((x: { floorId: string }) => x.floorId === String(f));
@@ -166,21 +166,21 @@ describe("the list", () => {
     expect(again.requestId).toMatch(/^\d+$/);
   });
   it("does not list a withdrawn, decided or other-queue floor, and shows the floor it would replace", async () => {
-    const c = await company(), f = await floor(c, { family: "gone" }), g = await floor(c, { family: "kept" });
+    const c = await company(), f = await floor(c, { family: "1112" }), g = await floor(c, { family: "1113" });
     await su.query("update pay_floor set status = 'withdrawn' where id = $1", [f]);
     const ids = (await ok(call("ed1"))).items.map((x: { floorId: string }) => x.floorId);
     expect(ids).not.toContain(String(f));
     expect(ids).toContain(String(g));
     await ok(act("ed1", "reject", g, { reason: "no_evidence" }));
     expect((await ok(call("ed1"))).items.map((x: { floorId: string }) => x.floorId)).not.toContain(String(g));
-    const h = await floor(c, { family: "swap", eur: 40000 });
+    const h = await floor(c, { family: "1114", eur: 40000 });
     await ok(act("ed1", "propose", h)); await ok(act("ad1", "confirm", h));
-    const h2 = await floor(c, { family: "swap", eur: 50000 });
+    const h2 = await floor(c, { family: "1114", eur: 50000 });
     expect((await ok(call("ed1"))).items.find((x: { floorId: string }) => x.floorId === String(h2))).toMatchObject({ currentFloorEur: 40000 });
   });
   it("pages oldest first with a cursor, and refuses a bad cursor", async () => {
     const c = await company();
-    for (let i = 0; i < 22; i++) await floor(c, { family: `page ${String(i).padStart(2, "0")}` });
+    for (let i = 0; i < 22; i++) await floor(c, { family: String(2000 + i) });
     const a = await ok(call("ed1"));
     expect(a.items.length).toBe(20);
     expect(typeof a.next).toBe("string");
@@ -229,9 +229,9 @@ describe("propose, confirm", () => {
   });
   it("signing again replaces the active floor of the same family and leaves other families alone", async () => {
     const c = await company();
-    const a = await floor(c, { family: "dev", eur: 50000 }), other = await floor(c, { family: "ops" });
+    const a = await floor(c, { family: "2134", eur: 50000 }), other = await floor(c, { family: "1115" });
     for (const id of [a, other]) { await ok(act("ed1", "propose", id)); await ok(act("ad1", "confirm", id)); }
-    const b = await floor(c, { family: "dev", eur: 55000 });
+    const b = await floor(c, { family: "2134", eur: 55000 });
     await ok(act("ed1", "propose", b));
     const r = await ok(act("ad2", "confirm", b));
     expect(r.replacedId).toBe(String(a));
@@ -323,7 +323,7 @@ describe("what the database holds even if a route were wrong", () => {
     expect((await state(f)).status).toBe("pending_check");
   });
   it("a confirmed request for one floor cannot activate another, and a request is used once", async () => {
-    const c = await company(), a = await floor(c, { family: "a" }), b = await floor(c, { family: "b" });
+    const c = await company(), a = await floor(c, { family: "1116" }), b = await floor(c, { family: "1117" });
     const rid = await confirmedApproval(su, F.staff, "pay_floor", "pay_floor", a);
     const admin = db.pool("app_admin");
     await expect(admin.query("update pay_floor set status='active', approval_request_id=$2 where id=$1", [b, rid])).rejects.toThrow();
@@ -355,11 +355,55 @@ describe("hostile requests", () => {
   });
 });
 
+describe("a withdrawn floor drops its check item (0023, #234 D8)", () => {
+  const who = (c: Co) => ({ membershipId: c.member, organisationId: c.org, role: "account_owner" });
+  const item = (id: number) => one("select status, outcome, decided_at is not null as decided, decided_by_staff_user_id by from review_item where pay_floor_id = $1 and queue = 'pay_floor_check'", [id]);
+  it("the employer's withdrawal of a pending floor drops its open item in the same statement, and it leaves the queue", async () => {
+    const c = await company(), f = await floor(c), other = await floor(c, { family: "1118" });
+    expect(await item(f)).toMatchObject({ status: "open" });
+    const [, statements] = await counted(() => withdrawPayFloor(db.pool("app_portal"), who(c), String(f)));
+    expect(statements).toBe(1); // the trigger runs inside the one update
+    expect(await item(f)).toEqual({ status: "dropped", outcome: "withdrawn", decided: true, by: null });
+    expect((await state(f)).status).toBe("withdrawn");
+    expect((await ok(call("ed1"))).items.map((x: { floorId: string }) => x.floorId)).not.toContain(String(f));
+    expect(await item(other)).toMatchObject({ status: "open" }); // the company's other floor is untouched
+    await no(act("ed1", "propose", f), 409, "floor_not_pending");
+  });
+  it("drops a claimed item too, also when the floor had a proposal", async () => {
+    const c = await company(), f = await floor(c), g = await floor(c, { family: "1119" });
+    await su.query("update review_item set status = 'claimed', claimed_by_staff_user_id = $2, claimed_at = now() where pay_floor_id = $1 and queue = 'pay_floor_check'", [f, staff.ed1]);
+    await ok(act("ed1", "propose", g));
+    await withdrawPayFloor(db.pool("app_portal"), who(c), String(f));
+    await withdrawPayFloor(db.pool("app_portal"), who(c), String(g));
+    expect(await item(f)).toMatchObject({ status: "dropped", outcome: "withdrawn" });
+    expect(await item(g)).toMatchObject({ status: "dropped", outcome: "withdrawn" });
+    await no(act("ad1", "confirm", g), 409, "floor_not_pending");
+  });
+  it("leaves another company's items alone, and an active floor's finished item as it was", async () => {
+    const [c, d] = [await company(), await company()];
+    const [fc, fd, act1] = [await floor(c), await floor(d), await floor(c, { family: "1120" })];
+    await ok(act("ed1", "propose", act1)); await ok(act("ad1", "confirm", act1));
+    await withdrawPayFloor(db.pool("app_portal"), who(c), String(fc));
+    await withdrawPayFloor(db.pool("app_portal"), who(c), String(act1)); // an active floor: withdrawn, but its item was finished by the check
+    expect(await item(fd)).toMatchObject({ status: "open" });
+    expect(await item(act1)).toMatchObject({ status: "done", outcome: "accepted" });
+    await expect(withdrawPayFloor(db.pool("app_portal"), who(c), String(fd))).rejects.toThrow(); // not their floor: nothing happens
+    expect(await item(fd)).toMatchObject({ status: "open" });
+  });
+  it("only the move from pending_check to withdrawn does it: a rejection or an expiry written by the owner role leaves its item as the check set it", async () => {
+    const [a, b] = [await floor(await company()), await floor(await company())];
+    await su.query("update pay_floor set status = 'found_false' where id = $1", [a]);
+    expect(await item(a)).toMatchObject({ status: "open" });
+    await su.query("update pay_floor set status = 'withdrawn' where id = $1", [b]); // the trigger does not care who writes
+    expect(await item(b)).toMatchObject({ status: "dropped" });
+  });
+});
+
 describe("performance", () => {
   it("list, propose, confirm and reject stay inside their statement and time budgets; the queue page stays under its page budget", async () => {
     const c = await company();
     const ids: number[] = [];
-    for (let i = 0; i < 25; i++) ids.push(await floor(c, { family: `perf ${i}` }));
+    for (let i = 0; i < 25; i++) ids.push(await floor(c, { family: String(3000 + i) }));
     const [, listN] = await counted(() => call("ed1"));
     const [, proposeN] = await counted(() => act("ed1", "propose", ids[0]!));
     const [, confirmN] = await counted(() => act("ad1", "confirm", ids[0]!));

@@ -1,7 +1,7 @@
 // Employer-signed pay floors (#82, #100, #104). Portal side: a signer of a big-company employer signs a floor for a role family, lists the company's
 // floors and withdraws one. Admin side: the pay_floor_check queue. A rules data editor proposes the `pay_floor` approval, an administrator (never the
 // proposer) confirms it and the floor becomes active; either may reject it. The database stays the guard (pay_floor_insert, signer_check, pay_floor_guard,
-// approval_check, approval_request_guard); the checks here only give short refusal codes first. No migration: the queue item and trigger exist since 0002.
+// approval_check, approval_request_guard); the checks here only give short refusal codes first. 0023 adds the four-digit family check and drops a withdrawn floor's queue item.
 import type pg from "pg";
 import { QueueRefused } from "./admin-queue";
 import { decodeReviewCursor, REASON } from "./account-review";
@@ -23,11 +23,9 @@ export class FloorRefused extends Error {}
 export type FloorMember = { membershipId: number; organisationId: number; role: string };
 const TITLE: Record<string, string> = { account_owner: "Account owner", poster: "Poster", recruiter: "Recruiter" };
 
-/** One spelling per role family: trimmed, lower case, inner spaces collapsed. Null when empty, too long or holding control or format characters. */
+/** The role family is a four-digit occupation code (#231, and pay_floor_role_family_check in 0023). Null for anything else; the portal route also refuses an Ineligible code. */
 export function cleanFamily(s: unknown): string | null {
-  if (typeof s !== "string" || /[\p{Cc}\p{Cf}]/u.test(s)) return null;
-  const t = s.trim().replace(/\s+/g, " ").toLowerCase();
-  return t.length >= 2 && t.length <= 80 && /\p{L}/u.test(t) ? t : null;
+  return typeof s === "string" && /^[0-9]{4}$/.test(s) ? s : null;
 }
 
 const CURRENT_TEXT = "select id::text as id, version, body from consent_text where purpose = 'pay_floor' order by published_at desc, id desc limit 1";

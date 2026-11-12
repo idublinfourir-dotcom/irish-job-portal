@@ -4,6 +4,7 @@
 // The proposer holds any role; the confirmer holds administrator. The database checks both and that the request is used once.
 // Safe to run twice: a staff member who already holds the role gets nothing written. One transaction: all or nothing.
 import pg from "pg";
+import { confirmGrant, proposeGrant } from "./role-grant.ts";
 import { sslOptions } from "./ssl.ts";
 import { PLAIN_EMAIL, STAFF_ROLES } from "./staff-seed-cli.ts";
 
@@ -32,21 +33,10 @@ export async function grantRole(client: pg.ClientBase, i: { proposer: string; co
       await client.query("rollback");
       return "already holds";
     }
-    const kind = i.role === "administrator" ? "grant_administrator" : "grant_role";
-    await client.query("select set_config('app.staff_user_id', $1, true)", [p]);
-    const req = (await client.query(
-      "insert into approval_request(kind, target_table, target_id, change, reason) values ($1, 'staff_role', $2, $3::jsonb, 'role grant by command') returning id",
-      [kind, s, JSON.stringify({ role: i.role })],
-    )).rows[0].id as string;
-    await client.query("select set_config('app.staff_user_id', $1, true)", [c]);
-    await client.query("update approval_request set status='confirmed' where id=$1", [req]);
-    const row = (await client.query(
-      "insert into staff_role(staff_user_id, role, granted_by_staff_user_id, approval_request_id) values ($1,$2,$3,$4) returning id", [s, i.role, c, req])).rows[0].id as string;
-    await client.query(
-      "insert into audit_event(kind, actor_staff_user_id, second_staff_user_id, action, object_type, object_id, after, source) values ('admin_action', $1, $2, 'staff.role_grant', 'staff_role', $3, $4::jsonb, 'panel')",
-      [c, p, row, JSON.stringify({ role: i.role, approvalRequestId: req })]);
+    const request = await proposeGrant(client, p, s, i.role);
+    await confirmGrant(client, { confirmer: c, proposer: p, staff: s, role: i.role, request });
     await client.query("commit");
-    return req;
+    return request;
   } catch (e) {
     await client.query("rollback").catch(() => {});
     throw e;

@@ -4,17 +4,12 @@ import { QueueRefused } from "./admin-queue";
 import { cleanFamily, confirmFloor, createPayFloor, FloorRefused, getFloorCheck, listFloorChecks, proposeFloor, rejectFloor, withdrawPayFloor } from "./pay-floors";
 
 describe("cleanFamily", () => {
-  it("gives one spelling per role family", () => {
-    expect(cleanFamily("  Software   Engineer ")).toBe("software engineer");
-    expect(cleanFamily("CHEF")).toBe("chef");
-    expect(cleanFamily("Médecin")).toBe("médecin");
+  it("accepts exactly four digits, as they are", () => {
+    for (const v of ["2134", "0000", "9999"]) expect(cleanFamily(v)).toBe(v);
   });
-  it("refuses empty, short, long, letterless and non-string values", () => {
-    for (const v of ["", " ", "a", "12 34", "x".repeat(81), null, undefined, 5, {}, ["chef"]]) expect(cleanFamily(v), String(v)).toBeNull();
-    expect(cleanFamily("x".repeat(80))).toBe("x".repeat(80));
-  });
-  it("refuses control and format characters (right-to-left override, zero width, newline, NUL)", () => {
-    for (const v of ["chef‮", "ch​ef", "chef\nlead", "chef\u0000", "­chef", "chef﻿"]) expect(cleanFamily(v), JSON.stringify(v)).toBeNull();
+  it("refuses everything else: free text, other lengths, spaces, other digits, control and format characters, non-strings", () => {
+    for (const v of ["", " ", "chef", "Chef", "213", "21345", " 2134", "2134 ", "21 34", "2.34", "-123", "٢١٣٤", "２１３４", "2134\n", "2134\u0000", "2134‮", "21​34", null, undefined, 2134, {}, ["2134"]])
+      expect(cleanFamily(v), JSON.stringify(v)).toBeNull();
   });
 });
 
@@ -32,9 +27,9 @@ const why = async (p: Promise<unknown>) => { try { await p; } catch (e) { return
 
 describe("createPayFloor, before the database", () => {
   it("refuses a bad family, amount or text id without a query", async () => {
-    const bad = [{ roleFamily: "", floorEur: 40000, consentTextId: "1" }, { roleFamily: "chef", floorEur: 0, consentTextId: "1" }, { roleFamily: "chef", floorEur: 1.5, consentTextId: "1" },
-      { roleFamily: "chef", floorEur: 1_000_001, consentTextId: "1" }, { roleFamily: "chef", floorEur: Number.NaN, consentTextId: "1" }, { roleFamily: "chef", floorEur: 40000, consentTextId: "0" },
-      { roleFamily: "chef", floorEur: 40000, consentTextId: "1; drop table pay_floor" }, { roleFamily: "chef", floorEur: 40000, consentTextId: "9223372036854775808" }];
+    const bad = [{ roleFamily: "", floorEur: 40000, consentTextId: "1" }, { roleFamily: "3434", floorEur: 0, consentTextId: "1" }, { roleFamily: "3434", floorEur: 1.5, consentTextId: "1" },
+      { roleFamily: "3434", floorEur: 1_000_001, consentTextId: "1" }, { roleFamily: "3434", floorEur: Number.NaN, consentTextId: "1" }, { roleFamily: "3434", floorEur: 40000, consentTextId: "0" },
+      { roleFamily: "3434", floorEur: 40000, consentTextId: "1; drop table pay_floor" }, { roleFamily: "3434", floorEur: 40000, consentTextId: "9223372036854775808" }];
     for (const b of bad) {
       const { db, calls } = fake();
       expect(await why(createPayFloor(db, who, b)), JSON.stringify(b)).toBe("BAD_REQUEST");
@@ -42,13 +37,13 @@ describe("createPayFloor, before the database", () => {
     }
   });
   it("needs a published wording, and the one the signer saw", async () => {
-    expect(await why(createPayFloor(fake([{ rows: [] }]).db, who, { roleFamily: "chef", floorEur: 40000, consentTextId: "1" }))).toBe("NO_CONSENT_TEXT");
-    expect(await why(createPayFloor(fake([{ rows: [{ id: "7", version: "v2", body: "x" }] }]).db, who, { roleFamily: "chef", floorEur: 40000, consentTextId: "6" }))).toBe("TEXT_CHANGED");
+    expect(await why(createPayFloor(fake([{ rows: [] }]).db, who, { roleFamily: "3434", floorEur: 40000, consentTextId: "1" }))).toBe("NO_CONSENT_TEXT");
+    expect(await why(createPayFloor(fake([{ rows: [{ id: "7", version: "v2", body: "x" }] }]).db, who, { roleFamily: "3434", floorEur: 40000, consentTextId: "6" }))).toBe("TEXT_CHANGED");
   });
   it("turns the database's own refusals into codes and lets anything else through", async () => {
     const text = { rows: [{ id: "7", version: "v", body: "x" }] };
     const failing = (e: object) => ({ db: { query: async (sql: string) => { if (sql.startsWith("insert")) throw Object.assign(new Error((e as { message?: string }).message ?? ""), e); return text; } } as never });
-    const go = (e: object) => why(createPayFloor(failing(e).db, who, { roleFamily: "chef", floorEur: 40000, consentTextId: "7" }));
+    const go = (e: object) => why(createPayFloor(failing(e).db, who, { roleFamily: "3434", floorEur: 40000, consentTextId: "7" }));
     expect(await go({ code: "P0001", message: "pay floor refused: the organisation is not an employer on the big-company list" })).toBe("NOT_BIG_COMPANY");
     expect(await go({ code: "P0001", message: "signer refused: not an active poster" })).toBe("NOT_SIGNER");
     expect(await go({ code: "23505", constraint: "pay_floor_one_pending" })).toBe("ALREADY_PENDING");
