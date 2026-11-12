@@ -23,7 +23,8 @@ export type TeamAction =
   | { action: "invite"; email: string; role: Role; isSigner: boolean }
   | { action: "accept"; token: string }
   | { action: "request"; organisationId: number }
-  | { action: "approve" | "refuse" | "remove" | "transfer"; membershipId: number }
+  | { action: "refuse" | "remove" | "transfer"; membershipId: number }
+  | { action: "approve"; membershipId: number; role: Role; isSigner: boolean }
   | { action: "leave" }
   | { action: "role"; membershipId: number; role: Role; isSigner: boolean };
 
@@ -41,8 +42,10 @@ export function checkTeam(b: unknown): TeamAction | null {
   }
   if (a === "accept" && only(b, ["action", "token"]) && typeof b.token === "string" && TOKEN.test(b.token)) return { action: a, token: b.token };
   if (a === "request" && only(b, ["action", "organisationId"]) && isId(b.organisationId)) return { action: a, organisationId: b.organisationId };
-  if ((a === "approve" || a === "refuse" || a === "remove" || a === "transfer") && only(b, ["action", "membershipId"]) && isId(b.membershipId))
+  if ((a === "refuse" || a === "remove" || a === "transfer") && only(b, ["action", "membershipId"]) && isId(b.membershipId))
     return { action: a, membershipId: b.membershipId };
+  if (a === "approve" && only(b, ["action", "membershipId", "role", "isSigner"]) && isId(b.membershipId) && isRole(b.role) && typeof b.isSigner === "boolean")
+    return { action: a, membershipId: b.membershipId, role: b.role, isSigner: b.isSigner };
   if (a === "leave" && only(b, ["action"])) return { action: a };
   if (a === "role" && only(b, ["action", "membershipId", "role", "isSigner"]) && isId(b.membershipId) && isRole(b.role) && typeof b.isSigner === "boolean")
     return { action: a, membershipId: b.membershipId, role: b.role, isSigner: b.isSigner };
@@ -54,8 +57,8 @@ function callFor(user: string, b: Exclude<TeamAction, { action: "invite" }>): [s
   switch (b.action) {
     case "accept": return ["select private.team_accept($1, $2) r", [user, hashToken(b.token)]];
     case "request": return ["select private.team_request($1, $2) r", [user, b.organisationId]];
-    case "approve": return ["select private.team_answer($1, $2, true) r", [user, b.membershipId]];
-    case "refuse": return ["select private.team_answer($1, $2, false) r", [user, b.membershipId]];
+    case "approve": return ["select private.team_answer($1, $2, true, $3, $4) r", [user, b.membershipId, b.role, b.isSigner]];
+    case "refuse": return ["select private.team_answer($1, $2, false, null, false) r", [user, b.membershipId]];
     case "remove": return ["select private.team_remove($1, $2) r", [user, b.membershipId]];
     case "transfer": return ["select private.team_transfer($1, $2) r", [user, b.membershipId]];
     case "leave": return ["select private.team_leave($1) r", [user]];

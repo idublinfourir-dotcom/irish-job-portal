@@ -228,17 +228,19 @@ describe("the team list (GET): roles decide what is shown", () => {
 describe("request to join, then approve or refuse", () => {
   let c: Company;
   beforeAll(async () => { c = await company(); });
-  it("a login on the company's domain asks; the owner approves; it joins as a viewer", async () => {
+  it("a login on the company's domain asks; the owner approves with the role and switch the owner picks", async () => {
     const a = await login(c.domain);
     const r = await team(a.cookie, { action: "request", organisationId: c.org });
     expect(r.status, r.text).toBe(200);
     const id = r.json!.membershipId;
     expect(await mem(id)).toMatchObject({ status: "join_requested", role: "viewer", is_signer: false, portal_user_id: a.id });
     expect(await me(a.cookie)).toBeNull();
-    expect((await team(c.owner.cookie, { action: "approve", membershipId: id })).status).toBe(200);
-    expect(await me(a.cookie)).toMatchObject({ id, role: "viewer", isSigner: false, organisationId: c.org });
+    expect((await team(c.owner.cookie, { action: "approve", membershipId: id, role: "viewer", isSigner: true })).json).toEqual({ code: "VIEWER_NOT_SIGNER" });
+    expect((await mem(id)).status).toBe("join_requested");
+    expect((await team(c.owner.cookie, { action: "approve", membershipId: id, role: "poster", isSigner: true })).status).toBe(200);
+    expect(await me(a.cookie)).toMatchObject({ id, role: "poster", isSigner: true, organisationId: c.org });
     expect((await audits("membership.request", id))[0]).toMatchObject({ actor_portal_user_id: a.id, after: { status: "join_requested" } });
-    expect((await audits("membership.approve", id))[0]).toMatchObject({ actor_portal_user_id: c.owner.id, before: { status: "join_requested" }, after: { status: "active" } });
+    expect((await audits("membership.approve", id))[0]).toMatchObject({ actor_portal_user_id: c.owner.id, before: { status: "join_requested" }, after: { status: "active", role: "poster", is_signer: true } });
   });
   it("the owner refuses a request; the login can ask again later", async () => {
     const b = await login(c.domain);
@@ -246,7 +248,7 @@ describe("request to join, then approve or refuse", () => {
     expect((await team(c.owner.cookie, { action: "refuse", membershipId: id })).status).toBe(200);
     expect((await mem(id)).status).toBe("removed");
     expect(await audits("membership.refuse", id)).toHaveLength(1);
-    expect((await team(c.owner.cookie, { action: "approve", membershipId: id })).json).toEqual({ code: "MEMBER_NOT_FOUND" });
+    expect((await team(c.owner.cookie, { action: "approve", membershipId: id, role: "viewer", isSigner: false })).json).toEqual({ code: "MEMBER_NOT_FOUND" });
     expect((await team(b.cookie, { action: "request", organisationId: c.org })).status).toBe(200);
   });
   it("the asker can withdraw its own request (leave)", async () => {
@@ -280,11 +282,12 @@ describe("request to join, then approve or refuse", () => {
     const a = await login(x.domain), b = await login(x.domain);
     const ra = (await team(a.cookie, { action: "request", organisationId: x.org })).json!.membershipId;
     const rb = (await team(b.cookie, { action: "request", organisationId: x.org })).json!.membershipId;
-    for (const action of ["approve", "refuse"]) expect((await team(other.owner.cookie, { action, membershipId: ra })).json, action).toEqual({ code: "MEMBER_NOT_FOUND" });
+    for (const body of [{ action: "approve", membershipId: ra, role: "viewer", isSigner: false }, { action: "refuse", membershipId: ra }])
+      expect((await team(other.owner.cookie, body)).json, body.action).toEqual({ code: "MEMBER_NOT_FOUND" });
     await db.query("app_admin", "update portal_user set status='blocked', blocked_at=now(), blocked_reason_code='fake' where id=$1", [b.id]);
-    expect((await team(x.owner.cookie, { action: "approve", membershipId: rb })).json).toEqual({ code: "REFUSED" });
+    expect((await team(x.owner.cookie, { action: "approve", membershipId: rb, role: "viewer", isSigner: false })).json).toEqual({ code: "REFUSED" });
     await su.query("update organisation set status='suspended' where id=$1", [x.org]);
-    expect((await team(x.owner.cookie, { action: "approve", membershipId: ra })).json).toEqual({ code: "ORGANISATION_NOT_AVAILABLE" });
+    expect((await team(x.owner.cookie, { action: "approve", membershipId: ra, role: "viewer", isSigner: false })).json).toEqual({ code: "ORGANISATION_NOT_AVAILABLE" });
     expect([(await mem(ra)).status, (await mem(rb)).status]).toEqual(["join_requested", "join_requested"]);
   });
   it("accepting an invite drops the login's own open request elsewhere", async () => {
@@ -420,7 +423,7 @@ describe("security", () => {
   const ownerActions = (target: number) => [
     { action: "invite", email: "fake.sneak@example.test", role: "recruiter", isSigner: true }, { action: "remove", membershipId: target },
     { action: "role", membershipId: target, role: "recruiter", isSigner: true }, { action: "transfer", membershipId: target },
-    { action: "approve", membershipId: target }, { action: "refuse", membershipId: target },
+    { action: "approve", membershipId: target, role: "recruiter", isSigner: true }, { action: "refuse", membershipId: target },
   ];
   const unchanged = async () => {
     expect(await count("select 1 from membership where organisation_id=$1 and status='active'", [c.org])).toBe(4);
@@ -461,7 +464,7 @@ describe("security", () => {
     for (const [sql, args] of [
       ["select private.team_invite($1, 'fake.d@example.test', 'viewer', false, $2)", [boss.id, hash]], ["select private.team_remove($1, $2)", [boss.id, 1]],
       ["select private.team_set_role($1, $2, 'viewer', false)", [boss.id, 1]], ["select private.team_transfer($1, $2)", [boss.id, 1]],
-      ["select private.team_answer($1, $2, true)", [boss.id, 1]], ["select private.team_leave($1)", [b.id]], ["select private.team_leave($1)", [d.id]],
+      ["select private.team_answer($1, $2, true, 'viewer', false)", [boss.id, 1]], ["select private.team_leave($1)", [b.id]], ["select private.team_leave($1)", [d.id]],
       ["select private.team_accept($1, $2)", [b.id, hash]], ["select private.team_accept($1, $2)", [d.id, hash]],
       ["select private.team_request($1, $2)", [b.id, c.org]], ["select private.team_request($1, $2)", [d.id, c.org]],
       ["select private.team_invite($1, 'fake.d@example.test', 'viewer', false, $2)", ["no-such-user", hash]],
@@ -485,7 +488,7 @@ describe("security", () => {
     await ban("banned-team.example.test");
     for (const r of [await invite(x, "fake.other@banned-team.example.test"), await team(victim.cookie, { action: "accept", token: tokenFor(victim.email) }),
       await team((await login("banned-team.example.test")).cookie, { action: "request", organisationId: x.org }),
-      await team(x.owner.cookie, { action: "approve", membershipId: Number(reqId) })])
+      await team(x.owner.cookie, { action: "approve", membershipId: Number(reqId), role: "viewer", isSigner: false })])
       expect([r.status, r.text]).toEqual([403, JSON.stringify({ code: "REFUSED" })]);
     expect(await me(victim.cookie)).toBeNull();
     expect(await me(asker.cookie)).toBeNull();

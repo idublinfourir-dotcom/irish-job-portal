@@ -11,7 +11,8 @@ describe("checkTeam", () => {
     expect(checkTeam({ action: "invite", email: "  Fake.One@Example.TEST ", role: "poster", isSigner: true })).toEqual({ action: "invite", email: "fake.one@example.test", role: "poster", isSigner: true });
     expect(checkTeam({ action: "accept", token })).toEqual({ action: "accept", token });
     expect(checkTeam({ action: "request", organisationId: 7 })).toEqual({ action: "request", organisationId: 7 });
-    for (const action of ["approve", "refuse", "remove", "transfer"]) expect(checkTeam({ action, membershipId: 3 })).toEqual({ action, membershipId: 3 });
+    for (const action of ["refuse", "remove", "transfer"]) expect(checkTeam({ action, membershipId: 3 })).toEqual({ action, membershipId: 3 });
+    expect(checkTeam({ action: "approve", membershipId: 3, role: "poster", isSigner: true })).toEqual({ action: "approve", membershipId: 3, role: "poster", isSigner: true });
     expect(checkTeam({ action: "leave" })).toEqual({ action: "leave" });
     expect(checkTeam({ action: "role", membershipId: 3, role: "viewer", isSigner: false })).toEqual({ action: "role", membershipId: 3, role: "viewer", isSigner: false });
   });
@@ -20,7 +21,8 @@ describe("checkTeam", () => {
       { action: "leave", portalUserId: "x" }, { action: "remove", membershipId: 3, organisationId: 9 }, { action: "transfer", membershipId: 3, userId: "x" },
       { action: "accept", token, email: "x@example.test" }, { action: "request", organisationId: 7, role: "account_owner" },
       { action: "invite", email: "a@example.test", role: "poster" }, { action: "invite", email: "a@example.test", role: "poster", isSigner: true, organisationId: 2 },
-      { action: "role", membershipId: 3, role: "poster" }, { action: "approve" }, { action: "remove", membershipId: 3, ...JSON.parse('{"__proto__": {"x": 1}}') }])
+      { action: "role", membershipId: 3, role: "poster" }, { action: "approve" }, { action: "approve", membershipId: 3 },
+      { action: "approve", membershipId: 3, role: "account_owner", isSigner: false }, { action: "approve", membershipId: 3, role: "poster", isSigner: "yes" }, { action: "remove", membershipId: 3, ...JSON.parse('{"__proto__": {"x": 1}}') }])
       expect(checkTeam(bad), JSON.stringify(bad)).toBeNull();
   });
   it("never takes the owner role, and only the three others", () => {

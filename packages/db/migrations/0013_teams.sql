@@ -102,7 +102,7 @@ begin
 end $$;
 
 -- A confirmed login with no company asks to join a claimed company. Its email domain must be one of the company's own domains
--- (organisation_domain, never a free provider), so a stranger cannot fill a team with requests. It joins as a viewer when approved.
+-- (organisation_domain, never a free provider), so a stranger cannot fill a team with requests. The owner picks its role when approving.
 create function private.team_request(p_user text, p_org bigint) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare u portal_user; v_domain text; v_id bigint;
@@ -124,8 +124,8 @@ begin
   return jsonb_build_object('membershipId', v_id);
 end $$;
 
--- The owner approves (active, as viewer) or refuses (removed) a join request.
-create function private.team_answer(p_user text, p_membership bigint, p_approve boolean) returns jsonb
+-- The owner approves (active, with the role and signer switch the owner picks) or refuses (removed) a join request.
+create function private.team_answer(p_user text, p_membership bigint, p_approve boolean, p_role text, p_signer boolean) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare m membership; r membership; o organisation; u portal_user;
 begin
@@ -133,17 +133,19 @@ begin
   select * into r from membership where id = p_membership and organisation_id = m.organisation_id and status = 'join_requested';
   if r.id is null then raise exception 'team refused: MEMBER_NOT_FOUND' using errcode = 'P0001'; end if;
   if p_approve then
+    if p_role is null or p_role not in ('viewer','poster','recruiter') then raise exception 'team refused: BAD_REQUEST role' using errcode = 'P0001'; end if;
+    if p_signer is null or (p_role = 'viewer' and p_signer) then raise exception 'team refused: VIEWER_NOT_SIGNER' using errcode = 'P0001'; end if;
     select * into o from organisation where id = m.organisation_id;
     if not private.team_open(o.status) then raise exception 'team refused: ORGANISATION_NOT_AVAILABLE company cannot take on people' using errcode = 'P0001'; end if;
     select * into u from portal_user where id = r.portal_user_id;
     if u.status <> 'active' or u.deleted_at is not null then raise exception 'team refused: REFUSED requester blocked or deleted' using errcode = 'P0001'; end if;
     if exists (select 1 from ban where email_domain = lower(split_part(u.email, '@', 2))) then raise exception 'team refused: REFUSED banned email domain' using errcode = 'P0001'; end if;
-    update membership set status = 'active', joined_at = now() where id = r.id;
+    update membership set status = 'active', joined_at = now(), role = p_role, is_signer = p_signer where id = r.id;
   else
     update membership set status = 'removed', removed_at = now() where id = r.id;
   end if;
   perform private.team_audit(p_user, case when p_approve then 'membership.approve' else 'membership.refuse' end, r.id,
-    jsonb_build_object('status', 'join_requested'), jsonb_build_object('status', case when p_approve then 'active' else 'removed' end));
+    jsonb_build_object('status', 'join_requested'), case when p_approve then jsonb_build_object('status', 'active', 'role', p_role, 'is_signer', p_signer) else jsonb_build_object('status', 'removed') end);
   return jsonb_build_object('membershipId', r.id);
 end $$;
 
@@ -220,7 +222,7 @@ begin
 end $$;
 
 grant execute on function private.team_invite(text, text, text, boolean, text), private.team_accept(text, text), private.team_request(text, bigint),
-  private.team_answer(text, bigint, boolean), private.team_remove(text, bigint), private.team_leave(text), private.team_set_role(text, bigint, text, boolean),
+  private.team_answer(text, bigint, boolean, text, boolean), private.team_remove(text, bigint), private.team_leave(text), private.team_set_role(text, bigint, text, boolean),
   private.team_transfer(text, bigint) to app_portal;
 
 reset role;
