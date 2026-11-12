@@ -3,7 +3,9 @@
 // adverts, on the structured fields the employer typed; the database has the last word (job_guard, signer_check, job_org_live, the deferred
 // statement check). There is no row level security: every read and write here is filtered by the login's own company.
 import { getPool, listAnswer } from "@portal/db";
-import { assess, type PublicPayCandidates } from "@portal/rules";
+import {
+  assess, CRITICAL_SKILLS_MINIMUM, MIN_CONTRACT_MONTHS as RULES_MIN_CONTRACT_MONTHS, minimumForHours, NON_LIST_MINIMUM, NON_LIST_ROUTE, type PublicPayCandidates,
+} from "@portal/rules";
 import type pg from "pg";
 // The rules data files the scheduled fetch reads (PORTAL_PRIVATE_DATA=packages/fetcher/data). The DETE names are not loaded: the chain uses
 // them only for LinkedIn adverts (assess.ts, `known`), so an employer post never reads them.
@@ -13,12 +15,12 @@ import { isObject, no, only, portalLogin, readPost, withinLimit, type Refusal } 
 
 export const JOBS_RATE = { windowMs: 10 * 60_000, max: 30 }; // posts, edits, renewals and closes together, per login
 export const MAX_JOB_BODY = 24_000; // characters: a 10,000-character advert with its JSON escaping and the other fields
-export const CS_MINIMUM = 40904; // Critical Skills list roles (DEFAULT_SALARY_MINIMUM in @portal/rules)
+export const CS_MINIMUM = CRITICAL_SKILLS_MINIMUM; // Critical Skills list roles (packages/rules/src/thresholds.ts)
 // #225, confirmed on DETE's own page by the step 9 research (step9/dete-thresholds-research.md): a role not on the Critical Skills list and
-// not Ineligible qualifies at this pay. The main session sets the switch from that research.
-export const HIGH_PAY_MINIMUM = 68911;
-export const HIGH_PAY_ROUTE_ALLOWED = true;
-export const MIN_CONTRACT_MONTHS = 24; // a Critical Skills post needs a contract of at least 2 years (#32)
+// not Ineligible qualifies at this pay. The figures and the switch live in packages/rules/src/thresholds.ts, shared with the eligibility checker.
+export const HIGH_PAY_MINIMUM = NON_LIST_MINIMUM;
+export const HIGH_PAY_ROUTE_ALLOWED = NON_LIST_ROUTE;
+export const MIN_CONTRACT_MONTHS = RULES_MIN_CONTRACT_MONTHS; // a Critical Skills post needs a contract of at least 2 years (#32)
 const MAX_PAY = 1_000_000;
 
 // The 26 counties of the Republic (the same list as packages/fetcher/src/county.ts, which does not export it).
@@ -30,15 +32,8 @@ export const COUNTIES = [
 const candidates: PublicPayCandidates = new Map(Object.entries(publicPay as Record<string, { tier: 1 | 2 }>).map(([k, v]) => [k, v.tier]));
 const LISTS = lists as { code: string; list: string }[];
 
-/**
- * DETE's minimums assume a 39-hour week ("A 40-hour week must have a minimum salary of €41953.60"): over 39 hours the hourly rate of the
- * annual minimum, rounded to cents, times the hours. Replace with @portal/rules minimumForHours at the combine.
- */
-export function minimumForHours(annualMinimum: number, weeklyHours: number): number {
-  if (weeklyHours <= 39) return annualMinimum;
-  const centsAnHour = Math.round((annualMinimum * 100) / (39 * 52)); // in whole cents, so 40 hours of 40,904 is exactly 41,953.60
-  return Math.max(annualMinimum, (centsAnHour * weeklyHours * 52) / 100);
-}
+// DETE's minimums assume a 39-hour week: minimumForHours (packages/rules/src/thresholds.ts) applies the hourly rate over 39 hours.
+export { minimumForHours };
 
 // ===== the body
 export type Statement = { signerName: string; signerTitle: string; writtenAuthority: boolean };

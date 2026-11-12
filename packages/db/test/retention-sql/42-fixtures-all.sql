@@ -11,6 +11,7 @@ $$;
 insert into staff_user(id,name,email,email_verified) values ('c3-st1','Staff One','c3.st1@example.test',true),('c3-st2','Staff Two','c3.st2@example.test',true),('c3-st3','Staff Three','c3.st3@example.test',true);
 insert into staff_role(staff_user_id,role,seeded_by_owner) values ('c3-st1','trust_and_safety',true),('c3-st2','trust_and_safety',true),('c3-st3','administrator',true);
 insert into consent_text(id,purpose,version,body) overriding system value select g, p, 'v1', 'c3 consent text' from unnest(array['signup_terms','privacy_notice','visibility','application','contact_accept','services_request','employer_contact','sponsorship_statement','pay_floor']) with ordinality as t(p,g);
+delete from job_source where kind = 'portal' and board = 'employer'; -- 0019's one row for employer posts; these fixtures pick their own ids
 insert into job_source(id,kind,board) overriding system value values (1,'board','c3-board'),(2,'portal','portal');
 -- organisations (ids 1..)
 insert into organisation(id,slug,display_name,kind,status,signup_path,claimed_at,verified_at,status_changed_at,permit_history) overriding system value

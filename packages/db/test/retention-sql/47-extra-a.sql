@@ -11,7 +11,7 @@ reset role;
 select c3t.chk('signin','after the sign-in the 31-day-old warning no longer deletes the profile and CV', $$ select exists(select 1 from candidate_profile where candidate_user_id='c3-i9') and exists(select 1 from candidate_cv where candidate_user_id='c3-i9') $$);
 -- T2: a portal close of a live job must carry closed_at (retention counts from it)
 set session_replication_role = replica;
-select c3t.mkjob(1401, 4, 'live'); update job set closes_at = now() + interval '10 days' where id = 1401;
+select c3t.mkjob(1401, 4, 'live'); update job set closes_at = now() + interval '10 days', posted_by_membership_id = 14 where id = 1401; -- 14: org 4's active recruiter (0019's poster check)
 reset session_replication_role;
 begin; set local role app_portal; update job set status = 'closed' where id = 1401; commit;
 select c3t.chk('closed_at','a job closed by app_portal (status closed, nothing else sent) has closed_at set', $$ select status='closed' and closed_at is not null from job where id=1401 $$);
