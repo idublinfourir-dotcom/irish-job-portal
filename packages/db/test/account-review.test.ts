@@ -14,11 +14,12 @@ vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 
 // Statements measured on 12 November 2026. Times are the median of 9 calls (as portal-login.test.ts does; one slow moment on a busy machine must not fail
 // the run), and the limit is about 4 times the slowest median measured: medians over three runs on 12 November 2026: list 2.4 to 2.7 ms, item 1.7 to 2.0, claim 3.9 to 4.5, approve 6.4 to 6.6, approve with domain 8.2 to 8.5 (so 35 ms);
+// first-time approve (with the label call) 4.2 to 5.4 ms, 6 statements, under the same 35 ms;
 // through the route: list 5.2 to 5.5, approve with domain 10.4 to 11.0 (so 45 ms). Raise these only on purpose.
 // Function level: list = role check + page (2); one item = role check + read (2); claim = begin, role check, update, commit (4);
-// approve without domain = begin, role check, lock, decide, commit (5); with domain = + domain lock, other-owner check, add (8).
+// approve without domain = begin, role check, lock, decide, commit (5); a first-time registration adds the label call (6); with domain = + domain lock, other-owner check, add (8).
 // Route level adds requireStaff's 2 (session by token, user by id).
-const BUDGET = { list: 2, item: 2, claim: 4, approve: 5, approveDomain: 8, routeExtra: 2, ms: 35, routeMs: 45 };
+const BUDGET = { list: 2, item: 2, claim: 4, approve: 5, approveFirstTime: 6, approveDomain: 8, routeExtra: 2, ms: 35, routeMs: 45 };
 
 const secret = "trial-only-secret-trial-only-secret-32";
 let db: TestDb;
@@ -357,6 +358,84 @@ describe("approve", () => {
   });
 });
 
+describe("approve: the First-time sponsor label (#73)", () => {
+  const label = async (org: number | string) => (await su.query("select permit_history from organisation where id = $1", [org])).rows[0].permit_history as string;
+  // a live job written as postgres, so the app guards do not interfere (as permit-history.test.ts does)
+  async function job(org: number | string) {
+    const src = (await su.query("insert into job_source(kind,board) values ('portal',$1) returning id", [id("b")])).rows[0].id;
+    return (await su.query(`insert into job(organisation_id,source,job_source_id,title,employer_name,sector,permit_type,status,closes_at,own_page_url,search_vector)
+      values ($1,'admin_manual',$2,'Cook','Org','it','critical_skills','live',now()+interval '20 days','https://example.test/a',to_tsvector('english','cook')) returning id`, [org, src])).rows[0].id as string;
+  }
+  const jobLabel = async (j: string) => (await su.query("select permit_history from job where id = $1", [j])).rows[0].permit_history as string;
+  async function withDete(org: number | string, year: number, permits: number) {
+    const tag = id("dete");
+    const n = (await su.query("insert into organisation_name(organisation_id, name, normalised_name, kind, source) values ($1, $2, $2, 'alias', 'admin') returning id::text", [org, tag])).rows[0].id;
+    await su.query("insert into dete_permit_count(dete_name, organisation_name_id, year, permits) values ($1, $2, $3, $4)", [tag, n, year, permits]);
+  }
+  const state = async (r: { org: number | string; item: string }) => JSON.stringify([await orgRow(r.org), await itemRow(r.item), await audits(r.org), await label(r.org)]);
+
+  it("a first-time registration gets the label, its open jobs follow, and the audit row says so", async () => {
+    const r = await registered();
+    const j = await job(r.org);
+    expect(await label(r.org)).toBe("not_linked");
+    await claimedBy("reviewer", r.item);
+    await approveAccount(admin(), staff.reviewer!, r.item);
+    expect(await label(r.org)).toBe("first_time");
+    expect(await jobLabel(j)).toBe("first_time");
+    expect((await audits(r.org))[0]).toMatchObject({ after: { status: "verified", domain_added: false, first_time_label: true } });
+  });
+  it("an agency registration and a DETE claim are left as they were", async () => {
+    const agency = await registered({ kind: "agency" });
+    const claim = await claimed();
+    for (const x of [agency, claim]) {
+      await claimedBy("reviewer", x.item);
+      await approveAccount(admin(), staff.reviewer!, x.item);
+      expect(await label(x.org)).toBe("not_linked");
+      expect((await audits(x.org))[0]!.after).toEqual({ status: "verified", domain_added: false });
+    }
+  });
+  it("a first-time registration with a qualifying DETE row is refused as has_permit_history and nothing changes; 2018 and 0 permits do not count", async () => {
+    const r = await registered();
+    await withDete(r.org, 2024, 3);
+    await claimedBy("reviewer", r.item);
+    const before = await state(r);
+    expect(await refusal(approveAccount(admin(), staff.reviewer!, r.item))).toBe("has_permit_history");
+    expect(await state(r)).toBe(before);
+    expect(await orgRow(r.org)).toMatchObject({ status: "pending_review", verified_at: null });
+    expect(await itemRow(r.item)).toMatchObject({ status: "claimed" });
+    expect(await audits(r.org)).toEqual([]);
+    expect(await label(r.org)).toBe("not_linked");
+    const old = await registered();
+    await withDete(old.org, 2018, 9);
+    await withDete(old.org, 2025, 0);
+    await claimedBy("reviewer", old.item);
+    await approveAccount(admin(), staff.reviewer!, old.item);
+    expect(await label(old.org)).toBe("first_time");
+  });
+  it("through the real route the refusal is 409 has_permit_history, and an approve there sets the label", async () => {
+    const bad = await registered();
+    await withDete(bad.org, 2024, 3);
+    await post("reviewer", { action: "claim", itemId: bad.item });
+    expect(await post("reviewer", { action: "approve", itemId: bad.item })).toEqual({ status: 409, json: { error: "has_permit_history" } });
+    expect(await label(bad.org)).toBe("not_linked");
+    const ok = await registered();
+    await post("reviewer", { action: "claim", itemId: ok.item });
+    expect((await post("reviewer", { action: "approve", itemId: ok.item })).status).toBe(200);
+    expect(await label(ok.org)).toBe("first_time");
+  });
+  it("security: the label is not set when approve is refused (no claim, not the claimer, wrong role, company not pending)", async () => {
+    const a = await registered();
+    expect(await refusal(approveAccount(admin(), staff.reviewer!, a.item))).toBe("not_claimed");
+    await claimedBy("reviewer", a.item);
+    expect(await refusal(approveAccount(admin(), staff.reviewer2!, a.item))).toBe("not_claimer");
+    for (const who of ["adminonly", "fetchedonly", "norole", "disabled"]) expect(await refusal(approveAccount(admin(), staff[who]!, a.item)), who).toMatch(/^not_/);
+    expect(await label(a.org)).toBe("not_linked");
+    await su.query("update organisation set status = 'suspended' where id = $1", [a.org]);
+    expect(await refusal(approveAccount(admin(), staff.reviewer!, a.item))).toBe("organisation_not_pending");
+    expect(await label(a.org)).toBe("not_linked");
+  });
+});
+
 describe("ask for more information", () => {
   it("moves the company to needs_info and puts the item back to open, unclaimed; the audit row holds the reason code and the real old status", async () => {
     const a = await claimed();
@@ -691,18 +770,22 @@ describe("performance budgets", () => {
     };
     const items = async () => { const l: Awaited<ReturnType<typeof claimed>>[] = []; for (let n = 0; n < 9; n++) l.push(await claimed()); return l; };
     const forClaim = await items(), plain = await items(), withDomain = await items();
-    for (const x of [...plain, ...withDomain]) await claimedBy("reviewer", x.item);
+    const firstTime: { item: string }[] = [];
+    for (let n = 0; n < 9; n++) firstTime.push(await registered());
+    for (const x of [...plain, ...withDomain, ...firstTime]) await claimedBy("reviewer", x.item);
     await listAccountReviews(admin(), staff.reviewer!); // warm the pool
     out.list = await measure(() => listAccountReviews(admin(), staff.reviewer!));
     out.item = await measure(() => getAccountReview(admin(), staff.reviewer!, plain[0]!.item));
     out.claim = await measure((n) => claimReview(admin(), staff.reviewer!, forClaim[n]!.item));
     out.approve = await measure((n) => approveAccount(admin(), staff.reviewer!, plain[n]!.item));
+    out.approveFirstTime = await measure((n) => approveAccount(admin(), staff.reviewer!, firstTime[n]!.item));
     out.approveDomain = await measure((n) => approveAccount(admin(), staff.reviewer!, withDomain[n]!.item, { addDomain: true }));
     console.log("account review (statements, median ms):", JSON.stringify(out));
     expect(out.list![0]).toBeLessThanOrEqual(BUDGET.list);
     expect(out.item![0]).toBeLessThanOrEqual(BUDGET.item);
     expect(out.claim![0]).toBeLessThanOrEqual(BUDGET.claim);
     expect(out.approve![0]).toBeLessThanOrEqual(BUDGET.approve);
+    expect(out.approveFirstTime![0]).toBeLessThanOrEqual(BUDGET.approveFirstTime);
     expect(out.approveDomain![0]).toBeLessThanOrEqual(BUDGET.approveDomain);
     for (const [k, v] of Object.entries(out)) expect(v[1], `${k} median ${v[1]} ms`).toBeLessThanOrEqual(BUDGET.ms);
   });

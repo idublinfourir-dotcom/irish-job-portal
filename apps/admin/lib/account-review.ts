@@ -45,7 +45,7 @@ const STATUS = new Map<string, number>(Object.entries({
   bad_body: 400, bad_action: 400, bad_item_id: 400, bad_reason: 400, bad_cursor: 400, bad_input: 400,
   bad_origin: 403, not_reviewer: 403, not_active_staff: 403,
   not_found: 404,
-  already_decided: 409, not_claimed: 409, not_claimer: 409, claimed_by_other: 409, organisation_not_pending: 409,
+  already_decided: 409, not_claimed: 409, not_claimer: 409, claimed_by_other: 409, organisation_not_pending: 409, has_permit_history: 409,
   free_email_domain: 409, domain_owned_by_other: 409, no_claimant: 409, claimant_not_active: 409, bad_domain: 409,
   no_session: 401, not_active: 401,
 }));
