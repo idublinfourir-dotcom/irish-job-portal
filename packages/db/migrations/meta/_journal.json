@@ -155,6 +155,13 @@
       "when": 1794300017000,
       "tag": "0021_rules_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794300018000,
+      "tag": "0022_companies",
+      "breakpoints": true
     }
   ]
 }

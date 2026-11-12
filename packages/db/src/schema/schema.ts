@@ -223,6 +223,7 @@ export const job = pgTable("job", {
 	index("job_company_page_idx").using("btree", sql`organisation_id`, sql`((NOT quota_full))`, sql`posted_at`, sql`id`).where(sql`(status = 'live'::text)`),
 	index("job_draft_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'draft'::text)`),
 	index("job_hidden_report_idx").using("btree", table.hiddenReportId.asc().nullsLast().op("int8_ops")),
+	index("job_manual_idx").using("btree", table.id.desc().nullsFirst().op("int8_ops")).where(sql`(source = 'admin_manual'::text)`),
 	index("job_life_idx").using("btree", table.closesAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((status = ANY (ARRAY['live'::text, 'under_review'::text])) AND (closes_at < 'infinity'::timestamp with time zone))`),
 	index("job_live_newest").using("btree", sql`((NOT quota_full))`, sql`posted_at`, sql`id`, sql`quota_full`, sql`closes_at`).where(sql`(status = 'live'::text)`),
 	index("job_live_sponsor").using("btree", sql`((NOT quota_full))`, sql`sponsor_sort`, sql`posted_at`, sql`id`, sql`quota_full`, sql`closes_at`).where(sql`(status = 'live'::text)`),
@@ -2245,4 +2246,53 @@ export const rulesVersion = pgTable("rules_version", {
 	check("rules_version_check", sql`seeded_by_owner OR (approval_request_id IS NOT NULL)`),
 	check("rules_version_data_check", sql`jsonb_typeof(data) = ANY (ARRAY['object'::text, 'array'::text])`),
 	check("rules_version_kind_check", sql`kind = ANY (ARRAY['minimums'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'public_pay_employers'::text, 'big_company_names'::text])`),
+export const ownerReassign = pgTable("owner_reassign", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "owner_reassign_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	organisationId: bigint("organisation_id", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	newOwnerMembershipId: bigint("new_owner_membership_id", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	oldOwnerMembershipId: bigint("old_owner_membership_id", { mode: "number" }).notNull(),
+	domainChecked: boolean("domain_checked").notNull(),
+	croChecked: boolean("cro_checked").notNull(),
+	requestedByStaffUserId: text("requested_by_staff_user_id").notNull(),
+	requestedAt: timestamp("requested_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	completesAfter: timestamp("completes_after", { withTimezone: true, mode: 'string' }).notNull(),
+	status: text().default('open').notNull(),
+	decidedByStaffUserId: text("decided_by_staff_user_id"),
+	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	uniqueIndex("owner_reassign_one_open").using("btree", table.organisationId.asc().nullsLast().op("int8_ops")).where(sql`(status = 'open'::text)`),
+	foreignKey({
+			columns: [table.decidedByStaffUserId],
+			foreignColumns: [staffUser.id],
+			name: "owner_reassign_decided_by_staff_user_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.newOwnerMembershipId],
+			foreignColumns: [membership.id],
+			name: "owner_reassign_new_owner_membership_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.oldOwnerMembershipId],
+			foreignColumns: [membership.id],
+			name: "owner_reassign_old_owner_membership_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.organisationId],
+			foreignColumns: [organisation.id],
+			name: "owner_reassign_organisation_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.requestedByStaffUserId],
+			foreignColumns: [staffUser.id],
+			name: "owner_reassign_requested_by_staff_user_id_fkey"
+		}),
+	check("owner_reassign_check", sql`domain_checked AND cro_checked`),
+	check("owner_reassign_check1", sql`new_owner_membership_id <> old_owner_membership_id`),
+	check("owner_reassign_check2", sql`completes_after >= (requested_at + '7 days'::interval)`),
+	check("owner_reassign_check3", sql`(status = 'open'::text) = ((decided_by_staff_user_id IS NULL) AND (decided_at IS NULL))`),
+	check("owner_reassign_status_check", sql`status = ANY (ARRAY['open'::text, 'done'::text, 'cancelled'::text])`),
 ]);

@@ -101,6 +101,11 @@ check organisation_permit_history_check on organisation: CHECK ((permit_history 
 check organisation_signup_path_check on organisation: CHECK ((signup_path = ANY (ARRAY['dete_claim'::text, 'first_time'::text, 'agency'::text, 'admin'::text])))
 check organisation_sponsor_sort_check on organisation: CHECK ((sponsor_sort >= '-1'::integer))
 check organisation_status_check on organisation: CHECK ((status = ANY (ARRAY['unclaimed'::text, 'pending_review'::text, 'needs_info'::text, 'verified'::text, 'verified_restricted'::text, 'suspended'::text, 'rejected'::text, 'banned'::text, 'closed'::text])))
+check owner_reassign_check on owner_reassign: CHECK ((domain_checked AND cro_checked))
+check owner_reassign_check1 on owner_reassign: CHECK ((new_owner_membership_id <> old_owner_membership_id))
+check owner_reassign_check2 on owner_reassign: CHECK ((completes_after >= (requested_at + '7 days'::interval)))
+check owner_reassign_check3 on owner_reassign: CHECK (((status = 'open'::text) = ((decided_by_staff_user_id IS NULL) AND (decided_at IS NULL))))
+check owner_reassign_status_check on owner_reassign: CHECK ((status = ANY (ARRAY['open'::text, 'done'::text, 'cancelled'::text])))
 check pay_floor_check on pay_floor: CHECK ((valid_until > signed_at))
 check pay_floor_check1 on pay_floor: CHECK (((status <> 'active'::text) OR (approval_request_id IS NOT NULL)))
 check pay_floor_floor_eur_check on pay_floor: CHECK ((floor_eur > 0))
@@ -196,6 +201,7 @@ rights app_admin on notification_preference: table[delete,insert,select,update] 
 rights app_admin on organisation: table[insert,select,update] columns[]
 rights app_admin on organisation_domain: table[delete,select] columns[insert(added_by_staff_id,domain,organisation_id,source) update(added_by_staff_id,domain,organisation_id,source)]
 rights app_admin on organisation_name: table[delete,insert,select,update] columns[]
+rights app_admin on owner_reassign: table[select] columns[]
 rights app_admin on pay_floor: table[select,update] columns[]
 rights app_admin on portal_account: table[] columns[]
 rights app_admin on portal_case_document: table[] columns[]
@@ -269,6 +275,7 @@ rights app_candidate on notification_preference: table[] columns[]
 rights app_candidate on organisation: table[] columns[select(claimed_at,claims_removed_at,county,display_name,id,kind,logo_url,merged_into_id,nace_code,permit_history,short_description,slug,status,website,wrc_licence_number)]
 rights app_candidate on organisation_domain: table[] columns[]
 rights app_candidate on organisation_name: table[select] columns[]
+rights app_candidate on owner_reassign: table[] columns[]
 rights app_candidate on pay_floor: table[] columns[]
 rights app_candidate on portal_account: table[] columns[]
 rights app_candidate on portal_case_document: table[] columns[]
@@ -342,6 +349,7 @@ rights app_fetcher on notification_preference: table[] columns[]
 rights app_fetcher on organisation: table[select] columns[insert(county,display_name,kind,slug)]
 rights app_fetcher on organisation_domain: table[] columns[]
 rights app_fetcher on organisation_name: table[insert,select] columns[]
+rights app_fetcher on owner_reassign: table[] columns[]
 rights app_fetcher on pay_floor: table[] columns[select(floor_eur,id,organisation_id,role_family,status,valid_until)]
 rights app_fetcher on portal_account: table[] columns[]
 rights app_fetcher on portal_case_document: table[] columns[]
@@ -415,6 +423,7 @@ rights app_portal on notification_preference: table[] columns[]
 rights app_portal on organisation: table[select] columns[update(county,display_name,logo_url,short_description,website)]
 rights app_portal on organisation_domain: table[] columns[]
 rights app_portal on organisation_name: table[select] columns[]
+rights app_portal on owner_reassign: table[] columns[]
 rights app_portal on pay_floor: table[insert,select] columns[update(status)]
 rights app_portal on portal_account: table[delete,insert,select,update] columns[]
 rights app_portal on portal_case_document: table[select] columns[insert(byte_size,content_type,file_name,portal_user_id,services_case_id,storage_key)]
@@ -547,6 +556,7 @@ unique CREATE UNIQUE INDEX organisation_name_cro_unique ON public.organisation_n
 unique CREATE UNIQUE INDEX organisation_name_legal_nocro_unique ON public.organisation_name USING btree (normalised_name) WHERE ((kind = 'legal'::text) AND (cro_number IS NULL))
 unique CREATE UNIQUE INDEX organisation_slug_key ON public.organisation USING btree (slug)
 unique CREATE UNIQUE INDEX organisation_wrc_unique ON public.organisation USING btree (wrc_licence_number) WHERE ((wrc_licence_number IS NOT NULL) AND (status <> ALL (ARRAY['rejected'::text, 'closed'::text])) AND (merged_into_id IS NULL))
+unique CREATE UNIQUE INDEX owner_reassign_one_open ON public.owner_reassign USING btree (organisation_id) WHERE (status = 'open'::text)
 unique CREATE UNIQUE INDEX pay_floor_one_active ON public.pay_floor USING btree (organisation_id, role_family) WHERE (status = 'active'::text)
 unique CREATE UNIQUE INDEX pay_floor_one_pending ON public.pay_floor USING btree (organisation_id, role_family) WHERE (status = 'pending_check'::text)
 unique CREATE UNIQUE INDEX portal_account_provider_unique ON public.portal_account USING btree (provider_id, account_id)

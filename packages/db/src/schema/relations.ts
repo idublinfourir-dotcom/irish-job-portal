@@ -1,7 +1,7 @@
 // Made by npm run db:pull (packages/db/test/pull-schema.mjs) from a database built by packages/db/migrations.
 // Do not edit by hand: change a migration, then run npm run db:pull. schema.test.ts fails until the two match.
 import { relations } from "drizzle-orm/relations";
-import { job, application, candidateUser, consentRecord, organisation, contactRequest, membership, candidateHiddenOrganisation, message, jobSource, fetchedAdvert, payFloor, organisationName, staffUser, report, jobText, fetchRun, jobDailyStat, candidateAccount, candidateSession, candidateProfile, candidateCv, savedJob, trackerEntry, applyClick, alert, portalUser, portalAccount, portalSession, organisationDomain, detePermitCount, sponsorshipStatement, consentText, approvalRequest, staffSession, staffAccount, staffRole, servicesCase, caseNote, caseDocument, caseQuote, contentPage, contactMessage, strike, ban, notificationPreference, notification, setting, reviewItem } from "./schema";
+import { job, application, candidateUser, consentRecord, organisation, contactRequest, membership, candidateHiddenOrganisation, message, jobSource, fetchedAdvert, payFloor, organisationName, staffUser, report, jobText, fetchRun, jobDailyStat, candidateAccount, candidateSession, candidateProfile, candidateCv, savedJob, trackerEntry, applyClick, alert, portalUser, portalAccount, portalSession, organisationDomain, detePermitCount, sponsorshipStatement, consentText, approvalRequest, staffSession, staffAccount, staffRole, servicesCase, caseNote, caseDocument, caseQuote, contentPage, contactMessage, strike, ban, notificationPreference, notification, setting, reviewItem, ownerReassign } from "./schema";
 
 export const applicationRelations = relations(application, ({one, many}) => ({
 	job: one(job, {
@@ -179,6 +179,7 @@ export const organisationRelations = relations(organisation, ({one, many}) => ({
 	consentRecords: many(consentRecord),
 	notifications: many(notification),
 	reviewItems: many(reviewItem),
+	ownerReassigns: many(ownerReassign),
 }));
 
 export const membershipRelations = relations(membership, ({one, many}) => ({
@@ -208,6 +209,12 @@ export const membershipRelations = relations(membership, ({one, many}) => ({
 	}),
 	sponsorshipStatements: many(sponsorshipStatement),
 	payFloors: many(payFloor),
+	ownerReassigns_newOwnerMembershipId: many(ownerReassign, {
+		relationName: "ownerReassign_newOwnerMembershipId_membership_id"
+	}),
+	ownerReassigns_oldOwnerMembershipId: many(ownerReassign, {
+		relationName: "ownerReassign_oldOwnerMembershipId_membership_id"
+	}),
 }));
 
 export const candidateHiddenOrganisationRelations = relations(candidateHiddenOrganisation, ({one}) => ({
@@ -349,6 +356,12 @@ export const staffUserRelations = relations(staffUser, ({many}) => ({
 	}),
 	reviewItems_decidedByStaffUserId: many(reviewItem, {
 		relationName: "reviewItem_decidedByStaffUserId_staffUser_id"
+	}),
+	ownerReassigns_decidedByStaffUserId: many(ownerReassign, {
+		relationName: "ownerReassign_decidedByStaffUserId_staffUser_id"
+	}),
+	ownerReassigns_requestedByStaffUserId: many(ownerReassign, {
+		relationName: "ownerReassign_requestedByStaffUserId_staffUser_id"
 	}),
 }));
 
@@ -850,5 +863,32 @@ export const reviewItemRelations = relations(reviewItem, ({one}) => ({
 		fields: [reviewItem.decidedByStaffUserId],
 		references: [staffUser.id],
 		relationName: "reviewItem_decidedByStaffUserId_staffUser_id"
+	}),
+}));
+
+export const ownerReassignRelations = relations(ownerReassign, ({one}) => ({
+	staffUser_decidedByStaffUserId: one(staffUser, {
+		fields: [ownerReassign.decidedByStaffUserId],
+		references: [staffUser.id],
+		relationName: "ownerReassign_decidedByStaffUserId_staffUser_id"
+	}),
+	membership_newOwnerMembershipId: one(membership, {
+		fields: [ownerReassign.newOwnerMembershipId],
+		references: [membership.id],
+		relationName: "ownerReassign_newOwnerMembershipId_membership_id"
+	}),
+	membership_oldOwnerMembershipId: one(membership, {
+		fields: [ownerReassign.oldOwnerMembershipId],
+		references: [membership.id],
+		relationName: "ownerReassign_oldOwnerMembershipId_membership_id"
+	}),
+	organisation: one(organisation, {
+		fields: [ownerReassign.organisationId],
+		references: [organisation.id]
+	}),
+	staffUser_requestedByStaffUserId: one(staffUser, {
+		fields: [ownerReassign.requestedByStaffUserId],
+		references: [staffUser.id],
+		relationName: "ownerReassign_requestedByStaffUserId_staffUser_id"
 	}),
 }));
