@@ -10,11 +10,12 @@ import { fixtures, in30 } from "./fixtures";
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 
 let db, P, su, id, ins, F;
-let org, board, portalSrc;
+let org, owner, board, portalSrc;
 beforeAll(async () => {
   db = await createTestDb();
   ({ P, su, id, ins, F } = fixtures(db));
   org = await F.org();
+  owner = await F.member(org, await F.portal(), { role: "account_owner" }); // 0019: a portal job write names an active poster of the company
   board = await ins("postgres", "job_source", { kind: "board", board: "fakeboard" });
   portalSrc = await ins("postgres", "job_source", { kind: "portal", board: "portal" });
 });
@@ -33,7 +34,7 @@ async function fetchedJob({ status = "live", closed = null } = {}) {
   return j;
 }
 const employerJob = (status = "live") =>
-  ins("postgres", "job", { organisation_id: org, source: "employer", job_source_id: portalSrc, title: "t", employer_name: "e", sector: "it", permit_type: "critical_skills", status, closes_at: in30(), own_page_url: "u", salary_low: 40000, search_vector: "'x':1" });
+  ins("postgres", "job", { organisation_id: org, source: "employer", job_source_id: portalSrc, title: "t", employer_name: "e", sector: "it", permit_type: "critical_skills", status, closes_at: in30(), own_page_url: "u", salary_low: 40000, search_vector: "'x':1", posted_by_membership_id: owner });
 const reopen = (job) => P.app_fetcher.query("update job set status='live', close_reason=null, closed_at=null, search_vector=to_tsvector('x') where id=$1", [job]);
 
 // ---- fetched_advert.content_hash

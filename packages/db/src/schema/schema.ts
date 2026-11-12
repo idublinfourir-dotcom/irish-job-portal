@@ -217,6 +217,7 @@ export const job = pgTable("job", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	hireAnsweredByMembershipId: bigint("hire_answered_by_membership_id", { mode: "number" }),
 	sponsorSort: integer("sponsor_sort").default(sql`'-1'`).notNull(),
+	weeklyHours: smallint("weekly_hours"),
 }, (table) => [
 	index("job_closed_idx").using("btree", table.closedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'closed'::text)`),
 	index("job_company_page_idx").using("btree", sql`organisation_id`, sql`((NOT quota_full))`, sql`posted_at`, sql`id`).where(sql`(status = 'live'::text)`),
@@ -301,6 +302,7 @@ export const job = pgTable("job", {
 	check("job_screening_questions_check", sql`(jsonb_typeof(screening_questions) = 'array'::text) AND (jsonb_array_length(screening_questions) <= 5)`),
 	check("job_sponsor_sort_check", sql`sponsor_sort >= '-1'::integer`),
 	check("job_recheck_failed_fetched", sql`(close_reason IS DISTINCT FROM 'recheck_failed'::text) OR (source = 'fetched'::text)`),
+	check("job_weekly_hours_check", sql`(weekly_hours >= 1) AND (weekly_hours <= 60)`),
 ]);
 
 export const jobText = pgTable("job_text", {

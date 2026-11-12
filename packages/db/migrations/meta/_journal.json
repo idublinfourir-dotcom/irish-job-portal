@@ -134,6 +134,13 @@
       "when": 1794300014000,
       "tag": "0018_occupation_content",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794300015000,
+      "tag": "0019_job_posting",
+      "breakpoints": true
     }
   ]
 }

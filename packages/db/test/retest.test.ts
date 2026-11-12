@@ -58,7 +58,7 @@ await blk("{ const c = await F.cand(), ct = await F.text(\"services_request\"), 
 
 // ---- 4 and 9. apps changing what they should only ask for: trust columns
 await blk("{ const o = await F.org(), j = await ins(\"app_portal\", \"job\", { organi", async () => {
-{ const o = await F.org(), j = await ins("app_portal", "job", { organisation_id: o, source: "employer", job_source_id: src, title: "t", employer_name: "e", sector: "it", permit_type: "general", status: "draft", closes_at: in30(), own_page_url: "u" });
+{ const o = await F.org(), om = await F.member(o, await F.portal(), { role: "poster" }), j = await ins("app_portal", "job", { organisation_id: o, posted_by_membership_id: om, source: "employer", job_source_id: src, title: "t", employer_name: "e", sector: "it", permit_type: "general", status: "draft", closes_at: in30(), own_page_url: "u" });
   for (const [what, sql] of [["organisation status", "update organisation set status='verified' where id=$1"], ["is_big_company", "update organisation set is_big_company=true where id=$1"],
       ["restricted_until", "update organisation set restricted_until=null where id=$1"], ["organisation permit_history", "update organisation set permit_history='has_history' where id=$1"],
       ["claims_removed_at", "update organisation set claims_removed_at=null where id=$1"], ["cro_number", "update organisation set cro_number='123' where id=$1"]])

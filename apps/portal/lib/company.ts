@@ -76,12 +76,12 @@ export async function withinLimit(key: string, rate: { windowMs: number; max: nu
 }
 
 // The checks every portal POST makes before its database call, in this order: the portal's own Origin, the body size (by header,
-// then by length), JSON, the body check, then a session from requirePortal. Returns the reply to send, or the login and the body.
-export async function readPost<T>(request: Request, check: (b: unknown) => T | null): Promise<Response | { login: PortalLogin; body: T }> {
+// then by length), JSON, the body check, then a session from requirePortal. `max` is the body cap in characters (a job post carries its advert text). Returns the reply to send, or the login and the body.
+export async function readPost<T>(request: Request, check: (b: unknown) => T | null, max = MAX_BODY): Promise<Response | { login: PortalLogin; body: T }> {
   if (request.headers.get("origin") !== portalOrigin()) return no(403, "BAD_ORIGIN");
-  if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY) return no(413, "BODY_TOO_LARGE"); // before the body is read
+  if (Number(request.headers.get("content-length") ?? 0) > max) return no(413, "BODY_TOO_LARGE"); // before the body is read
   const text = await request.text();
-  if (text.length > MAX_BODY) return no(413, "BODY_TOO_LARGE");
+  if (text.length > max) return no(413, "BODY_TOO_LARGE");
   let parsed: unknown;
   try { parsed = JSON.parse(text); } catch { return no(400, "BAD_REQUEST"); }
   const body = check(parsed);
