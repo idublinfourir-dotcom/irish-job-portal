@@ -11,7 +11,8 @@ type Db = Pick<pg.Pool, "query" | "connect">;
 // ===== the list and one item =====
 const COLS =
   "r.id, r.status, r.claimed_by_staff_user_id, r.created_at::text as created_text, r.reason, r.detail, o.id as organisation_id, o.display_name, o.kind, " +
-  "o.status as organisation_status, o.signup_path, o.cro_number, o.wrc_licence_number, u.email as claimant_email " +
+  "o.status as organisation_status, o.signup_path, o.cro_number, o.wrc_licence_number, u.email as claimant_email, " +
+  "r.detail->>'answer' as answer, r.detail->>'answered_at' as answered_at " +
   "from review_item r join organisation o on o.id = r.organisation_id " +
   "left join membership m on m.organisation_id = o.id and m.role = 'account_owner' and m.status = 'active' left join portal_user u on u.id = m.portal_user_id";
 // Oldest first on review_item_queue_idx (queue, created_at, id) where status in ('open','claimed').
@@ -23,7 +24,7 @@ export const REVIEW_ITEM = `select ${COLS} where r.id = $1::bigint and r.queue =
 type Row = {
   id: string; status: string; claimed_by_staff_user_id: string | null; created_text: string; reason: string | null; detail: unknown; organisation_id: string;
   display_name: string; kind: string; organisation_status: string; signup_path: string | null; cro_number: string | null; wrc_licence_number: string | null;
-  claimant_email: string | null;
+  claimant_email: string | null; answer: string | null; answered_at: string | null;
 };
 export type ReviewItem = {
   id: string; status: string; claimedBy: string | null; createdAt: string;
@@ -34,6 +35,8 @@ export type ReviewItem = {
   signupPath: string | null; croNumber: string | null; wrcLicenceNumber: string | null;
   /** The company owner's sign-up email and its domain (the one "add the domain" would save). null when the owner membership is gone. */
   claimantEmail: string | null; emailDomain: string | null;
+  /** The owner's latest answer to "ask for more" (#197) and when it was sent (ISO text); null until they answer. Plain text: show it as text, never as HTML. */
+  answer: string | null; answeredAt: string | null;
 };
 
 /** The part of an email after the first "@", lower case: the same cut the sign-up functions make (split_part(email, '@', 2)). */
@@ -43,6 +46,7 @@ const item = (r: Row): ReviewItem => ({
   id: r.id, status: r.status, claimedBy: r.claimed_by_staff_user_id, createdAt: r.created_text, reason: r.reason, detail: r.detail,
   organisationId: r.organisation_id, displayName: r.display_name, kind: r.kind, organisationStatus: r.organisation_status, signupPath: r.signup_path,
   croNumber: r.cro_number, wrcLicenceNumber: r.wrc_licence_number, claimantEmail: r.claimant_email, emailDomain: domainOf(r.claimant_email),
+  answer: r.answer, answeredAt: r.answered_at,
 });
 
 const encode = (r: Row) => Buffer.from(JSON.stringify({ t: r.created_text, i: r.id })).toString("base64url");
@@ -168,7 +172,9 @@ export const REVIEW_DECIDE =
   "where id = $2::bigint and status in ('pending_review','needs_info') returning id), " +
   "r as (update review_item set status = case when $5::text = 'needs_info' then 'open' else 'done' end, " +
   "claimed_by_staff_user_id = case when $5::text = 'needs_info' then null else claimed_by_staff_user_id end, " +
-  "claimed_at = case when $5::text = 'needs_info' then null else claimed_at end, decided_by_staff_user_id = $3, decided_at = now(), outcome = $5 " +
+  "claimed_at = case when $5::text = 'needs_info' then null else claimed_at end, " +
+  // a new question clears the owner's earlier answer (#197), so staff never read an answer to a question that was since replaced
+  "detail = case when $5::text = 'needs_info' then detail - 'answer' - 'answered_at' else detail end, decided_by_staff_user_id = $3, decided_at = now(), outcome = $5 " +
   "where id = $1::bigint and status = 'claimed' and claimed_by_staff_user_id = $3 and exists (select 1 from o) returning id) " +
   "insert into audit_event(kind, actor_staff_user_id, action, object_type, object_id, changed_columns, before, after, reason_code, source) " +
   "select 'admin_action', $3, $6, 'organisation', $2::text, '{status}', jsonb_build_object('status', $9::text), $8::jsonb, $7, 'panel' from r returning id";
