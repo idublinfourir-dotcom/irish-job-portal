@@ -42,6 +42,11 @@ describe("the portal sign-up answer (#194)", () => {
     expect(() => checkPortalSignup({ acceptsTerms: "true" })).toThrow(/accept the terms/);
     try { checkPortalSignup({}); } catch (e) { expect((e as { body?: { code?: string } }).body?.code).toBe("SIGNUP_ANSWERS_REFUSED"); }
   });
+  it("checkPortalSignup with the name rule: 1 to 100 characters, the same as candidates", () => {
+    expect(checkPortalSignup({ acceptsTerms: true, name: "x".repeat(100) }, true)).toEqual({ acceptsTerms: true });
+    for (const name of [undefined, "", "   ", 5, ["Fake"], "x".repeat(101)])
+      expect(() => checkPortalSignup({ acceptsTerms: true, name }, true), JSON.stringify(name)?.slice(0, 20)).toThrow(/Name must be 1 to 100/);
+  });
 });
 
 describe("the fake email sender (#174)", () => {

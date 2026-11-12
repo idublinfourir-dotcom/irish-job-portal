@@ -32,10 +32,18 @@ export function readPortalAnswers(raw: unknown): { answers?: PortalAnswers; erro
   return o.acceptsTerms === true ? { answers: { acceptsTerms: true } } : { error: "You must accept the terms." };
 }
 
-/** Portal sign-up checks (the route's body): the tick, or SIGNUP_ANSWERS_REFUSED. The name is Better Auth's own check. */
-export function checkPortalSignup(body: unknown): PortalAnswers {
+// The same name rule for both pools: portal_user.name and candidate_user.name have no length limit in the database.
+function checkName(body: unknown): void {
+  const name = (body as { name?: unknown }).name;
+  if (typeof name !== "string" || !name.trim() || name.length > NAME_MAX)
+    throw new APIError("BAD_REQUEST", { message: `Name must be 1 to ${NAME_MAX} characters.`, code: "SIGNUP_NAME_REFUSED" });
+}
+
+/** Portal sign-up checks (the route's body): the tick, or SIGNUP_ANSWERS_REFUSED, and with `withName` the name rule. */
+export function checkPortalSignup(body: unknown, withName = false): PortalAnswers {
   const { answers, error } = readPortalAnswers(body);
   if (!answers) throw new APIError("BAD_REQUEST", { message: error!, code: "SIGNUP_ANSWERS_REFUSED" });
+  if (withName) checkName(body);
   return answers;
 }
 
@@ -43,9 +51,7 @@ export function checkPortalSignup(body: unknown): PortalAnswers {
 export function checkSignup(body: unknown, withName: boolean): Answers {
   const { answers, error } = readAnswers(body);
   if (!answers) throw new APIError("BAD_REQUEST", { message: error!, code: "SIGNUP_ANSWERS_REFUSED" });
-  const name = (body as { name?: unknown }).name;
-  if (withName && (typeof name !== "string" || !name.trim() || name.length > NAME_MAX))
-    throw new APIError("BAD_REQUEST", { message: `Name must be 1 to ${NAME_MAX} characters.`, code: "SIGNUP_NAME_REFUSED" });
+  if (withName) checkName(body);
   return answers;
 }
 
@@ -99,7 +105,7 @@ export function signupPlugin(database: Pool, pool: SignupPool): BetterAuthPlugin
         matcher: (ctx) => ctx.path === "/sign-up/email",
         handler: createAuthMiddleware(async (ctx) => {
           if (pool === "candidate") checkSignup(ctx.body, true);
-          else checkPortalSignup(ctx.body);
+          else checkPortalSignup(ctx.body, true);
           await currentTermsId(database, pool);
         }),
       }],

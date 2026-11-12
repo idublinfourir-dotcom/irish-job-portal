@@ -286,6 +286,14 @@ describe("portal sign-up with the tick (#188, #194)", () => {
     expect((await signUp(p)).status).toBe(200);
     expect((await su.query("select name from portal_user where email=$1", [p.email])).rows[0].name).toBe(p.name);
   });
+  it("refuses an empty, blank or over-long name (400 SIGNUP_NAME_REFUSED) and makes no login", async () => {
+    for (const [i, name] of ["", "   ", "x".repeat(101), "x".repeat(200000)].entries()) {
+      const p = { ...person(`name${i}`), ...tick, name };
+      const r = await signUp(p);
+      expect([r.status, r.json?.code], `name of ${name.length}`).toEqual([400, "SIGNUP_NAME_REFUSED"]);
+      expect(await logins(p.email)).toBe(0);
+    }
+  });
   it("every portal login has exactly one consent row, whatever happened above", async () => {
     expect(await count("select 1 from portal_user u where (select count(*) from consent_record c where c.portal_user_id = u.id) <> 1")).toBe(0);
     expect(await count("select 1 from consent_record c join consent_text t on t.id = c.consent_text_id where c.portal_user_id is not null and t.purpose <> 'portal_signup_terms'")).toBe(0);
