@@ -7,6 +7,8 @@ import { checkPortalSignup, checkSignup, signupPlugin, writeConsent, type Answer
 
 export { readAnswers, readPortalAnswers, checkSignup, checkPortalSignup, currentTermsId, writeConsent, type Answers, type PortalAnswers } from "./signup";
 export { createFakeEmail, type FakeEmail } from "./fake-email";
+export { createMail, emailText } from "./mail";
+export { createBrevoMail, type SendMail } from "./brevo";
 
 // The pool is called portal, not employer: its tables are portal_user and so on (23-database-design.md).
 export type LoginPool = "candidate" | "portal" | "staff";

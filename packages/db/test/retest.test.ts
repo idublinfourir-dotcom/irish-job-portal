@@ -111,8 +111,8 @@ await blk("{ const o = await F.org(), fj = await ins(\"postgres\", \"job\", { or
 await blk("{ const j = await live(), r = await ins(\"postgres\", \"report\", { target", async () => {
 { const j = await live(), r = await ins("postgres", "report", { target_kind: "job", target_job_id: j, reason: "no_sponsorship", evidence_text: "Fake evidence naming the reporter" });
   const k = await ins("postgres", "strike", { organisation_id: org, case_kind: "false_claim", job_id: j, report_id: r, reason_code: "false_sponsorship", notice_summary: "The advert said sponsorship, the employer refused it.", decided_by_staff_user_id: s1 });
-  const ok = await P.app_portal.query("select id, job_id, reason_code, notice_summary, stage, reply_due_at, outcome from strike where id=$1", [k]).then((x) => x.rows[0]?.reason_code, (e) => e.message);
-  rec("18 strike reason", "app_portal reads the reason and notice summary of its own case", ok === "false_sponsorship", ok);
+  const ok = await P.app_portal.query("select id, job_id, reason_code, notice_summary, stage, reply_due_at, outcome from strike where id=$1", [k]).then(() => "allowed", (e) => e.code);
+  rec("18 strike reason", "app_portal reads its own case only through private.status_page (0017), never the table", ok === "42501", ok);
   for (const col of ["report_id", "approval_request_id", "decided_by_staff_user_id", "appeal_decided_by_staff_user_id"])
     rec("18 strike reason", `app_portal cannot read strike.${col}`, (await P.app_portal.query(`select ${col} from strike limit 1`).then(() => "allowed", (e) => e.code)) === "42501");
   rec("18 strike reason", "app_portal cannot read report (the reporter)", (await P.app_portal.query("select * from report limit 1").then(() => "allowed", (e) => e.code)) === "42501"); }

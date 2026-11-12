@@ -56,6 +56,7 @@ export function refusalFor(e: unknown): Refusal | null {
   }
   if (code !== "P0001") return null;
   if (message.includes("email not verified")) return { status: 403, code: "EMAIL_NOT_VERIFIED" };
+  if (message.includes("COOL_DOWN")) return { status: 429, code: "CLAIM_COOL_DOWN" }; // #203: this login's claim of this company was rejected under 24 hours ago
   if (message.includes("organisation is not unclaimed")) return { status: 409, code: "ORGANISATION_NOT_AVAILABLE" };
   if (/^CRO number .* already belongs/.test(message)) return { status: 409, code: "NUMBER_ALREADY_REGISTERED" };
   return { status: 403, code: "REFUSED" };
