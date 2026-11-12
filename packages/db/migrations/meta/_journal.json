@@ -78,6 +78,13 @@
       "when": 1794300006000,
       "tag": "0010_unclaimed_keeps_fetched_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794300007000,
+      "tag": "0011_claim_needs_info_rule",
+      "breakpoints": true
     }
   ]
 }

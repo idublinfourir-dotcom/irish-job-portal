@@ -3,6 +3,7 @@
 // back to unclaimed are an admin decision (a rejected false claim on a real sponsor) and the claim_needs_info retention rule.
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { claimReview, rejectAccount } from "../src/account-review";
 import { createTestDb, type TestDb } from "./db";
 import { fixtures } from "./fixtures";
 
@@ -10,7 +11,7 @@ vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 
 let db: TestDb, su: pg.Pool, admin: pg.Pool, portal: pg.Pool, fetcher: pg.Pool;
 let srcE: number, srcF: number;
-let F: { org(o?: object): Promise<number>; portal(o?: object): Promise<string> };
+let F: { org(o?: object): Promise<number>; portal(o?: object): Promise<string>; staff(): Promise<string> };
 let n = 0;
 
 const job = async (as: pg.Pool, org: number, source: string, status: string, advert: number | null = null) =>
@@ -65,6 +66,17 @@ describe("back to unclaimed keeps fetched and staff-made jobs (0010)", () => {
     // the rest of the cleanup is unchanged: no members left, claim columns empty
     expect(Number((await su.query("select count(*) from membership where organisation_id = $1 and status <> 'removed'", [s.org])).rows[0].count)).toBe(0);
     expect((await su.query("select claimed_at, verified_at, signup_path from organisation where id = $1", [s.org])).rows[0]).toEqual({ claimed_at: null, verified_at: null, signup_path: null });
+  });
+
+  it("rejectAccount (the reviewer's reject) on a claimed sponsor keeps its fetched jobs in review with their open items, and closes the claimant's own draft", async () => {
+    const s = await claimedSponsor();
+    const reviewer = await F.staff();
+    await su.query("insert into staff_role(staff_user_id, role, seeded_by_owner) values ($1, 'account_reviewer', true)", [reviewer]);
+    const item = (await su.query("select id::text from review_item where queue = 'account_review' and organisation_id = $1", [s.org])).rows[0].id;
+    await claimReview(admin, reviewer, item);
+    expect(await rejectAccount(admin, reviewer, item, "not_the_company")).toMatchObject({ organisationStatus: "unclaimed" });
+    await expectKept(s);
+    expect((await su.query("select status, outcome from review_item where id = $1", [item])).rows[0]).toEqual({ status: "done", outcome: "rejected" });
   });
 
   it("the claim_needs_info retention rule does the same", async () => {

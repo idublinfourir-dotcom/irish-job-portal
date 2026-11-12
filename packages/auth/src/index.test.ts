@@ -1,7 +1,7 @@
 // No database: the pool points at a closed port, and nothing here sends a query.
 import pg from "pg";
 import { describe, expect, it } from "vitest";
-import { authSettings, candidateSettings, checkSettings, createAuth, googleSettings, refuseEmail, STAFF_IDLE_SECONDS, STAFF_REFRESH_SECONDS, staffSettings, type LoginPool } from ".";
+import { authSettings, candidateSettings, checkSettings, createAuth, googleSettings, portalSettings, refuseEmail, STAFF_IDLE_SECONDS, STAFF_REFRESH_SECONDS, staffSettings, type LoginPool } from ".";
 
 const secret = "a".repeat(32);
 const database = new pg.Pool({ connectionString: "postgres://nobody:none@127.0.0.1:1/none" });
@@ -98,5 +98,22 @@ describe("Google sign-in settings (#179)", () => {
   it("account linking is pinned: no trusted providers, and the local email must be confirmed", async () => {
     const o = (await make("candidate").$context).options.account?.accountLinking;
     expect(o).toEqual({ enabled: true, requireLocalEmailVerified: true, trustedProviders: [] });
+  });
+});
+
+describe("portal settings and sessions (#189, #190)", () => {
+  it("portalSettings fails closed when a setting is missing or bad, and names the right variables", () => {
+    expect(() => portalSettings({})).toThrow(/PORTAL_AUTH_URL and PORTAL_AUTH_SECRET/);
+    expect(() => portalSettings({ CANDIDATE_AUTH_URL: "http://localhost:3000", CANDIDATE_AUTH_SECRET: secret })).toThrow(/PORTAL_AUTH_URL/);
+    expect(() => portalSettings({ PORTAL_AUTH_URL: "http://localhost:3001" })).toThrow(/must be set/);
+    expect(() => portalSettings({ PORTAL_AUTH_URL: "https://p.example.test", PORTAL_AUTH_SECRET: "short" })).toThrow(/32 characters/);
+    expect(() => portalSettings({ PORTAL_AUTH_URL: "http://p.example.test", PORTAL_AUTH_SECRET: secret })).toThrow(/https/);
+    expect(portalSettings({ PORTAL_AUTH_URL: "http://localhost:3001", PORTAL_AUTH_SECRET: secret })).toEqual({ baseURL: "http://localhost:3001", secret });
+  });
+  it("a portal session lasts 7 days and is moved out at most once a day (Better Auth's defaults, pinned); email confirmation is required", async () => {
+    const ctx = await make("portal").$context;
+    expect([ctx.sessionConfig.expiresIn, ctx.sessionConfig.updateAge]).toEqual([604800, 86400]);
+    expect(ctx.options.emailAndPassword?.requireEmailVerification).toBe(true);
+    expect(ctx.options.session?.cookieCache?.enabled).toBe(false);
   });
 });
