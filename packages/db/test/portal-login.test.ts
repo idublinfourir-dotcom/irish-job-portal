@@ -282,14 +282,14 @@ describe("registering a new employer or agency (20b paths 2 and 3, #21, #22, #18
     expect(r.json).toEqual({ organisationId: expect.any(Number), status: "pending_review" });
     expect(await orgRow(r.json!.organisationId)).toMatchObject({ status: "pending_review", signup_path: "first_time" });
     expect(await reviews(r.json!.organisationId)).toBe(1);
-    expect(await detail(r.json!.organisationId)).toEqual({ register: "cro_company", found: true, name_matches: true });
+    expect(await detail(r.json!.organisationId)).toEqual({ register: "cro_company", found: true, name_matches: true, status: "Normal" });
     expect((await requirePortal(auth(), new Headers({ cookie: ian.cookie }))).membership).toMatchObject({ role: "account_owner", organisationStatus: "pending_review" });
   });
   it("an agency found in the WRC sample is pending_review too", async () => {
     const r = await company("register", { kind: "agency", displayName: "Fake Recruitment Limited", wrcLicenceNumber: wrc }, { cookie: (await login("jo")).cookie });
     expect(r.json?.status).toBe("pending_review");
     expect(await orgRow(r.json!.organisationId)).toMatchObject({ signup_path: "agency" });
-    expect(await detail(r.json!.organisationId)).toEqual({ register: "wrc_licence", found: true, name_matches: true });
+    expect(await detail(r.json!.organisationId)).toEqual({ register: "wrc_licence", found: true, name_matches: true, possibly_lapsed: false });
   });
   it("a number not in the register still goes to review, marked not found; the reply does not say so", async () => {
     const r = await company("register", { kind: "employer", displayName: "Fake Unknown Ltd", croNumber: "610999" }, { cookie: (await login("kim")).cookie });

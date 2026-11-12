@@ -848,6 +848,8 @@ export const croCompany = pgTable("cro_company", {
 	normalisedName: text("normalised_name").notNull(),
 	status: text().notNull(),
 	lastSeenOn: date("last_seen_on").notNull(),
+	companyType: text("company_type"),
+	county: text(),
 }, (table) => [
 	index("cro_company_trgm").using("gin", table.normalisedName.asc().nullsLast().op("gin_trgm_ops")),
 	unique("cro_company_cro_number_key").on(table.croNumber),
@@ -885,8 +887,20 @@ export const wrcLicence = pgTable("wrc_licence", {
 	county: text(),
 	firstSeenOn: date("first_seen_on"),
 	lastSeenOn: date("last_seen_on"),
+	missedImports: smallint("missed_imports").default(0).notNull(),
 }, (table) => [
 	unique("wrc_licence_licence_number_key").on(table.licenceNumber),
+	check("wrc_licence_missed_imports_check", sql`missed_imports >= 0`),
+]);
+
+export const registerImport = pgTable("register_import", {
+	source: text().primaryKey().notNull(),
+	validator: text(),
+	importedOn: date("imported_on").notNull(),
+	rowCount: integer("row_count").notNull(),
+}, () => [
+	check("register_import_source_check", sql`source = ANY (ARRAY['cro'::text, 'wrc'::text])`),
+	check("register_import_row_count_check", sql`row_count >= 0`),
 ]);
 
 export const membership = pgTable("membership", {
@@ -1463,6 +1477,7 @@ export const report = pgTable("report", {
 	uniqueIndex("report_candidate_open_unique").using("btree", table.reporterCandidateUserId.asc().nullsLast().op("int8_ops"), table.targetJobId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
 	index("report_decided_idx").using("btree", table.decidedByStaffUserId.asc().nullsLast().op("text_ops")),
 	index("report_inbox_idx").using("btree", table.status.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
+	index("report_queue_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
 	uniqueIndex("report_portal_open_unique").using("btree", table.reporterPortalUserId.asc().nullsLast().op("text_ops"), table.targetJobId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
 	index("report_reporter_candidate_idx").using("btree", table.reporterCandidateUserId.asc().nullsLast().op("text_ops")),
 	index("report_reporter_portal_idx").using("btree", table.reporterPortalUserId.asc().nullsLast().op("text_ops")),
@@ -1632,6 +1647,7 @@ export const ban = pgTable("ban", {
 	croNumber: text("cro_number"),
 	emailDomain: text("email_domain"),
 	reasonCode: text("reason_code").notNull(),
+	emailAddress: text("email_address"),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	strikeId: bigint("strike_id", { mode: "number" }).notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
@@ -1640,6 +1656,7 @@ export const ban = pgTable("ban", {
 	index("ban_approval_idx").using("btree", table.approvalRequestId.asc().nullsLast().op("int8_ops")),
 	uniqueIndex("ban_cro_unique").using("btree", table.croNumber.asc().nullsLast().op("text_ops")).where(sql`(cro_number IS NOT NULL)`),
 	uniqueIndex("ban_domain_unique").using("btree", table.emailDomain.asc().nullsLast().op("text_ops")).where(sql`(email_domain IS NOT NULL)`),
+	uniqueIndex("ban_address_unique").using("btree", table.emailAddress.asc().nullsLast().op("text_ops")).where(sql`(email_address IS NOT NULL)`),
 	index("ban_strike_idx").using("btree", table.strikeId.asc().nullsLast().op("int8_ops")),
 	foreignKey({
 			columns: [table.strikeId],
@@ -1652,7 +1669,7 @@ export const ban = pgTable("ban", {
 			name: "ban_approval_request_id_fkey"
 		}),
 	check("ban_reason_code_check", sql`reason_code = ANY (ARRAY['asks_for_money'::text, 'fake_company'::text, 'fake_job'::text, 'strike_3'::text])`),
-	check("ban_check", sql`num_nonnulls(cro_number, email_domain) >= 1`),
+	check("ban_check", sql`num_nonnulls(cro_number, email_domain, email_address) >= 1`),
 ]);
 
 export const consentText = pgTable("consent_text", {

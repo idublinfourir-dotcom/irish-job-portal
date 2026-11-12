@@ -12,3 +12,11 @@ function make() {
 export const candidateAuth = () => (made ?? make()).auth;
 /** The emails the fake sender kept (tests read the links here). */
 export const candidateMail = () => (made ?? make()).mail.outbox;
+
+/** The signed-in candidate for a report: a suspended or deleted candidate is refused. */
+export async function candidateReporter(headers: Headers): Promise<{ userId: string } | { refused: "no_session" | "refused" }> {
+  const s = await candidateAuth().api.getSession({ headers });
+  if (!s) return { refused: "no_session" };
+  const u = s.user as { suspendedAt?: unknown; deletedAt?: unknown };
+  return u.suspendedAt || u.deletedAt ? { refused: "refused" } : { userId: s.user.id };
+}

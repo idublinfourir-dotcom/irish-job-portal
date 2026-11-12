@@ -2,6 +2,7 @@
 // @ts-nocheck
 // Ported from schema-trial-2/common.mjs: the fixture builders (F.cand, F.org, ...), written as postgres so app rights do not limit
 // them but every CHECK, foreign key and trigger still fires. Used by the permissions and Launch B tests. Fake data only.
+import { normaliseCompanyName } from "../src/registers";
 export const in30 = () => new Date(Date.now() + 864e5 * 29);
 export const daysAgo = (d) => new Date(Date.now() - 864e5 * d);
 export function fixtures(db) {
@@ -24,7 +25,7 @@ export function fixtures(db) {
   F.text = async (purpose = "application") => ins(P.postgres, "consent_text", { purpose, version: id("v"), body: "Fake wording" });
   F.approval = async (kind, table, target, o = {}) => ins(P.postgres, "approval_request", { kind, target_table: table, target_id: String(target), proposed_by_staff_user_id: o.by, confirmed_by_staff_user_id: o.status === "pending" ? null : (o.confirmer ?? null), status: o.status || "confirmed", decided_at: o.status === "pending" ? null : new Date() });
   // Sample register rows (#185): a CRO company and a WRC agency licence, until the importers exist (slice 3d).
-  F.cro = async (o = {}) => ins(P.postgres, "cro_company", { cro_number: o.number || String(++n).padStart(6, "9"), name: o.name || "Fake Company Limited", normalised_name: (o.name || "Fake Company Limited").toLowerCase(), status: o.status || "Normal", last_seen_on: new Date() });
+  F.cro = async (o = {}) => ins(P.postgres, "cro_company", { cro_number: o.number || String(++n).padStart(6, "9"), name: o.name || "Fake Company Limited", normalised_name: normaliseCompanyName(o.name || "Fake Company Limited"), status: o.status || "Normal", last_seen_on: new Date() });
   F.wrc = async (o = {}) => ins(P.postgres, "wrc_licence", { licence_number: o.number || id("EA"), agency_name: o.name || "Fake Recruitment Limited", county: "Dublin", first_seen_on: new Date(), last_seen_on: new Date() });
   return { P, su, id, ins, F };
 }

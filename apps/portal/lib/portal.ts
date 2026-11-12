@@ -13,5 +13,7 @@ function make() {
 export const portalAuth = () => (made ?? make()).auth;
 /** The emails the fake sender kept (tests read the links here). */
 export const portalMail = () => (made ?? make()).mail.outbox;
+/** The portal's email sender (the fake one for now); team invites go out through it. */
+export const portalSend = () => (made ?? make()).mail.send;
 /** The portal's own origin (from PORTAL_AUTH_URL); the claim and register POSTs must come from it. */
 export const portalOrigin = () => (made ?? make()).origin;
