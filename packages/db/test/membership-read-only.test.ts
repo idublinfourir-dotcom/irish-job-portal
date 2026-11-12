@@ -1,5 +1,5 @@
 // Migration 0009: the portal login reads membership and cannot write it (no insert, update or delete, on any column). The only
-// writers are app_admin and the security definer functions claim_organisation and register_organisation. Fake people only.
+// writers are app_admin and the security definer functions (claim_organisation, register_organisation and the team functions of 0013). Fake people only.
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestDb, type TestDb } from "./db";

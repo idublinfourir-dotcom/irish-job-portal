@@ -1,7 +1,7 @@
 // Becoming the owner of a company: the claim and register POSTs. The portal user id always comes from the session, never the
 // body. The database functions do the real checks (ban, email confirmed, one company per login, #191); this file only refuses
 // bad requests early and turns the functions' refusals into short codes.
-import { PortalRefused, requirePortal } from "@portal/auth";
+import { PortalRefused, requirePortal, type PortalLogin } from "@portal/auth";
 import { getPool } from "@portal/db";
 import { randomUUID } from "node:crypto";
 import { portalAuth, portalOrigin } from "./portal";
@@ -9,8 +9,8 @@ import { portalAuth, portalOrigin } from "./portal";
 export const MAX_BODY = 2048; // characters; the largest good body is about 250
 export const RATE = { windowMs: 10 * 60_000, max: 5 }; // claim and register together, per login
 
-const isObject = (b: unknown): b is Record<string, unknown> => typeof b === "object" && b !== null && !Array.isArray(b);
-const only = (b: Record<string, unknown>, keys: string[]) => Object.keys(b).every((k) => keys.includes(k));
+export const isObject = (b: unknown): b is Record<string, unknown> => typeof b === "object" && b !== null && !Array.isArray(b);
+export const only = (b: Record<string, unknown>, keys: string[]) => Object.keys(b).every((k) => keys.includes(k));
 const CRO = /^\d{1,8}$/; // CRO company numbers are digits
 const WRC = /^[A-Za-z0-9-]{1,20}$/; // ponytail: loose until the WRC list is checked on its source (slice 3d)
 
@@ -57,20 +57,22 @@ export function refusalFor(e: unknown): Refusal | null {
   return { status: 403, code: "REFUSED" };
 }
 
-const no = (status: number, code: string) => Response.json({ code }, { status });
+export const no = (status: number, code: string) => Response.json({ code }, { status });
 
-// One statement: counts this login's claim and register calls in the pool's rate-limit table (a row per login, the window
-// restarts after RATE.windowMs without a call). Old rows are swept by the retention job (rule 41).
-async function withinLimit(userId: string): Promise<boolean> {
+// One statement: counts this login's calls under one key in the pool's rate-limit table (a row per login and key, the window
+// restarts after rate.windowMs without a call). Old rows are swept by the retention job (rule 41).
+export async function withinLimit(key: string, rate: { windowMs: number; max: number } = RATE): Promise<boolean> {
   const now = Date.now();
   const { rows } = await getPool().query(
     `insert into portal_rate_limit(id, key, count, last_request) values ($1, $2, 1, $3)
      on conflict (key) do update set count = case when portal_rate_limit.last_request < $3 - $4 then 1 else portal_rate_limit.count + 1 end, last_request = $3
-     returning count`, [randomUUID(), `company:${userId}`, now, RATE.windowMs]);
-  return rows[0].count <= RATE.max;
+     returning count`, [randomUUID(), key, now, rate.windowMs]);
+  return rows[0].count <= rate.max;
 }
 
-export async function companyPost<T>(request: Request, check: (b: unknown) => T | null, sql: string, args: (userId: string, body: T) => unknown[]): Promise<Response> {
+// The checks every portal POST makes before its database call, in this order: the portal's own Origin, the body size (by header,
+// then by length), JSON, the body check, then a session from requirePortal. Returns the reply to send, or the login and the body.
+export async function readPost<T>(request: Request, check: (b: unknown) => T | null): Promise<Response | { login: PortalLogin; body: T }> {
   if (request.headers.get("origin") !== portalOrigin()) return no(403, "BAD_ORIGIN");
   if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY) return no(413, "BODY_TOO_LARGE"); // before the body is read
   const text = await request.text();
@@ -79,13 +81,24 @@ export async function companyPost<T>(request: Request, check: (b: unknown) => T 
   try { parsed = JSON.parse(text); } catch { return no(400, "BAD_REQUEST"); }
   const body = check(parsed);
   if (!body) return no(400, "BAD_REQUEST");
-  let login;
-  try { login = await requirePortal(portalAuth(), request.headers); } catch (e) {
+  const login = await portalLogin(request);
+  return login instanceof Response ? login : { login, body };
+}
+
+/** requirePortal, with its refusals as replies: no session is 401 NO_SESSION, a blocked or deleted login 403 REFUSED. */
+export async function portalLogin(request: Request): Promise<Response | PortalLogin> {
+  try { return await requirePortal(portalAuth(), request.headers); } catch (e) {
     if (e instanceof PortalRefused) return e.message === "no_session" ? no(401, "NO_SESSION") : no(403, "REFUSED");
     throw e;
   }
+}
+
+export async function companyPost<T>(request: Request, check: (b: unknown) => T | null, sql: string, args: (userId: string, body: T) => unknown[]): Promise<Response> {
+  const read = await readPost(request, check);
+  if (read instanceof Response) return read;
+  const { login, body } = read;
   if (login.membership) return no(409, "ALREADY_IN_A_COMPANY");
-  if (!(await withinLimit(login.userId))) return no(429, "TOO_MANY_REQUESTS");
+  if (!(await withinLimit(`company:${login.userId}`))) return no(429, "TOO_MANY_REQUESTS");
   try {
     const r = (await getPool().query(sql, args(login.userId, body))).rows[0].r as { organisation_id: number; status: string };
     return Response.json({ organisationId: Number(r.organisation_id), status: r.status });

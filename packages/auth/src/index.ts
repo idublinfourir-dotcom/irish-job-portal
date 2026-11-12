@@ -10,7 +10,7 @@ export { createFakeEmail, type FakeEmail } from "./fake-email";
 
 // The pool is called portal, not employer: its tables are portal_user and so on (23-database-design.md).
 export type LoginPool = "candidate" | "portal" | "staff";
-export type EmailKind = "verify" | "reset";
+export type EmailKind = "verify" | "reset" | "invite"; // invite: a portal team invite (apps/portal/lib/team.ts)
 // Email is an outside service, so the caller passes the sender in; tests pass a fake.
 export type SendEmail = (pool: LoginPool, kind: EmailKind, to: string, link: string) => Promise<void>;
 export type GoogleSettings = { clientId: string; clientSecret: string };
