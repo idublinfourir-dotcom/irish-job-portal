@@ -14,8 +14,8 @@ describe("checkStatus", () => {
     ["caseId string", { ...good, caseId: "5" }], ["caseId 0", { ...good, caseId: 0 }], ["caseId negative", { ...good, caseId: -1 }],
     ["caseId float", { ...good, caseId: 1.5 }], ["caseId 1e30", { ...good, caseId: 1e30 }], ["caseId NaN", { ...good, caseId: NaN }],
     ["text number", { ...good, text: 5 }], ["empty", { ...good, text: "" }], ["spaces", { ...good, text: " \n\t " }],
-    ["1801", { ...good, text: "x".repeat(1801) }], ["rtl override", { ...good, text: "a‮b" }], ["null char", { ...good, text: "a\u0000b" }],
-    ["zero width", { ...good, text: "a​b" }], ["bell", { ...good, text: "a\u0007b" }], ["del", { ...good, text: "a\u007fb" }],
+    ["1801", { ...good, text: "x".repeat(1801) }], ["rtl override", { ...good, text: "a\u202eb" }], ["null char", { ...good, text: "a\u0000b" }],
+    ["zero width", { ...good, text: "a\u200bb" }], ["bell", { ...good, text: "a\u0007b" }], ["del", { ...good, text: "a\u007fb" }],
   ])("refuses %s", (_n, b) => expect(checkStatus(b)).toBeNull());
 });
 

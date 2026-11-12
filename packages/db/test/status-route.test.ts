@@ -276,7 +276,7 @@ describe("hostile bodies", () => {
     for (const caseId of ["5", -1, 0, 1e30, 1.5]) expect((await act(c.owner.cookie, "reply", caseId as number)).status, String(caseId)).toBe(400);
     // the text cap (1,800) sits inside MAX_BODY (2,048), so the route itself refuses 1,801 characters
     expect((await post(c.owner.cookie, { action: "reply", caseId: id, text: "x".repeat(1801) })).status).toBe(400);
-    for (const text of ["", "   ", "\n\t", "a‮b", "a\u0000b", "a​b"]) {
+    for (const text of ["", "   ", "\n\t", "a\u202eb", "a\u0000b", "a\u200bb"]) {
       expect((await post(c.owner.cookie, { action: "reply", caseId: id, text })).status, JSON.stringify(text.slice(0, 5))).toBe(400);
     }
     expect((await act(c.owner.cookie, "decide", id)).status).toBe(400);

@@ -11,8 +11,8 @@ describe("checkAnswer", () => {
     expect(checkAnswer({ note: "<b>Robert'); drop table organisation;--</b>" })?.note).toBe("<b>Robert'); drop table organisation;--</b>");
   });
   it("refuses empty, over-long, control or format characters, a non-string note, extra fields and non-objects", () => {
-    const bad: unknown[] = [{ note: "" }, { note: "   " }, { note: "x".repeat(NOTE_MAX + 1) }, { note: "a\nb" }, { note: "a\tb" }, { note: "a\u0000b" }, { note: "a‮b" },
-      { note: "a​b" }, { note: "a b" }, { note: "a b" }, { note: "a­b" }, { note: "a\u0085b" }, { note: 1 }, { note: ["a"] }, { note: { a: 1 } }, { note: null }, {},
+    const bad: unknown[] = [{ note: "" }, { note: "   " }, { note: "x".repeat(NOTE_MAX + 1) }, { note: "a\nb" }, { note: "a\tb" }, { note: "a\u0000b" }, { note: "a\u202eb" },
+      { note: "a\u200bb" }, { note: "a\u2028b" }, { note: "a\u2029b" }, { note: "a\u00adb" }, { note: "a\u0085b" }, { note: 1 }, { note: ["a"] }, { note: { a: 1 } }, { note: null }, {},
       { note: "ok", organisationId: 1 }, { note: "ok", portalUserId: "x" }, JSON.parse('{"note":"ok","__proto__":{"x":1}}'), null, [], "note", 7];
     for (const b of bad) expect(checkAnswer(b), JSON.stringify(b)).toBeNull();
   });

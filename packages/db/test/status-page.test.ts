@@ -196,7 +196,7 @@ describe("status_write", () => {
   it("refuses hostile text and kinds, and stores text that looks like SQL as plain text", async () => {
     const a = await company();
     const k = await strike(a.org, { reply: "5 days" });
-    for (const t of [null, "", "   ", "x".repeat(1801), "a‮b", "a\u0007b", "a​b", "a﻿b", "a\u0085b"]) await refused(write(a.owner, "reply", k, t), "BAD_TEXT");
+    for (const t of [null, "", "   ", "x".repeat(1801), "a\u202eb", "a\u0007b", "a\u200bb", "a\ufeffb", "a\u0085b"]) await refused(write(a.owner, "reply", k, t), "BAD_TEXT");
     await refused(write(a.owner, "decide", k, "x"), "BAD_REQUEST");
     await refused(write(a.owner, "reply", 999999999, "x"), "CASE_NOT_FOUND");
     expect((await row(k)).employer_reply).toBeNull();
