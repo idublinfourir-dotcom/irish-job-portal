@@ -149,7 +149,7 @@ export const REVIEW_LOCK =
   "select r.status, r.claimed_by_staff_user_id, o.id as organisation_id, o.status as organisation_status, o.signup_path, u.email as claimant_email, " +
   "u.status as claimant_status, u.deleted_at is not null as claimant_deleted, " +
   // a ban added after the claim: the owner's email domain, or one of the company's CRO numbers (the same two checks claim_organisation makes)
-  "exists (select 1 from ban b where b.email_domain = lower(split_part(u.email, '@', 2)) or b.cro_number in " +
+  "exists (select 1 from ban b where b.email_domain = lower(split_part(u.email, '@', 2)) or b.email_address = lower(u.email) or b.cro_number in " +
   "(select o.cro_number union select n.cro_number from organisation_name n where n.organisation_id = o.id)) as claimant_banned " +
   "from review_item r join organisation o on o.id = r.organisation_id " +
   "left join membership m on m.organisation_id = o.id and m.role = 'account_owner' and m.status = 'active' left join portal_user u on u.id = m.portal_user_id " +

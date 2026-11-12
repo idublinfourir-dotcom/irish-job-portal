@@ -13,7 +13,7 @@ check approval_request_status_check on approval_request: CHECK ((status = ANY (A
 check audit_event_check on audit_event: CHECK ((num_nonnulls(actor_staff_user_id, actor_candidate_user_id, actor_portal_user_id, actor_system) <= 1))
 check audit_event_kind_check on audit_event: CHECK ((kind = ANY (ARRAY['admin_action'::text, 'data_access'::text, 'security'::text])))
 check audit_event_source_check on audit_event: CHECK ((source = ANY (ARRAY['panel'::text, 'scheduled_job'::text, 'site'::text])))
-check ban_check on ban: CHECK ((num_nonnulls(cro_number, email_domain) >= 1))
+check ban_check on ban: CHECK ((num_nonnulls(cro_number, email_domain, email_address) >= 1))
 check ban_reason_code_check on ban: CHECK ((reason_code = ANY (ARRAY['asks_for_money'::text, 'fake_company'::text, 'fake_job'::text, 'strike_3'::text])))
 check candidate_cv_content_type_check on candidate_cv: CHECK ((content_type = ANY (ARRAY['pdf'::text, 'docx'::text])))
 check candidate_cv_size_bytes_check on candidate_cv: CHECK (((size_bytes >= 1) AND (size_bytes <= 10485760)))
@@ -275,7 +275,7 @@ rights app_candidate on portal_user: table[] columns[]
 rights app_candidate on portal_verification: table[] columns[]
 rights app_candidate on published_content_page: table[select] columns[]
 rights app_candidate on register_import: table[] columns[]
-rights app_candidate on report: table[insert] columns[select(id)]
+rights app_candidate on report: table[] columns[insert(evidence_text,reason,reporter_candidate_user_id,target_job_id,target_kind,target_snapshot) select(id)]
 rights app_candidate on review_item: table[] columns[]
 rights app_candidate on saved_job: table[delete,insert,select] columns[]
 rights app_candidate on services_case: table[] columns[]
@@ -419,7 +419,7 @@ rights app_portal on portal_user: table[insert,select] columns[update(deleted_at
 rights app_portal on portal_verification: table[delete,insert,select,update] columns[]
 rights app_portal on published_content_page: table[select] columns[]
 rights app_portal on register_import: table[] columns[]
-rights app_portal on report: table[insert] columns[select(id)]
+rights app_portal on report: table[] columns[insert(evidence_text,reason,reporter_portal_user_id,target_job_id,target_kind,target_snapshot) select(id)]
 rights app_portal on review_item: table[] columns[]
 rights app_portal on saved_job: table[] columns[]
 rights app_portal on services_case: table[] columns[]
@@ -491,6 +491,7 @@ unique CREATE UNIQUE INDEX alert_unsubscribe_token_key ON public.alert USING btr
 unique CREATE UNIQUE INDEX application_candidate_user_id_job_id_key ON public.application USING btree (candidate_user_id, job_id)
 unique CREATE UNIQUE INDEX apply_click_open_unique ON public.apply_click USING btree (candidate_user_id, job_id) WHERE (status = ANY (ARRAY['pending'::text, 'not_yet'::text]))
 unique CREATE UNIQUE INDEX approval_request_pending_unique ON public.approval_request USING btree (kind, target_table, target_id) WHERE (status = 'pending'::text)
+unique CREATE UNIQUE INDEX ban_address_unique ON public.ban USING btree (email_address) WHERE (email_address IS NOT NULL)
 unique CREATE UNIQUE INDEX ban_cro_unique ON public.ban USING btree (cro_number) WHERE (cro_number IS NOT NULL)
 unique CREATE UNIQUE INDEX ban_domain_unique ON public.ban USING btree (email_domain) WHERE (email_domain IS NOT NULL)
 unique CREATE UNIQUE INDEX candidate_account_provider_unique ON public.candidate_account USING btree (provider_id, account_id)

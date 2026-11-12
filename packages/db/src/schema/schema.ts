@@ -1477,6 +1477,7 @@ export const report = pgTable("report", {
 	uniqueIndex("report_candidate_open_unique").using("btree", table.reporterCandidateUserId.asc().nullsLast().op("int8_ops"), table.targetJobId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
 	index("report_decided_idx").using("btree", table.decidedByStaffUserId.asc().nullsLast().op("text_ops")),
 	index("report_inbox_idx").using("btree", table.status.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
+	index("report_queue_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
 	uniqueIndex("report_portal_open_unique").using("btree", table.reporterPortalUserId.asc().nullsLast().op("text_ops"), table.targetJobId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
 	index("report_reporter_candidate_idx").using("btree", table.reporterCandidateUserId.asc().nullsLast().op("text_ops")),
 	index("report_reporter_portal_idx").using("btree", table.reporterPortalUserId.asc().nullsLast().op("text_ops")),
@@ -1646,6 +1647,7 @@ export const ban = pgTable("ban", {
 	croNumber: text("cro_number"),
 	emailDomain: text("email_domain"),
 	reasonCode: text("reason_code").notNull(),
+	emailAddress: text("email_address"),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	strikeId: bigint("strike_id", { mode: "number" }).notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
@@ -1654,6 +1656,7 @@ export const ban = pgTable("ban", {
 	index("ban_approval_idx").using("btree", table.approvalRequestId.asc().nullsLast().op("int8_ops")),
 	uniqueIndex("ban_cro_unique").using("btree", table.croNumber.asc().nullsLast().op("text_ops")).where(sql`(cro_number IS NOT NULL)`),
 	uniqueIndex("ban_domain_unique").using("btree", table.emailDomain.asc().nullsLast().op("text_ops")).where(sql`(email_domain IS NOT NULL)`),
+	uniqueIndex("ban_address_unique").using("btree", table.emailAddress.asc().nullsLast().op("text_ops")).where(sql`(email_address IS NOT NULL)`),
 	index("ban_strike_idx").using("btree", table.strikeId.asc().nullsLast().op("int8_ops")),
 	foreignKey({
 			columns: [table.strikeId],
@@ -1666,7 +1669,7 @@ export const ban = pgTable("ban", {
 			name: "ban_approval_request_id_fkey"
 		}),
 	check("ban_reason_code_check", sql`reason_code = ANY (ARRAY['asks_for_money'::text, 'fake_company'::text, 'fake_job'::text, 'strike_3'::text])`),
-	check("ban_check", sql`num_nonnulls(cro_number, email_domain) >= 1`),
+	check("ban_check", sql`num_nonnulls(cro_number, email_domain, email_address) >= 1`),
 ]);
 
 export const consentText = pgTable("consent_text", {

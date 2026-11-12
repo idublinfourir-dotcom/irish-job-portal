@@ -13,6 +13,7 @@ import { GOOD_RUN_TODAY, utcDayStart } from "../../src/fetch-guard-cli";
 import { LAST_5_YEARS } from "../../src/dete";
 import { JOB_QUERY, listQuery, SORTS as LIST_SORTS, type Cursor, type Sort as ListSort } from "../../src/search";
 import { approveAccount, claimReview, REVIEW_AFTER, REVIEW_DECIDE, REVIEW_FIRST, REVIEW_ITEM, REVIEW_LOCK, listAccountReviews } from "../../src/account-review";
+import { REPORTS_AFTER, REPORTS_FIRST } from "../../src/trust-safety";
 import { approve, claim, DECIDE, listQueue, LOCK, QUEUE_ACT, QUEUE_AFTER, QUEUE_FIRST, QUEUE_ITEM, RELEASE, STALE_AFTER, TAKE_OVER } from "../../src/admin-queue";
 import { fill } from "./fill";
 import { costOf, measurePages, pageOver, type PageCost, type Statement } from "./pages";
@@ -456,6 +457,27 @@ it("the account review pages and an approve stay under the limit", async () => {
   });
   expect(write).toHaveLength(2);
   expectNoneOver("account review", failures);
+});
+
+// The trust and safety reports queue (src/trust-safety.ts), as app_admin on the full-size fill (its reports are all cleared) plus 300 open and 50 job_hidden
+// reports on live jobs: the first page and a page from the middle, under the same page and time limits as the other admin queues.
+it("the trust and safety report list stays under the limit", async () => {
+  await su.query("insert into report(target_kind, target_job_id, reason, evidence_text, status, created_at) select 'job', j.id, 'no_sponsorship', 'Fake evidence of normal length.', case when n <= 50 then 'job_hidden' else 'open' end, now() - n * interval '1 minute' from (select id, row_number() over (order by id) n from job where status = 'live' limit 350) j");
+  await owner.query("vacuum (analyze) report");
+  const mid = (await su.query("select created_at::text t, id::text i from report where status in ('open','job_hidden') order by created_at, id offset 150 limit 1")).rows[0];
+  const client = new pg.Client({ connectionString: urlFor(db.name, "app_admin") });
+  await client.connect();
+  try {
+    const [first, after] = await measurePages(client, [REPORTS_FIRST, { text: REPORTS_AFTER, values: [mid.t, mid.i] }]);
+    console.log(`\n=== report list (app_admin): first ${first!.pages} pages / ${first!.ms} ms [${first!.scans}]; middle ${after!.pages} pages / ${after!.ms} ms [${after!.scans}]`);
+    const failures = ([["report list first page", first!], ["report list page from the middle", after!]] as const).flatMap(([n, c]) => {
+      const over = pageOver(n, [c], PAGE_LIMIT);
+      return [...(over ? [over] : []), ...(c.ms > MS_LIMIT ? [`page "${n}" took ${c.ms} ms, budget ${MS_LIMIT} ms`] : [])];
+    });
+    expectNoneOver("report list", failures);
+  } finally {
+    await client.end();
+  }
 });
 
 // The daily fetch guard (src/fetch-guard-cli.ts): one statement as app_fetcher on a year of runs (22,700 rows; about 30 a day in real life, so

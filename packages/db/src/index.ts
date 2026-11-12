@@ -9,6 +9,8 @@ export * from "./registers";
 export * from "./search";
 export * from "./admin-queue";
 export * from "./account-review";
+export * from "./trust-safety";
+export * from "./report";
 
 type Db = NodePgDatabase<typeof schema>;
 
