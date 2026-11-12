@@ -1,10 +1,7 @@
 // The eligibility checker (#94, #223): a pure function from a person's or an offer's facts to "qualifies or not, which minimum, why".
-// Built on the same numbers as the badges (thresholds.ts). `lists` is the Critical Skills / Ineligible data the fetcher reads
-// (packages/fetcher/data/occupation-lists.json); the caller passes it, so this package stays free of files.
-import {
-  CRITICAL_SKILLS_MINIMUM, GRADUATE_MINIMUM, GRADUATE_MONTHS, MIN_CONTRACT_MONTHS, NON_LIST_MINIMUM, NON_LIST_ROUTE, RULES_CHECKED_ON, STANDARD_WEEK_HOURS,
-  minimumForHours, standingLine,
-} from "./thresholds";
+// Built on the same numbers as the badges: the rules snapshot (#229), its minimums and its Critical Skills / Ineligible lists. The caller passes it.
+import type { Minimums } from "./snapshot";
+import { minimumForHours, standingLine } from "./thresholds";
 
 export type OccupationLists = readonly { code: string; list: string }[];
 export type EligibilityInput = {
@@ -39,12 +36,14 @@ export function monthsSince(awardMonth: string, now: Date): number {
 
 export function checkEligibility(
   input: EligibilityInput,
-  lists: OccupationLists,
+  rules: { minimums: Minimums; occupationLists: OccupationLists },
   opts: { now?: Date; nonListRoute?: boolean } = {},
 ): EligibilityResult {
-  const { occupationCode: code, annualPay: pay, relevantDegree, degreeAwardMonth, contractMonths, weeklyHours = STANDARD_WEEK_HOURS } = input;
+  const m = rules.minimums, lists = rules.occupationLists;
+  const { occupationCode: code, annualPay: pay, relevantDegree, degreeAwardMonth, contractMonths, weeklyHours = m.standardWeekHours } = input;
   const now = opts.now ?? new Date();
-  const nonListRoute = opts.nonListRoute ?? NON_LIST_ROUTE;
+  const nonListRoute = opts.nonListRoute ?? m.nonListRoute;
+  const forHours = (annual: number) => minimumForHours(annual, weeklyHours, m.standardWeekHours);
   if (typeof code !== "string" || typeof relevantDegree !== "boolean") throw new BadEligibilityInput("bad input");
   if (!Number.isFinite(pay) || pay < 0) throw new BadEligibilityInput("annual pay must be a number of euro, 0 or more");
   if (!Number.isFinite(weeklyHours) || weeklyHours < 1 || weeklyHours > 60) throw new BadEligibilityInput("weekly hours must be 1 to 60");
@@ -52,24 +51,24 @@ export function checkEligibility(
   const months = relevantDegree && degreeAwardMonth ? monthsSince(degreeAwardMonth, now) : null;
 
   const done = (qualifies: boolean, reason: EligibilityReason, minimum: number | null, why: string): EligibilityResult =>
-    ({ qualifies, reason, minimum, why, standingLine: standingLine(), rulesCheckedOn: RULES_CHECKED_ON });
+    ({ qualifies, reason, minimum, why, standingLine: standingLine(m.checkedOn), rulesCheckedOn: m.checkedOn });
 
   if (!/^[0-9]{4}$/.test(code)) return done(false, "unknown_code", null, "That is not a four-digit occupation code.");
   // ponytail: 2229 is on both lists (orthoptists listed, other therapists ineligible); like listAnswer in admin-queue, the Critical Skills entry wins.
   const onList = lists.some((e) => e.code === code && e.list === "critical-skills");
   if (!onList && lists.some((e) => e.code === code && e.list === "ineligible"))
     return done(false, "ineligible", null, "This occupation is on the Ineligible list, so it cannot get a Critical Skills permit.");
-  if (contractMonths !== null && contractMonths < MIN_CONTRACT_MONTHS)
-    return done(false, "contract_too_short", null, `A Critical Skills permit needs a contract of at least ${MIN_CONTRACT_MONTHS} months. A shorter one goes to a General permit.`);
+  if (contractMonths !== null && contractMonths < m.minContractMonths)
+    return done(false, "contract_too_short", null, `A Critical Skills permit needs a contract of at least ${m.minContractMonths} months. A shorter one goes to a General permit.`);
 
-  const nonList = minimumForHours(NON_LIST_MINIMUM, weeklyHours);
+  const nonList = forHours(m.nonList);
   if (onList && relevantDegree) {
-    const graduate = months !== null && months >= 0 && months <= GRADUATE_MONTHS;
-    const base = graduate ? GRADUATE_MINIMUM : CRITICAL_SKILLS_MINIMUM;
-    const minimum = minimumForHours(base, weeklyHours);
+    const graduate = months !== null && months >= 0 && months <= m.graduateMonths;
+    const base = graduate ? m.graduate : m.criticalSkills;
+    const minimum = forHours(base);
     if (pay >= minimum)
       return done(true, graduate ? "recent_graduate" : "listed_degree", minimum,
-        graduate ? `Recent graduate (degree within ${GRADUATE_MONTHS} months): the minimum is ${eur(minimum)}.` : `On the Critical Skills list with a relevant degree: the minimum is ${eur(minimum)}.`);
+        graduate ? `Recent graduate (degree within ${m.graduateMonths} months): the minimum is ${eur(minimum)}.` : `On the Critical Skills list with a relevant degree: the minimum is ${eur(minimum)}.`);
     // every listed minimum is below the non-list one, so pay under it cannot reach the higher route either
     return done(false, "below_minimum", minimum, `Pay is below the ${eur(minimum)} minimum.`);
   }
@@ -78,7 +77,7 @@ export function checkEligibility(
       return done(true, "non_list_route", nonList,
         `Pay of ${eur(nonList)} or more qualifies any role not on the Ineligible list. Without a relevant degree DETE asks for the necessary level of experience.`);
     if (onList && !relevantDegree)
-      return done(false, "degree_needed", nonList, `The ${eur(minimumForHours(CRITICAL_SKILLS_MINIMUM, weeklyHours))} minimum for a listed role needs a relevant degree. Without one, pay of ${eur(nonList)} or more is needed.`);
+      return done(false, "degree_needed", nonList, `The ${eur(forHours(m.criticalSkills))} minimum for a listed role needs a relevant degree. Without one, pay of ${eur(nonList)} or more is needed.`);
     return done(false, "below_minimum", nonList, `This occupation is not on the Critical Skills list, so pay of ${eur(nonList)} or more is needed.`);
   }
   return done(false, onList ? "degree_needed" : "non_list_route_blocked", null,

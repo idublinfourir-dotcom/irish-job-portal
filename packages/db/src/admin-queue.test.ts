@@ -1,4 +1,5 @@
 // Unit tests for the pure parts of the admin queue: the staff input check, the list answer and the re-run of the rules. No database.
+import { CHAIN_RULES_V1 } from "@portal/rules";
 import { describe, expect, it } from "vitest";
 import { checkApproveInput, claim, listAnswer, QueueRefused, reassess } from "./admin-queue";
 
@@ -8,7 +9,7 @@ const LISTS = [
   { code: "2229", list: "ineligible" },
   { code: "1225", list: "ineligible" },
 ];
-const CHAIN = { deteNames: new Set<string>(), publicPayCandidates: new Map<string, 1 | 2>() };
+const CHAIN = { deteNames: new Set<string>(), publicPayCandidates: new Map<string, 1 | 2>(), ...CHAIN_RULES_V1 };
 const why = (f: () => unknown) => {
   try {
     f();

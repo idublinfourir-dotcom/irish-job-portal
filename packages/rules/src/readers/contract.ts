@@ -1,6 +1,5 @@
 // R09 contract length (#32). Python: prototype/classify.py:125-139 (use at :218-221).
 import type { ContractResult } from "../types";
-import { MIN_CONTRACT_MONTHS } from "../thresholds";
 import { asciiDigits, cpHead, py } from "./pyre";
 
 // classify.py:125-126. Groups 1 and 5 hold the number of months.
@@ -31,13 +30,13 @@ const MATERNITY = py(String.raw`\bmaternity\s+(leave\s+)?cover\b|\bcover(ing)?\s
 const PLACEMENT = py(String.raw`\bdedicated\s+placement\b|\b(2nd|3rd|second|third|penultimate)[- ]year\s+students?\b|\bstudent\s+placements?\b|\bplacement\s+students?\b`, "i");
 const INTERN_TITLE = py(String.raw`\bintern(ship)?s?\b`, "i");
 
-/** Python `contract(title, etype, desc)`: the result and the reason text. Only the first months figure is looked at. */
-export function readContract(title: string, employmentType: string | null | undefined, description: string): { result: ContractResult; reason: string } {
+/** Python `contract(title, etype, desc)`: the result and the reason text. Only the first months figure is looked at. `minMonths` from the rules snapshot (#229). */
+export function readContract(title: string, employmentType: string | null | undefined, description: string, minMonths: number): { result: ContractResult; reason: string } {
   const head = cpHead(description, 6000);
   const m = SHORT.exec(title + " " + head);
   if (m) {
     const n = Number(asciiDigits(m[1] ?? m[5]!));
-    return { result: n < MIN_CONTRACT_MONTHS ? "short" : "ok", reason: `${n} months` };
+    return { result: n < minMonths ? "short" : "ok", reason: `${n} months` };
   }
   const mat = MATERNITY.exec(title + " " + head);
   if (mat) return { result: "short", reason: mat[0] };

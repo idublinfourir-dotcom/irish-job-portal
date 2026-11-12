@@ -5,6 +5,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { expect, test } from "vitest";
+import { MINIMUMS_V1 } from "../snapshot";
 import { checkSalary, doctorGradeWithoutTwoYears, noSponsorshipPhrase, permanentOrSpecifiedPurpose, readContract, readSalary, salaryStage, scamPatternPython, scamWording, sponsorshipAvailable } from "./index";
 
 type Advert = { id?: string; title?: string | null; description?: string | null; employment_type?: string | null; salary_box?: string | null };
@@ -31,9 +32,9 @@ test("the TypeScript readers match the Python on every saved advert", () => {
     const j = adverts.get(ref.key)!;
     const title = j.title || "";
     const d = j.description || "";
-    const contract = readContract(title, j.employment_type, d);
+    const contract = readContract(title, j.employment_type, d, MINIMUMS_V1.minContractMonths);
     const { low, high } = readSalary(d, j.salary_box ?? "");
-    const check = checkSalary(low, high);
+    const check = checkSalary(low, high, MINIMUMS_V1.criticalSkills);
     compare(ref, "noSponsor", noSponsorshipPhrase(title, d), ref.noSponsor);
     compare(ref, "sponsorYes", sponsorshipAvailable(d), ref.sponsorYes);
     compare(ref, "scam", scamPatternPython(d), ref.scam); // the Python's pattern, as ported

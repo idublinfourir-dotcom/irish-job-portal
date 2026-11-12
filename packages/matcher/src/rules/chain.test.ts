@@ -1,9 +1,9 @@
 // New rules (A, B, C of brief R1) through the real chain: the real rules matcher and the real `assess`. Made-up adverts only.
-import { assess, type AdvertInput } from "@portal/rules";
+import { assess, CHAIN_RULES_V1, type AdvertInput } from "@portal/rules";
 import { describe, expect, it } from "vitest";
 import { rulesMatcher } from "./index";
 
-const data = { deteNames: new Set<string>(), publicPayCandidates: new Map<string, 1 | 2>(), matcher: rulesMatcher };
+const data = { deteNames: new Set<string>(), publicPayCandidates: new Map<string, 1 | 2>(), ...CHAIN_RULES_V1, matcher: rulesMatcher };
 const advert = (o: Partial<AdvertInput> = {}): AdvertInput => ({
   source: "greenhouse",
   employer: "Example Ltd",

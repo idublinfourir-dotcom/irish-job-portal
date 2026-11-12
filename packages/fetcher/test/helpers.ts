@@ -1,5 +1,6 @@
 // Shared by the fetcher tests. Fake data only; no test calls a real board or a real model.
 import type { BatchResult } from "@portal/matcher";
+import { CHAIN_RULES_V1 } from "@portal/rules";
 import type { RawAdvert } from "@portal/sources";
 import type { BoardTask, Db, Deps, Plan } from "../src";
 
@@ -32,7 +33,7 @@ export const matcher: Deps["matcher"] = async () => ({ match: { occupationCode: 
 /** A model that is never asked: tests with no badge job. A call fails the test. */
 export const noModel: Deps["checkBatch"] = async () => { throw new Error("the model was asked, but no test expected a request"); };
 export const deps = (db: Db, boards: BoardTask[], over: Partial<Deps> = {}): Deps => ({
-  db, now: () => NOW, chain: { deteNames: new Set(), publicPayCandidates: new Map() }, matcher, checkBatch: noModel, maxModelRequests: 100, boards, ...over,
+  db, now: () => NOW, chain: { deteNames: new Set(), publicPayCandidates: new Map(), ...CHAIN_RULES_V1 }, matcher, checkBatch: noModel, maxModelRequests: 100, boards, ...over,
 });
 
 /** Wraps a Db and records every statement, on the pool and on each checked-out client. */

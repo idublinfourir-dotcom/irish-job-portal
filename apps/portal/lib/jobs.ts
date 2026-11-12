@@ -3,24 +3,12 @@
 // adverts, on the structured fields the employer typed; the database has the last word (job_guard, signer_check, job_org_live, the deferred
 // statement check). There is no row level security: every read and write here is filtered by the login's own company.
 import { getPool, listAnswer } from "@portal/db";
-import {
-  assess, CRITICAL_SKILLS_MINIMUM, MIN_CONTRACT_MONTHS as RULES_MIN_CONTRACT_MONTHS, minimumForHours, NON_LIST_MINIMUM, NON_LIST_ROUTE, type PublicPayCandidates,
-} from "@portal/rules";
+import { assess, chainRules, getRules, minimumForHours, type RulesSnapshot } from "@portal/rules";
 import type pg from "pg";
-// The rules data files the scheduled fetch reads (PORTAL_PRIVATE_DATA=packages/fetcher/data). The DETE names are not loaded: the chain uses
-// them only for LinkedIn adverts (assess.ts, `known`), so an employer post never reads them.
-import lists from "../../../packages/fetcher/data/occupation-lists.json";
-import publicPay from "../../../packages/fetcher/data/L2/public_employers_candidates.json";
 import { isObject, no, only, portalLogin, readPost, withinLimit, type Refusal } from "./company";
 
 export const JOBS_RATE = { windowMs: 10 * 60_000, max: 30 }; // posts, edits, renewals and closes together, per login
 export const MAX_JOB_BODY = 24_000; // characters: a 10,000-character advert with its JSON escaping and the other fields
-export const CS_MINIMUM = CRITICAL_SKILLS_MINIMUM; // Critical Skills list roles (packages/rules/src/thresholds.ts)
-// #225, confirmed on DETE's own page by the step 9 research (step9/dete-thresholds-research.md): a role not on the Critical Skills list and
-// not Ineligible qualifies at this pay. The figures and the switch live in packages/rules/src/thresholds.ts, shared with the eligibility checker.
-export const HIGH_PAY_MINIMUM = NON_LIST_MINIMUM;
-export const HIGH_PAY_ROUTE_ALLOWED = NON_LIST_ROUTE;
-export const MIN_CONTRACT_MONTHS = RULES_MIN_CONTRACT_MONTHS; // a Critical Skills post needs a contract of at least 2 years (#32)
 const MAX_PAY = 1_000_000;
 
 // The 26 counties of the Republic (the same list as packages/fetcher/src/county.ts, which does not export it).
@@ -28,9 +16,6 @@ export const COUNTIES = [
   "Carlow", "Cavan", "Clare", "Cork", "Donegal", "Dublin", "Galway", "Kerry", "Kildare", "Kilkenny", "Laois", "Leitrim", "Limerick",
   "Longford", "Louth", "Mayo", "Meath", "Monaghan", "Offaly", "Roscommon", "Sligo", "Tipperary", "Waterford", "Westmeath", "Wexford", "Wicklow",
 ] as const;
-
-const candidates: PublicPayCandidates = new Map(Object.entries(publicPay as Record<string, { tier: 1 | 2 }>).map(([k, v]) => [k, v.tier]));
-const LISTS = lists as { code: string; list: string }[];
 
 // DETE's minimums assume a 39-hour week: minimumForHours (packages/rules/src/thresholds.ts) applies the hourly rate over 39 hours.
 export { minimumForHours };
@@ -119,22 +104,28 @@ export function checkClose(b: unknown): { jobId: number; hireAnswer: Hire } | nu
 // ===== the rules
 export type Verdict = { ok: true; passRoute: "stated_pay" | "public_pay"; status: "live" | "in_review"; sector: string; stage: string } | { ok: false; code: string; stage?: string };
 
-/** The rules on the structured fields: the occupation list, the contract, the rules chain (Ireland, "no sponsorship", Irish employer, contract text, scam wording), then the pay. */
-export async function rulesFor(p: Post, employerName: string): Promise<Verdict> {
-  const onList = listAnswer(LISTS, p.occupationCode);
+/**
+ * The rules on the structured fields: the occupation list, the contract, the rules chain (Ireland, "no sponsorship", Irish employer, contract text, scam wording), then the pay.
+ * `rules`: the minimums and lists in force (#229, `getRules()`); the DETE names are not loaded: the chain uses them only for LinkedIn adverts (assess.ts, `known`).
+ */
+export async function rulesFor(p: Post, employerName: string, rules?: RulesSnapshot): Promise<Verdict> {
+  const r = rules ?? (await getRules()), m = r.minimums;
+  const onList = listAnswer(r.occupationLists, p.occupationCode);
   if (onList === "no") return { ok: false, code: "OCCUPATION_INELIGIBLE" };
-  if (onList === null && !HIGH_PAY_ROUTE_ALLOWED) return { ok: false, code: "OCCUPATION_NOT_ON_LIST" };
-  if (p.contractType === "fixed_term" && p.contractMonths! < MIN_CONTRACT_MONTHS) return { ok: false, code: "CONTRACT_TOO_SHORT" };
+  if (onList === null && !m.nonListRoute) return { ok: false, code: "OCCUPATION_NOT_ON_LIST" };
+  // a Critical Skills post needs a contract of at least 2 years (#32)
+  if (p.contractType === "fixed_term" && p.contractMonths! < m.minContractMonths) return { ok: false, code: "CONTRACT_TOO_SHORT" };
   const a = await assess(
     { source: "employer", employer: employerName, title: p.title, location: `${p.county}, Ireland`, description: p.description, employmentType: "", salaryBox: "" },
-    { deteNames: new Set(), publicPayCandidates: candidates, matcher: async () => ({ occupationCode: p.occupationCode, onCriticalSkillsList: "yes", confidence: "high" }) },
+    { deteNames: new Set(), ...chainRules(r), matcher: async () => ({ occupationCode: p.occupationCode, onCriticalSkillsList: "yes", confidence: "high" }) },
     // The contract is stated in its own fields (checked above), so the chain's "contract unclear" stops do not apply; a short contract in the text still fails.
     { contractConfirmed: true, ...(p.salaryLow !== null ? { salary: { low: p.salaryLow, high: p.salaryHigh ?? p.salaryLow } } : {}) },
   );
   if (a.bucket === "rejected" && !a.stage.startsWith("8 ")) return { ok: false, code: "RULES_FAILED", stage: a.stage };
   // Pay: the top of a range counts (#66), with employer-paid health insurance (#68), against the minimum for the stated hours. Compared with >=:
   // DETE's page says "over 68,911" and its checklist "is 68,911 or more"; we follow the checklist.
-  const minimum = minimumForHours(onList === "yes" ? CS_MINIMUM : HIGH_PAY_MINIMUM, p.weeklyHours);
+  // #225 (step9/dete-thresholds-research.md): a role not on the Critical Skills list and not Ineligible qualifies at the non-list minimum.
+  const minimum = minimumForHours(onList === "yes" ? m.criticalSkills : m.nonList, p.weeklyHours, m.standardWeekHours);
   const pay = p.salaryLow === null ? null : (p.salaryHigh ?? p.salaryLow) + (p.healthInsuranceEur ?? 0);
   let passRoute: "stated_pay" | "public_pay";
   if (pay !== null && pay >= minimum) passRoute = "stated_pay";

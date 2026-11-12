@@ -7,6 +7,7 @@ import { gunzipSync } from "node:zlib";
 import { expect, test } from "vitest";
 import { rulesMatcher } from "../../../matcher/src/rules";
 import { cleanEmployerName } from "../employers";
+import { CHAIN_RULES_V1 } from "../snapshot";
 import { assess, type AdvertInput } from "./assess";
 
 type Saved = { id: string; source: string; board?: string; employer?: string | null; title?: string | null; location?: string | null; description?: string | null; url?: string; employment_type?: string | null; salary_box?: string | null };
@@ -38,7 +39,7 @@ test("the TypeScript chain matches the Python on every saved advert", async () =
     const ref = reference[i]!;
     expect(s.id).toBe(ref.id);
     const advert: AdvertInput = { ...s, employmentType: s.employment_type, salaryBox: s.salary_box };
-    const a = await assess(advert, { deteNames, publicPayCandidates: candidates, matcher: rulesMatcher });
+    const a = await assess(advert, { deteNames, publicPayCandidates: candidates, ...CHAIN_RULES_V1, matcher: rulesMatcher });
     const stageKey = (x: string) => x.split(":")[0]!;
     bump(tally.tsBuckets, a.bucket);
     bump(tally.pyBuckets, ref.bucket);

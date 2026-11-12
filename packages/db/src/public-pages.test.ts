@@ -1,3 +1,4 @@
+import { getRules } from "@portal/rules";
 import { describe, expect, it } from "vitest";
 import { getCompanyPage, getOccupationPage, scopedQuery, summarisePermits, type ListEntry } from "./public-pages";
 import { BadSearchInput, encodeCursor, PAGE_SIZE } from "./search";
@@ -90,6 +91,15 @@ describe("getOccupationPage", () => {
     const db = fake();
     for (const c of ["2222", "11", "abcd", "1111 ", "", "1111;"]) expect(await getOccupationPage(db, c, { lists })).toBeNull();
     expect(db.calls).toHaveLength(0);
+  });
+  it("the minimums and the date come from the rules in force (#229)", async () => {
+    const db = fake((t) => (t.includes("count(*)") ? [{ n: 0 }] : []));
+    const today = await getRules();
+    const rules = { ...today, minimums: { ...today.minimums, criticalSkills: 45000, nonListRoute: false, checkedOn: "2027-03-01" } };
+    const p = await getOccupationPage(db, "2134", { rules });
+    expect(p).toMatchObject({ listStatus: "critical-skills", rulesCheckedOn: "2027-03-01", minimums: { withDegree: 45000, withoutDegreeOrNotListed: null, basedOnWeekHours: 39 } });
+    expect(p!.standingLine).toContain("Rules last checked on 2027-03-01.");
+    expect((await getOccupationPage(db, "2134"))!.minimums).toMatchObject({ withDegree: 40904, withoutDegreeOrNotListed: 68911 });
   });
   it("an ineligible code has no minimums", async () => {
     const p = await getOccupationPage(fake((t) => (t.includes("count(*)") ? [{ n: 0 }] : [])), "1111", { lists });

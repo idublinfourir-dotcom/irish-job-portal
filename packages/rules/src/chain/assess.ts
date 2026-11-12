@@ -14,6 +14,7 @@ import {
   sponsorshipAvailable,
 } from "../readers";
 import { cpHead, py } from "../readers/pyre";
+import type { Minimums } from "../snapshot";
 import type { Assessment, Bucket, Sector, Stage } from "../types";
 
 /** The shape of `RawAdvert` (packages/sources/src/types.ts) that the chain reads. Copied: this package does not depend on `@portal/sources`. */
@@ -36,13 +37,17 @@ export type ChainMatcher = (
   description: string,
 ) => Promise<{ occupationCode: string; onCriticalSkillsList: "yes" | "no" | "unknown"; confidence: "none" | "low" | "medium" | "high" }>;
 
-/** What the Python reads from globals (run_day.py:42-50). */
+/** What the Python reads from globals (run_day.py:42-50). All but `deteNames` and `matcher` come from the rules snapshot: `chainRules(snapshot)`. */
 export type ChainData = {
   /** Cleaned DETE employer names (`cleanEmployerName` already applied), the keys of DETE_NORM (run_day.py:47-49). */
   deteNames: ReadonlySet<string>;
   /** The public pay-deal candidate names (public_employers_candidates.json), see `publicPayTier`. */
   publicPayCandidates: PublicPayCandidates;
   matcher: ChainMatcher;
+  /** The minimums in force (#229): the salary check and the contract length read them (the fetch's second opinion reads `nonList`). */
+  minimums: Minimums;
+  /** The big-company names in force (#229), see `isBigCompany`. */
+  bigCompanyNames: readonly string[];
 };
 
 // NEW BEHAVIOUR, not in the Python (10 November 2026). Adverts are untrusted text and three ported patterns slow down with
@@ -197,7 +202,7 @@ export async function assess(advert: AdvertInput, data: ChainData, staff: StaffI
 
   // classify.py:217-221
   if (!stage) {
-    const c = readContract(title, advert.employmentType, description);
+    const c = readContract(title, advert.employmentType, description, data.minimums.minContractMonths);
     out.contract = c.result;
     out.contractReason = c.reason;
     if (c.result === "short") stage = "7 contract under 2 years";
@@ -209,14 +214,14 @@ export async function assess(advert: AdvertInput, data: ChainData, staff: StaffI
     const { low, high } = staff.salary ?? readSalary(description, advert.salaryBox ?? "");
     out.salaryLow = low;
     out.salaryHigh = high;
-    out.salaryCheck = checkSalary(low, high);
-    out.bigCompany = isBigCompany(employer);
+    out.salaryCheck = checkSalary(low, high, data.minimums.criticalSkills);
+    out.bigCompany = isBigCompany(employer, data.bigCompanyNames);
     stage = salaryStage(out.salaryCheck, out.bigCompany, out.agency);
   }
 
   // run_day.py:92. D2: every non-LinkedIn advert counts as known.
   const tier = publicPayTier(employer, data.publicPayCandidates);
-  const known = advert.source !== "linkedin" || data.deteNames.has(cleanEmployerName(employer)) || isBigCompany(employer) || tier > 0;
+  const known = advert.source !== "linkedin" || data.deteNames.has(cleanEmployerName(employer)) || isBigCompany(employer, data.bigCompanyNames) || tier > 0;
 
   // run_day.py:93-99. The Irish check is skipped when the stage already starts with "3 " or "4 ".
   if (TEST_JOB.test(title)) stage = "0 test posting";

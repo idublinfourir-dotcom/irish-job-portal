@@ -1,10 +1,6 @@
 // R12 salary reader (#66, #68) and R13 salary check (#66, #29). Python: prototype/classify.py:9, :142-177, use at :224-229.
 import type { SalaryCheck, Stage } from "../types";
-import { CRITICAL_SKILLS_MINIMUM } from "../thresholds";
 import { asciiDigits, cpHead, cpLength, cpTail, py, pyStrip } from "./pyre";
-
-/** classify.py:9 `CS_MIN`. A parameter below, because it will come from rules data. Now held in ../thresholds. */
-export const DEFAULT_SALARY_MINIMUM = CRITICAL_SKILLS_MINIMUM;
 
 // classify.py:142. The class in the first branch ends with U+202F (narrow no-break space), written by code point.
 const NUM = String.raw`(\d{1,3}(?:[ ,. ]\d{3})+(?:[.,]\d{2})?|\d+(?:[.,]\d+)?\s?[kK]\b|\d{4,6}(?:[.,]\d{2})?)`;
@@ -61,8 +57,8 @@ export function readSalary(description: string, box = ""): { low: number | null;
   return { low: first[1], high: Math.max(...found.filter(([p]) => p - first[0] < 80).map(([, v]) => v)) };
 }
 
-/** R13. Python `salary_check(lo, hi)` (classify.py:173-177). */
-export function checkSalary(low: number | null, high: number | null, minimum = DEFAULT_SALARY_MINIMUM): SalaryCheck {
+/** R13. Python `salary_check(lo, hi)` (classify.py:173-177). `minimum` is classify.py:9 `CS_MIN`, from the rules snapshot (#229). */
+export function checkSalary(low: number | null, high: number | null, minimum: number): SalaryCheck {
   if (low === null) return "not stated";
   if (low >= minimum) return "pass";
   if (high && high >= minimum) return "range crosses";

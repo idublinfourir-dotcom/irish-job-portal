@@ -1,4 +1,5 @@
 // No database: the post body checks, the hours minimum, the rules verdicts and the refusal codes. The routes end to end: packages/db/test/jobs-route.test.ts.
+import { getRules } from "@portal/rules";
 import { describe, expect, it } from "vitest";
 import { checkClose, checkEdit, checkPost, checkRenew, jobRefusal, minimumForHours, rulesFor, type Post } from "./jobs";
 
@@ -72,6 +73,15 @@ describe("checkEdit, checkRenew, checkClose", () => {
 
 describe("rulesFor", () => {
   const run = (o: object = {}, employer = "Fake Payments Limited") => rulesFor(post(o), employer);
+  it("reads the rules in force (#229): a changed snapshot changes the verdict", async () => {
+    const today = await getRules();
+    const at = (m: object) => rulesFor(post({ salaryLow: 45000, salaryHigh: null }), "Fake Payments Limited", { ...today, minimums: { ...today.minimums, ...m } });
+    expect(await at({})).toMatchObject({ ok: true, passRoute: "stated_pay" });
+    expect(await at({ criticalSkills: 45001 })).toEqual({ ok: false, code: "PAY_BELOW_MINIMUM" });
+    expect(await rulesFor(post({ contractType: "fixed_term", contractMonths: 30 }), "Fake Payments Limited", { ...today, minimums: { ...today.minimums, minContractMonths: 36 } })).toEqual({ ok: false, code: "CONTRACT_TOO_SHORT" });
+    expect(await rulesFor(post({ occupationCode: "3545", salaryLow: 70000, salaryHigh: null }), "Fake Payments Limited", { ...today, minimums: { ...today.minimums, nonListRoute: false } })).toEqual({ ok: false, code: "OCCUPATION_NOT_ON_LIST" });
+    expect(await rulesFor(post(), "Fake Payments Limited", { ...today, occupationLists: [{ id: "in-2136", code: "2136", title: "T", list: "ineligible" }] })).toEqual({ ok: false, code: "OCCUPATION_INELIGIBLE" });
+  });
   it("passes a Critical Skills role at the minimum, and the top of a range counts (#66)", async () => {
     expect(await run()).toMatchObject({ ok: true, passRoute: "stated_pay", status: "live", sector: "IT" });
     expect(await run({ salaryLow: 40904, salaryHigh: null })).toMatchObject({ ok: true, passRoute: "stated_pay" });

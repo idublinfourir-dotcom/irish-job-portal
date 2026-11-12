@@ -3,7 +3,7 @@
 // Fake names, fake adverts and fake staff only. No network: the matcher is the staff member's code.
 import { readFileSync } from "node:fs";
 import type pg from "pg";
-import { cleanEmployerName } from "@portal/rules";
+import { CHAIN_RULES_V1, cleanEmployerName } from "@portal/rules";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { approve, claim, getItem, listQueue, QueueRefused, reject, release, type RulesData } from "../src/admin-queue";
 import { getJob, PAGE_SIZE } from "../src/search";
@@ -17,6 +17,7 @@ const RULES: RulesData = {
   chain: {
     deteNames: new Set((json("L2/dete-2026.json") as [string, number][]).map(([n]) => cleanEmployerName(n))),
     publicPayCandidates: new Map(Object.entries(json("L2/public_employers_candidates.json") as Record<string, { tier: 1 | 2 }>).map(([k, v]) => [k, v.tier])),
+    ...CHAIN_RULES_V1,
   },
   lists: json("occupation-lists.json") as RulesData["lists"],
 };

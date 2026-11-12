@@ -7,6 +7,7 @@
 // Roles: postgres loads the fill and rewrites the rows (it can switch triggers off), portal_owner vacuums and sets table options,
 // and app_candidate, the role the candidate site runs as, takes every measurement. Fake data only.
 import pg from "pg";
+import { CHAIN_RULES_V1 } from "@portal/rules";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createTestDb, tx, urlFor, type TestDb } from "../db";
 import { GOOD_RUN_TODAY, utcDayStart } from "../../src/fetch-guard-cli";
@@ -348,7 +349,7 @@ it("the admin queue pages and an approve stay under the limit", async () => {
       });
     },
   } as unknown as pg.Pool;
-  const rules = { chain: { deteNames: new Set<string>(), publicPayCandidates: new Map<string, 1 | 2>() }, lists: [{ code: "2134", list: "critical-skills" }] };
+  const rules = { chain: { deteNames: new Set<string>(), publicPayCandidates: new Map<string, 1 | 2>(), ...CHAIN_RULES_V1 }, lists: [{ code: "2134", list: "critical-skills" }] };
   for (const item of made) {
     write = [];
     await approve(measuring, staff, item, { occupationCode: "2134", contractConfirmed: true }, rules);

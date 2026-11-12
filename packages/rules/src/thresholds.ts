@@ -27,9 +27,10 @@ export const standingLine = (date: string = RULES_CHECKED_ON) =>
 /**
  * DETE: "40,904 is based on a 39-hour week, €20.17"; a 40-hour week needs 41,953.60. Over 39 hours the minimum is the hourly rate
  * (the 39-hour rate rounded to cents) times the hours times 52, never less than the annual minimum. Whole cents, so no float drift.
+ * Runtime callers pass the snapshot's `standardWeekHours` as `standardWeek` (#229); the default is version 1.
  */
-export function minimumForHours(annualMinimum: number, weeklyHours: number = STANDARD_WEEK_HOURS): number {
-  if (weeklyHours <= STANDARD_WEEK_HOURS) return annualMinimum;
-  const hourlyCents = Math.round((annualMinimum * 100) / (STANDARD_WEEK_HOURS * 52));
+export function minimumForHours(annualMinimum: number, weeklyHours: number = STANDARD_WEEK_HOURS, standardWeek: number = STANDARD_WEEK_HOURS): number {
+  if (weeklyHours <= standardWeek) return annualMinimum;
+  const hourlyCents = Math.round((annualMinimum * 100) / (standardWeek * 52));
   return Math.max(annualMinimum, Math.round(hourlyCents * weeklyHours * 52) / 100);
 }

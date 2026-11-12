@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  BadEligibilityInput, checkEligibility, minimumForHours, monthsSince, RULES_CHECKED_ON, standingLine, type EligibilityInput, type EligibilityReason,
+  BadEligibilityInput, checkEligibility, MINIMUMS_V1, minimumForHours, monthsSince, RULES_CHECKED_ON, standingLine, type EligibilityInput, type EligibilityReason,
 } from "./index";
 
 const lists = [
@@ -9,7 +9,7 @@ const lists = [
 ];
 const NOW = new Date("2026-11-12T10:00:00Z");
 const base: EligibilityInput = { occupationCode: "2136", annualPay: 50_000, relevantDegree: true, contractMonths: 24 };
-const run = (o: Partial<EligibilityInput>, opts: { nonListRoute?: boolean } = {}) => checkEligibility({ ...base, ...o }, lists, { now: NOW, ...opts });
+const run = (o: Partial<EligibilityInput>, opts: { nonListRoute?: boolean } = {}) => checkEligibility({ ...base, ...o }, { minimums: MINIMUMS_V1, occupationLists: lists }, { now: NOW, ...opts });
 
 describe("minimumForHours", () => {
   it("is the annual minimum up to 39 hours", () => {
