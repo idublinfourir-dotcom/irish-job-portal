@@ -247,14 +247,13 @@ export async function getCase(db: Q, staff: string, id: string | number) {
 // ===== cases: the steps =====
 export const CASE_LOCK =
   "select s.id, s.organisation_id, s.case_kind, s.reason_code, s.level, s.stage, s.outcome, s.reply_due_at, s.replied_at, s.reply_entered_by_staff_user_id, " +
-  "s.decided_by_staff_user_id, s.approval_request_id, s.appeal_due_at, s.appealed_at, s.appeal_entered_by_staff_user_id, s.appeal_decided_at, o.kind as organisation_kind, " +
-  "(select a.proposed_by_staff_user_id from approval_request a where a.id = s.approval_request_id) as proposed_by " +
+  "s.decided_by_staff_user_id, s.approval_request_id, s.appeal_due_at, s.appealed_at, s.appeal_entered_by_staff_user_id, s.appeal_decided_at, o.kind as organisation_kind " +
   "from strike s join organisation o on o.id = s.organisation_id where s.id = $1::bigint for update of s, o";
 type Case = {
   id: string; organisation_id: string; case_kind: string; reason_code: string; level: number | null; stage: string; outcome: string | null;
   reply_due_at: Date | null; replied_at: Date | null; reply_entered_by_staff_user_id: string | null; decided_by_staff_user_id: string | null;
   approval_request_id: string | null; appeal_due_at: Date | null; appealed_at: Date | null; appeal_entered_by_staff_user_id: string | null;
-  appeal_decided_at: Date | null; organisation_kind: string; proposed_by: string | null;
+  appeal_decided_at: Date | null; organisation_kind: string;
 };
 async function lockCase(c: pg.PoolClient, id: string): Promise<Case> {
   const r = (await c.query<Case>(CASE_LOCK, [id])).rows[0];
@@ -484,7 +483,8 @@ export async function decideAppeal(db: Db, staff: string, caseId: string | numbe
     if (k.appeal_decided_at !== null) throw new QueueRefused("appeal_decided");
     if (k.appealed_at === null) throw new QueueRefused("no_appeal");
     if (staff === k.appeal_entered_by_staff_user_id) throw new QueueRefused("entered_appeal");
-    if (staff === k.decided_by_staff_user_id || staff === k.proposed_by) throw new QueueRefused("decided_case");
+    // #217: not the person who decided (for strike 2, 3 and bans, the confirmer); the proposer may decide, so two officers are enough
+    if (staff === k.decided_by_staff_user_id) throw new QueueRefused("decided_case");
     await c.query("update strike set stage = $2 where id = $1::bigint", [id, result]);
     const lifts = result === "overturned" ? await proposeLifts(c, id) : 0;
     await notice(c, id, "appeal_decided");

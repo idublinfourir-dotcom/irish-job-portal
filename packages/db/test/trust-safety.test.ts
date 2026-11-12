@@ -353,7 +353,7 @@ describe("appeals (#134 to #136)", () => {
     await ok("ts2", "cases", { action: "confirm", caseId: b });
     return { co, caseId: b };
   }
-  it("an appeal by post is entered with its date; neither the one who entered it nor the deciders decide it; overturned clears the restriction", async () => {
+  it("an appeal by post is entered with its date; neither the one who entered it nor the confirmer decides it, the proposer may (#217); overturned clears the restriction", async () => {
     const { co, caseId } = await strike2();
     await no("ts3", "cases", { action: "decide_appeal", caseId, result: "overturned" }, 409, "no_appeal");
     await ok("ts3", "cases", { action: "record_appeal", caseId, text: "We have the permit letters.", receivedAt: ago(5) });
@@ -361,11 +361,12 @@ describe("appeals (#134 to #136)", () => {
     expect(await caseRow(caseId)).toMatchObject({ stage: "appealed", appeal_entered_by_staff_user_id: staff.ts3 });
     await no("ts3", "cases", { action: "decide_appeal", caseId, result: "overturned" }, 409, "entered_appeal");
     await no("ts2", "cases", { action: "decide_appeal", caseId, result: "overturned" }, 409, "decided_case"); // the confirmer decided the case
-    await no("ts1", "cases", { action: "decide_appeal", caseId, result: "overturned" }, 409, "decided_case"); // the proposer
-    expect(await ok("ts4", "cases", { action: "decide_appeal", caseId, result: "overturned" })).toEqual({ ok: true, result: "overturned", liftsProposed: 0 });
-    expect(await caseRow(caseId)).toMatchObject({ stage: "overturned", appeal_decided_by_staff_user_id: staff.ts4 });
+    // the proposer may decide the appeal (#217), so two trust and safety officers are enough
+    expect(await ok("ts1", "cases", { action: "decide_appeal", caseId, result: "overturned" })).toEqual({ ok: true, result: "overturned", liftsProposed: 0 });
+    expect(await caseRow(caseId)).toMatchObject({ stage: "overturned", appeal_decided_by_staff_user_id: staff.ts1 });
     expect((await orgRow(co.org)).restricted_until).toBeNull();
     await no("ts4", "cases", { action: "decide_appeal", caseId, result: "upheld" }, 409, "appeal_decided");
+    await no("ts1", "cases", { action: "decide_appeal", caseId, result: "upheld" }, 409, "appeal_decided");
     expect((await su.query("select count(*)::int n from email_outbox where params->>'strike_id' = $1 and template = 'appeal_decided'", [caseId])).rows[0].n).toBe(1);
   });
 
