@@ -253,7 +253,7 @@ await blk("{ const k = id(\"lic\"); await rule(\"wrc_licence\", \"unique licence
 });
 await blk("{ const o = await F.org(), a = await F.portal(), b = await F.portal(),", async () => {
 { const o = await F.org(), a = await F.portal(), b = await F.portal(), m1 = await F.member(o, a, { role: "account_owner" }), m2 = await F.member(o, b);
-  await rule("membership", "one_owner_per_org; transfer demotes then promotes in one transaction, as app_portal", { refuse: async () => su("update membership set role='account_owner' where id=$1", [m2]), ok: async () => tx("app_portal", async (c) => { await c.query("update membership set role='recruiter' where id=$1", [m1]); await c.query("update membership set role='account_owner' where id=$1", [m2]); }) }); }
+  await rule("membership", "one_owner_per_org; transfer demotes then promotes in one transaction, as app_admin (the portal has no write on membership; its transfer function comes with the employer login slice)", { refuse: async () => su("update membership set role='account_owner' where id=$1", [m2]), ok: async () => tx("app_admin", async (c) => { await c.query("update membership set role='recruiter' where id=$1", [m1]); await c.query("update membership set role='account_owner' where id=$1", [m2]); }) }); }
 });
 await blk("{ const a = await F.portal(), o = await F.org(), o2 = await F.org(), o", async () => {
 { const a = await F.portal(), o = await F.org(), o2 = await F.org(), o3 = await F.org(), m = await F.member(o, a);
@@ -273,8 +273,8 @@ await blk("{ const o = await F.org(); await rule(\"membership\", \"portal_user_i
 });
 await blk("{ const a = await F.portal(), others = []; for (let i = 0; i < 5; i++)", async () => {
 { const a = await F.portal(), others = []; for (let i = 0; i < 5; i++) others.push(await F.org());
-  const t = await race(5, (i) => P.app_portal.query("insert into membership(organisation_id,portal_user_id,role,status) values($1,$2,'viewer','active')", [others[i], a]));
-  line("membership", "CONCURRENT: 5 invites accepted at once by one login, one wins", t.ok.length === 1, t.ok.length >= 1, `${t.ok.length} succeeded, ${t.bad.length} refused by the unique index`); }
+  const t = await race(5, (i) => P.app_admin.query("insert into membership(organisation_id,portal_user_id,role,status) values($1,$2,'viewer','active')", [others[i], a]));
+  line("membership", "CONCURRENT: 5 invites accepted at once by one login, one wins (as app_admin)", t.ok.length === 1, t.ok.length >= 1, `${t.ok.length} succeeded, ${t.bad.length} refused by the unique index`); }
 });
 await blk("{ const o = await F.org(), inv = await F.member(o, null, { status: \"in", async () => {
 { const o = await F.org(), inv = await F.member(o, null, { status: "invited", email: `${id("i")}@x.test` });

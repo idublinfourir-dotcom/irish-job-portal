@@ -393,7 +393,7 @@ rights app_portal on job: table[] columns[insert(application_route,badge,close_r
 rights app_portal on job_daily_stat: table[select] columns[]
 rights app_portal on job_source: table[select] columns[]
 rights app_portal on job_text: table[delete,insert,select,update] columns[]
-rights app_portal on membership: table[insert,select,update] columns[]
+rights app_portal on membership: table[select] columns[]
 rights app_portal on message: table[] columns[]
 rights app_portal on notification: table[] columns[]
 rights app_portal on notification_preference: table[] columns[]
