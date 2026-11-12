@@ -1,3 +1,4 @@
+import { rulesV1 } from "@portal/rules";
 import { describe, expect, it } from "vitest";
 import { getCompanyPage, getOccupationPage, scopedQuery, summarisePermits, type ListEntry } from "./public-pages";
 import { BadSearchInput, encodeCursor, PAGE_SIZE } from "./search";
@@ -84,15 +85,26 @@ describe("getCompanyPage", () => {
   });
 });
 
+const v1 = await rulesV1(); // version 1, as the database holds it (the default read, getRules(db), is covered in test/content-pages.test.ts)
+
 describe("getOccupationPage", () => {
   const lists: ListEntry[] = [{ code: "1111", title: "T", list: "ineligible" }];
   it("is not found for a code on neither list, with no statement", async () => {
     const db = fake();
-    for (const c of ["2222", "11", "abcd", "1111 ", "", "1111;"]) expect(await getOccupationPage(db, c, { lists })).toBeNull();
+    for (const c of ["2222", "11", "abcd", "1111 ", "", "1111;"]) expect(await getOccupationPage(db, c, { lists, rules: v1 })).toBeNull();
     expect(db.calls).toHaveLength(0);
   });
+  it("the minimums and the date come from the rules in force (#229)", async () => {
+    const db = fake((t) => (t.includes("count(*)") ? [{ n: 0 }] : []));
+    const today = await rulesV1();
+    const rules = { ...today, minimums: { ...today.minimums, criticalSkills: 45000, nonListRoute: false, checkedOn: "2027-03-01" } };
+    const p = await getOccupationPage(db, "2134", { rules });
+    expect(p).toMatchObject({ listStatus: "critical-skills", rulesCheckedOn: "2027-03-01", minimums: { withDegree: 45000, withoutDegreeOrNotListed: null, basedOnWeekHours: 39 } });
+    expect(p!.standingLine).toContain("Rules last checked on 2027-03-01.");
+    expect((await getOccupationPage(db, "2134", { rules: today }))!.minimums).toMatchObject({ withDegree: 40904, withoutDegreeOrNotListed: 68911 });
+  });
   it("an ineligible code has no minimums", async () => {
-    const p = await getOccupationPage(fake((t) => (t.includes("count(*)") ? [{ n: 0 }] : [])), "1111", { lists });
+    const p = await getOccupationPage(fake((t) => (t.includes("count(*)") ? [{ n: 0 }] : [])), "1111", { lists, rules: v1 });
     expect(p).toMatchObject({ code: "1111", listStatus: "ineligible", minimums: null, text: null });
   });
 });

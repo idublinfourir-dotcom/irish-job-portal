@@ -1,9 +1,13 @@
 import type { Assessment } from "@portal/rules";
-import { assess } from "@portal/rules";
+import { assess, CHAIN_RULES_V1 } from "@portal/rules";
 import { describe, expect, it } from "vitest";
 import { rulesMatcher } from "../rules";
 import { createBatchChecker, type BatchResult } from "./batch";
-import { applySecondOpinion, HIGH_PAY, keepsBadge, SHOWN } from "./secondOpinion";
+import { applySecondOpinion, keepsBadge as keepsAt, SHOWN } from "./secondOpinion";
+
+// Version 1 of the non-list minimum, passed in as the rules snapshot does (#229).
+const HIGH_PAY = CHAIN_RULES_V1.minimums.nonList;
+const keepsBadge = (r: BatchResult, pay: number | null) => keepsAt(r, pay, HIGH_PAY);
 import { batchReply, ENTRIES, item as plain } from "./testkit";
 
 const item = (id: string, o: Record<string, unknown> = {}) => plain(id, { quote: "Design cloud systems", ...o });
@@ -41,12 +45,16 @@ describe("keepsBadge: the high pay route (pay over 68,911)", () => {
     expect(keepsBadge(result(IN1, "high"), pay)).toBe(false);
     expect(keepsBadge(result(null, "low", true), pay)).toBe(false);
   });
+  it("the line is the snapshot's non-list minimum (#229): a higher one keeps this pay on the list route", () => {
+    expect(keepsAt(result(null, "none"), HIGH_PAY + 1, HIGH_PAY)).toBe(true);
+    expect(keepsAt(result(null, "none"), HIGH_PAY + 1, HIGH_PAY + 1)).toBe(false);
+  });
   it("exactly 68,911 is still the list route (the rule says over)", () => {
     expect(keepsBadge(result(null, "none"), HIGH_PAY)).toBe(false);
   });
 });
 
-const dete = { deteNames: new Set<string>(), publicPayCandidates: new Map<string, 1 | 2>(), matcher: rulesMatcher };
+const dete = { deteNames: new Set<string>(), publicPayCandidates: new Map<string, 1 | 2>(), ...CHAIN_RULES_V1, matcher: rulesMatcher };
 const advert = (title: string, pay: number, n = 0) => ({ source: "greenhouse", employer: `Example ${n} Ltd`, title, location: "Dublin, Ireland", description: `Design cloud systems. Salary EUR ${pay} per year. Fixed term contract of 36 months. Ref ${n}.` });
 const rowsOf = async (adverts: ReturnType<typeof advert>[]) => Promise.all(adverts.map(async (a) => ({ advert: a, assessment: await assess(a, dete) })));
 
@@ -59,7 +67,7 @@ describe("applySecondOpinion with the real chain", () => {
     const rows = await rowsOf(adverts);
     expect(rows.filter((r) => SHOWN.has(r.assessment.bucket))).toHaveLength(25);
     const f = batchReply((n) => Array.from({ length: n === 3 ? 5 : 10 }, (_, i) => item(`A${i + 1}`)));
-    const out = await applySecondOpinion(rows, createBatchChecker({ client: f.client, modelId: "m", entries: ENTRIES }), 10);
+    const out = await applySecondOpinion(rows, createBatchChecker({ client: f.client, modelId: "m", entries: ENTRIES }), HIGH_PAY, 10);
     expect(f.prompts).toHaveLength(3);
     expect(f.prompts.map((p) => p.user.split("<<<END ADVERT").length - 1)).toEqual([10, 10, 5]);
     expect(f.prompts.join()).not.toContain("Head Chef");
@@ -71,7 +79,7 @@ describe("applySecondOpinion with the real chain", () => {
   it("a badge the AI does not back moves to the admin queue (stage 5, bucket queue), never dropped", async () => {
     const rows = await rowsOf([advert("Cloud Solutions Architect", 50_000, 1), advert("Cloud Solutions Architect", 50_000, 2)]);
     const f = batchReply([item("A1"), item("A2", { code: "5111", entry: "in-1" })]);
-    const out = await applySecondOpinion(rows, createBatchChecker({ client: f.client, modelId: "m", entries: ENTRIES }));
+    const out = await applySecondOpinion(rows, createBatchChecker({ client: f.client, modelId: "m", entries: ENTRIES }), HIGH_PAY);
     expect(out[0]!.bucket).toBe("stated_pay");
     expect(out[1]).toMatchObject({ stage: "5 unsure occupation (admin queue)", bucket: "queue", salaryLow: 50_000 });
     expect(rows[1]!.assessment.bucket).toBe("stated_pay"); // the input is not changed
@@ -81,32 +89,32 @@ describe("applySecondOpinion with the real chain", () => {
     const rows = await rowsOf([advert("Cloud Solutions Architect", 50_000, 1), advert("Cloud Solutions Architect", 70_000, 2)]);
     const none = { code: "none", entry: "none", quote: "" };
     const f = batchReply([item("A1", none), item("A2", none)]);
-    const out = await applySecondOpinion(rows, createBatchChecker({ client: f.client, modelId: "m", entries: ENTRIES }));
+    const out = await applySecondOpinion(rows, createBatchChecker({ client: f.client, modelId: "m", entries: ENTRIES }), HIGH_PAY);
     expect(out.map((a: Assessment) => a.bucket)).toEqual(["queue", "stated_pay"]);
   });
 
   it("a model fault queues the whole batch's badges", async () => {
     const rows = await rowsOf([advert("Cloud Solutions Architect", 70_000, 1), advert("Cloud Solutions Architect", 50_000, 2)]);
     const f = batchReply("garbage");
-    const out = await applySecondOpinion(rows, createBatchChecker({ client: f.client, modelId: "m", entries: ENTRIES }));
+    const out = await applySecondOpinion(rows, createBatchChecker({ client: f.client, modelId: "m", entries: ENTRIES }), HIGH_PAY);
     expect(out.map((a) => a.bucket)).toEqual(["queue", "queue"]);
   });
 
   it("sends nothing when there is no badge", async () => {
     const f = batchReply([]);
-    const out = await applySecondOpinion(await rowsOf([advert("Head Chef", 50_000)]), createBatchChecker({ client: f.client, modelId: "m", entries: ENTRIES }));
+    const out = await applySecondOpinion(await rowsOf([advert("Head Chef", 50_000)]), createBatchChecker({ client: f.client, modelId: "m", entries: ENTRIES }), HIGH_PAY);
     expect(f.prompts).toHaveLength(0);
     expect(out).toHaveLength(1);
   });
 
   it("refuses a batch size that is not a whole number of at least 1, and a checker that answers the wrong count", async () => {
     const rows = await rowsOf([advert("Cloud Solutions Architect", 50_000, 1)]);
-    for (const bad of [0, -1, 1.5, Number.NaN]) await expect(applySecondOpinion(rows, async () => [], bad)).rejects.toThrow(/batch size/);
-    await expect(applySecondOpinion(rows, async () => [])).rejects.toThrow(/different number/);
+    for (const bad of [0, -1, 1.5, Number.NaN]) await expect(applySecondOpinion(rows, async () => [], HIGH_PAY, bad)).rejects.toThrow(/batch size/);
+    await expect(applySecondOpinion(rows, async () => [], HIGH_PAY)).rejects.toThrow(/different number/);
   });
 
   it("the check throwing is not hidden", async () => {
     const rows = await rowsOf([advert("Cloud Solutions Architect", 50_000, 1)]);
-    await expect(applySecondOpinion(rows, async () => { throw new Error("stop"); })).rejects.toThrow("stop");
+    await expect(applySecondOpinion(rows, async () => { throw new Error("stop"); }, HIGH_PAY)).rejects.toThrow("stop");
   });
 });

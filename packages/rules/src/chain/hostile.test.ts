@@ -2,10 +2,11 @@
 // down with the square of the input length, so the chain refuses over-long input before any rule runs.
 // Made-up text only. The matcher is a fake (the real one has its own hostile tests in packages/matcher).
 import { describe, expect, it, vi } from "vitest";
+import { CHAIN_RULES_V1 } from "../snapshot";
 import { assess, INPUT_LIMITS, type AdvertInput, type ChainData, type ChainMatcher } from "./assess";
 
 const GOOD: ChainMatcher = async () => ({ occupationCode: "2134", onCriticalSkillsList: "yes", confidence: "high" });
-const data = (matcher: ChainMatcher = GOOD): ChainData => ({ deteNames: new Set(), publicPayCandidates: new Map(), matcher });
+const data = (matcher: ChainMatcher = GOOD): ChainData => ({ deteNames: new Set(), publicPayCandidates: new Map(), ...CHAIN_RULES_V1, matcher });
 const advert = (o: Partial<AdvertInput> = {}): AdvertInput => ({
   source: "greenhouse",
   employer: "Acme Widgets",

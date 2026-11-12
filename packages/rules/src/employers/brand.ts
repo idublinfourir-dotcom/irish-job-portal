@@ -19,10 +19,11 @@ export const BIG_COMPANY_LIST_150: readonly string[] = [
   "st john of god university hospital", "trinity care", "turner and townsend", "uniphar", "upmc", "version 1", "vhi", "viatris",
 ]; // prettier-ignore
 
-const ALL_BIG = [...BIG_COMPANY_BRANDS, ...BIG_COMPANY_LIST_150];
-
-/** R15 and #150: cleaned name equals a listed name, or starts with it plus a space. Python: classify.big_company (:190-192). */
-export function isBigCompany(employer: string): boolean {
+/**
+ * R15 and #150: cleaned name equals a listed name, or starts with it plus a space. Python: classify.big_company (:190-192).
+ * `names` come from the rules snapshot (#229); the two lists above are its version 1.
+ */
+export function isBigCompany(employer: string, names: readonly string[]): boolean {
   const e = cleanEmployerName(employer);
-  return ALL_BIG.some((b) => e === b || e.startsWith(b + " "));
+  return names.some((b) => e === b || e.startsWith(b + " "));
 }

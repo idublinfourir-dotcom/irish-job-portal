@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { readContract } from "./index";
+import { readContract as readAt } from "./index";
+
+// Version 1 of the minimum contract (24 months), passed in as the rules snapshot does (#229).
+const readContract = (title: string, employmentType: string | null | undefined, description: string) => readAt(title, employmentType, description, 24);
 
 describe("R09 readContract: months stated", () => {
   test("under 24 months is short", () => {

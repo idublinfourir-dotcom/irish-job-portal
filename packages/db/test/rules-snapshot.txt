@@ -101,9 +101,15 @@ check organisation_permit_history_check on organisation: CHECK ((permit_history 
 check organisation_signup_path_check on organisation: CHECK ((signup_path = ANY (ARRAY['dete_claim'::text, 'first_time'::text, 'agency'::text, 'admin'::text])))
 check organisation_sponsor_sort_check on organisation: CHECK ((sponsor_sort >= '-1'::integer))
 check organisation_status_check on organisation: CHECK ((status = ANY (ARRAY['unclaimed'::text, 'pending_review'::text, 'needs_info'::text, 'verified'::text, 'verified_restricted'::text, 'suspended'::text, 'rejected'::text, 'banned'::text, 'closed'::text])))
+check owner_reassign_check on owner_reassign: CHECK ((domain_checked AND cro_checked))
+check owner_reassign_check1 on owner_reassign: CHECK ((new_owner_membership_id <> old_owner_membership_id))
+check owner_reassign_check2 on owner_reassign: CHECK ((completes_after >= (requested_at + '7 days'::interval)))
+check owner_reassign_check3 on owner_reassign: CHECK (((status = 'open'::text) = ((decided_by_staff_user_id IS NULL) AND (decided_at IS NULL))))
+check owner_reassign_status_check on owner_reassign: CHECK ((status = ANY (ARRAY['open'::text, 'done'::text, 'cancelled'::text])))
 check pay_floor_check on pay_floor: CHECK ((valid_until > signed_at))
 check pay_floor_check1 on pay_floor: CHECK (((status <> 'active'::text) OR (approval_request_id IS NOT NULL)))
 check pay_floor_floor_eur_check on pay_floor: CHECK ((floor_eur > 0))
+check pay_floor_role_family_check on pay_floor: CHECK ((role_family ~ '^[0-9]{4}$'::text))
 check pay_floor_status_check on pay_floor: CHECK ((status = ANY (ARRAY['pending_check'::text, 'active'::text, 'expired'::text, 'replaced'::text, 'withdrawn'::text, 'rejected'::text, 'found_false'::text])))
 check portal_user_status_check on portal_user: CHECK ((status = ANY (ARRAY['active'::text, 'blocked'::text])))
 check register_import_row_count_check on register_import: CHECK ((row_count >= 0))
@@ -119,6 +125,9 @@ check review_item_check on review_item: CHECK (((status = ANY (ARRAY['done'::tex
 check review_item_check1 on review_item: CHECK (((queue <> 'data_request'::text) OR (status <> ALL (ARRAY['done'::text, 'dropped'::text])) OR (num_nonnulls(candidate_user_id, portal_user_id) = 0)))
 check review_item_queue_check on review_item: CHECK ((queue = ANY (ARRAY['fetched_job'::text, 'account_review'::text, 'merge_confirmation'::text, 'pay_floor_check'::text, 'post_strike_job_review'::text, 'scam_flag'::text, 'agency_client_check'::text, 'data_request'::text, 'scheduled_check'::text])))
 check review_item_status_check on review_item: CHECK ((status = ANY (ARRAY['open'::text, 'claimed'::text, 'done'::text, 'dropped'::text])))
+check rules_version_check on rules_version: CHECK ((seeded_by_owner OR (approval_request_id IS NOT NULL)))
+check rules_version_data_check on rules_version: CHECK ((jsonb_typeof(data) = ANY (ARRAY['object'::text, 'array'::text])))
+check rules_version_kind_check on rules_version: CHECK ((kind = ANY (ARRAY['minimums'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'public_pay_employers'::text, 'big_company_names'::text])))
 check services_case_check on services_case: CHECK (((num_nonnulls(candidate_user_id, portal_user_id) = 1) OR (requester_erased_at IS NOT NULL)))
 check services_case_check1 on services_case: CHECK (((portal_user_id IS NULL) OR (dedupe_key IS NOT NULL)))
 check services_case_check2 on services_case: CHECK (((status <> 'closed'::text) OR ((closed_at IS NOT NULL) AND (close_reason IS NOT NULL))))
@@ -193,6 +202,7 @@ rights app_admin on notification_preference: table[delete,insert,select,update] 
 rights app_admin on organisation: table[insert,select,update] columns[]
 rights app_admin on organisation_domain: table[delete,select] columns[insert(added_by_staff_id,domain,organisation_id,source) update(added_by_staff_id,domain,organisation_id,source)]
 rights app_admin on organisation_name: table[delete,insert,select,update] columns[]
+rights app_admin on owner_reassign: table[select] columns[]
 rights app_admin on pay_floor: table[select,update] columns[]
 rights app_admin on portal_account: table[] columns[]
 rights app_admin on portal_case_document: table[] columns[]
@@ -208,6 +218,7 @@ rights app_admin on published_content_page: table[] columns[]
 rights app_admin on register_import: table[insert,select,update] columns[]
 rights app_admin on report: table[delete,insert,select,update] columns[]
 rights app_admin on review_item: table[insert,select,update] columns[]
+rights app_admin on rules_version: table[select] columns[insert(approval_request_id,data,effective_from,kind) update(run_at)]
 rights app_admin on saved_job: table[select] columns[]
 rights app_admin on services_case: table[insert,select,update] columns[]
 rights app_admin on setting: table[insert,select] columns[update(is_guess,solicitor_confirmed_at,solicitor_note,value)]
@@ -265,6 +276,7 @@ rights app_candidate on notification_preference: table[] columns[]
 rights app_candidate on organisation: table[] columns[select(claimed_at,claims_removed_at,county,display_name,id,kind,logo_url,merged_into_id,nace_code,permit_history,short_description,slug,status,website,wrc_licence_number)]
 rights app_candidate on organisation_domain: table[] columns[]
 rights app_candidate on organisation_name: table[select] columns[]
+rights app_candidate on owner_reassign: table[] columns[]
 rights app_candidate on pay_floor: table[] columns[]
 rights app_candidate on portal_account: table[] columns[]
 rights app_candidate on portal_case_document: table[] columns[]
@@ -280,6 +292,7 @@ rights app_candidate on published_content_page: table[select] columns[]
 rights app_candidate on register_import: table[] columns[]
 rights app_candidate on report: table[] columns[insert(evidence_text,reason,reporter_candidate_user_id,target_job_id,target_kind,target_snapshot) select(id)]
 rights app_candidate on review_item: table[] columns[]
+rights app_candidate on rules_version: table[select] columns[]
 rights app_candidate on saved_job: table[delete,insert,select] columns[]
 rights app_candidate on services_case: table[] columns[]
 rights app_candidate on setting: table[] columns[]
@@ -337,6 +350,7 @@ rights app_fetcher on notification_preference: table[] columns[]
 rights app_fetcher on organisation: table[select] columns[insert(county,display_name,kind,slug)]
 rights app_fetcher on organisation_domain: table[] columns[]
 rights app_fetcher on organisation_name: table[insert,select] columns[]
+rights app_fetcher on owner_reassign: table[] columns[]
 rights app_fetcher on pay_floor: table[] columns[select(floor_eur,id,organisation_id,role_family,status,valid_until)]
 rights app_fetcher on portal_account: table[] columns[]
 rights app_fetcher on portal_case_document: table[] columns[]
@@ -352,6 +366,7 @@ rights app_fetcher on published_content_page: table[] columns[]
 rights app_fetcher on register_import: table[insert,select,update] columns[]
 rights app_fetcher on report: table[] columns[]
 rights app_fetcher on review_item: table[] columns[insert(detail,job_id,queue,reason) select(job_id,queue,status)]
+rights app_fetcher on rules_version: table[select] columns[]
 rights app_fetcher on saved_job: table[] columns[]
 rights app_fetcher on services_case: table[] columns[]
 rights app_fetcher on setting: table[] columns[]
@@ -409,6 +424,7 @@ rights app_portal on notification_preference: table[] columns[]
 rights app_portal on organisation: table[select] columns[update(county,display_name,logo_url,short_description,website)]
 rights app_portal on organisation_domain: table[] columns[]
 rights app_portal on organisation_name: table[select] columns[]
+rights app_portal on owner_reassign: table[] columns[]
 rights app_portal on pay_floor: table[insert,select] columns[update(status)]
 rights app_portal on portal_account: table[delete,insert,select,update] columns[]
 rights app_portal on portal_case_document: table[select] columns[insert(byte_size,content_type,file_name,portal_user_id,services_case_id,storage_key)]
@@ -424,6 +440,7 @@ rights app_portal on published_content_page: table[select] columns[]
 rights app_portal on register_import: table[] columns[]
 rights app_portal on report: table[] columns[insert(evidence_text,reason,reporter_portal_user_id,target_job_id,target_kind,target_snapshot) select(id)]
 rights app_portal on review_item: table[] columns[]
+rights app_portal on rules_version: table[select] columns[]
 rights app_portal on saved_job: table[] columns[]
 rights app_portal on services_case: table[] columns[]
 rights app_portal on setting: table[] columns[]
@@ -476,8 +493,10 @@ trigger pay_floor_big_company on pay_floor: CREATE TRIGGER pay_floor_big_company
 trigger pay_floor_guard on pay_floor: CREATE TRIGGER pay_floor_guard BEFORE UPDATE ON public.pay_floor FOR EACH ROW EXECUTE FUNCTION private.pay_floor_guard()
 trigger pay_floor_queue on pay_floor: CREATE TRIGGER pay_floor_queue AFTER INSERT ON public.pay_floor FOR EACH ROW EXECUTE FUNCTION private.pay_floor_insert()
 trigger pay_floor_signer on pay_floor: CREATE TRIGGER pay_floor_signer BEFORE INSERT ON public.pay_floor FOR EACH ROW EXECUTE FUNCTION private.signer_check()
+trigger pay_floor_withdrawn on pay_floor: CREATE TRIGGER pay_floor_withdrawn AFTER UPDATE OF status ON public.pay_floor FOR EACH ROW WHEN (((old.status = 'pending_check'::text) AND (new.status = 'withdrawn'::text))) EXECUTE FUNCTION private.pay_floor_withdrawn()
 trigger report_upheld on report: CREATE TRIGGER report_upheld AFTER UPDATE OF status ON public.report FOR EACH ROW EXECUTE FUNCTION private.report_upheld()
 trigger review_item_fetcher on review_item: CREATE TRIGGER review_item_fetcher BEFORE INSERT ON public.review_item FOR EACH ROW EXECUTE FUNCTION private.review_item_fetcher()
+trigger rules_version_approval on rules_version: CREATE TRIGGER rules_version_approval BEFORE INSERT ON public.rules_version FOR EACH ROW EXECUTE FUNCTION private.approval_check()
 trigger saved_job_check on saved_job: CREATE TRIGGER saved_job_check BEFORE INSERT ON public.saved_job FOR EACH ROW EXECUTE FUNCTION private.candidate_job_check()
 trigger services_case_guard on services_case: CREATE TRIGGER services_case_guard BEFORE INSERT OR UPDATE OF consent_record_id, employer_contact_consent_record_id, candidate_user_id, portal_user_id ON public.services_case FOR EACH ROW EXECUTE FUNCTION private.services_case_guard()
 trigger setting_guard on setting: CREATE TRIGGER setting_guard BEFORE INSERT OR UPDATE ON public.setting FOR EACH ROW WHEN ((CURRENT_USER = 'app_admin'::name)) EXECUTE FUNCTION private.setting_guard()
@@ -539,6 +558,7 @@ unique CREATE UNIQUE INDEX organisation_name_cro_unique ON public.organisation_n
 unique CREATE UNIQUE INDEX organisation_name_legal_nocro_unique ON public.organisation_name USING btree (normalised_name) WHERE ((kind = 'legal'::text) AND (cro_number IS NULL))
 unique CREATE UNIQUE INDEX organisation_slug_key ON public.organisation USING btree (slug)
 unique CREATE UNIQUE INDEX organisation_wrc_unique ON public.organisation USING btree (wrc_licence_number) WHERE ((wrc_licence_number IS NOT NULL) AND (status <> ALL (ARRAY['rejected'::text, 'closed'::text])) AND (merged_into_id IS NULL))
+unique CREATE UNIQUE INDEX owner_reassign_one_open ON public.owner_reassign USING btree (organisation_id) WHERE (status = 'open'::text)
 unique CREATE UNIQUE INDEX pay_floor_one_active ON public.pay_floor USING btree (organisation_id, role_family) WHERE (status = 'active'::text)
 unique CREATE UNIQUE INDEX pay_floor_one_pending ON public.pay_floor USING btree (organisation_id, role_family) WHERE (status = 'pending_check'::text)
 unique CREATE UNIQUE INDEX portal_account_provider_unique ON public.portal_account USING btree (provider_id, account_id)
@@ -554,6 +574,8 @@ unique CREATE UNIQUE INDEX review_item_job_unique ON public.review_item USING bt
 unique CREATE UNIQUE INDEX review_item_name_unique ON public.review_item USING btree (queue, organisation_name_id) WHERE (status = ANY (ARRAY['open'::text, 'claimed'::text]))
 unique CREATE UNIQUE INDEX review_item_org_unique ON public.review_item USING btree (queue, organisation_id) WHERE (status = ANY (ARRAY['open'::text, 'claimed'::text]))
 unique CREATE UNIQUE INDEX review_item_portal_unique ON public.review_item USING btree (queue, portal_user_id) WHERE (status = ANY (ARRAY['open'::text, 'claimed'::text]))
+unique CREATE UNIQUE INDEX rules_version_approval_request_id_key ON public.rules_version USING btree (approval_request_id)
+unique CREATE UNIQUE INDEX rules_version_one_seed ON public.rules_version USING btree (kind) WHERE seeded_by_owner
 unique CREATE UNIQUE INDEX saved_job_candidate_user_id_job_id_key ON public.saved_job USING btree (candidate_user_id, job_id)
 unique CREATE UNIQUE INDEX services_case_candidate_open ON public.services_case USING btree (candidate_user_id, job_id) NULLS NOT DISTINCT WHERE ((status <> 'closed'::text) AND (candidate_user_id IS NOT NULL))
 unique CREATE UNIQUE INDEX services_case_dedupe_unique ON public.services_case USING btree (dedupe_key) WHERE (dedupe_key IS NOT NULL)

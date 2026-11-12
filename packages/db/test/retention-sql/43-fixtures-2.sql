@@ -12,9 +12,9 @@ insert into sponsorship_statement(id,job_id,organisation_id,kind,consent_text_id
 insert into approval_request(id,kind,target_table,target_id,proposed_by_staff_user_id,confirmed_by_staff_user_id,status,decided_at,applied_at,created_at) overriding system value
  select 900+g,'pay_floor','pay_floor',g::text,'c3-st1','c3-st2','confirmed',now(),now(),now() from generate_series(1,3) g;
 insert into pay_floor(id,organisation_id,role_family,floor_eur,consent_text_id,signer_membership_id,signer_name,signer_title,signed_at,valid_until,status,ended_at,approval_request_id) overriding system value values
- (1,8,'software',60000,9,18,'Real Signer','Head',now()-interval '30 months',now()-interval '14 months','expired',now()-interval '13 months',901),
- (2,8,'nurse',60000,9,18,'Real Signer','Head',now()-interval '30 months',now()-interval '12 months','expired',now()-interval '11 months',902),
- (3,8,'cook',60000,9,18,'Real Signer','Head',now()-interval '30 months',now()-interval '14 months','expired',now()-interval '13 months',903);
+ (1,8,'2134',60000,9,18,'Real Signer','Head',now()-interval '30 months',now()-interval '14 months','expired',now()-interval '13 months',901),
+ (2,8,'2230',60000,9,18,'Real Signer','Head',now()-interval '30 months',now()-interval '12 months','expired',now()-interval '11 months',902),
+ (3,8,'5434',60000,9,18,'Real Signer','Head',now()-interval '30 months',now()-interval '14 months','expired',now()-interval '13 months',903);
 -- services cases ------------------------------------------------------
 select c3t.mkc('c3-sc1');
 insert into consent_record(id,candidate_user_id,consent_text_id) overriding system value select 110+g,'c3-sc1',6 from generate_series(1,8) g;

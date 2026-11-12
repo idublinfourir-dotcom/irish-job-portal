@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { checkIrishEmployer, locationLooksIrish } from "../irish";
+import { BIG_COMPANY_NAMES_V1 } from "../snapshot";
 import { buildNameMatcher, cleanEmployerName, isAgencyName, isBigCompany, nameTitlePlaceKey, publicPayTier, urlOrNameKey } from ".";
 
 type Ref = {
@@ -46,7 +47,7 @@ describe("L1b parity with the Python", () => {
       const u = checkIrishEmployer(j, false);
       cmp(i, "R03 not known", [u.verdict, [u.reason]], r.r03_unknown);
       cmp(i, "clean name", cleanEmployerName(j.employer), r.name);
-      cmp(i, "brand", isBigCompany(j.employer), r.brand);
+      cmp(i, "brand", isBigCompany(j.employer, BIG_COMPANY_NAMES_V1), r.brand);
       cmp(i, "agency", isAgencyName(j.employer), r.agency);
       cmp(i, "tier", publicPayTier(j.employer, candidates), r.tier);
       cmp(i, "duplicate key (url)", urlOrNameKey(j), typeof r.dup_url === "string" ? "u:" + r.dup_url : "t:" + JSON.stringify(r.dup_url));

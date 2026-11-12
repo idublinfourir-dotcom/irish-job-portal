@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { DEFAULT_SALARY_MINIMUM, checkSalary, readSalary, salaryStage } from "./index";
+import { checkSalary, readSalary, salaryStage } from "./index";
 
 const sal = (d: string, box = "") => readSalary(d, box);
 
@@ -101,14 +101,13 @@ describe("R12 readSalary: salary box with yearly slash forms", () => {
 
 describe("R13 checkSalary", () => {
   test("the four results", () => {
-    expect(checkSalary(null, null)).toBe("not stated");
-    expect(checkSalary(40904, 40904)).toBe("pass");
-    expect(checkSalary(40903, 50000)).toBe("range crosses");
-    expect(checkSalary(30000, 40903)).toBe("below");
-    expect(checkSalary(30000, null)).toBe("below");
+    expect(checkSalary(null, null, 40904)).toBe("not stated");
+    expect(checkSalary(40904, 40904, 40904)).toBe("pass");
+    expect(checkSalary(40903, 50000, 40904)).toBe("range crosses");
+    expect(checkSalary(30000, 40903, 40904)).toBe("below");
+    expect(checkSalary(30000, null, 40904)).toBe("below");
   });
-  test("the minimum is a parameter, defaulting to the Python value", () => {
-    expect(DEFAULT_SALARY_MINIMUM).toBe(40904);
+  test("the minimum is a parameter (from the rules snapshot, #229)", () => {
     expect(checkSalary(45000, 45000, 50000)).toBe("below");
     expect(checkSalary(45000, 60000, 50000)).toBe("range crosses");
   });

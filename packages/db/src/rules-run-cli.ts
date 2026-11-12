@@ -1,0 +1,76 @@
+// The daily rules run (#93, #234 D9): on the first run on or after the day a confirmed minimums version comes into force, every live employer or
+// agency job whose stated pay is now below the minimum goes "under review" (the employer's own job list shows the reason 'pay_check', 0019), and
+// every active pay floor ends as 'expired' (#82). One transaction; the version's run_at records that it was applied, so a second run does nothing.
+// Run from the repo root with the app_admin login, daily from .github/workflows/daily-fetch.yml after the job expiry step:
+//   RULES_ADMIN_DATABASE_URL=... node packages/db/src/rules-run-cli.ts
+import pg from "pg";
+import { minimumForHours } from "../../rules/src/thresholds.ts";
+import { loadRules, type Minimums } from "./rules-data.ts";
+import { sslOptions } from "./ssl.ts";
+
+// The minimums version in force today, locked so two runs cannot both apply it.
+export const PICK =
+  "select id::text as id, run_at is not null as done, current_date::text as today from rules_version where kind = 'minimums' and effective_from <= current_date " +
+  "order by effective_from desc, id desc limit 1 for update";
+// Portal posts that passed on their stated pay (public_pay posts pass on the employer's pay scale and are left alone).
+export const LIVE_STATED =
+  "select id::text as id, occupation_code, salary_low, salary_high, health_insurance_eur, weekly_hours from job " +
+  "where source in ('employer','agency') and status = 'live' and pass_route = 'stated_pay' for update";
+type Job = { id: string; occupation_code: string | null; salary_low: number | null; salary_high: number | null; health_insurance_eur: number | null; weekly_hours: number | null };
+
+/** The posting check's pay rule (apps/portal/lib/jobs.ts): the top of the range plus employer-paid health insurance, >= the minimum for the stated hours. */
+export function belowMinimum(j: Job, m: Minimums, criticalSkills: ReadonlySet<string>): boolean {
+  const onList = j.occupation_code !== null && criticalSkills.has(j.occupation_code);
+  if (!onList && !m.nonListRoute) return true;
+  if (j.salary_low === null) return true;
+  const pay = (j.salary_high ?? j.salary_low) + (j.health_insurance_eur ?? 0);
+  return pay < minimumForHours(onList ? m.criticalSkills : m.nonList, j.weekly_hours ?? undefined, m.standardWeekHours);
+}
+
+export type RunResult = { versionId: string | null; applied: boolean; underReview: number; floorsEnded: number };
+
+export async function runRules(c: pg.ClientBase): Promise<RunResult> {
+  await c.query("begin");
+  try {
+    const v = (await c.query<{ id: string; done: boolean; today: string }>(PICK)).rows[0];
+    if (!v || v.done) {
+      await c.query("commit");
+      return { versionId: v?.id ?? null, applied: false, underReview: 0, floorsEnded: 0 };
+    }
+    const rules = await loadRules(c, v.today);
+    const cs = new Set(rules.occupationLists.filter((o) => o.list === "critical-skills").map((o) => o.code));
+    const ids = (await c.query<Job>(LIVE_STATED)).rows.filter((j) => belowMinimum(j, rules.minimums, cs)).map((j) => j.id);
+    const underReview = (await c.query("update job set status = 'under_review' where id = any($1::bigint[]) and status = 'live'", [ids])).rowCount ?? 0;
+    const floorsEnded = (await c.query("update pay_floor set status = 'expired' where status = 'active'")).rowCount ?? 0;
+    await c.query("update rules_version set run_at = now() where id = $1::bigint", [v.id]);
+    await c.query(
+      "insert into audit_event(kind, actor_system, action, object_type, object_id, after, source) values ('admin_action', 'rules-run-cli', 'rules.minimums_in_force', 'rules_version', $1, $2, 'scheduled_job')",
+      [v.id, { under_review: underReview, floors_ended: floorsEnded }],
+    );
+    await c.query("commit");
+    return { versionId: v.id, applied: true, underReview, floorsEnded };
+  } catch (e) {
+    await c.query("rollback").catch(() => {});
+    throw e;
+  }
+}
+
+export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: string) => void): Promise<number> {
+  if (argv.length) return log("usage: rules-run-cli.ts (no arguments)"), 2;
+  const url = env.RULES_ADMIN_DATABASE_URL;
+  if (!url) return log("RULES_ADMIN_DATABASE_URL is not set (the app_admin login)"), 2;
+  const client = new pg.Client({ connectionString: url, ssl: sslOptions(env) });
+  try {
+    await client.connect();
+    const r = await runRules(client);
+    log(r.applied ? `minimums version ${r.versionId} applied: ${r.underReview} jobs under review, ${r.floorsEnded} pay floors ended` : "no new minimums today");
+    return 0;
+  } catch (e) {
+    log(`refused: ${(e as Error).message}`);
+    return 1;
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
+if (import.meta.main) process.exitCode = await main(process.argv.slice(2), process.env, console.log);

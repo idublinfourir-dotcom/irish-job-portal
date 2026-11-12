@@ -1,6 +1,6 @@
 // Unit, performance and security tests for planAdvert and countyOf. Made-up text only; no database, network or clock.
 import { describe, expect, it } from "vitest";
-import { assess, type Assessment, type Bucket, type ChainData, type Stage } from "@portal/rules";
+import { assess, CHAIN_RULES_V1, type Assessment, type Bucket, type ChainData, type Stage } from "@portal/rules";
 import type { RawAdvert } from "@portal/sources";
 import { countyOf } from "./county";
 import { planAdvert } from "./plan";
@@ -123,7 +123,7 @@ describe("planAdvert, one test per step of design 3.7", () => {
 
 describe("planAdvert with the real rules chain", () => {
   const data: ChainData = {
-    deteNames: new Set(), publicPayCandidates: new Map(),
+    deteNames: new Set(), publicPayCandidates: new Map(), ...CHAIN_RULES_V1,
     matcher: async () => ({ occupationCode: "2134", onCriticalSkillsList: "yes", confidence: "high" }),
   };
   it("a clean advert becomes a live job", async () => {

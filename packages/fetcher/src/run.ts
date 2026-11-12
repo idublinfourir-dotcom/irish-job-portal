@@ -154,6 +154,7 @@ async function secondOpinion(deps: Deps, budget: { left: number }, items: Item[]
           if (fault) throw new Error(fault.failure?.why);
           return results;
         },
+        deps.chain.minimums.nonList,
         size,
       );
       chunk.forEach((i, k) => {

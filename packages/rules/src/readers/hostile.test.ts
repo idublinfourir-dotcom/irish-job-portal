@@ -7,11 +7,11 @@ function runAll(title: string, description: string, box = "", employmentType: st
   noSponsorshipPhrase(title, description);
   sponsorshipAvailable(description);
   scamWording(description);
-  readContract(title, employmentType, description);
+  readContract(title, employmentType, description, 24);
   doctorGradeWithoutTwoYears(title, description);
   permanentOrSpecifiedPurpose(description);
   const { low, high } = readSalary(description, box);
-  checkSalary(low, high);
+  checkSalary(low, high, 40904);
 }
 
 function timed(f: () => void): number {
@@ -122,12 +122,12 @@ describe("security: hostile text neither throws nor hangs", () => {
   test("the new patterns still answer under hostile padding", () => {
     const pad = "a ".repeat(MB / 2);
     expect(noSponsorshipPhrase("", pad + "requires you to be a national of an EU member state")).not.toBeNull();
-    expect(readContract("E", "", "maternity cover " + pad).result).toBe("short");
+    expect(readContract("E", "", "maternity cover " + pad, 24).result).toBe("short");
     expect(readSalary(pad, "\u20ac80,000/yr").low).toBe(80000);
     expect(noSponsorshipPhrase("", pad + "\nmust be eligible to work in Ireland")).not.toBeNull();
     expect(noSponsorshipPhrase("", pad + "\n Right to work in Ireland.")).not.toBeNull();
-    expect(readContract("E (12 month FTC)", "", pad).result).toBe("short");
-    expect(readContract("E", "", pad + " dedicated placement").result).toBe("ok"); // past the first 6,000 characters
+    expect(readContract("E (12 month FTC)", "", pad, 24).result).toBe("short");
+    expect(readContract("E", "", pad + " dedicated placement", 24).result).toBe("ok"); // past the first 6,000 characters
   });
 
   test("missing and empty fields", () => {
@@ -135,7 +135,7 @@ describe("security: hostile text neither throws nor hangs", () => {
     expect(() => runAll("", "", "", undefined as unknown as null)).not.toThrow();
     expect(readSalary("", "")).toEqual({ low: null, high: null });
     expect(readSalary("")).toEqual({ low: null, high: null });
-    expect(readContract("", undefined, "")).toEqual({ result: "ok", reason: "permanent or not stated" });
+    expect(readContract("", undefined, "", 24)).toEqual({ result: "ok", reason: "permanent or not stated" });
   });
 
   test("hostile text does not change the answers: an amount inside script tags is still read as an amount", () => {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { BIG_COMPANY_NAMES_V1 } from "../snapshot";
 import { buildNameMatcher, cleanEmployerName, isAgencyName, isBigCompany, nameTitlePlaceKey, publicPayTier, urlOrNameKey } from ".";
 
 // Performance and security tests (made-up text only).
@@ -11,7 +12,7 @@ const timed = (budgetMs: number, fn: () => void) => {
 const candidates = new Map<string, 1 | 2>([["beaumont hospital", 2]]);
 const everything = (employer: string, title = "Nurse", location = "Dublin") => {
   expect(typeof cleanEmployerName(employer)).toBe("string");
-  isBigCompany(employer);
+  isBigCompany(employer, BIG_COMPANY_NAMES_V1);
   isAgencyName(employer);
   publicPayTier(employer, candidates);
   urlOrNameKey({ url: "", employer, title, location });

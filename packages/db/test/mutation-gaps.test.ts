@@ -17,6 +17,7 @@ beforeAll(async () => { db = await createTestDb(); F = fixtures(db).F; });
 afterAll(() => db.drop());
 
 const uid = (p: string) => `${p}_${randomBytes(5).toString("hex")}`;
+let roleFamilies = 0; // a pay floor family is a four-digit code (0023)
 const su = (sql: string, args?: unknown[]) => db.query("postgres", sql, args);
 const days = (n: number) => new Date(Date.now() + 864e5 * n);
 type Q = (sql: string, args?: unknown[]) => Promise<pg.QueryResult>;
@@ -176,7 +177,7 @@ test("[review_item] one open or claimed item per (queue, pay_floor_id)", async (
   await su("update organisation set is_big_company=true where id=$1", [big]);
   const user = await F.portal();
   const member = await F.member(big, user, { role: "account_owner", signer: true });
-  const floor = await insert("postgres", "pay_floor", { organisation_id: big, role_family: "chef", floor_eur: 40000, consent_text_id: await F.text("pay_floor"), signer_membership_id: member, signer_name: "Fake Signer", valid_until: days(300) });
+  const floor = await insert("postgres", "pay_floor", { organisation_id: big, role_family: "3434", floor_eur: 40000, consent_text_id: await F.text("pay_floor"), signer_membership_id: member, signer_name: "Fake Signer", valid_until: days(300) });
   // the pay floor insert has queued its own open item for this queue
   const item = () => insert("postgres", "review_item", { queue: "pay_floor_check", pay_floor_id: floor, reason: "again" });
   await rule({ refuse: item, expect: "review_item_floor_unique" });
@@ -247,7 +248,7 @@ test("[pay_floor] an active pay floor carries an approval request (CHECK alone, 
   const member = await F.member(org, await F.portal(), { role: "account_owner", signer: true });
   const text = await F.text("pay_floor");
   const request = await alone((q) => put(q, "approval_request", { kind: "pay_floor", target_table: "pay_floor", target_id: "0", proposed_by_staff_user_id: A, status: "confirmed", confirmed_by_staff_user_id: B, decided_at: new Date() }));
-  const row = (o: Record<string, unknown>) => ({ organisation_id: org, role_family: uid("r"), floor_eur: 40000, consent_text_id: text, signer_membership_id: member, signer_name: "Fake Signer", valid_until: days(300), ...o });
+  const row = (o: Record<string, unknown>) => ({ organisation_id: org, role_family: String(1000 + ++roleFamilies), floor_eur: 40000, consent_text_id: text, signer_membership_id: member, signer_name: "Fake Signer", valid_until: days(300), ...o });
   await rule({ refuse: () => alone((q) => put(q, "pay_floor", row({ status: "active" }))), expect: "pay_floor_check1" });
   await rule({ ok: () => alone((q) => put(q, "pay_floor", row({ status: "active", approval_request_id: request }))) });
   await rule({ ok: () => alone((q) => put(q, "pay_floor", row({ status: "pending_check" }))) }); // not active yet, needs none

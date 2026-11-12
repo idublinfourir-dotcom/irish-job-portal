@@ -2,7 +2,7 @@
 // Private data stays outside the repo. The report holds numbers and advert ids only, never advert text, never the key.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assess, cleanEmployerName, type Assessment, type ChainData, type ChainMatcher } from "@portal/rules";
+import { assess, CHAIN_RULES_V1, cleanEmployerName, type Assessment, type ChainData, type ChainMatcher } from "@portal/rules";
 import { createBatchChecker } from "../ai/batch";
 import { chatClient } from "../ai/client";
 import { createAiMatcher } from "../ai/matcher";
@@ -46,9 +46,11 @@ export async function runGate(env: Record<string, string | undefined>, deps: { f
 
   const dete = JSON.parse(readText(join(dir, "dete-2026.json"), "the DETE employer list (dete-2026.json)")) as [string, number][];
   const candidates = JSON.parse(readText(join(dir, "public_employers_candidates.json"), "public_employers_candidates.json")) as Record<string, { tier: 1 | 2 }>;
+  // The gate measures version 1 of the minimums and big-company names (#229) on its frozen set.
   const base = {
     deteNames: new Set(dete.map(([name]) => cleanEmployerName(name))),
     publicPayCandidates: new Map<string, 1 | 2>(Object.entries(candidates).map(([k, v]) => [k, v.tier])),
+    ...CHAIN_RULES_V1,
   };
 
   // The matcher under test: "rules" is the baseline with no key and no network; "rules+ai" runs the rules, then asks the model once per batch
@@ -102,6 +104,7 @@ export async function runGate(env: Record<string, string | undefined>, deps: { f
         badAnswers += results.filter((x) => x.failure).length;
         return results;
       },
+      base.minimums.nonList,
       batchSize,
     );
     const before = assessed.filter((a) => SHOWN.has(a.assessment.bucket)).length;

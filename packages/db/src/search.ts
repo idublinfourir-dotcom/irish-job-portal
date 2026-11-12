@@ -3,6 +3,7 @@
 // candidate role cannot read), and the list pages on the sort key plus id, never OFFSET. No advert text is read for a list.
 import type pg from "pg";
 import { RULES_CHECKED_ON as RULES_DATE } from "@portal/rules";
+import { getRules } from "./rules-data";
 import { permitsLast5Years } from "./dete";
 
 type Db = Pick<pg.Pool, "query">;
@@ -11,7 +12,7 @@ export const SORTS = ["sponsor", "newest", "salary"] as const;
 export type Sort = (typeof SORTS)[number];
 export const PAGE_SIZE = 20;
 export const COUNT_CAP = 200; // #125: the count stops here ("200+")
-// The date on the standing line "Rules last checked on [date]" (#94): the one constant in @portal/rules (thresholds.ts), changed with the figures.
+// The date on the standing line "Rules last checked on [date]" (#94), version 1. A job page reads the date in force from getRules(db) (#229).
 export const RULES_CHECKED_ON = RULES_DATE;
 
 /** A bad cursor, sort or id from a URL. A page answers 400 or shows the first page. */
@@ -221,7 +222,7 @@ export async function getJob(db: Db, id: string | number, now = new Date()): Pro
     postedAt: r.posted_at, closesAt: r.closes_at instanceof Date ? r.closes_at : null,
     advertText: r.advert_text,
     employer: { id: r.organisation_id, slug: r.slug, name: r.display_name, website: r.website, logoUrl: r.logo_url, shortDescription: r.short_description, kind: r.kind },
-    badge: r.badge, sponsored, permitHistory: r.permit_history, lastCheckedAt: r.last_ok_at, rulesCheckedOn: RULES_CHECKED_ON,
+    badge: r.badge, sponsored, permitHistory: r.permit_history, lastCheckedAt: r.last_ok_at, rulesCheckedOn: (await getRules(db)).minimums.checkedOn,
   };
 }
 

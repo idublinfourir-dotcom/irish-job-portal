@@ -148,6 +148,27 @@
       "when": 1794300016000,
       "tag": "0020_candidate_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794300017000,
+      "tag": "0021_rules_versions",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794300018000,
+      "tag": "0022_companies",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794300019000,
+      "tag": "0023_staff_admin",
+      "breakpoints": true
     }
   ]
 }

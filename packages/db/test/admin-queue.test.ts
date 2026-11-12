@@ -3,7 +3,7 @@
 // Fake names, fake adverts and fake staff only. No network: the matcher is the staff member's code.
 import { readFileSync } from "node:fs";
 import type pg from "pg";
-import { cleanEmployerName } from "@portal/rules";
+import { CHAIN_RULES_V1, cleanEmployerName } from "@portal/rules";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { approve, claim, getItem, listQueue, QueueRefused, reject, release, type RulesData } from "../src/admin-queue";
 import { getJob, PAGE_SIZE } from "../src/search";
@@ -17,6 +17,7 @@ const RULES: RulesData = {
   chain: {
     deteNames: new Set((json("L2/dete-2026.json") as [string, number][]).map(([n]) => cleanEmployerName(n))),
     publicPayCandidates: new Map(Object.entries(json("L2/public_employers_candidates.json") as Record<string, { tier: 1 | 2 }>).map(([k, v]) => [k, v.tier])),
+    ...CHAIN_RULES_V1,
   },
   lists: json("occupation-lists.json") as RulesData["lists"],
 };
@@ -88,12 +89,12 @@ describe("listQueue and getItem", () => {
     await su("update organisation set sponsor_sort = 12, permit_history = 'has_history' where id = $1", [mine[0]!.org]);
 
     const seen: string[] = [];
-    let page = await listQueue(admin());
+    let page = await listQueue(admin(), staff);
     expect(page.items.length).toBe(PAGE_SIZE);
     for (;;) {
       seen.push(...page.items.map((x) => x.id));
       if (!page.next) break;
-      page = await listQueue(admin(), { after: page.next });
+      page = await listQueue(admin(), staff, { after: page.next });
     }
     expect(new Set(seen).size).toBe(seen.length);
     expect(seen).not.toContain(other);
@@ -101,24 +102,41 @@ describe("listQueue and getItem", () => {
     const want = mine.filter((_, i) => i !== 2).map((m) => m.item);
     expect(seen.filter((s) => want.includes(s))).toEqual(want);
 
-    const first = (await listQueue(admin())).items.find((x) => x.id === mine[0]!.item)!;
+    const first = (await listQueue(admin(), staff)).items.find((x) => x.id === mine[0]!.item)!;
     expect(first).toMatchObject({
       status: "open", claimedBy: null, jobId: mine[0]!.job, title: "Fixed-term Platform Engineer 0", employerName: "Acme Widgets", advertUrl: "https://jobs.example.test/a",
       occupationCode: "2134", permitHistory: "has_history", sponsorPermits: 12, stage: "7 contract unclear (admin queue)", reason: "title",
     });
-    const second = seen.includes(mine[1]!.item) && (await getItem(admin(), mine[1]!.item));
+    const second = seen.includes(mine[1]!.item) && (await getItem(admin(), staff, mine[1]!.item));
     expect(second).toMatchObject({ status: "claimed", claimedBy: staff, advertText: PAY, sponsorPermits: null, permitHistory: "not_linked" });
   });
 
   it("getItem is null for another queue's item, an unknown id and anything that is not an id", async () => {
     const other = (await su("insert into review_item(queue, organisation_id, reason) values ('account_review', $1, 'fake') returning id::text", [await F.org()])).rows[0].id;
-    for (const bad of [other, "999999999", "0", "-1", "1 or 1=1", "1e3", "99999999999999999999", "", "１２"]) expect(await getItem(admin(), bad)).toBeNull();
+    const staff = await reviewer();
+    for (const bad of [other, "999999999", "0", "-1", "1 or 1=1", "1e3", "99999999999999999999", "", "１２"]) expect(await getItem(admin(), staff, bad)).toBeNull();
+  });
+
+  it("refuses the list and the item to anyone but an active fetched_job_reviewer (#193, #234 D7): an administrator, an account reviewer, a disabled reviewer, no role, an unknown id", async () => {
+    const q = await queued();
+    const withRole = async (role: string) => { const i = await F.staff(); await su("insert into staff_role(staff_user_id, role, seeded_by_owner) values ($1, $2, true)", [i, role]); return i; };
+    const disabled = await reviewer();
+    await su("update staff_user set status = 'disabled' where id = $1", [disabled]);
+    const codes: [string, string][] = [
+      [await withRole("administrator"), "not_reviewer"], [await withRole("account_reviewer"), "not_reviewer"], [await F.staff(), "not_reviewer"],
+      [disabled, "not_active_staff"], ["no-such-staff-member", "not_active_staff"], ["", "not_active_staff"], ["x".repeat(201), "not_active_staff"],
+    ];
+    for (const [staff, want] of codes) {
+      expect(await refusal(listQueue(admin(), staff)), staff).toBe(want);
+      expect(await refusal(getItem(admin(), staff, q.item)), staff).toBe(want);
+    }
   });
 
   it("refuses a cursor it did not make", async () => {
     const forged = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
+    const staff = await reviewer();
     for (const bad of ["x", "!!!", "a".repeat(500), forged({ t: "now", i: "1" }), forged({ t: "2026-11-11 10:00:00+00", i: "1; drop table job" }), forged(null), forged([1])])
-      expect(await refusal(listQueue(admin(), { after: bad }))).toBe("bad_cursor");
+      expect(await refusal(listQueue(admin(), staff, { after: bad }))).toBe("bad_cursor");
   });
 });
 
@@ -324,11 +342,11 @@ describe("statement budget", () => {
       db: { query: wrap(pool), connect: async () => { const c = await pool.connect(); return Object.assign(Object.create(c), { query: wrap(c), release: () => c.release() }); } } as unknown as pg.Pool,
     };
   };
-  it("listQueue is one statement, claim four, approve and reject five each (begin, acting staff, lock, write, commit)", async () => {
+  it("listQueue is two statements (the role check and the page), claim four, approve and reject five each (begin, acting staff, lock, write, commit)", async () => {
     const c = await claimed();
     const m = counting(admin());
-    await listQueue(m.db);
-    expect(m.sql).toHaveLength(1);
+    await listQueue(m.db, c.staff);
+    expect(m.sql).toHaveLength(2);
     m.sql.length = 0;
     const q = await queued();
     await claim(m.db, c.staff, q.item);
@@ -362,7 +380,7 @@ describe("security", () => {
     await su("update review_item set claimed_at = now() - interval '48 hours' where id = $1", [stale.item]);
     const p = db.pool(role);
     const results = [
-      await refusal(listQueue(p)), await refusal(getItem(p, q.item)), await refusal(claim(p, c.staff, q.item)),
+      await refusal(listQueue(p, c.staff)), await refusal(getItem(p, c.staff, q.item)), await refusal(claim(p, c.staff, q.item)),
       await refusal(claim(p, c.staff, stale.item)), await refusal(release(p, c.staff, c.item)),
       await refusal(approve(p, c.staff, c.item, { occupationCode: "2134", contractConfirmed: true }, RULES)), await refusal(reject(p, c.staff, c.item, "duplicate")),
     ];

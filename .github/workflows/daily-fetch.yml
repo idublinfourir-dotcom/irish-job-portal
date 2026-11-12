@@ -80,3 +80,13 @@ jobs:
         run: |
           export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
           node packages/db/src/job-expiry-cli.ts
+      # The rules versions (#229, #234 D9): on the first day a new minimum is in force, live employer and agency jobs below it go "under review"
+      # and every active pay floor ends. Same admin login, given to this step only; it runs every day after the expiry step and does nothing
+      # on a day with no new minimum.
+      - name: Apply a new minimum
+        if: ${{ !cancelled() }}
+        env:
+          RULES_ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
+        run: |
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          node packages/db/src/rules-run-cli.ts

@@ -234,7 +234,7 @@ await blk("{ const old = (d) => daysAgo(d), ms = (d) => Date.now() - 864e5 * d; 
   await ins("postgres", "strike", { organisation_id: org, case_kind: "false_claim", job_id: strikeJob, reason_code: "false_sponsorship" });
   const big = await F.org(); await appr("big_company_entry", "organisation", big); await su("update organisation set is_big_company=true where id=$1", [big]);
   const bm = await F.member(big, await F.portal(), { role: "account_owner" });
-  const floorOld = await ins("postgres", "pay_floor", { organisation_id: big, role_family: "x", floor_eur: 50000, consent_text_id: await F.text("pay_floor"), signer_membership_id: bm, signer_name: "Floor Signer", valid_until: new Date(Date.now() + 1e10) });
+  const floorOld = await ins("postgres", "pay_floor", { organisation_id: big, role_family: "9999", floor_eur: 50000, consent_text_id: await F.text("pay_floor"), signer_membership_id: bm, signer_name: "Floor Signer", valid_until: new Date(Date.now() + 1e10) });
   await su("update pay_floor set status='withdrawn' where id=$1", [floorOld]); await su("update pay_floor set ended_at=$2 where id=$1", [floorOld, old(400)]);
   // strikes and reports
   const evOrg = await F.org(), evJob = await live({ organisation_id: evOrg });

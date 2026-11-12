@@ -223,6 +223,7 @@ export const job = pgTable("job", {
 	index("job_company_page_idx").using("btree", sql`organisation_id`, sql`((NOT quota_full))`, sql`posted_at`, sql`id`).where(sql`(status = 'live'::text)`),
 	index("job_draft_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'draft'::text)`),
 	index("job_hidden_report_idx").using("btree", table.hiddenReportId.asc().nullsLast().op("int8_ops")),
+	index("job_manual_idx").using("btree", table.id.desc().nullsFirst().op("int8_ops")).where(sql`(source = 'admin_manual'::text)`),
 	index("job_life_idx").using("btree", table.closesAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((status = ANY (ARRAY['live'::text, 'under_review'::text])) AND (closes_at < 'infinity'::timestamp with time zone))`),
 	index("job_live_newest").using("btree", sql`((NOT quota_full))`, sql`posted_at`, sql`id`, sql`quota_full`, sql`closes_at`).where(sql`(status = 'live'::text)`),
 	index("job_live_sponsor").using("btree", sql`((NOT quota_full))`, sql`sponsor_sort`, sql`posted_at`, sql`id`, sql`quota_full`, sql`closes_at`).where(sql`(status = 'live'::text)`),
@@ -2213,3 +2214,87 @@ export const portalNotification = pgView("portal_notification", {	// You can use
 	readAt: timestamp("read_at", { withTimezone: true, mode: 'string' }),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
 }).with({"securityBarrier":true,"checkOption":"cascaded"}).as(sql`SELECT id, candidate_user_id, portal_user_id, organisation_id, category, template_key, params, dedupe_key, read_at, created_at FROM notification WHERE portal_user_id IS NOT NULL`);
+
+// 0021, added by hand from the db:pull output to keep the diff small (a full pull reorders the file); the next full pull places it.
+export const rulesVersion = pgTable("rules_version", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "rules_version_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	kind: text().notNull(),
+	data: jsonb().notNull(),
+	effectiveFrom: date("effective_from").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	approvalRequestId: bigint("approval_request_id", { mode: "number" }),
+	proposedByStaffUserId: text("proposed_by_staff_user_id"),
+	seededByOwner: boolean("seeded_by_owner").default(false).notNull(),
+	runAt: timestamp("run_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("rules_version_in_force_idx").using("btree", table.kind.asc().nullsLast().op("date_ops"), table.effectiveFrom.desc().nullsFirst().op("int8_ops"), table.id.desc().nullsFirst().op("text_ops")),
+	uniqueIndex("rules_version_one_seed").using("btree", table.kind.asc().nullsLast().op("text_ops")).where(sql`seeded_by_owner`),
+	index("rules_version_proposed_idx").using("btree", table.proposedByStaffUserId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.approvalRequestId],
+			foreignColumns: [approvalRequest.id],
+			name: "rules_version_approval_request_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.proposedByStaffUserId],
+			foreignColumns: [staffUser.id],
+			name: "rules_version_proposed_by_staff_user_id_fkey"
+		}),
+	unique("rules_version_approval_request_id_key").on(table.approvalRequestId),
+	check("rules_version_check", sql`seeded_by_owner OR (approval_request_id IS NOT NULL)`),
+	check("rules_version_data_check", sql`jsonb_typeof(data) = ANY (ARRAY['object'::text, 'array'::text])`),
+	check("rules_version_kind_check", sql`kind = ANY (ARRAY['minimums'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'public_pay_employers'::text, 'big_company_names'::text])`),
+]);
+
+export const ownerReassign = pgTable("owner_reassign", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "owner_reassign_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	organisationId: bigint("organisation_id", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	newOwnerMembershipId: bigint("new_owner_membership_id", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	oldOwnerMembershipId: bigint("old_owner_membership_id", { mode: "number" }).notNull(),
+	domainChecked: boolean("domain_checked").notNull(),
+	croChecked: boolean("cro_checked").notNull(),
+	requestedByStaffUserId: text("requested_by_staff_user_id").notNull(),
+	requestedAt: timestamp("requested_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	completesAfter: timestamp("completes_after", { withTimezone: true, mode: 'string' }).notNull(),
+	status: text().default('open').notNull(),
+	decidedByStaffUserId: text("decided_by_staff_user_id"),
+	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	uniqueIndex("owner_reassign_one_open").using("btree", table.organisationId.asc().nullsLast().op("int8_ops")).where(sql`(status = 'open'::text)`),
+	foreignKey({
+			columns: [table.decidedByStaffUserId],
+			foreignColumns: [staffUser.id],
+			name: "owner_reassign_decided_by_staff_user_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.newOwnerMembershipId],
+			foreignColumns: [membership.id],
+			name: "owner_reassign_new_owner_membership_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.oldOwnerMembershipId],
+			foreignColumns: [membership.id],
+			name: "owner_reassign_old_owner_membership_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.organisationId],
+			foreignColumns: [organisation.id],
+			name: "owner_reassign_organisation_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.requestedByStaffUserId],
+			foreignColumns: [staffUser.id],
+			name: "owner_reassign_requested_by_staff_user_id_fkey"
+		}),
+	check("owner_reassign_check", sql`domain_checked AND cro_checked`),
+	check("owner_reassign_check1", sql`new_owner_membership_id <> old_owner_membership_id`),
+	check("owner_reassign_check2", sql`completes_after >= (requested_at + '7 days'::interval)`),
+	check("owner_reassign_check3", sql`(status = 'open'::text) = ((decided_by_staff_user_id IS NULL) AND (decided_at IS NULL))`),
+	check("owner_reassign_status_check", sql`status = ANY (ARRAY['open'::text, 'done'::text, 'cancelled'::text])`),
+]);

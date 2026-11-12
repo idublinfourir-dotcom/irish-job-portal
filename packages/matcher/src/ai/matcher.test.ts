@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assess } from "@portal/rules";
+import { assess, CHAIN_RULES_V1 } from "@portal/rules";
 import { createAiMatcher } from "./matcher";
 import { cut } from "./prompt";
 import { ADVERT, answer, ENTRIES, fakeClient } from "./testkit";
@@ -16,7 +16,7 @@ const QUEUE = { occupationCode: "none", onCriticalSkillsList: "unknown", confide
 describe("in the real chain", () => {
   const stage = async (reply: Parameters<typeof fakeClient>[0]) => {
     const advert = { source: "greenhouse", employer: "Fake Org", location: "Dublin", ...ADVERT };
-    return (await assess(advert, { deteNames: new Set(), publicPayCandidates: new Map(), matcher: make(reply).matcher })).stage;
+    return (await assess(advert, { deteNames: new Set(), publicPayCandidates: new Map(), ...CHAIN_RULES_V1, matcher: make(reply).matcher })).stage;
   };
   it("a bad answer sends the advert to the admin queue, it is not rejected", async () => {
     expect(await stage("oops")).toBe("5 unsure occupation (admin queue)");

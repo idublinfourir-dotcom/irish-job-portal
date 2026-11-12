@@ -2,12 +2,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { assess, type AdvertInput, type ChainData, type ChainMatcher } from "./assess";
 import { cleanEmployerName } from "../employers";
+import { CHAIN_RULES_V1 } from "../snapshot";
 
 type Match = Awaited<ReturnType<ChainMatcher>>;
 const found = (occupationCode: string, onCriticalSkillsList: Match["onCriticalSkillsList"], confidence: Match["confidence"]): ChainMatcher => async () => ({ occupationCode, onCriticalSkillsList, confidence });
 const GOOD = found("2134", "yes", "high");
 
-const data = (o: Partial<ChainData> = {}): ChainData => ({ deteNames: new Set(), publicPayCandidates: new Map(), matcher: GOOD, ...o });
+const data = (o: Partial<ChainData> = {}): ChainData => ({ deteNames: new Set(), publicPayCandidates: new Map(), ...CHAIN_RULES_V1, matcher: GOOD, ...o });
 const advert = (o: Partial<AdvertInput> = {}): AdvertInput => ({
   source: "greenhouse",
   employer: "Acme Widgets",
