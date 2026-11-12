@@ -1,0 +1,63 @@
+import { describe, expect, it } from "vitest";
+import { BadContentInput, CONTENT_QUERIES, decodeFeedCursor, encodeFeedCursor, getGuide, listUpdates, UPDATES_PAGE, validSlug } from "./content";
+
+type Call = { text: string; values: unknown[] | undefined };
+const fake = (rows: unknown[] = []) => {
+  const calls: Call[] = [];
+  return { calls, query: (async (text: string, values?: unknown[]) => { calls.push({ text, values }); return { rows }; }) as never };
+};
+
+describe("validSlug", () => {
+  it.each(["a", "guide-1", "0", "a".repeat(100)])("accepts %s", (s) => expect(validSlug(s)).toBe(true));
+  it.each(["", "-a", "A", "a b", "a_b", "a/b", "a\n", "é", "a".repeat(101), "'; drop table content_page; --", 5, null, undefined, ["a"]])("refuses %j", (s) => expect(validSlug(s)).toBe(false));
+});
+
+describe("getContent", () => {
+  it("never runs a statement for a bad slug", async () => {
+    const db = fake();
+    expect(await getGuide(db, "Bad Slug")).toBeNull();
+    expect(db.calls).toHaveLength(0);
+  });
+  it("reads the view, not the table, with the kind and slug as parameters", async () => {
+    const db = fake();
+    await getGuide(db, "work-permits");
+    expect(db.calls[0]).toEqual({ text: CONTENT_QUERIES.one, values: ["guide", "work-permits"] });
+    for (const q of Object.values(CONTENT_QUERIES)) expect(q).toMatch(/from published_content_page/);
+    for (const q of Object.values(CONTENT_QUERIES)) expect(q).not.toMatch(/from content_page/);
+  });
+});
+
+describe("feed cursor", () => {
+  const t = "2027-03-01 00:00:08.123456+00";
+  it("round trips", () => expect(decodeFeedCursor(encodeFeedCursor(t, "31"))).toEqual({ t, i: "31" }));
+  it.each([
+    ["not a string", 5], ["empty", ""], ["not base64url", "a b"], ["too long", "a".repeat(201)], ["not json", "AAAA"],
+    ["no fields", Buffer.from("{}").toString("base64url")], ["null", Buffer.from("null").toString("base64url")], ["array", Buffer.from("[]").toString("base64url")],
+    ["time not a time", encodeFeedCursor("now", "1")], ["time with SQL", encodeFeedCursor("2027-03-01 00:00:08+00'); drop table job; --", "1")],
+    ["month 13", encodeFeedCursor("2027-13-01 00:00:08+00", "1")], ["id with SQL", encodeFeedCursor(t, "1; drop")], ["id zero", encodeFeedCursor(t, "0")],
+    ["id over bigint", encodeFeedCursor(t, "9223372036854775808")], ["id a number", Buffer.from(JSON.stringify({ t, i: 1 })).toString("base64url")],
+  ])("refuses %s", (_n, token) => expect(() => decodeFeedCursor(token)).toThrow(BadContentInput));
+});
+
+describe("listUpdates", () => {
+  const row = (n: number) => ({ id: String(n), kind: "update", slug: `s${n}`, title: `t${n}`, body: "b", source_url: null, checked_on: null, published_at: new Date(), updated_at: new Date(), published_text: "2027-03-01 00:00:08.5+00" });
+  it("gives a next cursor only when there is a further page, built from the last row shown", async () => {
+    const full = fake(Array.from({ length: UPDATES_PAGE + 1 }, (_, i) => row(100 - i)));
+    const r = await listUpdates(full);
+    expect(r.updates).toHaveLength(UPDATES_PAGE);
+    expect(decodeFeedCursor(r.next!)).toEqual({ t: "2027-03-01 00:00:08.5+00", i: String(100 - (UPDATES_PAGE - 1)) });
+    expect((await listUpdates(fake([row(1)]))).next).toBeNull();
+  });
+  it("runs no statement for a bad cursor, and binds the cursor for a good one", async () => {
+    const bad = fake();
+    await expect(listUpdates(bad, "junk!")).rejects.toThrow(BadContentInput);
+    expect(bad.calls).toHaveLength(0);
+    const good = fake();
+    await listUpdates(good, encodeFeedCursor("2027-03-01 00:00:08+00", "7"));
+    expect(good.calls[0]).toEqual({ text: CONTENT_QUERIES.feedAfter, values: ["2027-03-01 00:00:08+00", "7"] });
+  });
+  it("orders by the table's own id, not the text output column", () => {
+    expect(CONTENT_QUERIES.feedFirst).toContain("published_content_page.id desc");
+    expect(CONTENT_QUERIES.feedAfter).toContain("published_content_page.id desc");
+  });
+});

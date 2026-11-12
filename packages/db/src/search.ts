@@ -2,6 +2,7 @@
 // Every statement is a constant with parameters, every column is named (never `select job.*`: it would fetch search_vector and columns the
 // candidate role cannot read), and the list pages on the sort key plus id, never OFFSET. No advert text is read for a list.
 import type pg from "pg";
+import { RULES_CHECKED_ON as RULES_DATE } from "@portal/rules";
 import { permitsLast5Years } from "./dete";
 
 type Db = Pick<pg.Pool, "query">;
@@ -10,21 +11,20 @@ export const SORTS = ["sponsor", "newest", "salary"] as const;
 export type Sort = (typeof SORTS)[number];
 export const PAGE_SIZE = 20;
 export const COUNT_CAP = 200; // #125: the count stops here ("200+")
-// The date on the standing line "Rules last checked on [date]" (#94). ponytail: a constant until the rules tables (design section 11) hold
-// an "effective from" date; then this is the newest of those dates.
-export const RULES_CHECKED_ON = "2026-11-11";
+// The date on the standing line "Rules last checked on [date]" (#94): the one constant in @portal/rules (thresholds.ts), changed with the figures.
+export const RULES_CHECKED_ON = RULES_DATE;
 
 /** A bad cursor, sort or id from a URL. A page answers 400 or shows the first page. */
 export class BadSearchInput extends Error {}
 
 // The sort keys that follow (not quota_full) and come before id. Full-quota jobs sort last on every sort (#85).
 // sponsor (#154, #157): permits in the last 5 years, then newest. -1 means no confirmed DETE link, so those come after the rest.
-const KEYS: Record<Sort, { col: string; kind: "int" | "time" }[]> = {
+export const KEYS: Record<Sort, { col: string; kind: "int" | "time" }[]> = {
   sponsor: [{ col: "sponsor_sort", kind: "int" }, { col: "posted_at", kind: "time" }],
   newest: [{ col: "posted_at", kind: "time" }],
   salary: [{ col: "salary_sort", kind: "int" }],
 };
-const CAST = { int: "int", time: "timestamptz" } as const;
+export const CAST = { int: "int", time: "timestamptz" } as const;
 
 // ===== cursors: an opaque token for the row a page starts or ends at =====
 export type Cursor = { sort: Sort; quotaFull: boolean; keys: string[]; id: string };
@@ -62,11 +62,11 @@ export function decodeCursor(sort: Sort, token: unknown): Cursor {
 
 // ===== the list =====
 // What a card shows, plus the key texts the cursor needs. posted_text is the time with its microseconds.
-const LIST =
+export const LIST =
   "job.id, job.title, job.employer_name, job.county, job.salary_low, job.salary_high, job.pay_grade, job.pass_route, job.badge, job.quota_full, " +
   "job.posted_at, job.posted_at::text as posted_text, job.sponsor_sort, job.salary_sort, s.last_ok_at";
-const SOURCE = "left join job_source s on s.id = job.job_source_id"; // "last checked" is the source's last good fetch
-const LIVE = "job.status = 'live' and job.closes_at > now()"; // the one visibility rule; 'infinity' passes
+export const SOURCE = "left join job_source s on s.id = job.job_source_id"; // "last checked" is the source's last good fetch
+export const LIVE = "job.status = 'live' and job.closes_at > now()"; // the one visibility rule; 'infinity' passes
 
 type Query = { text: string; values: unknown[] };
 
@@ -100,7 +100,7 @@ export function listQuery(sort: Sort, cursor?: Cursor, dir: "after" | "before" =
   };
 }
 
-type ListRow = {
+export type ListRow = {
   id: string; title: string; employer_name: string; county: string | null; salary_low: number | null; salary_high: number | null;
   pay_grade: string | null; pass_route: string; badge: string | null; quota_full: boolean; posted_at: Date; posted_text: string;
   sponsor_sort: number; salary_sort: number; last_ok_at: Date | null; capped?: number;
@@ -133,13 +133,13 @@ export function salaryLine(low: number | null, high: number | null, payGrade: st
   return payGrade || null;
 }
 
-const card = (r: ListRow): JobCard => ({
+export const card = (r: ListRow): JobCard => ({
   id: r.id, title: r.title, employerName: r.employer_name, county: r.county, salaryLow: r.salary_low, salaryHigh: r.salary_high,
   salaryLine: salaryLine(r.salary_low, r.salary_high, r.pay_grade), payGrade: r.pay_grade, passRoute: r.pass_route, badge: r.badge,
   quotaFull: r.quota_full, postedAt: r.posted_at, sponsorPermits: r.sponsor_sort > 0 ? r.sponsor_sort : null, lastCheckedAt: r.last_ok_at,
 });
 
-function cursorOf(sort: Sort, r: ListRow): string {
+export function cursorOf(sort: Sort, r: ListRow): string {
   const value = { sponsor_sort: String(r.sponsor_sort), salary_sort: String(r.salary_sort), posted_at: r.posted_text } as Record<string, string>;
   return encodeCursor({ sort, quotaFull: r.quota_full, keys: KEYS[sort].map((k) => value[k.col]!), id: r.id });
 }

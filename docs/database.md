@@ -191,6 +191,7 @@ All are `SECURITY DEFINER`, owned by `portal_owner`, in schema `private`, with e
   - `team_set_role(user, membership_id, role, is_signer)`: the owner sets another active member's role (viewer, poster or recruiter) and switch.
   - `team_transfer(user, membership_id)`: the owner hands ownership to another active member who is not blocked or deleted; the old owner becomes a recruiter and keeps its signer switch.
   - Helpers with no grant: `team_owner` (the caller's active owner membership, after the lock), `team_room` (the limit), `team_audit`, `team_open`.
+- Migration 0018 (occupation pages, #223) adds no function. It adds the content kind `occupation` (slug = the four-digit occupation code, check `content_page_occupation_slug_check`; published needs a source and date like a guide) and the index `job_live_occupation` for the live jobs of one occupation. The reads that use them are plain constant statements in `packages/db/src/content.ts` (updates feed, guide, help, over the view `published_content_page`) and `packages/db/src/public-pages.ts` (company page by slug, occupation page by code, run as `app_candidate`).
 - `move_application(application_id, status, membership_id)` (Launch B): moves an application and its tracker row together. `app_portal`, from the Launch B migration only.
 - `search_visible_candidates(organisation_id, filters, cursor)` (Launch B): the portal's candidate search. `app_portal`, from the Launch B migration only.
 
