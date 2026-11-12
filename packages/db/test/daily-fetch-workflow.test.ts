@@ -29,10 +29,16 @@ it("keeps read-only permissions, the one-at-a-time group, and adds no secret", (
   expect(yml).toMatch(/group: daily-fetch\n\s+cancel-in-progress: false/);
   expect([...new Set([...yml.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]))].sort()).toEqual(["ADMIN_DATABASE_URL", "FETCHER_DATABASE_URL", "FETCHER_MODEL_KEY"]);
 });
-it("closes expired employer jobs last, every day, with the admin login only in that step (0019)", () => {
+it("closes expired employer jobs every day, with the admin login only in that step (0019)", () => {
   const s = step("Close expired employer jobs");
   expect(s).toMatch(/if: \$\{\{ !cancelled\(\) \}\}/);
   expect(s).toMatch(/EXPIRY_ADMIN_DATABASE_URL: \$\{\{ secrets\.ADMIN_DATABASE_URL \}\}/);
   expect(s).toMatch(/node packages\/db\/src\/job-expiry-cli\.ts/);
-  expect(yml.trimEnd().endsWith("node packages/db/src/job-expiry-cli.ts")).toBe(true);
+});
+it("applies a new minimum last, after the expiry step, every day, with the admin login only in that step (0021)", () => {
+  const s = step("Apply a new minimum");
+  expect(s).toMatch(/if: \$\{\{ !cancelled\(\) \}\}/);
+  expect(s).toMatch(/RULES_ADMIN_DATABASE_URL: \$\{\{ secrets\.ADMIN_DATABASE_URL \}\}/);
+  expect(yml.indexOf("name: Apply a new minimum")).toBeGreaterThan(yml.indexOf("name: Close expired employer jobs"));
+  expect(yml.trimEnd().endsWith("node packages/db/src/rules-run-cli.ts")).toBe(true);
 });

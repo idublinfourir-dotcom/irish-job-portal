@@ -2213,3 +2213,36 @@ export const portalNotification = pgView("portal_notification", {	// You can use
 	readAt: timestamp("read_at", { withTimezone: true, mode: 'string' }),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
 }).with({"securityBarrier":true,"checkOption":"cascaded"}).as(sql`SELECT id, candidate_user_id, portal_user_id, organisation_id, category, template_key, params, dedupe_key, read_at, created_at FROM notification WHERE portal_user_id IS NOT NULL`);
+
+// 0021, added by hand from the db:pull output to keep the diff small (a full pull reorders the file); the next full pull places it.
+export const rulesVersion = pgTable("rules_version", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "rules_version_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	kind: text().notNull(),
+	data: jsonb().notNull(),
+	effectiveFrom: date("effective_from").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	approvalRequestId: bigint("approval_request_id", { mode: "number" }),
+	proposedByStaffUserId: text("proposed_by_staff_user_id"),
+	seededByOwner: boolean("seeded_by_owner").default(false).notNull(),
+	runAt: timestamp("run_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("rules_version_in_force_idx").using("btree", table.kind.asc().nullsLast().op("date_ops"), table.effectiveFrom.desc().nullsFirst().op("int8_ops"), table.id.desc().nullsFirst().op("text_ops")),
+	uniqueIndex("rules_version_one_seed").using("btree", table.kind.asc().nullsLast().op("text_ops")).where(sql`seeded_by_owner`),
+	index("rules_version_proposed_idx").using("btree", table.proposedByStaffUserId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.approvalRequestId],
+			foreignColumns: [approvalRequest.id],
+			name: "rules_version_approval_request_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.proposedByStaffUserId],
+			foreignColumns: [staffUser.id],
+			name: "rules_version_proposed_by_staff_user_id_fkey"
+		}),
+	unique("rules_version_approval_request_id_key").on(table.approvalRequestId),
+	check("rules_version_check", sql`seeded_by_owner OR (approval_request_id IS NOT NULL)`),
+	check("rules_version_data_check", sql`jsonb_typeof(data) = ANY (ARRAY['object'::text, 'array'::text])`),
+	check("rules_version_kind_check", sql`kind = ANY (ARRAY['minimums'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'public_pay_employers'::text, 'big_company_names'::text])`),
+]);

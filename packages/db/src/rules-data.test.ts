@@ -1,0 +1,114 @@
+// No database: the rules data checks, the change shown to staff, the seed's values against the files and constants, and the daily run's pay rule.
+// The end-to-end runs are packages/db/test/rules-versions.test.ts.
+import { readFileSync } from "node:fs";
+import * as R from "@portal/rules";
+import { describe, expect, it } from "vitest";
+import { diffVersion } from "./rules-admin";
+import { BadRulesData, cleanData, type BigName, type Minimums } from "./rules-data";
+import { belowMinimum, main as runMain } from "./rules-run-cli.ts";
+import { brandList, main as seedMain, seedData } from "./rules-seed-cli.ts";
+
+const M: Minimums = { criticalSkills: 40904, graduate: 36848, graduateMonths: 12, nonList: 68911, nonListRoute: true, minContractMonths: 24, standardWeekHours: 39, checkedOn: "2026-11-12" };
+const bad = (kind: Parameters<typeof cleanData>[0], v: unknown) => { try { cleanData(kind, v); return "ok"; } catch (e) { return e instanceof BadRulesData ? "bad" : "other"; } };
+const big = (name: string, o: Partial<BigName> = {}): BigName => ({ name, test: "brand", link: null, readOn: null, reviewOn: null, ...o });
+
+describe("the seed gives exactly today's values", () => {
+  const s = seedData();
+  it("the minimums are the constants", () => {
+    expect(s.minimums).toEqual({ criticalSkills: R.CRITICAL_SKILLS_MINIMUM, graduate: R.GRADUATE_MINIMUM, graduateMonths: R.GRADUATE_MONTHS, nonList: R.NON_LIST_MINIMUM,
+      nonListRoute: R.NON_LIST_ROUTE, minContractMonths: R.MIN_CONTRACT_MONTHS, standardWeekHours: R.STANDARD_WEEK_HOURS, checkedOn: R.RULES_CHECKED_ON });
+  });
+  it("the two occupation lists, put back together, are the file; the public pay employers are the file", () => {
+    const file = JSON.parse(readFileSync(new URL("../../fetcher/data/occupation-lists.json", import.meta.url), "utf8"));
+    expect([...(s.critical_skills_list as unknown[]), ...(s.ineligible_list as unknown[])]).toEqual(file);
+    expect((s.critical_skills_list as unknown[]).length).toBe(60);
+    expect((s.ineligible_list as unknown[]).length).toBe(187);
+    expect(s.public_pay_employers).toEqual(JSON.parse(readFileSync(new URL("../../fetcher/data/L2/public_employers_candidates.json", import.meta.url), "utf8")));
+  });
+  it("the big-company names are BIG_COMPANY_BRANDS then BIG_COMPANY_LIST_150, each with its test", () => {
+    const names = s.big_company_names as BigName[];
+    expect(names.map((e) => e.name)).toEqual([...R.BIG_COMPANY_BRANDS, ...R.BIG_COMPANY_LIST_150]);
+    expect(names.filter((e) => e.test === "brand").length).toBe(42);
+    expect(names.filter((e) => e.test === "250_staff").map((e) => e.name).sort()).toEqual(["chemist warehouse", "mccabes pharmacy", "mccauley"]);
+    expect(names.every((e) => e.link === null && e.readOn === null && e.reviewOn === null)).toBe(true);
+    for (const e of names) expect(R.cleanEmployerName(e.name), e.name).toBe(e.name);
+  });
+  it("brandList refuses a changed file shape rather than guessing", () => {
+    expect(() => brandList("", "BIG_COMPANY_BRANDS")).toThrow(/not found/);
+    expect(() => brandList("export const X: readonly string[] = [];", "X")).toThrow(/not a list/);
+    expect(brandList('export const X: readonly string[] = [\n  "a", "b",\n];', "X")).toEqual(["a", "b"]);
+  });
+});
+
+describe("cleanData", () => {
+  it("takes good data of each kind and drops nothing", () => {
+    expect(cleanData("minimums", M)).toEqual(M);
+    expect(cleanData("public_pay_employers", { "hse": { tier: 1 }, "x y": { tier: 2, note: "n" } })).toEqual({ "hse": { tier: 1 }, "x y": { tier: 2, note: "n" } });
+    expect(cleanData("big_company_names", [big("a b", { link: "https://example.test/x", readOn: "2026-11-01", reviewOn: "2027-11-01" })])).toHaveLength(1);
+  });
+  it("refuses a missing, zero, negative, fractional or text minimum and unknown fields", () => {
+    for (const k of Object.keys(M)) { const m: Record<string, unknown> = { ...M }; delete m[k]; expect(bad("minimums", m), k).toBe("bad"); }
+    for (const v of [0, -1, 1.5, "40904", null, 2_000_000]) expect(bad("minimums", { ...M, criticalSkills: v }), String(v)).toBe("bad");
+    expect(bad("minimums", { ...M, extra: 1 })).toBe("bad");
+    expect(bad("minimums", { ...M, nonListRoute: "yes" })).toBe("bad");
+    for (const d of ["2026-02-30", "26-11-12", "2026-11-12T00:00", ""]) expect(bad("minimums", { ...M, checkedOn: d }), d).toBe("bad");
+    for (const v of [null, [], "x", 1]) expect(bad("minimums", v)).toBe("bad");
+  });
+  it("refuses an empty list, a duplicate, a wrong list name, a bad code and control or format characters", () => {
+    const e = { id: "cs-1122", code: "1122", title: "Site Manager", list: "critical-skills" };
+    expect(bad("critical_skills_list", [e])).toBe("ok");
+    for (const v of [[], {}, null, [e, e], [{ ...e, list: "ineligible" }], [{ ...e, code: "112" }], [{ ...e, code: "11a2" }], [{ ...e, title: "" }],
+      [{ ...e, title: "a‮b" }], [{ ...e, title: "a\u0000b" }], [{ ...e, extra: 1 }], [{ ...e, id: "Bad Id" }]]) expect(bad("critical_skills_list", v), JSON.stringify(v)).toBe("bad");
+    expect(bad("ineligible_list", [e])).toBe("bad");
+    expect(bad("public_pay_employers", {})).toBe("bad");
+    for (const v of [{ HSE: { tier: 1 } }, { " hse": { tier: 1 } }, { hse: { tier: 3 } }, { hse: { tier: 1, x: 1 } }, { hse: { tier: 1, note: "a​b" } }]) expect(bad("public_pay_employers", v), JSON.stringify(v)).toBe("bad");
+  });
+  it("big-company names must be cleaned, with a known test, an https link and real dates", () => {
+    for (const v of [[big("Google")], [big("a  b")], [big(" a")], [big("a-b")], [big("a", { test: "other" as never })], [big("a", { link: "http://x.test" })],
+      [big("a", { link: "javascript:alert(1)" })], [big("a", { readOn: "2026-13-01" })], [big("a"), big("a")], []]) expect(bad("big_company_names", v), JSON.stringify(v)).toBe("bad");
+  });
+});
+
+describe("diffVersion", () => {
+  it("shows entries added, removed and changed, whatever the key order", () => {
+    const d = diffVersion("big_company_names", [big("a"), big("b")], [big("b", { test: "250_staff" }), big("c")]);
+    expect(Object.keys(d.added)).toEqual(["c"]);
+    expect(Object.keys(d.removed)).toEqual(["a"]);
+    expect(d.changed.b).toEqual({ before: big("b"), after: big("b", { test: "250_staff" }) });
+    expect(diffVersion("minimums", M, { ...M, criticalSkills: 42000 }).changed).toEqual({ criticalSkills: { before: 40904, after: 42000 } });
+    expect(diffVersion("public_pay_employers", { a: { tier: 1, note: "n" } }, { a: { note: "n", tier: 1 } })).toEqual({ added: {}, removed: {}, changed: {} });
+    expect(Object.keys(diffVersion("minimums", null, M).added).length).toBe(8);
+  });
+});
+
+describe("the daily run's pay rule (as the posting check)", () => {
+  const cs = new Set(["2136"]);
+  const job = (o: object) => ({ id: "1", occupation_code: "2136", salary_low: 40000, salary_high: null, health_insurance_eur: null, weekly_hours: 39, ...o });
+  it("counts the top of the range plus health insurance, against the minimum for the hours, with >=", () => {
+    expect(belowMinimum(job({ salary_low: 40904 }), M, cs)).toBe(false);
+    expect(belowMinimum(job({ salary_low: 40903 }), M, cs)).toBe(true);
+    expect(belowMinimum(job({ salary_low: 30000, salary_high: 41000 }), M, cs)).toBe(false);
+    expect(belowMinimum(job({ salary_low: 40000, health_insurance_eur: 904 }), M, cs)).toBe(false);
+    expect(belowMinimum(job({ salary_low: 40904, weekly_hours: 40 }), M, cs)).toBe(true); // 40 hours need 41,953.60
+    expect(belowMinimum(job({ salary_low: 41954, weekly_hours: 40 }), M, cs)).toBe(false);
+    expect(belowMinimum(job({ salary_low: 40904, weekly_hours: null }), M, cs)).toBe(false);
+    expect(belowMinimum(job({ salary_low: null }), M, cs)).toBe(true);
+  });
+  it("a role not on the Critical Skills list needs the non-list minimum, and fails when that route is closed", () => {
+    expect(belowMinimum(job({ occupation_code: "9999", salary_low: 68911 }), M, cs)).toBe(false);
+    expect(belowMinimum(job({ occupation_code: "9999", salary_low: 68910 }), M, cs)).toBe(true);
+    expect(belowMinimum(job({ occupation_code: "9999", salary_low: 90000 }), { ...M, nonListRoute: false }, cs)).toBe(true);
+  });
+});
+
+describe("the two commands' arguments", () => {
+  it("refuse arguments and a missing login, without connecting", async () => {
+    const lines: string[] = [];
+    expect(await seedMain(["x"], {}, (l) => lines.push(l))).toBe(2);
+    expect(await seedMain([], {}, (l) => lines.push(l))).toBe(2);
+    expect(await runMain(["x"], {}, (l) => lines.push(l))).toBe(2);
+    expect(await runMain([], {}, (l) => lines.push(l))).toBe(2);
+    expect(lines).toEqual(["usage: rules-seed-cli.ts (no arguments)", "DATABASE_URL_MIGRATE is not set (the owner's login, as for migrations)",
+      "usage: rules-run-cli.ts (no arguments)", "RULES_ADMIN_DATABASE_URL is not set (the app_admin login)"]);
+  });
+});

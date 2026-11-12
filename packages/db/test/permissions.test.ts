@@ -174,7 +174,14 @@ const must = [
   ["app_admin", "insert an occupation text block (0018)", "insert into content_page(kind,slug,title,body) values('occupation','9001','t','b')"],
   ["app_admin", "run erase_candidate, erase_portal_user and run_retention", "select has_function_privilege('private.erase_candidate(text,boolean)','execute') and has_function_privilege('private.erase_portal_user(text,boolean)','execute') and has_function_privilege('private.run_retention(integer)','execute')"],
   ["app_admin", "delete a rejected queued job and its text", "delete from job where false"],
+  // 0021: every app role reads the rules versions; app_admin also marks one as run
+  ...["app_candidate", "app_portal", "app_fetcher", "app_admin"].map((r) => [r, "read the rules versions (0021)", "select kind, data, effective_from from rules_version limit 1"]),
+  ["app_admin", "mark a rules version as run (0021)", "update rules_version set run_at = run_at where false"],
 ];
+// 0021: nobody but app_admin writes a rules version, nobody changes its data or deletes it, and app_admin cannot mark one as the owner's seed
+for (const r of ["app_candidate", "app_portal", "app_fetcher"]) denied(r, "write a rules version (0021)", "insert into rules_version(kind,data,effective_from) values('minimums','{}',current_date)");
+for (const r of roles) { denied(r, "change a rules version's data (0021)", "update rules_version set data='[]'"); denied(r, "delete a rules version (0021)", "delete from rules_version"); }
+denied("app_admin", "seed a rules version (0021)", "insert into rules_version(kind,data,effective_from,seeded_by_owner) values('minimums','{}',current_date,true)");
 for (const [r, n, sql, a] of must) allowed(r, n, sql, a);
 // fixture change (0004, M2): a setting value change needs an acting staff id and a confirmed setting request for that value
 it("must: app_admin: change a retention setting", async () => {
