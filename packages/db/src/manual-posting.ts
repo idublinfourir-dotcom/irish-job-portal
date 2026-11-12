@@ -2,14 +2,13 @@
 // 'admin_manual'). It is listed only if it passes the checks an employer post runs (the occupation list, the contract, the rules chain, then the pay against the
 // minimum for the stated hours, compared with >=), as "Critical Skills eligible"; otherwise it stays a draft and the reason is kept in the audit row. Never
 // "Sponsor confirmed" (step 14 brings the employer's written confirmation and a second person). Staff may close their own manual posts.
-// This file does not import from apps/portal: `manualVerdict` is the small check of apps/portal/lib/jobs.ts (`rulesFor`), written again on the same files that
-// file loads today; the combine points it at the shared rules. Every write sets the acting staff id for the transaction and checks the role in the database.
+// This file does not import from apps/portal: `manualVerdict` is the small check of apps/portal/lib/jobs.ts (`rulesFor`), written again on the same
+// rules in force (#229, `getRules`), with the same pay rule (#107, #150, #225). Every write sets the acting staff id for the transaction and checks the role in the database.
 import type pg from "pg";
-import { assess, CRITICAL_SKILLS_MINIMUM, MIN_CONTRACT_MONTHS, minimumForHours, type PublicPayCandidates } from "@portal/rules";
-import lists from "../../fetcher/data/occupation-lists.json";
-import publicPay from "../../fetcher/data/L2/public_employers_candidates.json";
+import { assess, chainRules, minimumForHours, type RulesSnapshot } from "@portal/rules";
 import { QueueRefused, listAnswer } from "./admin-queue";
 import { companyRefusal } from "./merges";
+import { getRules } from "./rules-data";
 import { PAGE_SIZE, validId } from "./search";
 
 type Db = Pick<pg.Pool, "query" | "connect">;
@@ -23,8 +22,6 @@ export const COUNTIES = [
 ] as const;
 const MAX_PAY = 1_000_000;
 
-const candidates: PublicPayCandidates = new Map(Object.entries(publicPay as Record<string, { tier: 1 | 2 }>).map(([k, v]) => [k, v.tier]));
-const LISTS = lists as { code: string; list: string }[];
 
 // ===== the body
 export type ManualPost = {
@@ -92,23 +89,25 @@ export type Verdict = { ok: true; passRoute: "stated_pay" | "public_pay"; sector
  * pay (the top of a range, with employer-paid health insurance) against the minimum for the stated hours, compared with >=. A post the chain sends to review is
  * not listed either (a staff post has no review queue): code `needs_review`.
  */
-export async function manualVerdict(p: ManualPost, employerName: string): Promise<Verdict> {
-  const onList = listAnswer(LISTS, p.occupationCode);
+export async function manualVerdict(p: ManualPost, employerName: string, r: RulesSnapshot): Promise<Verdict> {
+  const m = r.minimums;
+  const onList = listAnswer(r.occupationLists, p.occupationCode);
   if (onList === "no") return { ok: false, code: "occupation_ineligible" };
-  if (onList === null) return { ok: false, code: "occupation_not_on_list" };
-  if (p.contractMonths !== null && p.contractMonths < MIN_CONTRACT_MONTHS) return { ok: false, code: "contract_too_short" };
+  if (onList === null && !m.nonListRoute) return { ok: false, code: "occupation_not_on_list" };
+  if (p.contractMonths !== null && p.contractMonths < m.minContractMonths) return { ok: false, code: "contract_too_short" };
   const a = await assess(
     { source: "employer", employer: employerName, title: p.title, location: `${p.county}, Ireland`, description: p.description, employmentType: "", salaryBox: "" },
-    { deteNames: new Set(), publicPayCandidates: candidates, matcher: async () => ({ occupationCode: p.occupationCode, onCriticalSkillsList: "yes", confidence: "high" }) },
+    { deteNames: new Set(), ...chainRules(r), matcher: async () => ({ occupationCode: p.occupationCode, onCriticalSkillsList: "yes", confidence: "high" }) },
     // The contract is stated in its own field (checked above), so the chain's "contract unclear" stops do not apply; a short contract in the text still fails.
     { contractConfirmed: true, ...(p.salaryLow !== null ? { salary: { low: p.salaryLow, high: p.salaryHigh ?? p.salaryLow } } : {}) },
   );
   if (a.bucket === "rejected" && !a.stage.startsWith("8 ")) return { ok: false, code: "rules_failed", stage: a.stage };
-  const minimum = minimumForHours(CRITICAL_SKILLS_MINIMUM, p.weeklyHours);
+  // As an employer's post (#225, #150): a role off the Critical Skills list and not Ineligible qualifies at the non-list minimum.
+  const minimum = minimumForHours(onList === "yes" ? m.criticalSkills : m.nonList, p.weeklyHours, m.standardWeekHours);
   const pay = p.salaryLow === null ? null : (p.salaryHigh ?? p.salaryLow) + (p.healthInsuranceEur ?? 0);
   let passRoute: "stated_pay" | "public_pay";
   if (pay !== null && pay >= minimum) passRoute = "stated_pay";
-  else if (a.publicPayTier > 0) passRoute = "public_pay"; // a public pay-scale employer on a list role (#67)
+  else if (a.publicPayTier > 0 && onList === "yes") passRoute = "public_pay"; // a public pay-scale employer on a list role (#67)
   else return { ok: false, code: pay === null ? "pay_required" : "pay_below_minimum" };
   if (a.bucket === "queue" || a.scamFlag) return { ok: false, code: "needs_review", stage: a.stage };
   return { ok: true, passRoute, sector: a.sector, stage: a.stage };
@@ -161,7 +160,7 @@ export async function createManualPost(db: Db, staff: string, input: unknown): P
     if ((org.kind !== "employer" && org.kind !== "agency") || org.merged || NOT_POSTABLE.has(org.status)) throw new QueueRefused("company_not_postable");
     const when = (await c.query<{ closes_at: Date; future: boolean; near: boolean }>(CLOSES, [p.closesOn, MAX_CLOSING_DAYS])).rows[0]!;
     if (!when.future || !when.near) throw new QueueRefused("bad_closing_date");
-    const v = await manualVerdict(p, org.display_name);
+    const v = await manualVerdict(p, org.display_name, await getRules(c));
     const live = v.ok;
     const r = (await c.query<{ id: string }>(INSERT_JOB, [
       p.organisationId, p.title, org.display_name, p.county, v.ok ? v.sector : "other", p.occupationCode, p.contractMonths === null ? "permanent" : "fixed_term", p.contractMonths,

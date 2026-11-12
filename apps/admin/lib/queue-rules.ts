@@ -1,18 +1,12 @@
-// The rules data the fetched-job queue's approve step needs, built from the files the scheduled fetch reads (packages/fetcher/data), the way the queue's
-// own tests build it. The step 13 combine points this at the shared rules (13a and 13b). Loaded once per process, on the first approve.
-import { cleanEmployerName } from "@portal/rules";
-import type { RulesData } from "@portal/db";
-import lists from "../../../packages/fetcher/data/occupation-lists.json";
+// The rules data the fetched-job queue's approve step needs (#229): the rules in force from the database (`getRules`), and the DETE names from the
+// file the scheduled fetch reads (the DETE names stay a file, #229). The names are loaded once per process, on the first approve.
+import { chainRules, cleanEmployerName } from "@portal/rules";
+import { getRules, type RulesData } from "@portal/db";
 import dete from "../../../packages/fetcher/data/L2/dete-2026.json";
-import publicPay from "../../../packages/fetcher/data/L2/public_employers_candidates.json";
 
-let data: RulesData | undefined;
-export function queueRules(): RulesData {
-  return (data ??= {
-    chain: {
-      deteNames: new Set((dete as [string, number][]).map(([n]) => cleanEmployerName(n))),
-      publicPayCandidates: new Map(Object.entries(publicPay as Record<string, { tier: 1 | 2 }>).map(([k, v]) => [k, v.tier])),
-    },
-    lists: lists as RulesData["lists"],
-  });
+let deteNames: ReadonlySet<string> | undefined;
+export async function queueRules(db: Parameters<typeof getRules>[0]): Promise<RulesData> {
+  const r = await getRules(db);
+  deteNames ??= new Set((dete as [string, number][]).map(([n]) => cleanEmployerName(n)));
+  return { chain: { deteNames, ...chainRules(r) }, lists: r.occupationLists };
 }

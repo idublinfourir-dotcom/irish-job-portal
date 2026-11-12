@@ -38,6 +38,7 @@ beforeAll(async () => {
   route = await import("../../../apps/admin/app/api/rules/route");
   ({ POST: AUTH } = await import("../../../apps/admin/app/api/auth/staff/[...all]/route"));
   today = (await su.query("select current_date::text d")).rows[0].d;
+  await su.query("delete from rules_version"); // the test template carries the seed (global-setup.ts); these tests start before it
 });
 afterAll(async () => {
   const { getPool } = await import("../src");
@@ -307,7 +308,7 @@ async function job(c: { org: number; recM: number }, o: { status?: string; pay?:
 }
 async function activeFloor(c: { org: number; ownerM: number }) {
   const text = await F.text("pay_floor");
-  const id = (await one("insert into pay_floor(organisation_id, role_family, floor_eur, consent_text_id, signer_membership_id, valid_until) values ($1, 'chef', 40000, $2, $3, now() + interval '12 months') returning id", [c.org, text, c.ownerM])).id;
+  const id = (await one("insert into pay_floor(organisation_id, role_family, floor_eur, consent_text_id, signer_membership_id, valid_until) values ($1, '5434', 40000, $2, $3, now() + interval '12 months') returning id", [c.org, text, c.ownerM])).id;
   const rid = await confirmedApproval(su, F.staff, "pay_floor", "pay_floor", id);
   await su.query("update pay_floor set status = 'active', approval_request_id = $2 where id = $1", [id, rid]);
   return String(id);

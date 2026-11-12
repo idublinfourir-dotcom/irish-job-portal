@@ -207,7 +207,7 @@ describe("manual posting (#232)", () => {
   it("a post that fails the checks stays a draft with the reason, and is not visible to candidates", async () => {
     const o = await org({ status: "verified" });
     const cases: [object, string][] = [
-      [{ salaryLow: 40000, salaryHigh: null }, "pay_below_minimum"], [{ occupationCode: "4112" }, "occupation_ineligible"], [{ occupationCode: "3545" }, "occupation_not_on_list"],
+      [{ salaryLow: 40000, salaryHigh: null }, "pay_below_minimum"], [{ occupationCode: "4112" }, "occupation_ineligible"], [{ occupationCode: "3545" }, "pay_below_minimum"], // off the list and not Ineligible: the non-list minimum (#225, #150)
       [{ contractMonths: 12 }, "contract_too_short"], [{ description: desc + " We cannot offer visa sponsorship." }, "rules_failed"], [{ salaryLow: null, salaryHigh: null, payGrade: "Grade VI" }, "pay_required"],
       [{ description: desc + " Candidates must pay a registration fee before the interview." }, "needs_review"], // scam wording: not listed, and a staff post has no review queue
     ];

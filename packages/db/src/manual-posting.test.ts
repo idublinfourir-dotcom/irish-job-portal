@@ -1,8 +1,11 @@
 // Manual posting: the body check and the rules check, with no database and no network (the rules chain is local code; the matcher is a fake inside manualVerdict).
+import { rulesV1 } from "@portal/rules";
 import { describe, expect, it } from "vitest";
 import { QueueRefused } from "./admin-queue";
 import { checkManualPost, manualVerdict, type ManualPost } from "./manual-posting";
 import { companyRefusal } from "./merges";
+
+const v1 = await rulesV1(); // version 1 of the rules (the seed), as the database holds it
 
 const desc = "We are hiring a software engineer to build our payments platform in Dublin. Full sponsorship offered.";
 const good = {
@@ -40,26 +43,28 @@ describe("checkManualPost", () => {
 describe("manualVerdict", () => {
   const post = (x: object = {}) => checkManualPost({ ...good, ...x }) as ManualPost;
   it("passes at the Critical Skills minimum (>=) and fails a euro below", async () => {
-    expect(await manualVerdict(post({ salaryLow: 40904, salaryHigh: null }), "Fake Payments Limited")).toMatchObject({ ok: true, passRoute: "stated_pay" });
-    expect(await manualVerdict(post({ salaryLow: 40903, salaryHigh: null }), "Fake Payments Limited")).toEqual({ ok: false, code: "pay_below_minimum" });
+    expect(await manualVerdict(post({ salaryLow: 40904, salaryHigh: null }), "Fake Payments Limited", v1)).toMatchObject({ ok: true, passRoute: "stated_pay" });
+    expect(await manualVerdict(post({ salaryLow: 40903, salaryHigh: null }), "Fake Payments Limited", v1)).toEqual({ ok: false, code: "pay_below_minimum" });
   });
   it("counts the top of a range and the employer-paid health insurance, and scales the minimum for long hours", async () => {
-    expect(await manualVerdict(post({ salaryLow: 30000, salaryHigh: 38000, healthInsuranceEur: 2904 }), "Fake Co")).toMatchObject({ ok: true });
-    expect(await manualVerdict(post({ salaryLow: 41953, salaryHigh: null, weeklyHours: 40 }), "Fake Co")).toMatchObject({ ok: false, code: "pay_below_minimum" });
-    expect(await manualVerdict(post({ salaryLow: 41954, salaryHigh: null, weeklyHours: 40 }), "Fake Co")).toMatchObject({ ok: true });
+    expect(await manualVerdict(post({ salaryLow: 30000, salaryHigh: 38000, healthInsuranceEur: 2904 }), "Fake Co", v1)).toMatchObject({ ok: true });
+    expect(await manualVerdict(post({ salaryLow: 41953, salaryHigh: null, weeklyHours: 40 }), "Fake Co", v1)).toMatchObject({ ok: false, code: "pay_below_minimum" });
+    expect(await manualVerdict(post({ salaryLow: 41954, salaryHigh: null, weeklyHours: 40 }), "Fake Co", v1)).toMatchObject({ ok: true });
   });
-  it("needs a list occupation (not an ineligible or unlisted one) and a fixed term of 24 months or more", async () => {
-    expect(await manualVerdict(post({ occupationCode: "4112" }), "Fake Co")).toEqual({ ok: false, code: "occupation_ineligible" });
-    expect(await manualVerdict(post({ occupationCode: "3545", salaryLow: 90000, salaryHigh: null }), "Fake Co")).toEqual({ ok: false, code: "occupation_not_on_list" });
-    expect(await manualVerdict(post({ contractMonths: 23 }), "Fake Co")).toEqual({ ok: false, code: "contract_too_short" });
-    expect(await manualVerdict(post({ contractMonths: 24 }), "Fake Co")).toMatchObject({ ok: true });
+  it("refuses an Ineligible occupation, takes a role off the list at the non-list minimum (#225, #150), and needs a fixed term of 24 months or more", async () => {
+    expect(await manualVerdict(post({ occupationCode: "4112" }), "Fake Co", v1)).toEqual({ ok: false, code: "occupation_ineligible" });
+    expect(await manualVerdict(post({ occupationCode: "3545", salaryLow: 68911, salaryHigh: null }), "Fake Co", v1)).toMatchObject({ ok: true, passRoute: "stated_pay" });
+    expect(await manualVerdict(post({ occupationCode: "3545", salaryLow: 68910, salaryHigh: null }), "Fake Co", v1)).toEqual({ ok: false, code: "pay_below_minimum" });
+    expect(await manualVerdict(post({ occupationCode: "3545", salaryLow: 90000, salaryHigh: null }), "Fake Co", { ...v1, minimums: { ...v1.minimums, nonListRoute: false } })).toEqual({ ok: false, code: "occupation_not_on_list" });
+    expect(await manualVerdict(post({ contractMonths: 23 }), "Fake Co", v1)).toEqual({ ok: false, code: "contract_too_short" });
+    expect(await manualVerdict(post({ contractMonths: 24 }), "Fake Co", v1)).toMatchObject({ ok: true });
   });
   it("fails the rules chain on no-sponsorship wording, and holds scam wording back for review", async () => {
-    expect(await manualVerdict(post({ description: desc + " We cannot offer visa sponsorship." }), "Fake Co")).toMatchObject({ ok: false, code: "rules_failed" });
-    expect(await manualVerdict(post({ description: desc + " Candidates must pay a registration fee before the interview." }), "Fake Co")).toMatchObject({ ok: false, code: "needs_review" });
+    expect(await manualVerdict(post({ description: desc + " We cannot offer visa sponsorship." }), "Fake Co", v1)).toMatchObject({ ok: false, code: "rules_failed" });
+    expect(await manualVerdict(post({ description: desc + " Candidates must pay a registration fee before the interview." }), "Fake Co", v1)).toMatchObject({ ok: false, code: "needs_review" });
   });
   it("asks for pay when there is only a grade", async () => {
-    expect(await manualVerdict(post({ salaryLow: null, salaryHigh: null, payGrade: "Grade VI" }), "Fake Co")).toEqual({ ok: false, code: "pay_required" });
+    expect(await manualVerdict(post({ salaryLow: null, salaryHigh: null, payGrade: "Grade VI" }), "Fake Co", v1)).toEqual({ ok: false, code: "pay_required" });
   });
 });
 

@@ -4,9 +4,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import pg from "pg";
+import { loadRules } from "@portal/db/rules-data";
 import { sslOptions } from "@portal/db/ssl";
 import { chatClient, createBatchChecker, spacedClient, rulesMatcher, type ListEntry } from "@portal/matcher";
-import { chainRules, checkSnapshot, cleanEmployerName, rulesFromFiles } from "@portal/rules";
+import { chainRules, checkSnapshot, cleanEmployerName } from "@portal/rules";
 import { atsTasks, runBoards, type BoardReport, type BoardsFile, type FetcherMatcher } from "../src";
 
 const need = (name: string) => {
@@ -26,9 +27,10 @@ const matcher: FetcherMatcher = async (title, description) => ({ match: await ru
 
 type Deps = { fetch: typeof fetch; pool: (connectionString: string) => pg.Pool };
 const real = (): Deps => ({ fetch: globalThis.fetch, pool: (connectionString) => new pg.Pool({ connectionString, max: 4, ssl: sslOptions() }) });
-const loadRules = (dir: string) => {
+// The rules in force on the run's UTC day, from the database (#229).
+const rulesInForce = async (db: Pick<pg.Pool, "query">, day: string) => {
   try {
-    return checkSnapshot(rulesFromFiles(dir));
+    return checkSnapshot(await loadRules(db, day));
   } catch (e) {
     throw new Error(`the fetch did not start, nothing was saved: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -36,8 +38,6 @@ const loadRules = (dir: string) => {
 
 export async function main(deps: Deps = real()): Promise<BoardReport[]> {
   const started = new Date();
-  // The rules first (#229): a list that loads empty or a minimum missing ends the run here, before any board or database request.
-  const rules = loadRules(need("PORTAL_PRIVATE_DATA"));
   // Same DETE file and loading as packages/rules/src/chain/assess.parity.ts.
   const deteNames = new Set((json(join(need("PORTAL_PRIVATE_DATA"), "L2", "dete-2026.json")) as [string, number][]).map(([name]) => cleanEmployerName(name)));
   const boards = json(need("FETCHER_BOARDS_FILE")) as BoardsFile;
@@ -50,12 +50,14 @@ export async function main(deps: Deps = real()): Promise<BoardReport[]> {
     chatClient({ fetch: deps.fetch, baseUrl: need("FETCHER_MODEL_URL"), key: need("FETCHER_MODEL_KEY"), model: modelId, timeoutMs: whole("FETCHER_MODEL_TIMEOUT_MS", 60_000) }),
     whole("FETCHER_MODEL_GAP_MS", 0),
   );
-  const entries = rules.occupationLists as ListEntry[];
   const maxModelRequests = Number(need("FETCHER_MAX_MODEL_REQUESTS"));
   if (!Number.isInteger(maxModelRequests) || maxModelRequests < 0) throw new Error("FETCHER_MAX_MODEL_REQUESTS must be a whole number, 0 or more");
 
   const db = deps.pool(need("FETCHER_DATABASE_URL"));
   try {
+    // The rules first (#229): a kind with no version, a list that loads empty or a minimum missing ends the run here, before any board or model request.
+    const rules = await rulesInForce(db, started.toISOString().slice(0, 10));
+    const entries = rules.occupationLists as ListEntry[];
     const reports = await runBoards({
       db,
       now: () => new Date(),

@@ -2,8 +2,8 @@
 // The acting login and its membership always come from the session, never the body. The rules package runs the same checks as on fetched
 // adverts, on the structured fields the employer typed; the database has the last word (job_guard, signer_check, job_org_live, the deferred
 // statement check). There is no row level security: every read and write here is filtered by the login's own company.
-import { getPool, listAnswer } from "@portal/db";
-import { assess, chainRules, getRules, minimumForHours, type RulesSnapshot } from "@portal/rules";
+import { getPool, getRules, listAnswer } from "@portal/db";
+import { assess, chainRules, minimumForHours, type RulesSnapshot } from "@portal/rules";
 import type pg from "pg";
 import { isObject, no, only, portalLogin, readPost, withinLimit, type Refusal } from "./company";
 
@@ -106,10 +106,10 @@ export type Verdict = { ok: true; passRoute: "stated_pay" | "public_pay"; status
 
 /**
  * The rules on the structured fields: the occupation list, the contract, the rules chain (Ireland, "no sponsorship", Irish employer, contract text, scam wording), then the pay.
- * `rules`: the minimums and lists in force (#229, `getRules()`); the DETE names are not loaded: the chain uses them only for LinkedIn adverts (assess.ts, `known`).
+ * `rules`: the minimums and lists in force (#229, `getRules(db)` from the database); the DETE names are not loaded: the chain uses them only for LinkedIn adverts (assess.ts, `known`).
  */
-export async function rulesFor(p: Post, employerName: string, rules?: RulesSnapshot): Promise<Verdict> {
-  const r = rules ?? (await getRules()), m = r.minimums;
+export async function rulesFor(p: Post, employerName: string, r: RulesSnapshot): Promise<Verdict> {
+  const m = r.minimums;
   const onList = listAnswer(r.occupationLists, p.occupationCode);
   if (onList === "no") return { ok: false, code: "OCCUPATION_INELIGIBLE" };
   if (onList === null && !m.nonListRoute) return { ok: false, code: "OCCUPATION_NOT_ON_LIST" };
@@ -226,7 +226,7 @@ export async function jobPost(request: Request): Promise<Response> {
     if (p.clientName && org.kind !== "agency") return no(400, "CLIENT_ONLY_FOR_AGENCIES");
     let v: Verdict = { ok: true, passRoute: "stated_pay", status: "live", sector: "other", stage: "" };
     if (p.status === "live") {
-      v = await rulesFor(p, p.clientName ?? org.display_name);
+      v = await rulesFor(p, p.clientName ?? org.display_name, await getRules(c));
       if (!v.ok) return verdictReply(v);
     }
     const r = (await c.query(INSERT_JOB, [who.organisationId, org.kind === "agency" ? "agency" : "employer", p.title, org.display_name, p.county, v.sector, p.occupationCode,
@@ -262,7 +262,7 @@ export async function jobEdit(request: Request): Promise<Response> {
     const publish = j.status === "draft" && p.status === "live";
     let status: string = j.status, passRoute = j.pass_route, sector = j.sector;
     if (publish || (j.status !== "draft" && key)) {
-      const v = await rulesFor(p, p.clientName ?? org.display_name);
+      const v = await rulesFor(p, p.clientName ?? org.display_name, await getRules(c));
       if (!v.ok) return verdictReply(v);
       if (publish) status = v.status;
       else if (v.status === "in_review" && j.status === "live") return no(409, "NEEDS_REVIEW"); // the guard keeps a live job live or closes it

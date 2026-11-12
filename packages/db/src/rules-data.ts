@@ -3,27 +3,9 @@
 // No imports but types, so the daily run (rules-run-cli.ts) can load this file with plain node. The admin side is rules-admin.ts.
 import type pg from "pg";
 
-// The rules in force on one day (#229). 13b owns this type in packages/rules/src/snapshot.ts;
-// 13a keeps an identical copy in packages/db/src/rules-data.ts, swapped to the @portal/rules import at the combine.
-export type Minimums = {
-  criticalSkills: number;    // today CRITICAL_SKILLS_MINIMUM, 40904
-  graduate: number;          // today GRADUATE_MINIMUM, 36848
-  graduateMonths: number;    // today GRADUATE_MONTHS, 12
-  nonList: number;           // today NON_LIST_MINIMUM, 68911
-  nonListRoute: boolean;     // today NON_LIST_ROUTE, true
-  minContractMonths: number; // today MIN_CONTRACT_MONTHS, 24
-  standardWeekHours: number; // today STANDARD_WEEK_HOURS, 39
-  checkedOn: string;         // today RULES_CHECKED_ON, "2026-11-12"
-};
-export type RulesSnapshot = {
-  minimums: Minimums;
-  /** packages/fetcher/data/occupation-lists.json as it is. */
-  occupationLists: readonly { id: string; code: string; title: string; list: "critical-skills" | "ineligible" }[];
-  /** packages/fetcher/data/L2/public_employers_candidates.json as it is. */
-  publicPayEmployers: Readonly<Record<string, { tier: 1 | 2; note?: string }>>;
-  /** Cleaned names, matched as isBigCompany does today: BIG_COMPANY_BRANDS then BIG_COMPANY_LIST_150, in that order. */
-  bigCompanyNames: readonly string[];
-};
+// The shared shape lives in packages/rules/src/snapshot.ts. A type-only import, erased when plain node runs the daily run (rules-run-cli.ts).
+import type { Minimums, RulesSnapshot } from "@portal/rules";
+export type { Minimums, RulesSnapshot };
 
 export const RULES_KINDS = ["minimums", "critical_skills_list", "ineligible_list", "public_pay_employers", "big_company_names"] as const;
 export type RulesKind = (typeof RULES_KINDS)[number];
@@ -146,4 +128,18 @@ export async function loadRules(db: Pick<pg.ClientBase, "query">, day: string): 
     publicPayEmployers: get<Record<string, { tier: 1 | 2; note?: string }>>("public_pay_employers"),
     bigCompanyNames: get<BigName[]>("big_company_names").map((e) => e.name),
   };
+}
+
+// ponytail: one cache per process, keyed by the UTC day and kept 5 minutes, so a confirmed version reaches the apps within 5 minutes without a deploy.
+const RULES_TTL_MS = 5 * 60_000;
+let cached: { day: string; at: number; rules: Promise<RulesSnapshot> } | undefined;
+/** The rules in force today (UTC) for the apps (#229): `loadRules`, read again on a new day or after 5 minutes. A failed read is not kept. */
+export function getRules(db: Pick<pg.ClientBase, "query">, now: number = Date.now()): Promise<RulesSnapshot> {
+  const day = new Date(now).toISOString().slice(0, 10);
+  if (!cached || cached.day !== day || now - cached.at > RULES_TTL_MS) {
+    const rules = loadRules(db, day);
+    cached = { day, at: now, rules };
+    rules.catch(() => { if (cached?.rules === rules) cached = undefined; });
+  }
+  return cached.rules;
 }

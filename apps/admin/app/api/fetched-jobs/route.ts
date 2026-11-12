@@ -50,7 +50,7 @@ export async function POST(request: Request) {
       case "approve":
         return Response.json({ ok: true, ...(await approve(db, staff, id, {
           occupationCode: b.occupationCode as string, salaryLow: b.salaryLow as number | undefined, salaryHigh: b.salaryHigh as number | undefined, contractConfirmed: b.contractConfirmed as boolean | undefined,
-        }, queueRules())) });
+        }, await queueRules(db))) });
       case "reject": await reject(db, staff, id, b.reason as string); break;
     }
     return Response.json({ ok: true });

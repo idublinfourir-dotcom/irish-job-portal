@@ -1,6 +1,6 @@
 // The rules in force on one day (#229), passed in as data. Every runtime path takes its minimums and lists from a snapshot; the constants in
 // thresholds.ts and the lists in employers/brand.ts are version 1 (the seed and the tests read them). Today the snapshot is built from those
-// constants and the two data files; the combine points getRules() (current.ts) at the database loader.
+// constants and the two data files; the apps and the fetch read the rules in force from the database (getRules in packages/db/src/rules-data.ts); rulesV1() in current.ts is version 1.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BIG_COMPANY_BRANDS, BIG_COMPANY_LIST_150 } from "./employers/brand";

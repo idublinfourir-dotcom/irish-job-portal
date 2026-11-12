@@ -24,7 +24,7 @@ export function belowMinimum(j: Job, m: Minimums, criticalSkills: ReadonlySet<st
   if (!onList && !m.nonListRoute) return true;
   if (j.salary_low === null) return true;
   const pay = (j.salary_high ?? j.salary_low) + (j.health_insurance_eur ?? 0);
-  return pay < minimumForHours(onList ? m.criticalSkills : m.nonList, j.weekly_hours ?? undefined);
+  return pay < minimumForHours(onList ? m.criticalSkills : m.nonList, j.weekly_hours ?? undefined, m.standardWeekHours);
 }
 
 export type RunResult = { versionId: string | null; applied: boolean; underReview: number; floorsEnded: number };

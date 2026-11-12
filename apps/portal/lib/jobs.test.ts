@@ -1,5 +1,5 @@
 // No database: the post body checks, the hours minimum, the rules verdicts and the refusal codes. The routes end to end: packages/db/test/jobs-route.test.ts.
-import { getRules } from "@portal/rules";
+import { rulesV1 } from "@portal/rules";
 import { describe, expect, it } from "vitest";
 import { checkClose, checkEdit, checkPost, checkRenew, jobRefusal, minimumForHours, rulesFor, type Post } from "./jobs";
 
@@ -72,9 +72,9 @@ describe("checkEdit, checkRenew, checkClose", () => {
 });
 
 describe("rulesFor", () => {
-  const run = (o: object = {}, employer = "Fake Payments Limited") => rulesFor(post(o), employer);
+  const run = async (o: object = {}, employer = "Fake Payments Limited") => rulesFor(post(o), employer, await rulesV1());
   it("reads the rules in force (#229): a changed snapshot changes the verdict", async () => {
-    const today = await getRules();
+    const today = await rulesV1();
     const at = (m: object) => rulesFor(post({ salaryLow: 45000, salaryHigh: null }), "Fake Payments Limited", { ...today, minimums: { ...today.minimums, ...m } });
     expect(await at({})).toMatchObject({ ok: true, passRoute: "stated_pay" });
     expect(await at({ criticalSkills: 45001 })).toEqual({ ok: false, code: "PAY_BELOW_MINIMUM" });

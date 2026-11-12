@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
+import { seedRules } from "../src/rules-seed-cli";
 import { RUN, ROLES, TEMPLATE, testPassword, urlFor } from "./db";
 
 export default async function setup() {
@@ -28,6 +29,9 @@ export default async function setup() {
   await migrate(drizzle(pool), { migrationsFolder: fileURLToPath(new URL("../migrations", import.meta.url)) });
   // Mutation run (test/mutation/run.mjs): the SQL in this variable removes one rule from the template. Unset in normal runs.
   if (process.env.PORTAL_TEST_MUTATION) await pool.query(process.env.PORTAL_TEST_MUTATION);
+  // Version 1 of the rules (#229), as the owner's seed leaves the live database: the apps and routes read the rules in force from here.
+  const seed = await pool.connect();
+  try { await seedRules(seed); } finally { seed.release(); }
   await pool.end(); // a template cannot be copied while anyone is connected
 
   // Roles belong to the whole server, not one database, so their passwords are set here once.

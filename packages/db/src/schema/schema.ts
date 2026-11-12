@@ -2246,6 +2246,8 @@ export const rulesVersion = pgTable("rules_version", {
 	check("rules_version_check", sql`seeded_by_owner OR (approval_request_id IS NOT NULL)`),
 	check("rules_version_data_check", sql`jsonb_typeof(data) = ANY (ARRAY['object'::text, 'array'::text])`),
 	check("rules_version_kind_check", sql`kind = ANY (ARRAY['minimums'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'public_pay_employers'::text, 'big_company_names'::text])`),
+]);
+
 export const ownerReassign = pgTable("owner_reassign", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "owner_reassign_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),

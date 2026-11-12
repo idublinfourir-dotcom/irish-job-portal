@@ -30,9 +30,9 @@ create index job_manual_idx on job(id desc) where source = 'admin_manual';
 -- applications (a job with applications cannot change company: application points to job and company together).
 -- Order (23-database-design.md, organisation): merged_into_id first, so the CRO rule already skips the absorbed side when its CRO-numbered name moves; then the
 -- names (the DETE links point to the name rows and move with them), then the jobs. A job's poster membership belongs to the absorbed company, so it is emptied on
--- the move; the audit row keeps every moved id and every emptied poster, so a merge can be reversed by hand. The survivor's permit history is lifted to
--- has_history when the moved names bring a qualifying DETE record (the rule of refresh_permit_history, for this one company); its trigger copies it onto the survivor's
--- jobs, and the moved jobs take the survivor's value.
+-- the move; the audit row keeps every moved id and every emptied poster, so a merge can be reversed by hand. The survivor's permit history and sponsor sort
+-- are set by private.refresh_permit_history() (0008, the one rule), now that the names and their DETE links have moved; its trigger copies the label onto the
+-- survivor's jobs, and the moved jobs take the survivor's value.
 create function private.merge_organisations(p_staff text, p_absorbed bigint, p_survivor bigint) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare a organisation; s organisation; v_names bigint[]; v_jobs bigint[]; v_posted jsonb; v_hist_before text; v_hist text;
@@ -57,9 +57,7 @@ begin
   select coalesce(array_agg(id order by id), '{}') into v_names from organisation_name where organisation_id = a.id;
   update organisation_name set organisation_id = s.id where organisation_id = a.id;
   v_hist_before := s.permit_history;
-  update organisation set permit_history = 'has_history'
-   where id = s.id and permit_history <> 'has_history'
-     and exists (select 1 from dete_permit_count d join organisation_name n on n.id = d.organisation_name_id where n.organisation_id = s.id and d.permits > 0 and d.year >= 2019);
+  perform private.refresh_permit_history(); -- 0008: the one rule for the label and the sponsor sort, now over the moved names (and their DETE links)
   select permit_history into v_hist from organisation where id = s.id;
   select coalesce(array_agg(id order by id), '{}'), coalesce(jsonb_object_agg(id::text, posted_by_membership_id) filter (where posted_by_membership_id is not null), '{}')
     into v_jobs, v_posted from job where organisation_id = a.id;

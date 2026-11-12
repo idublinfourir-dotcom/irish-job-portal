@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  assess, BIG_COMPANY_BRANDS, BIG_COMPANY_LIST_150, chainRules, checkEligibility, checkSnapshot, CRITICAL_SKILLS_MINIMUM, getRules, GRADUATE_MINIMUM,
+  assess, BIG_COMPANY_BRANDS, BIG_COMPANY_LIST_150, chainRules, checkEligibility, checkSnapshot, CRITICAL_SKILLS_MINIMUM, rulesV1, GRADUATE_MINIMUM,
   GRADUATE_MONTHS, isBigCompany, MIN_CONTRACT_MONTHS, NON_LIST_MINIMUM, NON_LIST_ROUTE, RULES_CHECKED_ON, rulesFromFiles, STANDARD_WEEK_HOURS,
   type AdvertInput, type RulesSnapshot,
 } from "./index";
@@ -24,7 +24,7 @@ describe("rulesFromFiles", () => {
     expect(today.publicPayEmployers).toEqual(json("L2/public_employers_candidates.json"));
     expect(today.bigCompanyNames).toEqual([...BIG_COMPANY_BRANDS, ...BIG_COMPANY_LIST_150]);
     expect(checkSnapshot(today)).toBe(today);
-    expect(await getRules()).toEqual(today); // the apps' loader is the same version 1
+    expect(await rulesV1()).toEqual(today); // the apps' loader is the same version 1
   });
 });
 
@@ -91,12 +91,12 @@ describe("a changed snapshot changes the result", () => {
   });
 });
 
-describe("getRules budget", () => {
+describe("rulesV1 budget", () => {
   it("loads once per process: 10,000 calls share one snapshot in under 50 ms", async () => {
-    const first = await getRules();
+    const first = await rulesV1();
     const t = performance.now();
     let same = 0;
-    for (let i = 0; i < 10_000; i++) if ((await getRules()) === first) same++;
+    for (let i = 0; i < 10_000; i++) if ((await rulesV1()) === first) same++;
     expect(performance.now() - t).toBeLessThan(50);
     expect(same).toBe(10_000);
   });

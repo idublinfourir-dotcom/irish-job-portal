@@ -1,9 +1,7 @@
 // Pay floors (#82, #100): GET lists the company's floors and the wording to sign, POST { action, ... } signs or withdraws one. The acting member always
 // comes from the session, never the body. The database refuses an agency, an employer off the big-company list and a member who may not sign
 // (pay_floor_insert, signer_check); this file refuses bad requests early and turns refusals into short codes.
-import { cleanFamily, createPayFloor, FloorRefused, getPool, listAnswer, listPayFloors, MAX_FLOOR_EUR, withdrawPayFloor, type FloorMember } from "@portal/db";
-// The same list file the posting check reads (jobs.ts). A role family is a four-digit code that is not on the Ineligible list (#231).
-import lists from "../../../packages/fetcher/data/occupation-lists.json";
+import { cleanFamily, createPayFloor, FloorRefused, getPool, getRules, listAnswer, listPayFloors, MAX_FLOOR_EUR, withdrawPayFloor, type FloorMember, type ListEntries } from "@portal/db";
 import { isObject, no, only, portalLogin, readPost, withinLimit } from "./company";
 
 export const FLOOR_RATE = { windowMs: 10 * 60_000, max: 10 }; // signs and withdrawals together, per login
@@ -12,7 +10,8 @@ export type FloorWrite =
   | { action: "sign"; roleFamily: string; floorEur: number; consentTextId: string }
   | { action: "withdraw"; floorId: number };
 
-export function checkFloor(b: unknown): FloorWrite | null {
+/** `lists`: the occupation lists in force (#229); a role family is a four-digit code that is not on the Ineligible list (#231). */
+export function checkFloor(b: unknown, lists: ListEntries): FloorWrite | null {
   if (!isObject(b)) return null;
   if (b.action === "sign" && only(b, ["action", "roleFamily", "floorEur", "consentTextId"])) {
     const family = cleanFamily(b.roleFamily), eur = b.floorEur, text = b.consentTextId;
@@ -32,7 +31,8 @@ const STATUS: Record<string, number> = {
 const ACTIVE_COMPANY = ["verified", "verified_restricted"];
 
 export async function floorPost(request: Request): Promise<Response> {
-  const read = await readPost(request, checkFloor);
+  const lists = (await getRules(getPool())).occupationLists;
+  const read = await readPost(request, (b) => checkFloor(b, lists));
   if (read instanceof Response) return read;
   const { login, body } = read;
   const m = login.membership;

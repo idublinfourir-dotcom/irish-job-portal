@@ -1,6 +1,10 @@
 // The pay floor route's body check. No database.
+import { rulesV1 } from "@portal/rules";
 import { describe, expect, it } from "vitest";
-import { checkFloor } from "./pay-floors";
+import { checkFloor as checkWith } from "./pay-floors";
+
+const lists = (await rulesV1()).occupationLists; // version 1, as the database holds it
+const checkFloor = (b: unknown) => checkWith(b, lists);
 
 const sign = { action: "sign", roleFamily: "2134", floorEur: 45000, consentTextId: "7" };
 

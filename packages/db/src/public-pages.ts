@@ -2,7 +2,8 @@
 // jobs in the job list's own columns and cards; a further page is the `next` cursor of the one before. The scope (the company, the code) is a
 // parameter and the column it filters is fixed in code, never taken from input.
 import type pg from "pg";
-import { checkEligibility, getRules, standingLine, type RulesSnapshot } from "@portal/rules";
+import { checkEligibility, standingLine, type RulesSnapshot } from "@portal/rules";
+import { getRules } from "./rules-data";
 import { getContent, validSlug, type ContentPage } from "./content";
 import { card, COUNT_CAP, cursorOf, decodeCursor, KEYS, CAST, LIST, LIVE, PAGE_SIZE, SOURCE, type JobCard, type ListRow, type Sort } from "./search";
 
@@ -145,10 +146,10 @@ export type OccupationPage = {
 };
 
 /** One occupation by code, or null when the code is not on either list (so there is no page for it). */
-/** `rules`: the minimums and lists in force (#229, default `getRules()`); `lists` replaces the snapshot's lists (tests). */
+/** `rules`: the minimums and lists in force (#229, default `getRules(db)`, the database); `lists` replaces the snapshot's lists (tests). */
 export async function getOccupationPage(db: Db, code: string, opts: { after?: string; lists?: readonly ListEntry[]; rules?: RulesSnapshot } = {}): Promise<OccupationPage | null> {
   if (typeof code !== "string" || !/^[0-9]{4}$/.test(code)) return null;
-  const rules = opts.rules ?? (await getRules()), m = rules.minimums;
+  const rules = opts.rules ?? (await getRules(db)), m = rules.minimums;
   const entries = (opts.lists ?? rules.occupationLists).filter((e) => e.code === code);
   if (entries.length === 0) return null;
   const listed = entries.some((e) => e.list === "critical-skills");
@@ -163,4 +164,4 @@ export async function getOccupationPage(db: Db, code: string, opts: { after?: st
 }
 
 /** The checker with the rules in force (#229): what the route calls. Input checks throw BadEligibilityInput. */
-export const checkWithSiteLists = async (input: Parameters<typeof checkEligibility>[0], opts?: Parameters<typeof checkEligibility>[2]) => checkEligibility(input, await getRules(), opts);
+export const checkWithSiteLists = async (db: Db, input: Parameters<typeof checkEligibility>[0], opts?: Parameters<typeof checkEligibility>[2]) => checkEligibility(input, await getRules(db), opts);
