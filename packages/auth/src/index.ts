@@ -63,6 +63,7 @@ export function authSettings(prefix: "STAFF" | "CANDIDATE" | "PORTAL", env: Node
 }
 export const staffSettings = (env: NodeJS.ProcessEnv) => authSettings("STAFF", env);
 export const candidateSettings = (env: NodeJS.ProcessEnv) => authSettings("CANDIDATE", env);
+export const portalSettings = (env: NodeJS.ProcessEnv) => authSettings("PORTAL", env);
 // Google sign-in is on only when both variables are set (and not empty); otherwise undefined and the Google routes do not exist.
 export function googleSettings(env: NodeJS.ProcessEnv): GoogleSettings | undefined {
   const clientId = env.GOOGLE_CLIENT_ID, clientSecret = env.GOOGLE_CLIENT_SECRET;
@@ -173,4 +174,28 @@ export async function requireStaff(auth: ReturnType<typeof createAuth>, headers:
   if (!s) throw new StaffRefused("no_session");
   if ((s.user as { status?: unknown }).status !== "active") throw new StaffRefused("not_active");
   return s.user.id;
+}
+
+/** A request with no usable portal session. `why` is "no_session" or "not_active". */
+export class PortalRefused extends Error {}
+export type PortalMembership = { id: number; organisationId: number; role: string; isSigner: boolean; organisationStatus: string; organisationKind: string };
+export type PortalLogin = { userId: string; email: string; membership: PortalMembership | null };
+
+// Every portal call starts here. Like requireStaff, a login blocked or deleted after signing in is refused on its next request
+// (the cookie cache is off, so the status fields are read fresh). Then one more statement reads the login's active membership.
+// membership is null for a login with no company yet: such a login may only claim or register a company, every other portal
+// action must refuse it.
+export async function requirePortal(auth: ReturnType<typeof createAuth>, headers: Headers): Promise<PortalLogin> {
+  const s = await auth.api.getSession({ headers });
+  if (!s) throw new PortalRefused("no_session");
+  const u = s.user as { status?: unknown; deletedAt?: unknown };
+  if (u.status !== "active" || u.deletedAt) throw new PortalRefused("not_active");
+  const { rows } = await (auth.options.database as Pool).query(
+    `select m.id, m.organisation_id, m.role, m.is_signer, o.status, o.kind from membership m join organisation o on o.id = m.organisation_id
+      where m.portal_user_id = $1 and m.status = 'active'`, [s.user.id]);
+  const m = rows[0];
+  return {
+    userId: s.user.id, email: s.user.email,
+    membership: m ? { id: Number(m.id), organisationId: Number(m.organisation_id), role: m.role, isSigner: m.is_signer, organisationStatus: m.status, organisationKind: m.kind } : null,
+  };
 }
