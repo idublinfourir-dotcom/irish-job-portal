@@ -2,7 +2,8 @@
 // exists. It follows the two-person rule: one staff member proposes, a different one (an administrator) confirms, then the text is saved.
 // Run from the repo root with the admin app's login (app_admin, the same DATABASE_URL the admin app uses), as that role's grants allow every step:
 //   DATABASE_URL=... node packages/db/src/signup-terms-cli.ts <proposer staff id> <confirmer staff id>
-// Safe to run twice: the second run finds the text and writes nothing. One transaction: all or nothing.
+// Safe to run twice: the second run finds the text and writes nothing. It also writes nothing, and exits 1, when any other sign-up
+// text is already saved, so it can never put the placeholder ahead of the solicitor's real text. One transaction: all or nothing.
 import pg from "pg";
 import { sslOptions } from "./ssl.ts";
 
@@ -20,13 +21,17 @@ export function parseTermsArgs(argv: string[]): { ids?: [string, string]; error?
 }
 
 /** Returns "made" or "already there". The database stays the final word: it checks both people, their roles and that the request is used once. */
-export async function saveTerms(client: pg.ClientBase, proposer: string, confirmer: string): Promise<"made" | "already there"> {
+export async function saveTerms(client: pg.ClientBase, proposer: string, confirmer: string): Promise<"made" | "already there" | "other text"> {
   const target = `signup_terms:${PLACEHOLDER_VERSION}`;
   await client.query("begin");
   try {
     if ((await client.query("select 1 from consent_text where purpose='signup_terms' and version=$1", [PLACEHOLDER_VERSION])).rowCount) {
       await client.query("rollback");
       return "already there";
+    }
+    if ((await client.query("select 1 from consent_text where purpose='signup_terms'")).rowCount) {
+      await client.query("rollback");
+      return "other text";
     }
     // The acting staff id is a transaction setting, which the approval_request trigger reads.
     await client.query("select set_config('app.staff_user_id', $1, true)", [proposer]);
@@ -52,7 +57,9 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: s
   const client = new pg.Client({ connectionString: env.DATABASE_URL, ssl: sslOptions(env) });
   try {
     await client.connect();
-    log((await saveTerms(client, ids[0], ids[1])) === "made" ? `saved the placeholder sign-up text (${PLACEHOLDER_VERSION})` : `the placeholder sign-up text (${PLACEHOLDER_VERSION}) is already there; nothing was written`);
+    const done = await saveTerms(client, ids[0], ids[1]);
+    if (done === "other text") return log("stopped: a sign-up text is already saved, so the placeholder would replace it as the newest text; nothing was written"), 1;
+    log(done === "made" ? `saved the placeholder sign-up text (${PLACEHOLDER_VERSION})` : `the placeholder sign-up text (${PLACEHOLDER_VERSION}) is already there; nothing was written`);
     return 0;
   } catch (e) {
     log(`refused: ${(e as Error).message}`);

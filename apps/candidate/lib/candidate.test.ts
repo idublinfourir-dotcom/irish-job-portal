@@ -19,6 +19,13 @@ describe("the candidate login settings", () => {
     expect((await load({ ...good, CANDIDATE_AUTH_URL: "https://candidate.example.test" })).candidateAuth).toThrow(/only on localhost/);
     expect((await load({ ...good, CANDIDATE_AUTH_URL: "https://candidate.example.test" })).candidateMail).toThrow(/only on localhost/);
   });
+  it("a localhost address on Vercel or with NODE_ENV=production is refused too", async () => {
+    vi.stubEnv("VERCEL", "1");
+    expect((await load(good)).candidateAuth).toThrow(/developer machine/);
+    vi.unstubAllEnvs();
+    vi.stubEnv("NODE_ENV", "production");
+    expect((await load(good)).candidateAuth).toThrow(/developer machine/);
+  });
   it("Google sign-in is on only when both GOOGLE_ variables are set", async () => {
     vi.stubEnv("DATABASE_URL", "postgres://nobody:none@127.0.0.1:1/none");
     const google = async (env: Record<string, string>) => ((await (await load({ ...good, ...env })).candidateAuth().$context).socialProviders.map((p) => p.id));

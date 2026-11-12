@@ -8,11 +8,14 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { createAuth } from "../../auth/src";
+import { seedSignupTerms } from "./better-auth-helper";
 
 // Statements measured on 12 November 2026, counting every pg.Client.query call (begin and commit included). Sign-up (account plus
 // consent row, with the rate limit): 10 on the first request of an instance, which includes Better Auth's one-off column list read.
 // Sign-in: 6. A server-side getSession is 2, and 4 through the route (the rate limit adds 2). Raise these only on purpose.
-const BUDGET = { signUp: 10, signIn: 6, getSession: 2, signUpMs: 3000, concurrentMs: 15000, signInMs: 3000 };
+const BUDGET = { signUp: 10, signIn: 6, getSession: 2, signUpMs: 700, concurrentMs: 2100, signInMs: 740 };
+// Times measured three times on 12 November 2026 (about 5 times the measured value): sign-up 141 ms (budget 700), 10 concurrent sign-ups
+// 420 ms (2100), sign-in 148 ms (740). Hashing the password dominates sign-up and sign-in.
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 const CLI = fileURLToPath(new URL("../src/signup-terms-cli.ts", import.meta.url));
@@ -36,11 +39,11 @@ afterAll(async () => {
 
 let ipn = 10;
 const freshIp = () => `198.51.100.${ipn++}`;
-async function call(path: string, body?: unknown, o: { ip?: string; cookie?: string; raw?: string } = {}) {
+async function call(path: string, body?: unknown, o: { ip?: string; cookie?: string; raw?: string; origin?: string } = {}) {
   const post = body !== undefined || o.raw !== undefined, handler = post ? POST : GET;
   const res = await handler(new Request(`${BASE}/api/auth/candidate/${path}`, {
     method: post ? "POST" : "GET", body: o.raw ?? (body === undefined ? undefined : JSON.stringify(body)), redirect: "manual",
-    headers: { "content-type": "application/json", origin: BASE, "x-vercel-forwarded-for": o.ip ?? freshIp(), ...(o.cookie ? { cookie: o.cookie } : {}) },
+    headers: { "content-type": "application/json", origin: o.origin ?? BASE, "x-vercel-forwarded-for": o.ip ?? freshIp(), ...(o.cookie ? { cookie: o.cookie } : {}) },
   }));
   const text = await res.text();
   let json: Record<string, any> | null = null; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -406,6 +409,19 @@ describe("password reset (#54)", () => {
     expect((await call("reset-password", { newPassword: "Fake-fay-third-password-3", token })).status).toBeGreaterThanOrEqual(400);
     expect((await call("sign-in/email", { email: fay.email, password: "Fake-fay-third-password-3" })).status).toBe(401);
   });
+  it("a reset ends every other session: a cookie from before the reset stops working", async () => {
+    const gus = person("gus");
+    await call("sign-up/email", gus);
+    await click(linkFor(gus.email, "verify"));
+    const [a, b] = [await call("sign-in/email", { email: gus.email, password: gus.password }), await call("sign-in/email", { email: gus.email, password: gus.password })];
+    for (const r of [a, b]) expect((await call("get-session", undefined, { cookie: r.cookie })).json?.user.email).toBe(gus.email);
+    await call("request-password-reset", { email: gus.email, redirectTo: `${BASE}/reset` });
+    const token = new URL(linkFor(gus.email, "reset")).pathname.split("/").at(-1)!;
+    expect((await call("reset-password", { newPassword: "Fake-gus-new-password-2", token })).status).toBe(200);
+    for (const r of [a, b]) expect((await call("get-session", undefined, { cookie: r.cookie })).json).toBeNull();
+    expect(await count("select 1 from candidate_session s join candidate_user u on u.id=s.user_id where u.email=$1", [gus.email])).toBe(0);
+    expect((await call("sign-in/email", { email: gus.email, password: "Fake-gus-new-password-2" })).status).toBe(200);
+  });
   it("a made-up reset token and a too-short new password change nothing", async () => {
     expect((await call("reset-password", { newPassword, token: "made-up" })).status).toBeGreaterThanOrEqual(400);
     await call("request-password-reset", { email: fay.email, redirectTo: `${BASE}/reset` });
@@ -420,5 +436,82 @@ describe("password reset (#54)", () => {
     const ip = freshIp(), seq = [];
     for (let i = 0; i < 4; i++) seq.push((await call("request-password-reset", { email: fay.email, redirectTo: `${BASE}/reset` }, { ip })).status);
     expect(seq).toEqual([200, 200, 200, 429]);
+  });
+});
+
+// The origin, CSRF and redirect-address checks run in tests exactly as in production (advanced.disableOriginCheck is false; Better Auth's
+// own default would switch them off under NODE_ENV=test, so no test would ever see them).
+describe("origin and redirect-address checks (review finding 2)", () => {
+  const evil = "https://evil.example.test";
+  const foreign = [`${evil}/steal`, "//evil.example.test/steal", "/\\evil.example.test", "javascript:alert(1)", "https://localhost.evil.example.test/", "http://localhost:3000@evil.example.test/", "http://localhost:3001/other-app"];
+  const hal = person("hal");
+  let cookie: string;
+  it("sets up a confirmed, signed-in candidate", async () => {
+    await call("sign-up/email", hal);
+    await click(linkFor(hal.email, "verify"));
+    cookie = (await call("sign-in/email", { email: hal.email, password: hal.password })).cookie;
+    expect((await call("get-session", undefined, { cookie })).json?.user.email).toBe(hal.email);
+  });
+  it("a request that carries the session cookie from a foreign origin is refused, and our own origin still works", async () => {
+    for (const origin of [evil, "http://localhost:3001", "null"]) {
+      const r = await call("sign-out", {}, { cookie, origin });
+      expect([r.status, r.json?.code], origin).toEqual([403, origin === "null" ? "MISSING_OR_NULL_ORIGIN" : "INVALID_ORIGIN"]);
+    }
+    expect((await call("get-session", undefined, { cookie })).json?.user.email).toBe(hal.email);
+    expect((await call("sign-out", {}, { cookie })).status).toBe(200);
+    expect((await call("get-session", undefined, { cookie })).json).toBeNull();
+  });
+  it("a foreign callbackURL is refused on sign-up, sign-in, resend and verify; nothing is made or sent", async () => {
+    const sent = mail().length, accounts = await users("fake.cb@example.test");
+    for (const bad of foreign) {
+      const up = await call("sign-up/email", { ...person("cb"), callbackURL: bad });
+      expect([up.status, up.json?.code], bad).toEqual([403, "INVALID_CALLBACK_URL"]);
+      expect((await call("sign-in/email", { email: hal.email, password: hal.password, callbackURL: bad })).status, bad).toBe(403);
+      expect((await call("send-verification-email", { email: hal.email, callbackURL: bad })).status, bad).toBe(403);
+    }
+    expect(await users("fake.cb@example.test")).toBe(accounts);
+    expect(mail().length).toBe(sent);
+  });
+  it("a foreign redirectTo is refused on a reset request, and no email is sent", async () => {
+    const sent = mail().length;
+    for (const bad of foreign) {
+      const r = await call("request-password-reset", { email: hal.email, redirectTo: bad });
+      expect([r.status, r.json?.code], bad).toEqual([403, "INVALID_REDIRECT_URL"]);
+    }
+    expect(mail().length).toBe(sent);
+  });
+  it("a verify link with a foreign callbackURL does not confirm the address", async () => {
+    const ivy = person("ivy");
+    await call("sign-up/email", ivy);
+    const token = new URL(linkFor(ivy.email, "verify")).searchParams.get("token")!;
+    for (const bad of foreign) expect((await call(`verify-email?token=${token}&callbackURL=${encodeURIComponent(bad)}`)).status, bad).toBe(403);
+    expect((await su.query("select email_verified from candidate_user where email=$1", [ivy.email])).rows[0].email_verified).toBe(false);
+  });
+  it("our own address still works, relative or absolute", async () => {
+    const jan = person("jan");
+    expect((await call("sign-up/email", { ...jan, callbackURL: `${BASE}/welcome` })).status).toBe(200);
+    expect((await call("sign-in/email", { email: hal.email, password: hal.password, callbackURL: "/welcome" })).status).toBe(200);
+    expect((await call("request-password-reset", { email: hal.email, redirectTo: `${BASE}/reset` })).status).toBe(200);
+    expect((await call("send-verification-email", { email: jan.email, callbackURL: "/welcome" })).status).toBe(200);
+    const token = new URL(linkFor(jan.email, "verify")).searchParams.get("token")!;
+    expect((await call(`verify-email?token=${token}&callbackURL=${encodeURIComponent("/welcome")}`)).status).toBe(302);
+    expect((await su.query("select email_verified from candidate_user where email=$1", [jan.email])).rows[0].email_verified).toBe(true);
+  });
+});
+
+describe("placeholder wording command when another text exists (review finding 7)", () => {
+  it("stops, writes nothing and says why, so the placeholder can never become the newest text", async () => {
+    const other = await createTestDb();
+    try {
+      const su2 = other.pool("postgres");
+      await seedSignupTerms(su2); // the solicitor's text stands in here: version 'test', saved first
+      const before = [await su2.query("select version from consent_text where purpose='signup_terms'"), await su2.query("select id from approval_request")].map((r) => r.rows);
+      const r = spawnSync(process.execPath, [CLI, "terms-proposer", "terms-confirmer"], { encoding: "utf8", env: { ...process.env, DATABASE_URL: urlFor(other.name, "app_admin"), DATABASE_SSL: "disable" } });
+      expect(r.status, r.stdout + r.stderr).toBe(1);
+      expect(r.stdout).toMatch(/stopped: a sign-up text is already saved/);
+      const after = [await su2.query("select version from consent_text where purpose='signup_terms'"), await su2.query("select id from approval_request")].map((x) => x.rows);
+      expect(after).toEqual(before);
+      expect(after[0]).toEqual([{ version: "test" }]);
+    } finally { await other.drop(); }
   });
 });

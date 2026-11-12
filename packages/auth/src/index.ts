@@ -92,6 +92,7 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
       enabled: true,
       disableSignUp: name === "staff",
       requireEmailVerification: name !== "staff", // #54
+      revokeSessionsOnPasswordReset: true, // a reset ends every other session, so an intruder's session does not outlive the owner's reset
       sendResetPassword: ({ user, url }) => sendEmail(name, "reset", user.email, url),
     },
     emailVerification: { sendVerificationEmail: ({ user, url }) => sendEmail(name, "verify", user.email, url) },
@@ -157,7 +158,7 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
     },
     // The client address comes from the header Vercel sets, not X-Forwarded-For, which any client can send.
     // consent_record's id is made by the database (identity column); every other table keeps Better Auth's own ids.
-    advanced: { database: { generateId: ({ model }: { model: string }) => (model === "consentRecord" ? false : generateRandomString(32, "a-z", "A-Z", "0-9")) }, cookiePrefix: name, useSecureCookies: secure, ipAddress: { ipAddressHeaders: ["x-vercel-forwarded-for"] } },
+    advanced: { disableOriginCheck: false, database: { generateId: ({ model }: { model: string }) => (model === "consentRecord" ? false : generateRandomString(32, "a-z", "A-Z", "0-9")) }, cookiePrefix: name, useSecureCookies: secure, ipAddress: { ipAddressHeaders: ["x-vercel-forwarded-for"] } },
   });
 }
 

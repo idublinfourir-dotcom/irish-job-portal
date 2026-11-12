@@ -10,7 +10,8 @@ import { answers, seedSignupTerms } from "./better-auth-helper";
 
 // Statements measured on 12 November 2026, counting every pg.Client.query call (begin and commit included). The callback that creates
 // an account (user, Google account, consent row, session): 17 for a new person (no password hashing, so far faster than email sign-up); a returning user: 12; joining an existing confirmed account: 14 (includes the one consent-row lookup). The sign-in start call is not counted. Raise only on purpose.
-const BUDGET = { newUser: 17, returning: 12, link: 14, newUserMs: 2000 };
+const BUDGET = { newUser: 17, returning: 12, link: 14, newUserMs: 200 };
+// Time measured three times on 12 November 2026: a new person 39 ms (budget 200, about 5 times).
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
@@ -52,11 +53,11 @@ afterAll(async () => {
 
 let ipn = 10;
 const freshIp = () => `203.0.113.${ipn++}`;
-async function call(path: string, body?: unknown, o: { cookie?: string; auth?: { handler: (r: Request) => Promise<Response> }; pool?: string } = {}) {
+async function call(path: string, body?: unknown, o: { cookie?: string; auth?: { handler: (r: Request) => Promise<Response> }; pool?: string; origin?: string } = {}) {
   const post = body !== undefined, handler = o.auth ? o.auth.handler : post ? POST : GET;
   const res = await handler(new Request(`${BASE}/api/auth/${o.pool ?? "candidate"}/${path}`, {
     method: post ? "POST" : "GET", body: post ? JSON.stringify(body) : undefined, redirect: "manual",
-    headers: { "content-type": "application/json", origin: BASE, "x-vercel-forwarded-for": freshIp(), ...(o.cookie ? { cookie: o.cookie } : {}) },
+    headers: { "content-type": "application/json", origin: o.origin ?? BASE, "x-vercel-forwarded-for": freshIp(), ...(o.cookie ? { cookie: o.cookie } : {}) },
   }));
   const text = await res.text();
   let json: Record<string, any> | null = null; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -102,6 +103,27 @@ describe("Google is off unless both settings are set", () => {
     expect(cb.status).toBe(302);
     expect(cb.location).toMatch(/error=/);
     expect(await everything()).toEqual(before);
+  });
+});
+
+describe("origin and redirect-address checks on the Google start (review finding 2)", () => {
+  const evil = "https://evil.example.test";
+  it("a foreign callbackURL, errorCallbackURL or newUserCallbackURL is refused and no state is stored", async () => {
+    const states = () => count("select 1 from candidate_verification");
+    const before = await states();
+    for (const field of ["callbackURL", "errorCallbackURL", "newUserCallbackURL"])
+      for (const bad of [`${evil}/steal`, "//evil.example.test/steal", "javascript:alert(1)", "https://localhost.evil.example.test/"]) {
+        const r = await call("sign-in/social", { provider: "google", callbackURL: "/welcome", additionalData: answers, [field]: bad });
+        expect([r.status, r.json?.code], `${field} ${bad}`).toEqual([403, field === "callbackURL" ? "INVALID_CALLBACK_URL" : field === "errorCallbackURL" ? "INVALID_ERROR_CALLBACK_URL" : "INVALID_NEW_USER_CALLBACK_URL"]);
+      }
+    expect(await states()).toBe(before);
+  });
+  it("a foreign origin with a cookie is refused; our own addresses (relative and absolute) work", async () => {
+    const body = { provider: "google", callbackURL: "/welcome", additionalData: answers };
+    const r = await call("sign-in/social", body, { cookie: "candidate.session_token=anything", origin: evil });
+    expect([r.status, r.json?.code]).toEqual([403, "INVALID_ORIGIN"]);
+    for (const own of [{ callbackURL: `${BASE}/welcome`, errorCallbackURL: "/sorry", newUserCallbackURL: `${BASE}/hello` }, {}])
+      expect((await call("sign-in/social", { ...body, ...own })).status).toBe(200);
   });
 });
 
@@ -228,12 +250,18 @@ describe("Google sign-up refused: no account, no consent row, no session, no coo
     expect(await googleAccounts(victim.email)).toBe(0);
     expect([await users(p.email), await googleAccounts(p.email)]).toEqual([1, 1]);
   });
-  it("signing in with an id token (no redirect) cannot make an account either", async () => {
-    const p = person("idtoken");
-    const before = await everything();
-    const r = await call("sign-in/social", { provider: "google", idToken: { token: `${b64({ alg: "RS256" })}.${b64({ ...p, aud: "fake-client-id" })}.x` } });
-    expect(r.status).toBeGreaterThanOrEqual(400);
+  it("signing in with an id token (no redirect) cannot make an account: with Google's check forced to pass, our own rule refuses it", async () => {
+    // The provider's token check is forced to pass, so the refusal below comes from our user-create step and not from the fake
+    // refusing Google's key download. A returning Google user (ann) is the control: the same call signs her in.
+    const auth = createAuth("candidate", { database: db.pool("app_candidate"), baseURL: BASE, secret, sendEmail: async () => {}, google: { clientId: "fake-client-id", clientSecret: "x", verifyIdToken: async () => true } as never });
+    const token = (p: Profile) => `${b64({ alg: "RS256" })}.${b64({ iss: "https://accounts.google.com", aud: "fake-client-id", ...p })}.x`;
+    const control = await call("sign-in/social", { provider: "google", idToken: { token: token(person("ann")) } }, { auth });
+    expect([control.status, control.json?.user?.email], control.text).toEqual([200, person("ann").email]);
+    const p = person("idtoken"), before = await everything();
+    const r = await call("sign-in/social", { provider: "google", idToken: { token: token(p) }, additionalData: answers }, { auth });
+    expect([r.status, r.json?.code], r.text).toEqual([400, "SIGNUP_ANSWERS_REFUSED"]);
     expect(await everything()).toEqual(before);
+    expect(await users(p.email)).toBe(0);
   });
   it("a refused sign-up leaves no half-made rows: every candidate has a consent row", async () => {
     expect(await count("select 1 from candidate_user u left join consent_record c on c.candidate_user_id=u.id where c.id is null")).toBe(0);

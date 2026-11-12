@@ -46,4 +46,11 @@ describe("the fake email sender (#174)", () => {
       expect(() => createFakeEmail(bad), bad).toThrow(/only on localhost/);
     expect(() => createFakeEmail("not a url")).toThrow();
   });
+  it("also refuses on Vercel and when NODE_ENV is production, even with a localhost address", () => {
+    const none = () => {};
+    for (const env of [{ VERCEL: "1" }, { NODE_ENV: "production" }, { VERCEL: "1", NODE_ENV: "production" }, { VERCEL: "0" }])
+      expect(() => createFakeEmail("http://localhost:3000", none, env), JSON.stringify(env)).toThrow(/developer machine/);
+    for (const env of [{}, { NODE_ENV: "test" }, { NODE_ENV: "development" }, { VERCEL: "" }])
+      expect(() => createFakeEmail("http://localhost:3000", none, env), JSON.stringify(env)).not.toThrow();
+  });
 });
