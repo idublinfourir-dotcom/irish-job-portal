@@ -134,7 +134,7 @@ const must = [
   ["app_portal", "write advert text", "insert into job_text(job_id,advert_text) values($1,'text') on conflict (job_id) do update set advert_text=excluded.advert_text", () => [job]],
   ["app_portal", "read its jobs' stats", "select views from job_daily_stat limit 1"],
   ["app_portal", "edit its company profile", "update organisation set website='https://example.test' where id=$1", () => [org]],
-  ["app_portal", "read names, the CRO register and the WRC register for sign-up", "select (select count(*) from organisation_name where normalised_name operator(extensions.%) 'fake'), (select count(*) from cro_company), (select count(*) from wrc_licence)"],
+  ["app_portal", "read names and the CRO register for sign-up (the WRC list is staff only, #212)", "select (select count(*) from organisation_name where normalised_name operator(extensions.%) 'fake'), (select count(*) from cro_company)"],
   ["app_portal", "claim or register through the functions", "select has_function_privilege('private.claim_organisation(text,bigint)','execute') and has_function_privilege('private.register_organisation(text,text,text,text,text)','execute')"],
   ["app_portal", "read its strikes without the reporter", "select id, reason_code, notice_summary, stage from strike limit 1"],
   ["app_portal", "read quotes without the staff id", "select id, amount_eur, status from case_quote limit 1"],

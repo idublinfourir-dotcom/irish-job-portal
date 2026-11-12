@@ -848,6 +848,8 @@ export const croCompany = pgTable("cro_company", {
 	normalisedName: text("normalised_name").notNull(),
 	status: text().notNull(),
 	lastSeenOn: date("last_seen_on").notNull(),
+	companyType: text("company_type"),
+	county: text(),
 }, (table) => [
 	index("cro_company_trgm").using("gin", table.normalisedName.asc().nullsLast().op("gin_trgm_ops")),
 	unique("cro_company_cro_number_key").on(table.croNumber),
@@ -885,8 +887,20 @@ export const wrcLicence = pgTable("wrc_licence", {
 	county: text(),
 	firstSeenOn: date("first_seen_on"),
 	lastSeenOn: date("last_seen_on"),
+	missedImports: smallint("missed_imports").default(0).notNull(),
 }, (table) => [
 	unique("wrc_licence_licence_number_key").on(table.licenceNumber),
+	check("wrc_licence_missed_imports_check", sql`missed_imports >= 0`),
+]);
+
+export const registerImport = pgTable("register_import", {
+	source: text().primaryKey().notNull(),
+	validator: text(),
+	importedOn: date("imported_on").notNull(),
+	rowCount: integer("row_count").notNull(),
+}, () => [
+	check("register_import_source_check", sql`source = ANY (ARRAY['cro'::text, 'wrc'::text])`),
+	check("register_import_row_count_check", sql`row_count >= 0`),
 ]);
 
 export const membership = pgTable("membership", {

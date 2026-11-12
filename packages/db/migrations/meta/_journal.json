@@ -99,6 +99,13 @@
       "when": 1794300009000,
       "tag": "0013_teams",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794300010000,
+      "tag": "0014_registers",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,49 @@
+name: Weekly registers
+
+# Loads the CRO company register and the WRC licensed agency list into the live database (step 8 slice 8.2b).
+# Secrets (the two existing ones, no new secret): FETCHER_DATABASE_URL (app_fetcher, CRO step only) and
+# ADMIN_DATABASE_URL (app_admin, WRC step only).
+on:
+  schedule:
+    - cron: "23 3 * * 0" # weekly, Sunday 03:23 UTC; GitHub may start it late
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never two runs at once; a second one waits.
+concurrency:
+  group: weekly-registers
+  cancel-in-progress: false
+
+jobs:
+  registers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Import CRO companies
+        env:
+          FETCHER_DATABASE_URL: ${{ secrets.FETCHER_DATABASE_URL }}
+        run: |
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          node packages/db/src/registers-cli.ts cro
+      # The WRC list is a PDF read with pdftotext. The WRC step runs even when the CRO step failed.
+      - name: Install pdftotext
+        if: ${{ !cancelled() }}
+        run: sudo apt-get install -y poppler-utils
+      # The command itself skips when the PDF has not changed since the last import.
+      - name: Import WRC agency list
+        if: ${{ !cancelled() }}
+        env:
+          WRC_ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
+        run: |
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          node packages/db/src/registers-cli.ts wrc

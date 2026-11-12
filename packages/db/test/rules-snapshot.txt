@@ -103,6 +103,8 @@ check pay_floor_check1 on pay_floor: CHECK (((status <> 'active'::text) OR (appr
 check pay_floor_floor_eur_check on pay_floor: CHECK ((floor_eur > 0))
 check pay_floor_status_check on pay_floor: CHECK ((status = ANY (ARRAY['pending_check'::text, 'active'::text, 'expired'::text, 'replaced'::text, 'withdrawn'::text, 'rejected'::text, 'found_false'::text])))
 check portal_user_status_check on portal_user: CHECK ((status = ANY (ARRAY['active'::text, 'blocked'::text])))
+check register_import_row_count_check on register_import: CHECK ((row_count >= 0))
+check register_import_source_check on register_import: CHECK ((source = ANY (ARRAY['cro'::text, 'wrc'::text])))
 check report_check on report: CHECK (((target_wiped_at IS NOT NULL) OR (num_nonnulls(target_job_id, target_organisation_id, target_message_id, target_candidate_user_id) = 1)))
 check report_check1 on report: CHECK ( CASE target_kind WHEN 'job'::text THEN (num_nonnulls(target_organisation_id, target_message_id, target_candidate_user_id) = 0) WHEN 'organisation'::text THEN (num_nonnulls(target_job_id, target_message_id, target_candidate_user_id) = 0) WHEN 'message'::text THEN (num_nonnulls(target_job_id, target_organisation_id, target_candidate_user_id) = 0) ELSE (num_nonnulls(target_job_id, target_organisation_id, target_message_id) = 0) END)
 check report_check2 on report: CHECK ((num_nonnulls(reporter_candidate_user_id, reporter_portal_user_id) <= 1))
@@ -143,6 +145,7 @@ check strike_stage_check on strike: CHECK ((stage = ANY (ARRAY['case_open'::text
 check tracker_entry_check on tracker_entry: CHECK ((((route = 'redirect'::text) AND (stage = ANY (ARRAY['applied'::text, 'interview'::text, 'offer'::text, 'rejected'::text, 'withdrawn'::text]))) OR ((route = 'on_site'::text) AND (stage = ANY (ARRAY['applied'::text, 'viewed'::text, 'shortlisted'::text, 'rejected'::text, 'offer'::text, 'hired'::text, 'withdrawn'::text])))))
 check tracker_entry_origin_check on tracker_entry: CHECK ((origin = ANY (ARRAY['did_you_apply_yes'::text, 'mark_applied'::text, 'on_site'::text])))
 check tracker_entry_route_check on tracker_entry: CHECK ((route = ANY (ARRAY['redirect'::text, 'on_site'::text])))
+check wrc_licence_missed_imports_check on wrc_licence: CHECK ((missed_imports >= 0))
 rights app_admin on alert: table[select] columns[]
 rights app_admin on application: table[] columns[]
 rights app_admin on apply_click: table[select] columns[]
@@ -199,6 +202,7 @@ rights app_admin on portal_session: table[delete] columns[select(id,user_id)]
 rights app_admin on portal_user: table[select] columns[update(blocked_at,blocked_reason_code,deleted_at,status)]
 rights app_admin on portal_verification: table[] columns[]
 rights app_admin on published_content_page: table[] columns[]
+rights app_admin on register_import: table[insert,select,update] columns[]
 rights app_admin on report: table[delete,insert,select,update] columns[]
 rights app_admin on review_item: table[insert,select,update] columns[]
 rights app_admin on saved_job: table[select] columns[]
@@ -270,6 +274,7 @@ rights app_candidate on portal_session: table[] columns[]
 rights app_candidate on portal_user: table[] columns[]
 rights app_candidate on portal_verification: table[] columns[]
 rights app_candidate on published_content_page: table[select] columns[]
+rights app_candidate on register_import: table[] columns[]
 rights app_candidate on report: table[insert] columns[select(id)]
 rights app_candidate on review_item: table[] columns[]
 rights app_candidate on saved_job: table[delete,insert,select] columns[]
@@ -341,6 +346,7 @@ rights app_fetcher on portal_session: table[] columns[]
 rights app_fetcher on portal_user: table[] columns[]
 rights app_fetcher on portal_verification: table[] columns[]
 rights app_fetcher on published_content_page: table[] columns[]
+rights app_fetcher on register_import: table[insert,select,update] columns[]
 rights app_fetcher on report: table[] columns[]
 rights app_fetcher on review_item: table[] columns[insert(detail,job_id,queue,reason) select(job_id,queue,status)]
 rights app_fetcher on saved_job: table[] columns[]
@@ -355,7 +361,7 @@ rights app_fetcher on staff_user: table[] columns[]
 rights app_fetcher on staff_verification: table[] columns[]
 rights app_fetcher on strike: table[] columns[]
 rights app_fetcher on tracker_entry: table[] columns[]
-rights app_fetcher on wrc_licence: table[select] columns[]
+rights app_fetcher on wrc_licence: table[] columns[]
 rights app_portal on alert: table[] columns[]
 rights app_portal on application: table[] columns[]
 rights app_portal on apply_click: table[] columns[]
@@ -412,6 +418,7 @@ rights app_portal on portal_session: table[delete,insert,select,update] columns[
 rights app_portal on portal_user: table[insert,select] columns[update(deleted_at,email,email_verified,image,last_active_at,name,updated_at)]
 rights app_portal on portal_verification: table[delete,insert,select,update] columns[]
 rights app_portal on published_content_page: table[select] columns[]
+rights app_portal on register_import: table[] columns[]
 rights app_portal on report: table[insert] columns[select(id)]
 rights app_portal on review_item: table[] columns[]
 rights app_portal on saved_job: table[] columns[]
@@ -426,7 +433,7 @@ rights app_portal on staff_user: table[] columns[]
 rights app_portal on staff_verification: table[] columns[]
 rights app_portal on strike: table[] columns[select(appeal_decided_at,appeal_due_at,appeal_text,appealed_at,case_kind,decided_at,employer_reply,id,job_id,level,notice_summary,organisation_id,outcome,pay_floor_id,reason_code,replied_at,reply_due_at,stage) update(appeal_text,employer_reply)]
 rights app_portal on tracker_entry: table[] columns[]
-rights app_portal on wrc_licence: table[select] columns[]
+rights app_portal on wrc_licence: table[] columns[]
 trigger application_guard on application: CREATE TRIGGER application_guard BEFORE UPDATE ON public.application FOR EACH ROW EXECUTE FUNCTION private.application_guard()
 trigger application_job_open on application: CREATE TRIGGER application_job_open BEFORE INSERT ON public.application FOR EACH ROW EXECUTE FUNCTION private.application_job_open()
 trigger approval_request_guard on approval_request: CREATE TRIGGER approval_request_guard BEFORE INSERT OR UPDATE ON public.approval_request FOR EACH ROW EXECUTE FUNCTION private.approval_request_guard()
