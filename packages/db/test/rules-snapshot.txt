@@ -431,7 +431,7 @@ rights app_portal on staff_role: table[] columns[]
 rights app_portal on staff_session: table[] columns[]
 rights app_portal on staff_user: table[] columns[]
 rights app_portal on staff_verification: table[] columns[]
-rights app_portal on strike: table[] columns[select(appeal_decided_at,appeal_due_at,appeal_text,appealed_at,case_kind,decided_at,employer_reply,id,job_id,level,notice_summary,organisation_id,outcome,pay_floor_id,reason_code,replied_at,reply_due_at,stage) update(appeal_text,employer_reply)]
+rights app_portal on strike: table[] columns[]
 rights app_portal on tracker_entry: table[] columns[]
 rights app_portal on wrc_licence: table[] columns[]
 trigger application_guard on application: CREATE TRIGGER application_guard BEFORE UPDATE ON public.application FOR EACH ROW EXECUTE FUNCTION private.application_guard()

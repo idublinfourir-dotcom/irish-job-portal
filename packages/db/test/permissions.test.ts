@@ -40,6 +40,9 @@ const allowed = (role, name, sql, a) => it(`must: ${role}: ${name}`, async () =>
 // ---- must not
 for (const t of ["candidate_user","candidate_account","candidate_session","candidate_verification","candidate_rate_limit","candidate_profile","candidate_cv","saved_job","tracker_entry","apply_click","alert"]) denied("app_portal", `read ${t}`, `select * from ${t} limit 1`);
 for (const t of ["staff_user","staff_account","staff_session","staff_verification","staff_rate_limit","staff_role","approval_request","audit_event","report","case_note","review_item","email_outbox","setting","organisation_domain","ban","contact_message","consent_record","services_case","case_document","notification","notification_preference","content_page","fetched_advert","fetch_run"]) denied("app_portal", `read ${t}`, `select * from ${t} limit 1`);
+// 0017: the portal reads and writes strikes only through private.status_page and private.status_write (its own company, the owner writes)
+for (const t of ["strike"]) denied("app_portal", `read ${t}`, `select id from ${t} limit 1`);
+denied("app_portal", "write a strike reply or appeal directly", "update strike set employer_reply = 'x', appeal_text = 'x' where false");
 for (const v of views.filter((v) => v.startsWith("candidate_"))) denied("app_portal", `read view ${v}`, `select * from ${v} limit 1`);
 for (const t of ["staff_user","staff_account","staff_session","staff_verification","staff_rate_limit","staff_role","approval_request","audit_event","membership","portal_user","portal_account","portal_session","portal_verification","portal_rate_limit","report","strike","ban","case_note","case_quote","review_item","email_outbox","organisation_domain","sponsorship_statement","pay_floor","fetched_advert","fetch_run","cro_company","wrc_licence","setting","content_page","services_case","case_document","consent_record","notification","notification_preference","contact_message"]) denied("app_candidate", `read ${t}`, `select * from ${t} limit 1`);
 for (const v of views.filter((v) => v.startsWith("portal_"))) denied("app_candidate", `read view ${v}`, `select * from ${v} limit 1`);
@@ -77,7 +80,7 @@ denied("app_portal", "manage its team: change a membership directly (members cha
 denied("app_portal", "add a member directly", "insert into membership(organisation_id,portal_user_id,role,status) values($1,$2,'viewer','active')", () => [org, pu]);
 denied("app_portal", "insert a Launch B contact_request", "insert into contact_request(organisation_id,membership_id,candidate_user_id) values($1,$2,$3)", () => [org, mem, cand]);
 // execute: exactly as section 2.1
-const want = { erase_candidate: ["app_admin"], erase_portal_user: ["app_admin"], run_retention: ["app_admin"], refresh_permit_history: ["app_admin"], mark_first_time: ["app_admin"], claim_organisation: ["app_portal"], register_organisation: ["app_portal"], team_invite: ["app_portal"], team_accept: ["app_portal"], team_request: ["app_portal"], team_answer: ["app_portal"], team_remove: ["app_portal"], team_leave: ["app_portal"], team_set_role: ["app_portal"], team_transfer: ["app_portal"], audit_pseudonymise: [], audit_purge: [], move_application: [], search_visible_candidates: [], use_approval: [] };
+const want = { erase_candidate: ["app_admin"], erase_portal_user: ["app_admin"], run_retention: ["app_admin"], refresh_permit_history: ["app_admin"], mark_first_time: ["app_admin"], claim_organisation: ["app_portal"], register_organisation: ["app_portal"], team_invite: ["app_portal"], team_accept: ["app_portal"], team_request: ["app_portal"], team_answer: ["app_portal"], team_remove: ["app_portal"], team_leave: ["app_portal"], team_set_role: ["app_portal"], team_transfer: ["app_portal"], status_page: ["app_portal"], status_write: ["app_portal"], audit_pseudonymise: [], audit_purge: [], move_application: [], search_visible_candidates: [], use_approval: [] };
 for (const f of fns) for (const r of [...roles, "anon", "authenticated", "service_role"]) {
   const exp = (want[f.proname] || []).includes(r);
   it(`${exp ? "must" : "must not"}: ${r}: execute ${f.f}`, async () => {
@@ -136,7 +139,7 @@ const must = [
   ["app_portal", "edit its company profile", "update organisation set website='https://example.test' where id=$1", () => [org]],
   ["app_portal", "read names and the CRO register for sign-up (the WRC list is staff only, #212)", "select (select count(*) from organisation_name where normalised_name operator(extensions.%) 'fake'), (select count(*) from cro_company)"],
   ["app_portal", "claim or register through the functions", "select has_function_privilege('private.claim_organisation(text,bigint)','execute') and has_function_privilege('private.register_organisation(text,text,text,text,text)','execute')"],
-  ["app_portal", "read its strikes without the reporter", "select id, reason_code, notice_summary, stage from strike limit 1"],
+  ["app_portal", "read its strikes without the reporter, through the status page function (0017)", "select has_function_privilege('private.status_page(text)','execute') and has_function_privilege('private.status_write(text,text,bigint,text)','execute')"],
   ["app_portal", "read quotes without the staff id", "select id, amount_eur, status from case_quote limit 1"],
   ["app_portal", "sign a sponsorship statement", "select 1 from sponsorship_statement limit 1"],
   ["app_portal", "file a report", "insert into report(target_kind,target_job_id,reason,reporter_portal_user_id) values('job',$1,'other',$2) returning id", () => [job, pu]],

@@ -258,7 +258,7 @@ sections[3] = async () => {
   await rule("organisation", "clock must not: nothing changes the badge of the restricted company's jobs by hand to sponsor_confirmed via app_admin on a job of a restricted company", { refuse: async () => { const o = await s2org(); const j = await portalJob(o.id); await run("app_admin", S.A, "update job set badge='sponsor_confirmed' where id=$1", [j]); }, expect: "restricted" });
 
   // ---------- overturn (#134): one staff member, not a second confirmation
-  const portalAppeal = (st) => run("app_portal", null, "update strike set appeal_text='unfair' where id=$1", [st]);
+  const portalAppeal = (st) => run("portal_owner", null, "update strike set appeal_text='unfair' where id=$1", [st]); // 0017: the portal appeals through private.status_write, which runs as portal_owner
   await rule("strike", "overturn must do: employer appeals in the portal, a different person (C) overturns alone; restricted_until clears; back to verified", { ok: async () => {
     const o = await s2org(); await portalAppeal(o.st); await run("app_admin", S.C, "update strike set stage='overturned' where id=$1", [o.st]);
     const s = await q1("app_admin", S.C, "select appeal_decided_by_staff_user_id d, appealed_at, appeal_entered_by_staff_user_id e from strike where id=$1", [o.st]);
@@ -294,10 +294,10 @@ sections[3] = async () => {
   await rule("strike", "portal appeal must do: before appeal_due_at; appealed_at stamped; no staff id; received date empty", { ok: async () => {
     const o = await mkOrg(); const st = await mkStrike(o.id, { appeal_due: ahead(3) }); await portalAppeal(st);
     const s = await q1("app_admin", S.A, "select appealed_at, appeal_entered_by_staff_user_id e, appeal_received_at r from strike where id=$1", [st]); must(s.appealed_at && s.e === null && s.r === null, JSON.stringify(s)); } });
-  await rule("strike", "portal appeal must not: after appeal_due_at", { refuse: async () => { const o = await mkOrg(); const st = await mkStrike(o.id, { appeal_due: ago(1) }); await portalAppeal(st); }, expect: "appeal window" });
-  await rule("strike", "portal appeal must not: appeal_due_at is empty", { refuse: async () => { const o = await mkOrg(); const st = await mkStrike(o.id, { appeal_due: null }); await portalAppeal(st); }, expect: "appeal window" });
+  await rule("strike", "portal appeal must not: after appeal_due_at", { refuse: async () => { const o = await mkOrg(); const st = await mkStrike(o.id, { appeal_due: ago(1) }); await run("app_portal", null, "update strike set appeal_text='unfair' where id=$1", [st]); }, expect: "permission denied" }); // 0017: no direct write; status_write checks the window
+  await rule("strike", "portal appeal must not: appeal_due_at is empty", { refuse: async () => { const o = await mkOrg(); const st = await mkStrike(o.id, { appeal_due: null }); await run("app_portal", null, "update strike set appeal_text='unfair' where id=$1", [st]); }, expect: "permission denied" });
   await rule("strike", "portal appeal must not: sets its own received date or entered-by (column grant)", { refuse: async () => { const o = await mkOrg(); const st = await mkStrike(o.id, { appeal_due: ahead(3) }); await run("app_portal", null, "update strike set appeal_text='x', appeal_received_at = now() - interval '9 days' where id=$1", [st]); }, expect: "permission denied" });
-  await rule("strike", "portal appeal must not: after the appeal is decided", { refuse: async () => { const o = await s2org(); await portalAppeal(o.st); await run("app_admin", S.C, "update strike set stage='upheld' where id=$1", [o.st]); await run("app_portal", null, "update strike set appeal_text='again' where id=$1", [o.st]); }, expect: "appeal is decided" });
+  await rule("strike", "portal appeal must not: after the appeal is decided", { refuse: async () => { const o = await s2org(); await portalAppeal(o.st); await run("app_admin", S.C, "update strike set stage='upheld' where id=$1", [o.st]); await run("portal_owner", null, "update strike set appeal_text='again' where id=$1", [o.st]); }, expect: "appeal is decided" });
   await rule("strike", "staff-entered appeal must do: received date set, entered_by stamped, appealed_at = now", { ok: async () => {
     const o = await mkOrg(); const st = await mkStrike(o.id, { appeal_due: ahead(3) }); await run("app_admin", S.C, "update strike set appeal_text='by post', appeal_received_at = now() - interval '1 day' where id=$1", [st]);
     const s = await q1("app_admin", S.A, "select appeal_entered_by_staff_user_id e, appealed_at, appeal_received_at r from strike where id=$1", [st]); must(s.e === S.C && near(s.appealed_at, new Date()) && s.r, JSON.stringify(s)); } });
@@ -306,10 +306,10 @@ sections[3] = async () => {
   await rule("strike", "staff-entered appeal must not: decided by the original decider (#134)", { refuse: async () => { const o = await entered(); await run("app_admin", S.A, "update strike set stage='overturned' where id=$1", [o.st]); }, expect: "check constraint" });
   await rule("strike", "staff-entered appeal must do: decided by a third person (D); strike 2 ends", { ok: async () => { const o = await entered(); await run("app_admin", S.D, "update strike set stage='overturned' where id=$1", [o.st]); must((await org(o.id)).restricted_until === null, "not cleared"); } });
   await rule("strike", "staff-entered appeal must not: entered by writing appeal_entered_by under another name (column grant)", { refuse: async () => { const o = await mkOrg(); const st = await mkStrike(o.id, { appeal_due: ahead(3) }); await run("app_admin", S.C, "update strike set appeal_text='x', appeal_received_at=now(), appeal_entered_by_staff_user_id=$2 where id=$1", [st, S.D]); }, expect: "permission denied" });
-  await rule("strike", "stamp on every write: a portal appeal over a staff-entered one clears entered_by; a staff write over a portal appeal stamps the staff member (RECHECK-2 failure 8)", { ok: async () => {
+  await rule("strike", "stamp on every write: a staff write over a portal appeal stamps the staff member (RECHECK-2 failure 8; since 0017 the portal cannot write over a staff entry)", { ok: async () => {
     const o = await mkOrg(); const st = await mkStrike(o.id, { appeal_due: ahead(3) });
     await run("app_admin", S.C, "update strike set appeal_text='by post', appeal_received_at = now() - interval '1 day' where id=$1", [st]);
-    await portalAppeal(st); const a = await q1("app_admin", S.A, "select appeal_entered_by_staff_user_id e, appeal_received_at r from strike where id=$1", [st]); must(a.e === null && a.r === null, "after portal " + JSON.stringify(a));
+    await run("app_portal", null, "update strike set appeal_text='unfair' where id=$1", [st]).then(() => must(false, "portal wrote the strike"), (e) => must(/permission denied/.test(e.message), e.message));
     await run("app_admin", S.D, "update strike set appeal_text='staff words', appeal_received_at = now() - interval '2 days' where id=$1", [st]);
     const b = await q1("app_admin", S.A, "select appeal_entered_by_staff_user_id e from strike where id=$1", [st]); must(b.e === S.D, "after staff " + JSON.stringify(b)); } });
 };
@@ -335,7 +335,7 @@ sections[4] = async () => {
   await rule("strike", "late appeal must not: no received date at all", { refuse: () => lateAppeal(3, null), expect: "appeal window" });
   await rule("strike", "late appeal must not: appeal_due_at empty", { refuse: () => lateAppeal(null, 4), expect: "appeal window" });
   await rule("strike", "late appeal must not: the received date typed in a separate update from the text", { refuse: async () => { const o = await mkOrg(); const st = await mkStrike(o.id, { appeal_due: ago(3) }); await run("app_admin", S.C, "update strike set appeal_received_at = now() - interval '4 days' where id=$1", [st]); }, expect: "same update" });
-  await rule("strike", "late appeal must not: the portal enters one late (due 3 days ago)", { refuse: async () => { const o = await mkOrg(); const st = await mkStrike(o.id, { appeal_due: ago(3) }); await run("app_portal", null, "update strike set appeal_text='x' where id=$1", [st]); }, expect: "appeal window" });
+  await rule("strike", "late appeal must not: the portal enters one late (due 3 days ago)", { refuse: async () => { const o = await mkOrg(); const st = await mkStrike(o.id, { appeal_due: ago(3) }); await run("app_portal", null, "update strike set appeal_text='x' where id=$1", [st]); }, expect: "permission denied" });
   await rule("strike", "late appeal setting: staff_entry_grace is read, not fixed: with 2 days, due 3 days ago is too late; with empty it is 0", { ok: async () => {
     try { await set("staff_entry_grace", 2); let refused = false; try { await lateAppeal(3, 4); } catch (e) { refused = /appeal window/.test(e.message); } must(refused, "2-day grace accepted a 3-day-late entry");
       await set("staff_entry_grace", null); refused = false; try { await lateAppeal(1, 2); } catch (e) { refused = /appeal window/.test(e.message); } must(refused, "empty grace accepted a late entry");
@@ -347,14 +347,14 @@ sections[4] = async () => {
   await rule("strike", "late reply must not: deadline 8 days ago", { refuse: () => lateReply(8, 9), expect: "reply window" });
   await rule("strike", "late reply must not: arrived after the deadline", { refuse: () => lateReply(3, 1), expect: "reply window" });
   await rule("strike", "late reply must not: no received date", { refuse: () => lateReply(3, null), expect: "reply window" });
-  await rule("strike", "late reply must not: the portal replies after reply_due_at", { refuse: async () => { const o = await mkOrg(); const st = await mkStrike(o.id, { stage: "reply_window", extra: { reply_due_at: ago(1) } }); await run("app_portal", null, "update strike set employer_reply='x' where id=$1", [st]); }, expect: "reply window" });
-  await rule("strike", "late reply must not: any reply once the case is decided (staff or portal)", { refuse: async () => { const o = await mkOrg(); const st = await mkStrike(o.id, { stage: "reply_window", extra: { reply_due_at: ahead(2), outcome: "cleared" } }, S.B); await run("app_portal", null, "update strike set employer_reply='too late' where id=$1", [st]); }, expect: "decided, no reply" });
+  await rule("strike", "late reply must not: the portal replies after reply_due_at", { refuse: async () => { const o = await mkOrg(); const st = await mkStrike(o.id, { stage: "reply_window", extra: { reply_due_at: ago(1) } }); await run("app_portal", null, "update strike set employer_reply='x' where id=$1", [st]); }, expect: "permission denied" });
+  await rule("strike", "late reply must not: any reply once the case is decided (staff or portal)", { refuse: async () => { const o = await mkOrg(); const st = await mkStrike(o.id, { stage: "reply_window", extra: { reply_due_at: ahead(2), outcome: "cleared" } }, S.B); await run("portal_owner", null, "update strike set employer_reply='too late' where id=$1", [st]); }, expect: "decided, no reply" });
   await rule("strike", "staff-entered reply must not: the person who entered it decides the case (#136 b)", { refuse: async () => { const st = await lateReply(1, 2); await run("app_admin", S.C, "update strike set outcome='strike', level=1 where id=$1", [st]); }, expect: "check constraint" });
   await rule("strike", "staff-entered reply must do: someone else (B) decides the case", { ok: async () => { const st = await lateReply(1, 2); await run("app_admin", S.B, "update strike set outcome='strike', level=1 where id=$1", [st]); } });
   await rule("strike", "staff-entered reply must not: entered under another name (column grant)", { refuse: async () => { const st = await lateReply(1, 2); await run("app_admin", S.C, "update strike set reply_entered_by_staff_user_id=$2 where id=$1", [st, S.D]); }, expect: "permission denied" });
-  await rule("strike", "stamp on every write: portal reply over a staff-entered one clears reply_entered_by", { ok: async () => { const o = await mkOrg(); const st = await mkStrike(o.id, { stage: "reply_window", extra: { reply_due_at: ahead(2) } });
+  await rule("strike", "stamp on every write: the portal cannot write over a staff-entered reply (0017: no direct write)", { refuse: async () => { const o = await mkOrg(); const st = await mkStrike(o.id, { stage: "reply_window", extra: { reply_due_at: ahead(2) } });
     await run("app_admin", S.C, "update strike set employer_reply='post', reply_received_at=now() - interval '1 day' where id=$1", [st]);
-    await run("app_portal", null, "update strike set employer_reply='portal words' where id=$1", [st]); const s = await q1("app_admin", S.A, "select reply_entered_by_staff_user_id e, reply_received_at r from strike where id=$1", [st]); must(s.e === null && s.r === null, JSON.stringify(s)); } });
+    await run("app_portal", null, "update strike set employer_reply='portal words' where id=$1", [st]); }, expect: "permission denied" });
   // ---------- the deadline columns app_admin can write (fix 5 noticed, not closed)
   await rule("strike", "HOLE a: one officer moves a spent appeal_due_at later in one update, then enters a late appeal in the next", { refuse: async () => {
     const o = await mkOrg(); const st = await mkStrike(o.id, { appeal_due: ago(40) });
@@ -393,7 +393,7 @@ sections[5] = async () => {
 
   // ---------- strike columns: staff read the reply, nobody writes the stamped columns, the portal reads no staff ids
   const rich = async () => { const o = await mkOrg(); const st = await mkStrike(o.id, { stage: "reply_window", extra: { reply_due_at: ahead(2) } });
-    await run("app_portal", null, "update strike set employer_reply='we deny it', appeal_text='unfair' where id=$1", [st]); return st; };
+    await run("portal_owner", null, "update strike set employer_reply='we deny it', appeal_text='unfair' where id=$1", [st]); return st; };
   await rule("strike", "strike grants must do: staff read the employer's reply, reply and appeal times, deciders (select *)", { ok: async () => {
     const st = await rich(); const r = await q1("app_admin", S.A, "select * from strike where id=$1", [st]); must(r.employer_reply === "we deny it" && r.replied_at && r.appeal_text === "unfair" && r.appealed_at, JSON.stringify(r));
     await q1("app_admin", S.A, "select employer_reply, replied_at, appealed_at, ban_lifted_at, decided_by_staff_user_id, appeal_decided_by_staff_user_id from strike where id=$1", [st]); } });
@@ -407,7 +407,7 @@ sections[5] = async () => {
   await rule("strike", "strike grants must not: the portal reads report_id (the reporter)", { refuse: () => run("app_portal", null, "select report_id from strike limit 1"), expect: "permission denied" });
   await rule("strike", "strike grants must not: the portal reads approval_request_id", { refuse: () => run("app_portal", null, "select approval_request_id from strike limit 1"), expect: "permission denied" });
   await rule("strike", "strike grants must not: select * as the portal", { refuse: () => run("app_portal", null, "select * from strike limit 1"), expect: "permission denied" });
-  await rule("strike", "strike grants must do: the portal reads its status page columns", { ok: () => run("app_portal", null, "select id, organisation_id, stage, outcome, level, reply_due_at, employer_reply, replied_at, appeal_due_at, appeal_text, appealed_at, decided_at, appeal_decided_at from strike limit 1") });
+  await rule("strike", "strike grants must not: the portal reads strike columns directly (0017: only its own cases, through private.status_page)", { refuse: () => run("app_portal", null, "select id, organisation_id, stage, outcome, level, reply_due_at, employer_reply, replied_at, appeal_due_at, appeal_text, appealed_at, decided_at, appeal_decided_at from strike limit 1"), expect: "permission denied" });
   for (const c of ["outcome", "stage", "decided_at", "level"]) await rule("strike", `strike grants must not: the portal updates ${c}`, { refuse: async () => { const st = await rich(); await run("app_portal", null, `update strike set ${c} = ${c === "stage" ? "'decided'" : c === "outcome" ? "'cleared'" : c === "level" ? "1" : "now()"} where id=$1`, [st]); }, expect: "permission denied" });
   await rule("strike", "strike grants must not: the candidate side has no grant at all", { refuse: () => run("app_candidate", null, "select 1 from strike limit 1"), expect: "permission denied" });
   await rule("ban", "ban grants must not: the portal and the candidate side read the ban list", { refuse: async () => { await run("app_portal", null, "select 1 from ban limit 1"); }, expect: "permission denied" });
@@ -524,7 +524,7 @@ sections[8] = async () => {
   const s1 = await mkStrike(o.id, { extra: { outcome: "strike", level: 1 } });
   const s2 = await mkStrike(o.id); const r2 = await reqC("strike_2", "strike", s2); await applyS2(o.id, s2, r2);
   const s2o = await mkStrike(o.id); const r2o = await reqC("strike_2", "strike", s2o); await run("app_admin", S.A, "update strike set outcome='strike', level=2, approval_request_id=$2 where id=$1", [s2o, r2o]);
-  await run("app_portal", null, "update strike set appeal_text='no' where id=$1", [s2o]); await run("app_admin", S.C, "update strike set stage='overturned' where id=$1", [s2o]);
+  await run("portal_owner", null, "update strike set appeal_text='no' where id=$1", [s2o]); await run("app_admin", S.C, "update strike set stage='overturned' where id=$1", [s2o]);
   const s3 = await mkStrike(o.id); const r3 = await reqC("strike_3", "strike", s3); const ban = await applyS3(o.id, s3, r3, o.cro);
   const sLater = await mkStrike(o.id, { extra: { outcome: "strike", level: 1 } });
   const sOther = await mkStrike(other.id, { extra: { outcome: "strike", level: 1 } });
@@ -576,7 +576,7 @@ sections[9] = async () => {
 
 sections[10] = async () => {
   // more probes on who may end a restriction or a claims removal (same family as the section 3 overturn probe)
-  const portalAppeal = (st) => run("app_portal", null, "update strike set appeal_text='unfair' where id=$1", [st]);
+  const portalAppeal = (st) => run("portal_owner", null, "update strike set appeal_text='unfair' where id=$1", [st]); // 0017: the portal appeals through private.status_write, which runs as portal_owner
   await rule("organisation", "probe: strike 2 case 1 ended long ago, strike 2 case 2 is running; case 1 is overturned late: case 2's restriction must stay", { ok: async () => {
     const o = await mkOrg(); const st1 = await mkStrike(o.id); const r1 = await reqC("strike_2", "strike", st1); await applyS2(o.id, st1, r1);
     await replica((q) => q("update organisation set restricted_until = now() - interval '1 day', status='verified' where id=$1", [o.id]));

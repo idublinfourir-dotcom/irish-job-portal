@@ -407,7 +407,7 @@ S("strike", "insert a decided strike 1 as admin (staff id and time stamped by th
 N("strike", "a strike write as app_admin with no acting staff id", "app_admin", /no acting staff/, () => q("app_admin", "update strike set notice_summary = 'x' where id = $1", [st1.id]));
 S("strike", "case open: reply window, portal writes employer_reply (replied_at stamped); app_portal cannot write the staff columns", "app_admin", async () => {
   stR = (await one("app_admin", "insert into strike(organisation_id, case_kind, reason_code, stage, reply_due_at, appeal_due_at) values ($1,'false_claim','false_sponsorship','reply_window', now() + interval '3 days', now() + interval '7 days') returning id", [org1], "s1")).id;
-  const r = await one("app_portal", "update strike set employer_reply = 'we deny' where id = $1 returning replied_at", [stR]);
+  const r = await one("portal_owner", "update strike set employer_reply = 'we deny' where id = $1 returning replied_at", [stR]); // 0017: the portal replies through status_write, which runs as portal_owner
   const e = await one("app_admin", "select reply_entered_by_staff_user_id e from strike where id = $1", [stR]);
   if (!r.replied_at || e.e !== null) throw new Error(JSON.stringify({ r, e }));
   try { await q("app_portal", "update strike set decided_by_staff_user_id = 's1' where id = $1", [stR]); throw new Error("accepted"); } catch (e) { if (!/permission denied/.test(e.message)) throw e; }
@@ -418,7 +418,7 @@ S("strike", "staff enter an emailed reply late within staff_entry_grace (receive
   if (r.e !== "s2") throw new Error(JSON.stringify(r));
 });
 N("strike", "staff enter a reply with no received date", "app_admin", /reply window/, () => q("app_admin", "update strike set employer_reply = 'again' where id = $1", [stR], "s2"));
-N("strike", "portal replies after the due date", "app_portal", /reply window/, () => q("app_portal", "update strike set employer_reply = 'late' where id = $1", [stE]));
+N("strike", "portal replies after the due date (0017: never directly; status_write checks the window)", "app_portal", /permission denied/, () => q("app_portal", "update strike set employer_reply = 'late' where id = $1", [stE]));
 S("strike", "strike 2 with approval: request, outcome set, organisation restricted_until set, status verified_restricted; badge removed from its jobs", "app_admin", async () => {
   st2 = (await one("app_admin", "insert into strike(organisation_id, case_kind, reason_code, stage, appeal_due_at) values ($1,'false_claim','false_sponsorship','decided', now() + interval '7 days') returning id", [org1], "s1")).id;
   const req = (await one("app_admin", "insert into approval_request(kind, target_table, target_id) values ('strike_2','strike',$1) returning id", [String(st2)], "s1")).id;
@@ -443,7 +443,7 @@ S("job", "restricted organisation: portal draft to live becomes in_review; scam/
   try { await q("app_portal", "update job set badge = 'sponsor_confirmed' where id = $1", [j.id]); throw new Error("accepted"); } catch (e) { if (!/restricted/.test(e.message)) throw e; }
 });
 S("strike", "appeal by the portal, overturned by s3-less admin s2 (not decider, not enterer); trigger strike_overturned clears restricted_until", "app_admin", async () => {
-  await q("app_portal", "update strike set appeal_text = 'unfair' where id = $1", [st2]);
+  await q("portal_owner", "update strike set appeal_text = 'unfair' where id = $1", [st2]);
   await q("app_admin", "update strike set stage = 'overturned' where id = $1", [st2], "s2");
   const r = await one("app_admin", "select restricted_until, appeal_decided_by_staff_user_id a from strike s join organisation o on o.id = s.organisation_id where s.id = $1", [st2]);
   if (r.restricted_until !== null || r.a !== "s2") throw new Error(JSON.stringify(r));
