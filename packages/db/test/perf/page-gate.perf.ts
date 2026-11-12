@@ -9,6 +9,7 @@
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createTestDb, tx, urlFor, type TestDb } from "../db";
+import { GOOD_RUN_TODAY, utcDayStart } from "../../src/fetch-guard-cli";
 import { LAST_5_YEARS } from "../../src/dete";
 import { JOB_QUERY, listQuery, SORTS as LIST_SORTS, type Cursor, type Sort as ListSort } from "../../src/search";
 import { approve, claim, DECIDE, listQueue, LOCK, QUEUE_AFTER, QUEUE_FIRST, QUEUE_ITEM, RELEASE, STALE_AFTER, TAKE_OVER } from "../../src/admin-queue";
@@ -388,4 +389,31 @@ it("the admin queue pages and an approve stay under the limit", async () => {
   });
   expect(write).toHaveLength(2);
   expectNoneOver("admin queue", failures);
+});
+
+// The daily fetch guard (src/fetch-guard-cli.ts): one statement as app_fetcher on a year of runs (22,700 rows; about 30 a day in real life, so
+// all but 30 of the fill's rows are moved to earlier days). Budget: 30 pages and
+// MS_LIMIT ms, both when a good run is found at once and in the worst case (every run today failed, so the whole day's range is read), and the
+// plan must use fetch_run_started_idx.
+it("the fetch guard is one statement, under its page and time budget, and uses the started_at index", async () => {
+  await su.query("update fetch_run set started_at = now() - interval '3 days' - id * interval '1 second' where id > (select min(id) + 29 from fetch_run)");
+  await su.query("insert into fetch_run(job_source_id, started_at, finished_at, seen, new, closed) select 1 + (g % 30), now() - interval '10 days' - g * interval '1 minute', now(), 100, 3, 1 from generate_series(1, 20000) g");
+  await owner.query("vacuum (analyze) fetch_run");
+  const client = new pg.Client({ connectionString: urlFor(db.name, "app_fetcher") });
+  await client.connect();
+  try {
+    const day = utcDayStart(new Date());
+    const hit = (await measurePages(client, [{ text: GOOD_RUN_TODAY, values: [day] }]))[0]!;
+    await su.query("update fetch_run set error = 'fake failure' where started_at >= $1", [day]);
+    await owner.query("vacuum (analyze) fetch_run");
+    const worst = (await measurePages(client, [{ text: GOOD_RUN_TODAY, values: [day] }]))[0]!;
+    console.log(`\n=== fetch guard (app_fetcher): good run found ${hit.pages} pages / ${hit.ms} ms [${hit.scans}]; worst, none good ${worst.pages} pages / ${worst.ms} ms [${worst.scans}]`);
+    for (const c of [hit, worst]) {
+      expect(c.pages).toBeLessThanOrEqual(30);
+      expect(c.ms).toBeLessThanOrEqual(MS_LIMIT);
+      expect(c.scans).toMatch(/fetch_run_started_idx/);
+    }
+  } finally {
+    await client.end();
+  }
 });

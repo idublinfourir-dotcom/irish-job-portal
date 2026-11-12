@@ -6,6 +6,9 @@ name: Daily fetch
 on:
   schedule:
     - cron: "17 5 * * *" # daily, 05:17 UTC; GitHub may start it late
+    # Backup slot, 45 minutes later: GitHub says scheduled runs can be delayed or dropped under load. The guard step below makes this
+    # one do nothing when the first already fetched today (a second full run would spend the model's free daily requests and hit 429).
+    - cron: "2 6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -30,7 +33,18 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # Scheduled runs only (a run started by hand always fetches). Skips the next two steps when a fetch already worked today (UTC).
+      # If the guard cannot tell (database unreachable) it fails, so the run goes red and nothing is fetched.
+      - name: Already fetched today?
+        id: guard
+        if: ${{ github.event_name == 'schedule' }}
+        env:
+          FETCHER_DATABASE_URL: ${{ secrets.FETCHER_DATABASE_URL }}
+        run: |
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          node packages/db/src/fetch-guard-cli.ts
       - name: Fetch
+        if: ${{ steps.guard.outputs.skip != 'true' }}
         env:
           FETCHER_DATABASE_URL: ${{ secrets.FETCHER_DATABASE_URL }}
           FETCHER_MODEL_KEY: ${{ secrets.FETCHER_MODEL_KEY }}
@@ -51,7 +65,7 @@ jobs:
       # The 5-year permit history window moves on 1 January; refresh every day so it is never late. The admin login is given
       # to this step only (engineer's choice, 11 November 2026), and it runs even when the fetch failed.
       - name: Refresh permit history labels
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.guard.outcome != 'failure' && steps.guard.outputs.skip != 'true' }}
         env:
           DETE_ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
         run: |
