@@ -12,12 +12,14 @@ export const STAFF_ROLES = ["account_reviewer", "fetched_job_reviewer", "rules_d
 
 export type SeedInput = { email: string; name: string; roles: string[] };
 
+export const PLAIN_EMAIL = /^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+
 /** Checks the command line. Emails are stored lowercased, as Better Auth looks them up. */
 export function parseSeedArgs(argv: string[]): { input?: SeedInput; error?: string } {
   if (argv.length !== 3) return { error: 'usage: staff-seed-cli.ts <email> "<name>" <role>[,<role>...]' };
   const email = argv[0]!.trim().toLowerCase(), name = argv[1]!.trim();
   const roles = [...new Set(argv[2]!.split(",").map((r) => r.trim()))];
-  if (email.length > 254 || !/^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(email)) return { error: "the email is not a plain address" };
+  if (email.length > 254 || !PLAIN_EMAIL.test(email)) return { error: "the email is not a plain address" };
   if (!name || name.length > 100 || /[\u0000-\u001f\u007f]/.test(name)) return { error: "the name must be 1 to 100 characters, with no control characters" };
   const unknown = roles.filter((r) => !STAFF_ROLES.includes(r));
   if (unknown.length || !roles.length) return { error: `unknown role: ${unknown.join(", ") || "(none)"}; roles are ${STAFF_ROLES.join(", ")}` };
