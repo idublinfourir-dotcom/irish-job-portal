@@ -9,8 +9,8 @@ import { createAuth } from "../../auth/src";
 import { answers, seedSignupTerms } from "./better-auth-helper";
 
 // Statements measured on 12 November 2026, counting every pg.Client.query call (begin and commit included). The callback that creates
-// an account (user, Google account, consent row, session): 17 for a new person (no password hashing, so far faster than email sign-up); a returning user: 12. The sign-in start call is not counted. Raise only on purpose.
-const BUDGET = { newUser: 17, returning: 12, newUserMs: 2000 };
+// an account (user, Google account, consent row, session): 17 for a new person (no password hashing, so far faster than email sign-up); a returning user: 12; joining an existing confirmed account: 14 (includes the one consent-row lookup). The sign-in start call is not counted. Raise only on purpose.
+const BUDGET = { newUser: 17, returning: 12, link: 14, newUserMs: 2000 };
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
@@ -239,6 +239,25 @@ describe("Google sign-up refused: no account, no consent row, no session, no coo
     expect(await count("select 1 from candidate_user u left join consent_record c on c.candidate_user_id=u.id where c.id is null")).toBe(0);
     expect(await count("select 1 from candidate_account a left join candidate_user u on u.id=a.user_id where u.id is null")).toBe(0);
   });
+  it("fails closed if the hand-off between the user-create and account-create steps ever breaks: no user, no account, no consent row", async () => {
+    // Simulates the hand-off failing: lookups of the stored answers miss. Only a value that is exactly the three answers is hidden.
+    const get = WeakMap.prototype.get;
+    // (A plain replacement, not vi.spyOn: the spy library itself uses WeakMap.get and would loop.)
+    WeakMap.prototype.get = function (this: WeakMap<object, unknown>, k: object) {
+      const v = get.call(this, k) as object | undefined;
+      return v && Object.keys(v).sort().join() === "acceptsTerms,needsPermit,over18" ? undefined : v; // exactly the answers, not the sign-in state
+    } as typeof get;
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const p = person("handoff"), before = await everything();
+    try {
+      const r = await viaGoogle(p);
+      expect(r.ok).toBe(false);
+      expect(r.callback.cookie).not.toMatch(/session_token=[^;]/);
+    } finally { WeakMap.prototype.get = get; logged.mockRestore(); }
+    expect(await everything()).toEqual(before);
+    expect([await users(p.email), await googleAccounts(p.email), await consents(p.email)]).toEqual([0, 0, 0]);
+    expect((await viaGoogle(p)).ok, "works again once the hand-off is back").toBe(true);
+  });
   it("when the consent write fails the Google account is rolled back too", async () => {
     const p = person("txfail");
     await su.query(`create function public.fail_consent() returns trigger language plpgsql as $$ begin
@@ -288,6 +307,7 @@ describe("an existing candidate with the same email (no silent takeover)", () =>
     const idBefore = (await su.query("select id from candidate_user where email=$1", [e.email])).rows[0].id;
     const r = await viaGoogle(person("confirmed", { email: e.email.toUpperCase() }), { additionalData: undefined });
     expect(r.ok, r.callback.location ?? "").toBe(true);
+    expect(r.statements, `joining sent ${r.statements} statements`).toBeLessThanOrEqual(BUDGET.link);
     expect((await sessionOf(r.callback.cookie))?.user.id).toBe(idBefore);
     expect([await users(e.email), await consents(e.email), await googleAccounts(e.email)]).toEqual([1, 1, 1]);
     // the password still works and was not changed

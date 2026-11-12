@@ -1,4 +1,4 @@
-import { betterAuth, type DBFieldAttribute } from "better-auth";
+import { betterAuth, getCurrentAdapter, type DBFieldAttribute } from "better-auth";
 import { APIError, getOAuthState } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { generateRandomString } from "better-auth/crypto";
@@ -134,8 +134,13 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
         } } },
         account: { create: { before: async (a: { userId: string }, ctx: Ctx | null) => {
           if (ctx?.path === "/sign-up/email") return void (await writeConsent(ctx.context.adapter, a.userId, checkSignup(ctx.body, false)));
-          const answers = ctx && fromGoogle.get(ctx); // none when Google joins an existing candidate: no second consent row
-          if (answers) await writeConsent(ctx.context.adapter, a.userId, answers);
+          const answers = ctx && fromGoogle.get(ctx);
+          if (answers) return void (await writeConsent(ctx.context.adapter, a.userId, answers));
+          // No answers means Google is joining an existing candidate, who must already have a consent row. Checked through the same
+          // transaction, so if the hand-off from the user-create step ever breaks, a new account with no consent row is refused (fail closed).
+          const trx = (await getCurrentAdapter(ctx?.context.adapter as never)) as unknown as { count: (q: unknown) => Promise<number> };
+          if (!(await trx.count({ model: "consentRecord", where: [{ field: "candidateUserId", value: a.userId }] })))
+            throw new APIError("FORBIDDEN", { message: "Sign-up answers are missing.", code: "SIGNUP_CONSENT_MISSING" });
         } } },
       } : {}),
       session: {
