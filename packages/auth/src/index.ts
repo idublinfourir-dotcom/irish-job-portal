@@ -1,7 +1,12 @@
 import { betterAuth, type DBFieldAttribute } from "better-auth";
 import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
+import { generateRandomString } from "better-auth/crypto";
 import type { Pool } from "pg";
+import { candidateSignup, checkSignup, writeConsent } from "./signup";
+
+export { readAnswers, checkSignup, currentTermsId, writeConsent, type Answers } from "./signup";
+export { createFakeEmail, type FakeEmail } from "./fake-email";
 
 // The pool is called portal, not employer: its tables are portal_user and so on (23-database-design.md).
 export type LoginPool = "candidate" | "portal" | "staff";
@@ -46,13 +51,16 @@ export function checkSettings(baseURL: string, secret: string): { secure: boolea
 export const STAFF_IDLE_SECONDS = 8 * 3600;
 export const STAFF_REFRESH_SECONDS = 300;
 
-// The admin app's settings, read from its environment. Missing ones fail closed, like checkSettings.
-export function staffSettings(env: NodeJS.ProcessEnv): { baseURL: string; secret: string } {
-  const baseURL = env.STAFF_AUTH_URL, secret = env.STAFF_AUTH_SECRET;
-  if (!baseURL || !secret) throw new Error("STAFF_AUTH_URL and STAFF_AUTH_SECRET must be set.");
+// An app's settings for one pool (STAFF_AUTH_URL and STAFF_AUTH_SECRET, CANDIDATE_..., PORTAL_...), read from its environment.
+// Missing ones fail closed, like checkSettings.
+export function authSettings(prefix: "STAFF" | "CANDIDATE" | "PORTAL", env: NodeJS.ProcessEnv): { baseURL: string; secret: string } {
+  const baseURL = env[`${prefix}_AUTH_URL`], secret = env[`${prefix}_AUTH_SECRET`];
+  if (!baseURL || !secret) throw new Error(`${prefix}_AUTH_URL and ${prefix}_AUTH_SECRET must be set.`);
   checkSettings(baseURL, secret);
   return { baseURL, secret };
 }
+export const staffSettings = (env: NodeJS.ProcessEnv) => authSettings("STAFF", env);
+export const candidateSettings = (env: NodeJS.ProcessEnv) => authSettings("CANDIDATE", env);
 // Staff reset links go nowhere yet (no outside email service in step 7 slice 1), so the staff pool refuses to send.
 export const refuseEmail: SendEmail = async (pool, kind) => {
   throw new Error(`Email is not set up for the ${pool} pool (${kind} link not sent).`);
@@ -82,7 +90,10 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
       storage: "database",
       modelName: `${name}_rate_limit`,
       fields: { lastRequest: "last_request" },
-      customRules: { "/sign-in/email": { window: 60, max: 5 }, "/sign-up/email": { window: 60, max: 5 }, "/request-password-reset": { window: 300, max: 3 } },
+      customRules: {
+        "/sign-in/email": { window: 60, max: 5 }, "/sign-up/email": { window: 60, max: 5 },
+        "/request-password-reset": { window: 300, max: 3 }, "/send-verification-email": { window: 300, max: 3 },
+      },
     },
     trustedOrigins: [baseURL],
     user: { modelName: `${name}_user`, fields: snake.user, additionalFields: added[name] },
@@ -92,11 +103,17 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
       ...(name === "staff" ? { expiresIn: STAFF_IDLE_SECONDS, updateAge: STAFF_REFRESH_SECONDS } : {}),
     },
     // Staff: server calls (requireStaff) refresh the session row, and this sends the new cookie back in Next.js route handlers and server actions.
-    plugins: name === "staff" ? [nextCookies()] : [],
+    plugins: name === "staff" ? [nextCookies()] : name === "candidate" ? [candidateSignup(database)] : [],
     account: { modelName: `${name}_account`, fields: snake.account },
     verification: { modelName: `${name}_verification`, fields: snake.verification },
     // Better Auth ignores the added status columns, so this refuses a session to a flagged person.
     databaseHooks: {
+      // Candidate sign-up: the consent row is written here, in the sign-up transaction, right after the user row and before the
+      // password account. A failure rolls the new account back. Only the email sign-up route makes candidates for now (Google is not built yet).
+      ...(name === "candidate" ? { account: { create: { before: async (a: { userId: string }, ctx: { path?: string; body?: unknown; context: { adapter: unknown } } | null) => {
+        if (ctx?.path !== "/sign-up/email") return;
+        await writeConsent(ctx.context.adapter, a.userId, checkSignup(ctx.body, false));
+      } } } } : {}),
       session: {
         create: {
           before: async (s) => {
@@ -110,7 +127,8 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
       },
     },
     // The client address comes from the header Vercel sets, not X-Forwarded-For, which any client can send.
-    advanced: { cookiePrefix: name, useSecureCookies: secure, ipAddress: { ipAddressHeaders: ["x-vercel-forwarded-for"] } },
+    // consent_record's id is made by the database (identity column); every other table keeps Better Auth's own ids.
+    advanced: { database: { generateId: ({ model }: { model: string }) => (model === "consentRecord" ? false : generateRandomString(32, "a-z", "A-Z", "0-9")) }, cookiePrefix: name, useSecureCookies: secure, ipAddress: { ipAddressHeaders: ["x-vercel-forwarded-for"] } },
   });
 }
 

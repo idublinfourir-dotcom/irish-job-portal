@@ -1,7 +1,7 @@
 // No database: the pool points at a closed port, and nothing here sends a query.
 import pg from "pg";
 import { describe, expect, it } from "vitest";
-import { checkSettings, createAuth, refuseEmail, STAFF_IDLE_SECONDS, STAFF_REFRESH_SECONDS, staffSettings, type LoginPool } from ".";
+import { authSettings, candidateSettings, checkSettings, createAuth, refuseEmail, STAFF_IDLE_SECONDS, STAFF_REFRESH_SECONDS, staffSettings, type LoginPool } from ".";
 
 const secret = "a".repeat(32);
 const database = new pg.Pool({ connectionString: "postgres://nobody:none@127.0.0.1:1/none" });
@@ -54,5 +54,30 @@ describe("staff settings and idle limit (#172)", () => {
       expect([c.expiresIn, c.updateAge], name).toEqual(name === "staff" ? [STAFF_IDLE_SECONDS, STAFF_REFRESH_SECONDS] : [7 * 86400, 86400]);
     }
     expect(STAFF_IDLE_SECONDS).toBe(8 * 3600);
+  });
+});
+
+describe("candidate settings and sessions (#177)", () => {
+  it("candidateSettings fails closed when a setting is missing or bad, and names the right variables", () => {
+    expect(() => candidateSettings({})).toThrow(/CANDIDATE_AUTH_URL and CANDIDATE_AUTH_SECRET/);
+    expect(() => candidateSettings({ STAFF_AUTH_URL: "https://admin.example.test", STAFF_AUTH_SECRET: secret })).toThrow(/CANDIDATE_AUTH_URL/);
+    expect(() => candidateSettings({ CANDIDATE_AUTH_URL: "https://x.example.test", CANDIDATE_AUTH_SECRET: "short" })).toThrow(/32 characters/);
+    expect(() => candidateSettings({ CANDIDATE_AUTH_URL: "http://x.example.test", CANDIDATE_AUTH_SECRET: secret })).toThrow(/https/);
+    expect(candidateSettings({ CANDIDATE_AUTH_URL: "http://localhost:3000", CANDIDATE_AUTH_SECRET: secret })).toEqual({ baseURL: "http://localhost:3000", secret });
+    expect(authSettings("PORTAL", { PORTAL_AUTH_URL: "https://p.example.test", PORTAL_AUTH_SECRET: secret }).baseURL).toBe("https://p.example.test");
+  });
+  it("a candidate session lasts 7 days and is moved out at most once a day (Better Auth's defaults, pinned)", async () => {
+    const c = (await make("candidate").$context).sessionConfig;
+    expect([c.expiresIn, c.updateAge]).toEqual([604800, 86400]);
+  });
+  it("the candidate pool checks the sign-up answers before the route runs; the other pools do not", async () => {
+    const candidate = await make("candidate").$context, portal = await make("portal").$context;
+    expect(candidate.options.plugins?.map((p) => p.id)).toEqual(["candidate-signup"]);
+    expect(portal.options.plugins ?? []).toEqual([]);
+  });
+  it("sign-in, sign-up, reset and resend each have their own rate limit", async () => {
+    const rules = (await make("candidate").$context).options.rateLimit?.customRules ?? {};
+    expect(Object.keys(rules).sort()).toEqual(["/request-password-reset", "/send-verification-email", "/sign-in/email", "/sign-up/email"]);
+    expect(rules["/send-verification-email"]).toEqual({ window: 300, max: 3 });
   });
 });
