@@ -1,10 +1,18 @@
-// Candidate sign-up rules (#8, #106, #175, #176, #178): three answers checked on the server, and one consent_record row
-// written inside Better Auth's own sign-up transaction, so no candidate account can exist without it.
+// Sign-up rules for the candidate pool (#8, #106, #175, #176, #178: three answers) and the portal pool (#188, #194: one answer, the
+// tick for the employer and agency terms). The answers are checked on the server, and one consent_record row is written inside
+// Better Auth's own sign-up transaction, so no account can exist without it.
 import { APIError, getCurrentAdapter, type BetterAuthPlugin } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import type { Pool } from "pg";
 
 export type Answers = { needsPermit: true; over18: true; acceptsTerms: true };
+export type PortalAnswers = { acceptsTerms: true };
+export type SignupPool = "candidate" | "portal";
+// What differs per pool: the terms purpose, the per-pool consent view, and the user-id field in it. Candidates keep signup_terms.
+const POOLS = {
+  candidate: { purpose: "signup_terms", view: "candidate_consent_record", userField: "candidateUserId", column: "candidate_user_id" },
+  portal: { purpose: "portal_signup_terms", view: "portal_consent_record", userField: "portalUserId", column: "portal_user_id" },
+} as const;
 const NAME_MAX = 100;
 type Adapter = { findMany: (a: unknown) => Promise<unknown[]>; create: (a: unknown) => Promise<unknown> };
 
@@ -18,6 +26,19 @@ export function readAnswers(raw: unknown): { answers?: Answers; error?: string }
   return { answers: { needsPermit: true, over18: true, acceptsTerms: true } };
 }
 
+/** The portal's one answer, or the reason it is refused. Only the JSON value `true` passes. */
+export function readPortalAnswers(raw: unknown): { answers?: PortalAnswers; error?: string } {
+  const o = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  return o.acceptsTerms === true ? { answers: { acceptsTerms: true } } : { error: "You must accept the terms." };
+}
+
+/** Portal sign-up checks (the route's body): the tick, or SIGNUP_ANSWERS_REFUSED. The name is Better Auth's own check. */
+export function checkPortalSignup(body: unknown): PortalAnswers {
+  const { answers, error } = readPortalAnswers(body);
+  if (!answers) throw new APIError("BAD_REQUEST", { message: error!, code: "SIGNUP_ANSWERS_REFUSED" });
+  return answers;
+}
+
 /** Everything checked before any account is made. Returns the answers (the sign-up route's body, or a Google sign-in's additionalData). */
 export function checkSignup(body: unknown, withName: boolean): Answers {
   const { answers, error } = readAnswers(body);
@@ -28,9 +49,9 @@ export function checkSignup(body: unknown, withName: boolean): Answers {
   return answers;
 }
 
-/** The id of the current signup_terms text (every text in the table passed the two-person rule). No text means no sign-up. */
-export async function currentTermsId(database: Pool): Promise<string> {
-  const r = await database.query("select id from consent_text where purpose='signup_terms' order by published_at desc, id desc limit 1");
+/** The id of the pool's current terms text (every text in the table passed the two-person rule). No text means no sign-up. */
+export async function currentTermsId(database: Pool, pool: SignupPool = "candidate"): Promise<string> {
+  const r = await database.query("select id from consent_text where purpose=$1 order by published_at desc, id desc limit 1", [POOLS[pool].purpose]);
   if (!r.rowCount) throw new APIError("SERVICE_UNAVAILABLE", { message: "Sign-up is not open yet.", code: "SIGNUP_TERMS_MISSING" });
   return r.rows[0].id;
 }
@@ -41,30 +62,33 @@ export async function currentTermsId(database: Pool): Promise<string> {
  * asking the pool for a second one could leave several sign-ups waiting on each other. Refuses to write outside a transaction
  * (fail closed). Part B (Google) calls this from its own user-create step.
  */
-export async function writeConsent(base: unknown, userId: string, answers: Answers): Promise<void> {
+export async function writeConsent(base: unknown, userId: string, answers: Answers | PortalAnswers, pool: SignupPool = "candidate"): Promise<void> {
+  const p = POOLS[pool];
   const trx = (await getCurrentAdapter(base as never)) as unknown as Adapter;
   if ((trx as unknown) === base) throw new Error("The consent row must be written inside the sign-up transaction.");
-  const [terms] = (await trx.findMany({ model: "consentText", where: [{ field: "purpose", value: "signup_terms" }], sortBy: { field: "publishedAt", direction: "desc" }, limit: 1 })) as { id: string }[];
+  const [terms] = (await trx.findMany({ model: "consentText", where: [{ field: "purpose", value: p.purpose }], sortBy: { field: "publishedAt", direction: "desc" }, limit: 1 })) as { id: string }[];
   if (!terms) throw new APIError("SERVICE_UNAVAILABLE", { message: "Sign-up is not open yet.", code: "SIGNUP_TERMS_MISSING" });
-  await trx.create({ model: "consentRecord", data: { candidateUserId: userId, consentTextId: Number(terms.id), details: answers } });
+  await trx.create({ model: "consentRecord", data: { [p.userField]: userId, consentTextId: Number(terms.id), details: answers } });
 }
 
 /**
- * The candidate pool's sign-up plugin. The before hook runs ahead of the whole sign-up route, so a bad answer gets the same refusal
- * whether or not the email already has an account. The consent_record is the candidate_consent_record view (given_at is the default).
+ * A pool's sign-up plugin. The before hook runs ahead of the whole sign-up route, so a bad answer gets the same refusal
+ * whether or not the email already has an account. The consent_record is the pool's own view, candidate_consent_record or
+ * portal_consent_record (given_at is the default).
  */
-export function candidateSignup(database: Pool): BetterAuthPlugin {
+export function signupPlugin(database: Pool, pool: SignupPool): BetterAuthPlugin {
+  const p = POOLS[pool];
   return {
-    id: "candidate-signup",
+    id: `${pool}-signup`,
     schema: {
       consentText: {
         modelName: "consent_text",
         fields: { purpose: { type: "string", required: true }, version: { type: "string", required: true }, body: { type: "string", required: true }, publishedAt: { type: "date", required: true, fieldName: "published_at" } },
       },
       consentRecord: {
-        modelName: "candidate_consent_record",
+        modelName: p.view,
         fields: {
-          candidateUserId: { type: "string", required: true, fieldName: "candidate_user_id" },
+          [p.userField]: { type: "string", required: true, fieldName: p.column },
           consentTextId: { type: "number", required: true, fieldName: "consent_text_id" },
           details: { type: "json", required: false, fieldName: "details" },
         },
@@ -74,8 +98,9 @@ export function candidateSignup(database: Pool): BetterAuthPlugin {
       before: [{
         matcher: (ctx) => ctx.path === "/sign-up/email",
         handler: createAuthMiddleware(async (ctx) => {
-          checkSignup(ctx.body, true);
-          await currentTermsId(database);
+          if (pool === "candidate") checkSignup(ctx.body, true);
+          else checkPortalSignup(ctx.body);
+          await currentTermsId(database, pool);
         }),
       }],
     },

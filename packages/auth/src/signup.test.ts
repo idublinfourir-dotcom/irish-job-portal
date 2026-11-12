@@ -1,6 +1,6 @@
 // No database: the sign-up answer checks and the fake email sender.
 import { describe, expect, it } from "vitest";
-import { checkSignup, createFakeEmail, readAnswers } from ".";
+import { checkPortalSignup, checkSignup, createFakeEmail, readAnswers, readPortalAnswers } from ".";
 
 const yes = { needsPermit: true, over18: true, acceptsTerms: true };
 
@@ -24,6 +24,23 @@ describe("the three sign-up answers", () => {
     for (const name of ["", "   ", "x".repeat(101), 5, null, undefined, { a: 1 }]) expect(() => checkSignup({ ...yes, name }, true), String(name)).toThrow(/Name/);
     expect(checkSignup({ ...yes, name: "x".repeat(100) }, true)).toEqual(yes);
     expect(checkSignup(yes, false)).toEqual(yes); // the account step (and Google) have no name to check
+  });
+});
+
+describe("the portal sign-up answer (#194)", () => {
+  it("passes only the plain value true", () => {
+    expect(readPortalAnswers({ acceptsTerms: true }).answers).toEqual({ acceptsTerms: true });
+    expect(readPortalAnswers({ acceptsTerms: true, extra: "ignored", needsPermit: false }).answers).toEqual({ acceptsTerms: true });
+    const odd = [false, undefined, null, 0, 1, "true", "yes", "on", [], [true], {}, { value: true }, { $ne: null }, "'; drop table x;--", "x".repeat(100000)];
+    for (const v of odd) expect(readPortalAnswers({ acceptsTerms: v }).answers, JSON.stringify(v)?.slice(0, 20)).toBeUndefined();
+  });
+  it("a missing, empty or non-object body is refused", () => {
+    for (const body of [undefined, null, "", "true", 5, [], [{ acceptsTerms: true }], {}]) expect(readPortalAnswers(body).answers, JSON.stringify(body)).toBeUndefined();
+  });
+  it("checkPortalSignup throws a 400 with the same code as candidates", () => {
+    expect(checkPortalSignup({ acceptsTerms: true, name: "Fake" })).toEqual({ acceptsTerms: true });
+    expect(() => checkPortalSignup({ acceptsTerms: "true" })).toThrow(/accept the terms/);
+    try { checkPortalSignup({}); } catch (e) { expect((e as { body?: { code?: string } }).body?.code).toBe("SIGNUP_ANSWERS_REFUSED"); }
   });
 });
 

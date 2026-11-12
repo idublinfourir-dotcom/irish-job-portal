@@ -282,6 +282,7 @@ test("[consent_text] only sign-up terms and the privacy notice can be tied to an
   const add = (purpose: string, approval = request as string | null) => alone((q) => put(q, "consent_text", { purpose, version: uid("v"), body: "Fake wording", approval_request_id: approval }));
   await rule({ refuse: () => add("application"), expect: "consent_text_check" });
   await rule({ ok: () => add("signup_terms") });
+  await rule({ ok: () => add("portal_signup_terms") });
   await rule({ ok: () => add("privacy_notice") });
   await rule({ ok: () => add("application", null) }); // no request, no limit
 });

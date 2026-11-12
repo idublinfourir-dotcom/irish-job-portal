@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "./db";
-import { answers, mail, makeAuth, seedSignupTerms } from "./better-auth-helper";
+import { answers, mail, makeAuth, portalAnswers, seedSignupTerms } from "./better-auth-helper";
 
 // Statements measured on 11 November 2026: requireStaff is one getSession (session by token, user by id; the user row carries
 // status, so the active check is free), plus 1 when the session row is refreshed. Sign-in reads the rate limit, the user, the
@@ -151,6 +151,7 @@ describe("staff sign-in through the admin route and requireStaff (#169, #171)", 
   });
   it("a candidate or portal cookie is no staff session, even renamed to the staff cookie", async () => {
     await seedSignupTerms(su); // candidate sign-up needs a saved signup_terms text (made here, after the seed-count tests)
+    await seedSignupTerms(su, "portal_signup_terms");
     for (const [pool, role] of [["candidate", "app_candidate"], ["portal", "app_portal"]] as const) {
       const auth = makeAuth(pool, db.pool(role));
       const go = async (path: string, body?: unknown) => {
@@ -160,7 +161,7 @@ describe("staff sign-in through the admin route and requireStaff (#169, #171)", 
         return res.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
       };
       const email = `fake.${pool}@example.test`, password = `Fake-${pool}-password-1`;
-      await go("sign-up/email", { email, password, name: "Fake", ...(pool === "candidate" ? answers : {}) });
+      await go("sign-up/email", { email, password, name: "Fake", ...(pool === "candidate" ? answers : portalAnswers) });
       await go(`verify-email?${new URL(mail.filter((m) => m.pool === pool && m.email === email).at(-1)!.url).searchParams}`);
       const c = await go("sign-in/email", { email, password });
       expect(c, pool).toMatch(new RegExp(`^${pool}\\.session_token=`));

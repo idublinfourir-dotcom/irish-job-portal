@@ -1672,8 +1672,8 @@ export const consentText = pgTable("consent_text", {
 			name: "consent_text_approval_request_id_fkey"
 		}),
 	unique("consent_text_purpose_version_key").on(table.purpose, table.version),
-	check("consent_text_purpose_check", sql`purpose = ANY (ARRAY['signup_terms'::text, 'privacy_notice'::text, 'visibility'::text, 'application'::text, 'contact_accept'::text, 'services_request'::text, 'employer_contact'::text, 'sponsorship_statement'::text, 'pay_floor'::text])`),
-	check("consent_text_check", sql`(approval_request_id IS NULL) OR (purpose = ANY (ARRAY['signup_terms'::text, 'privacy_notice'::text]))`),
+	check("consent_text_purpose_check", sql`purpose = ANY (ARRAY['signup_terms'::text, 'portal_signup_terms'::text, 'privacy_notice'::text, 'visibility'::text, 'application'::text, 'contact_accept'::text, 'services_request'::text, 'employer_contact'::text, 'sponsorship_statement'::text, 'pay_floor'::text])`),
+	check("consent_text_check", sql`(approval_request_id IS NULL) OR (purpose = ANY (ARRAY['signup_terms'::text, 'portal_signup_terms'::text, 'privacy_notice'::text]))`),
 ]);
 
 export const consentRecord = pgTable("consent_record", {
