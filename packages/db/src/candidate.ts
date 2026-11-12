@@ -1,0 +1,242 @@
+// The signed-in candidate's own data (step 9, part 10): profile, saved jobs, the tracker and "Did you apply?", one closed job with similar live jobs,
+// notification settings, and deleting the account. Every function takes the candidate's id from the session and puts it in every WHERE or INSERT:
+// the database has no row level security, so a statement without it would read another candidate's rows. The routes are in apps/candidate.
+import type pg from "pg";
+import { hasControl, inTransaction, isObject, only, Refuse } from "./candidate-route";
+import { validId } from "./search";
+
+// ===== profile (#88, #105, #108) =====
+// Stamps as the Immigration Service Delivery site lists them (irishimmigration.ie, read 12 November 2026). Any stamp starting with 4 allows work without a permit.
+export const STAMPS = ["0", "1", "1A", "1G", "1H", "2", "2A", "3", "4", "4EUFAM", "4D", "4S", "5", "6"] as const;
+export const isStamp4 = (stamp: string | null) => stamp !== null && stamp.startsWith("4");
+
+const str = (max: number, re?: RegExp) => (v: unknown) => {
+  if (typeof v !== "string") return undefined;
+  const t = v.trim();
+  return t.length >= 1 && t.length <= max && !hasControl(t) && (!re || re.test(t)) ? t : undefined;
+};
+const oneOf = (...xs: readonly string[]) => (v: unknown) => (typeof v === "string" && xs.includes(v) ? v : undefined);
+// [JSON key, column, check]. A key left out of a PUT is stored empty (null): PUT replaces the whole profile.
+const PROFILE = (occupations: ReadonlySet<string>) => [
+  ["fullName", "full_name", str(120)],
+  ["phone", "phone", str(30, /^\+?[0-9 ()-]{5,30}$/)],
+  ["occupationCode", "occupation_code", (v: unknown) => (typeof v === "string" && occupations.has(v) ? v : undefined)],
+  ["yearsExperience", "years_experience", (v: unknown) => (Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 60 ? v : undefined)],
+  ["hasRelevantDegree", "has_relevant_degree", (v: unknown) => (typeof v === "boolean" ? v : undefined)],
+  ["degreeField", "degree_field", str(120)],
+  ["degreeAwardedMonth", "degree_awarded_month", str(10, /^(19[5-9]\d|20\d\d)-(0[1-9]|1[0-2])-01$/)], // the first day of the month (#108)
+  ["registrationBody", "registration_body", str(120)],
+  ["registrationNumber", "registration_number", str(60)],
+  ["registrationStatus", "registration_status", oneOf("none", "in_progress", "registered")],
+  ["locationKind", "location_kind", oneOf("abroad", "ireland")],
+  ["currentStamp", "current_stamp", oneOf(...STAMPS)],
+] as const;
+
+export type ProfileBody = Record<string, string | number | boolean | null>;
+/** Null means refuse. Unknown fields are refused; the same rules as the table's checks, so a bad body is a 400 and not a database error. */
+export const checkProfile = (occupations: ReadonlySet<string>) => (b: unknown): ProfileBody | null => {
+  const fields = PROFILE(occupations);
+  if (!isObject(b) || !only(b, fields.map((f) => f[0]))) return null;
+  const out: ProfileBody = {};
+  for (const [key, col, check] of fields) {
+    const v = b[key];
+    if (v === undefined || v === null) { out[col] = null; continue; }
+    const ok = check(v);
+    if (ok === undefined) return null;
+    out[col] = ok as string | number | boolean;
+  }
+  if (out.degree_awarded_month !== null && out.has_relevant_degree !== true) return null; // a degree date needs a degree
+  if (out.current_stamp !== null && out.location_kind !== "ireland") return null; // a stamp needs Ireland
+  return out;
+};
+
+const COLUMNS = PROFILE(new Set()).map((f) => [f[0], f[1]] as const);
+const SELECT_PROFILE = COLUMNS.map(([k, c]) => (c === "degree_awarded_month" ? `to_char(${c}, 'YYYY-MM-DD') as "${k}"` : `${c} as "${k}"`)).join(", ");
+
+export async function getProfile(db: pg.Pool, userId: string) {
+  const r = await db.query(`select ${SELECT_PROFILE} from candidate_profile where candidate_user_id = $1`, [userId]);
+  return { profile: r.rows[0] ?? null };
+}
+
+/** Replaces the profile. A Stamp 4 pauses every active alert in the same transaction and says deletion is offered (#105). */
+export async function putProfile(db: pg.Pool, userId: string, p: ProfileBody) {
+  const cols = COLUMNS.map((c) => c[1]);
+  const marks = cols.map((c, i) => `$${i + 2}${c === "degree_awarded_month" ? "::date" : ""}`);
+  return inTransaction(db, async (c) => {
+    await c.query(
+      `insert into candidate_profile(candidate_user_id, ${cols.join(", ")}) values ($1, ${marks.join(", ")})
+       on conflict (candidate_user_id) do update set ${cols.map((x) => `${x} = excluded.${x}`).join(", ")}`, [userId, ...cols.map((x) => p[x])]);
+    if (!isStamp4(p.current_stamp as string | null)) return { ok: true, deletionOffered: false, alertsPaused: 0 };
+    const paused = await c.query("update alert set status = 'paused', pause_reason = 'stamp_4' where candidate_user_id = $1 and status = 'active'", [userId]);
+    return { ok: true, deletionOffered: true, alertsPaused: paused.rowCount ?? 0 };
+  });
+}
+
+// ===== saved jobs (#57, D5) =====
+export const checkJobId = (b: unknown): { jobId: string } | null => (isObject(b) && only(b, ["jobId"]) && validId(b.jobId) ? { jobId: b.jobId } : null);
+
+const CARD = "j.id::text as \"jobId\", j.title, j.employer_name as \"employerName\", j.county, j.salary_low as \"salaryLow\", j.salary_high as \"salaryHigh\", j.pay_grade as \"payGrade\", j.badge";
+const LIVE = "(j.status = 'live' and j.closes_at > now())";
+// A job that is no longer live shows only what the candidate saw when saving: its title and employer.
+const stripIfClosed = <T extends { live: boolean; jobId: string; title: string; employerName: string }>(r: T) =>
+  r.live ? r : ({ jobId: r.jobId, title: r.title, employerName: r.employerName, live: false } as T);
+
+/** Newest first, closed jobs included and marked live: false. At most 200 rows (the cap), so no paging. */
+export async function listSaved(db: pg.Pool, userId: string) {
+  const r = await db.query(
+    `select ${CARD}, ${LIVE} as live, s.created_at as "savedAt" from saved_job s join job j on j.id = s.job_id
+     where s.candidate_user_id = $1 order by s.created_at desc, s.id desc limit 200`, [userId]);
+  return { saved: r.rows.map((x) => ({ ...stripIfClosed(x), savedAt: x.savedAt })) };
+}
+
+// The database refuses a job that was never live and the 201st save (migration 0020). Saving again is not an error.
+export async function saveJob(db: pg.Pool, userId: string, b: { jobId: string }) {
+  await db.query(
+    `insert into saved_job(candidate_user_id, job_id) select $1, $2::bigint
+     where not exists (select 1 from saved_job where candidate_user_id = $1 and job_id = $2::bigint) on conflict do nothing`, [userId, b.jobId]);
+  return { ok: true };
+}
+export async function unsaveJob(db: pg.Pool, userId: string, b: { jobId: string }) {
+  const r = await db.query("delete from saved_job where candidate_user_id = $1 and job_id = $2::bigint", [userId, b.jobId]);
+  return { ok: true, removed: r.rowCount ?? 0 };
+}
+
+// ===== the tracker and "Did you apply?" (#49, #86) =====
+export const STAGES = ["applied", "interview", "viewed", "shortlisted", "offer", "hired", "rejected", "withdrawn"] as const;
+export const ANSWERS = ["yes", "not_yet", "no"] as const;
+export const ASK_DAYS = 14; // the apply_click retention setting (migration 0001); the candidate role cannot read settings
+export const MAX_ASKS = 2;
+const PROMPTS = 5; // most prompts one read returns
+
+/** The click on "Apply" that leaves for the employer's own page: the open click row (a new click starts the asks again) and today's count, one statement each. */
+export async function applyClick(db: pg.Pool, userId: string, b: { jobId: string }) {
+  return inTransaction(db, async (c) => {
+    const job = await c.query("select own_page_url as url from job where id = $1::bigint and status = 'live' and closes_at > now() and application_route = 'own_page'", [b.jobId]);
+    if (!job.rowCount) throw new Refuse(404, "JOB_NOT_FOUND");
+    await c.query(
+      `insert into apply_click(candidate_user_id, job_id) values ($1, $2::bigint)
+       on conflict (candidate_user_id, job_id) where status in ('pending', 'not_yet') do update set clicked_at = now(), status = 'pending', times_asked = 0, answered_at = null`, [userId, b.jobId]);
+    await c.query(
+      `insert into job_daily_stat(job_id, day, apply_clicks) values ($1::bigint, current_date, 1)
+       on conflict (job_id, day) do update set apply_clicks = job_daily_stat.apply_clicks + 1`, [b.jobId]);
+    return { ok: true, url: job.rows[0].url as string };
+  });
+}
+
+/** The clicks to ask about now: open, asked fewer than twice, clicked within 14 days. Reading changes nothing, so a reload costs no ask. */
+export async function didYouApplyPrompts(db: pg.Pool, userId: string) {
+  const r = await db.query(
+    `select c.id::text as "clickId", ${CARD}, c.clicked_at as "clickedAt" from apply_click c join job j on j.id = c.job_id
+     where c.candidate_user_id = $1 and c.status in ('pending', 'not_yet') and c.times_asked < $2 and c.clicked_at > now() - make_interval(days => $3)
+     order by c.clicked_at desc limit ${PROMPTS}`, [userId, MAX_ASKS, ASK_DAYS]);
+  return { prompts: r.rows };
+}
+
+export const checkAnswer = (b: unknown): { clickId: string; answer: (typeof ANSWERS)[number] } | null =>
+  isObject(b) && only(b, ["clickId", "answer"]) && validId(b.clickId) && typeof b.answer === "string" && (ANSWERS as readonly string[]).includes(b.answer)
+    ? { clickId: b.clickId, answer: b.answer as (typeof ANSWERS)[number] } : null;
+
+/** Every answer is one ask. Yes writes the tracker row (origin did_you_apply_yes) in the same transaction; a second "not yet" ends the asking. */
+export async function answerClick(db: pg.Pool, userId: string, b: { clickId: string; answer: string }) {
+  return inTransaction(db, async (c) => {
+    const r = await c.query(
+      `update apply_click set times_asked = least(times_asked + 1, $3),
+         status = case $4::text when 'yes' then 'yes' when 'no' then 'no' when 'not_yet' then (case when times_asked + 1 >= $3 then 'expired' else 'not_yet' end) end,
+         answered_at = case when $4::text = 'not_yet' then answered_at else now() end
+       where id = $1::bigint and candidate_user_id = $2 and status in ('pending', 'not_yet') returning job_id::text as "jobId"`, [b.clickId, userId, MAX_ASKS, b.answer]);
+    if (!r.rowCount) throw new Refuse(404, "CLICK_NOT_FOUND");
+    if (b.answer === "yes")
+      await c.query(
+        `insert into tracker_entry(candidate_user_id, job_id, route, origin, stage) values ($1, $2::bigint, 'redirect', 'did_you_apply_yes', 'applied')
+         on conflict (candidate_user_id, job_id) do nothing`, [userId, r.rows[0].jobId]);
+    return { ok: true };
+  });
+}
+
+/** "Mark applied": a redirect tracker row at applied, and any open "Did you apply?" for the job is closed as yes. Marking twice changes nothing. */
+export async function markApplied(db: pg.Pool, userId: string, b: { jobId: string }) {
+  return inTransaction(db, async (c) => {
+    const r = await c.query(
+      `insert into tracker_entry(candidate_user_id, job_id, route, origin, stage) values ($1, $2::bigint, 'redirect', 'mark_applied', 'applied')
+       on conflict (candidate_user_id, job_id) do nothing`, [userId, b.jobId]);
+    await c.query(
+      `update apply_click set status = 'yes', times_asked = least(times_asked + 1, $3), answered_at = now()
+       where candidate_user_id = $1 and job_id = $2::bigint and status in ('pending', 'not_yet')`, [userId, b.jobId, MAX_ASKS]);
+    return { ok: true, created: r.rowCount === 1 };
+  });
+}
+
+export const checkStage = (b: unknown): { jobId: string; stage: (typeof STAGES)[number] } | null =>
+  isObject(b) && only(b, ["jobId", "stage"]) && validId(b.jobId) && typeof b.stage === "string" && (STAGES as readonly string[]).includes(b.stage)
+    ? { jobId: b.jobId, stage: b.stage as (typeof STAGES)[number] } : null;
+
+/** A stage the table allows for this row's route (a redirect row: applied, interview, offer, rejected, withdrawn; an on-site row: only withdrawn, by the tracker guard). */
+export async function setStage(db: pg.Pool, userId: string, b: { jobId: string; stage: string }) {
+  const r = await db.query("update tracker_entry set stage = $3, updated_at = now() where candidate_user_id = $1 and job_id = $2::bigint", [userId, b.jobId, b.stage]);
+  if (!r.rowCount) throw new Refuse(404, "NOT_TRACKED");
+  return { ok: true, offerHint: b.stage === "offer" }; // #86: "Got an offer? We can handle your permit"
+}
+
+// ===== one saved or tracked job, even when closed (#57, D4) =====
+const SIMILAR = 5;
+export const similarSql = (occ: boolean) =>
+  `select ${CARD} from job j where j.status = 'live' and j.closes_at > now() and j.sector = $1 and j.id <> $2::bigint ${occ ? "and j.occupation_code = $3" : ""}
+   order by (not j.quota_full) desc, j.posted_at desc, j.id desc limit ${SIMILAR}`;
+export async function savedJob(db: pg.Pool, userId: string, url: URL) {
+  const id = url.searchParams.get("id");
+  if (!validId(id)) throw new Refuse(400, "BAD_REQUEST");
+  const r = await db.query(
+    `select ${CARD}, j.sector, j.occupation_code as "occupationCode", j.own_page_url as "ownPageUrl", ${LIVE} as live, j.closed_at as "closedAt",
+       (s.id is not null) as saved, t.stage
+     from job j left join saved_job s on s.candidate_user_id = $1 and s.job_id = j.id left join tracker_entry t on t.candidate_user_id = $1 and t.job_id = j.id
+     where j.id = $2::bigint and (s.id is not null or t.id is not null)`, [userId, id]);
+  const j = r.rows[0];
+  if (!j) throw new Refuse(404, "JOB_NOT_FOUND"); // not the candidate's own, whatever the job is
+  const { sector, occupationCode, ownPageUrl, closedAt, ...card } = j;
+  if (j.live) return { job: { ...card, ownPageUrl, saved: j.saved, stage: j.stage } };
+  // Closed: the live jobs of the same occupation, else of the same sector, newest first (full-quota last, as on the site; the sector index serves this order).
+  const similar = (occ: boolean) => db.query(similarSql(occ), occ ? [sector, id, occupationCode] : [sector, id]);
+  let s = occupationCode ? await similar(true) : null;
+  if (!s?.rowCount) s = await similar(false);
+  return { job: { ...stripIfClosed(card), closedAt, saved: j.saved, stage: j.stage }, similar: s.rows };
+}
+
+// ===== notification settings (D3) =====
+// One switch per category, for the email channel. The account category (security and service messages) is always on.
+export const CATEGORIES = ["job_alerts", "apply_reminders", "account"] as const;
+export const checkSettings = (b: unknown): Record<string, boolean> | null => {
+  if (!isObject(b) || !only(b, CATEGORIES) || !Object.keys(b).length) return null;
+  const out: Record<string, boolean> = {};
+  for (const [k, v] of Object.entries(b)) if (typeof v === "boolean") out[k] = v; else return null;
+  return out.account === false ? null : out;
+};
+
+export async function getSettings(db: pg.Pool, userId: string) {
+  const r = await db.query("select category, enabled from candidate_notification_preference where candidate_user_id = $1 and channel = 'email'", [userId]);
+  const set = new Map(r.rows.map((x) => [x.category as string, x.enabled as boolean]));
+  return { settings: Object.fromEntries(CATEGORIES.map((k) => [k, k === "account" ? true : (set.get(k) ?? true)])) };
+}
+export async function putSettings(db: pg.Pool, userId: string, s: Record<string, boolean>) {
+  const keys = Object.keys(s);
+  await db.query(
+    `insert into candidate_notification_preference(candidate_user_id, category, channel, enabled) select $1, k, 'email', v from unnest($2::text[], $3::boolean[]) as t(k, v)
+     on conflict (candidate_user_id, category, channel) where candidate_user_id is not null do update set enabled = excluded.enabled`, [userId, keys, keys.map((k) => s[k])]);
+  return getSettings(db, userId);
+}
+
+// ===== delete the account (D2) =====
+export const checkDelete = (b: unknown): { confirm: true } | null => (isObject(b) && only(b, ["confirm"]) && b.confirm === true ? { confirm: true } : null);
+
+/** Final at once: the login is refused from now on, every session ends, one confirmation email is queued (nothing is sent here). The data goes with the
+ *  30-day retention rule. The address is copied into the row because the sender looks addresses up only for logins that are not deleted. */
+export async function deleteAccount(db: pg.Pool, userId: string) {
+  return inTransaction(db, async (c) => {
+    const r = await c.query("update candidate_user set deleted_at = now(), updated_at = now() where id = $1 and deleted_at is null", [userId]);
+    if (!r.rowCount) throw new Refuse(403, "REFUSED");
+    await c.query("delete from candidate_session where user_id = $1", [userId]);
+    await c.query(
+      `insert into email_outbox(template, candidate_user_id, params, dedupe_key) select 'account_deleted', u.id, jsonb_build_object('email', u.email), 'account_deleted:' || u.id
+       from candidate_user u where u.id = $1 on conflict do nothing`, [userId]);
+    return { ok: true };
+  });
+}

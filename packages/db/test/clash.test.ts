@@ -485,7 +485,7 @@ await blk("{ const c = await F.cand(), ct = await F.text(\"visibility\"); await 
   await rule("consent_record", "app roles update only withdrawn_at, through their view", { refuse: async () => P.app_candidate.query("update candidate_consent_record set details='{}' where id=$1", [cr]), ok: async () => P.app_candidate.query("update candidate_consent_record set withdrawn_at=now() where id=$1", [cr]) }); }
 });
 await blk("{ const c = await F.cand(); const np = (x) => ins(\"postgres\", \"notific", async () => {
-{ const c = await F.cand(); const np = (x) => ins("postgres", "notification_preference", { category: "alerts", channel: "email", enabled: false, ...x });
+{ const c = await F.cand(); const np = (x) => ins("postgres", "notification_preference", { category: "job_alerts", channel: "email", enabled: false, ...x });
   await rule("notification_preference", "exactly one of the three user columns", { refuse: async () => np({ candidate_user_id: c, portal_user_id: pu }), ok: async () => np({ candidate_user_id: c }) });
   await rule("notification_preference", "partial unique (person, category, channel) in each pool", { refuse: async () => np({ candidate_user_id: c }), ok: async () => np({ staff_user_id: s1 }) }); }
 });

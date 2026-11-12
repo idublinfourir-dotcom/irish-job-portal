@@ -141,6 +141,13 @@
       "when": 1794300015000,
       "tag": "0019_job_posting",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794300016000,
+      "tag": "0020_candidate_accounts",
+      "breakpoints": true
     }
   ]
 }

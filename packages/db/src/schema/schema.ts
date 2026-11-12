@@ -1771,6 +1771,7 @@ export const notificationPreference = pgTable("notification_preference", {
 			foreignColumns: [staffUser.id],
 			name: "notification_preference_staff_user_id_fkey"
 		}),
+	check("notification_preference_candidate_category", sql`(candidate_user_id IS NULL) OR ((category = ANY (ARRAY['job_alerts'::text, 'apply_reminders'::text, 'account'::text])) AND ((category <> 'account'::text) OR enabled))`),
 	check("notification_preference_channel_check", sql`channel = ANY (ARRAY['email'::text, 'in_app'::text])`),
 	check("notification_preference_check", sql`num_nonnulls(candidate_user_id, portal_user_id, staff_user_id) = 1`),
 ]);

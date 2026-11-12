@@ -123,6 +123,11 @@ const must = [
   ["app_candidate", "read the live jobs of one occupation", "select id,title,sponsor_sort from job where status='live' and occupation_code='9001' order by (not quota_full) desc, sponsor_sort desc, posted_at desc, id desc limit 21"],
   ["app_candidate", "save a job", "insert into saved_job(candidate_user_id,job_id) values($1,$2) on conflict do nothing", () => [cand, job]],
   ["app_candidate", "write a profile by column list", "insert into candidate_profile(candidate_user_id,full_name,occupation_code) values($1,'Fake','2231') on conflict (candidate_user_id) do update set full_name=excluded.full_name", () => [cand]],
+  // 0020: the candidate account routes
+  ["app_candidate", "save a preference with ON CONFLICT through its view", "insert into candidate_notification_preference(candidate_user_id,category,channel,enabled) values($1,'job_alerts','email',true) on conflict (candidate_user_id, category, channel) where candidate_user_id is not null do update set enabled=excluded.enabled", () => [cand]],
+  ["app_candidate", "pause its alerts", "update alert set status='paused', pause_reason='stamp_4' where candidate_user_id=$1", () => [cand]],
+  ["app_candidate", "count an apply click", "insert into job_daily_stat(job_id,day,apply_clicks) values($1,current_date,1) on conflict (job_id,day) do update set apply_clicks=job_daily_stat.apply_clicks+1", () => [job]],
+  ["app_candidate", "end its sessions", "delete from candidate_session where user_id=$1", () => [cand]],
   ["app_candidate", "write an alert", "insert into alert(candidate_user_id,frequency,unsubscribe_token) values($1,'daily',$2)", () => [cand, id("t")]],
   ["app_candidate", "file a report", "insert into report(target_kind,target_job_id,reason,reporter_candidate_user_id) values('job',$1,'other',$2) returning id", () => [job, cand]],
   ["app_candidate", "give consent through its view", "insert into candidate_consent_record(candidate_user_id,consent_text_id) values($1,$2) returning id", () => [cand, ct]],
