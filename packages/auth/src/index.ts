@@ -1,9 +1,9 @@
 import { betterAuth, type DBFieldAttribute } from "better-auth";
-import { APIError } from "better-auth/api";
+import { APIError, getOAuthState } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { generateRandomString } from "better-auth/crypto";
 import type { Pool } from "pg";
-import { candidateSignup, checkSignup, writeConsent } from "./signup";
+import { candidateSignup, checkSignup, writeConsent, type Answers } from "./signup";
 
 export { readAnswers, checkSignup, currentTermsId, writeConsent, type Answers } from "./signup";
 export { createFakeEmail, type FakeEmail } from "./fake-email";
@@ -13,7 +13,9 @@ export type LoginPool = "candidate" | "portal" | "staff";
 export type EmailKind = "verify" | "reset";
 // Email is an outside service, so the caller passes the sender in; tests pass a fake.
 export type SendEmail = (pool: LoginPool, kind: EmailKind, to: string, link: string) => Promise<void>;
-export type AuthOptions = { database: Pool; baseURL: string; secret: string; sendEmail: SendEmail };
+export type GoogleSettings = { clientId: string; clientSecret: string };
+// google is for the candidate pool only, and only when set; without it the Google routes answer "provider not found".
+export type AuthOptions = { database: Pool; baseURL: string; secret: string; sendEmail: SendEmail; google?: GoogleSettings };
 
 // Better Auth's camelCase fields mapped to the lowercase columns of the migrations.
 const snake = {
@@ -61,15 +63,24 @@ export function authSettings(prefix: "STAFF" | "CANDIDATE" | "PORTAL", env: Node
 }
 export const staffSettings = (env: NodeJS.ProcessEnv) => authSettings("STAFF", env);
 export const candidateSettings = (env: NodeJS.ProcessEnv) => authSettings("CANDIDATE", env);
+// Google sign-in is on only when both variables are set (and not empty); otherwise undefined and the Google routes do not exist.
+export function googleSettings(env: NodeJS.ProcessEnv): GoogleSettings | undefined {
+  const clientId = env.GOOGLE_CLIENT_ID, clientSecret = env.GOOGLE_CLIENT_SECRET;
+  return clientId && clientSecret ? { clientId, clientSecret } : undefined;
+}
 // Staff reset links go nowhere yet (no outside email service in step 7 slice 1), so the staff pool refuses to send.
 export const refuseEmail: SendEmail = async (pool, kind) => {
   throw new Error(`Email is not set up for the ${pool} pool (${kind} link not sent).`);
 };
 
+type Ctx = { path?: string; body?: unknown; context: { adapter: unknown } };
+// The answers of a Google sign-up that passed the user-create step, until its account row is made (same request, same context object).
+const fromGoogle = new WeakMap<object, Answers>();
+
 // Three separate login pools in one database (#97): the same email can exist once in each, with its own
 // tables and its own cookie. The options are the ones the tests in packages/db/test/better-auth.test.ts prove
 // (23-database-design.md section 2.2).
-export function createAuth(name: LoginPool, { database, baseURL, secret, sendEmail }: AuthOptions) {
+export function createAuth(name: LoginPool, { database, baseURL, secret, sendEmail, google }: AuthOptions) {
   const { secure } = checkSettings(baseURL, secret);
   return betterAuth({
     appName: `portal-${name}`,
@@ -95,6 +106,7 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
         "/request-password-reset": { window: 300, max: 3 }, "/send-verification-email": { window: 300, max: 3 },
       },
     },
+    ...(name === "candidate" && google ? { socialProviders: { google } } : {}),
     trustedOrigins: [baseURL],
     user: { modelName: `${name}_user`, fields: snake.user, additionalFields: added[name] },
     // The cookie cache stays off, so every request reads the session and user from the database.
@@ -104,16 +116,28 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
     },
     // Staff: server calls (requireStaff) refresh the session row, and this sends the new cookie back in Next.js route handlers and server actions.
     plugins: name === "staff" ? [nextCookies()] : name === "candidate" ? [candidateSignup(database)] : [],
-    account: { modelName: `${name}_account`, fields: snake.account },
+    // A Google sign-in joins an existing account with the same email only when Google says the email is verified AND that account's
+    // email was confirmed here (Better Auth's defaults, written out so a change shows in review). No trusted providers: Google's word
+    // alone is not enough for an unconfirmed email-and-password account, so there is no silent takeover.
+    account: { modelName: `${name}_account`, fields: snake.account, accountLinking: { enabled: true, requireLocalEmailVerified: true, trustedProviders: [] } },
     verification: { modelName: `${name}_verification`, fields: snake.verification },
     // Better Auth ignores the added status columns, so this refuses a session to a flagged person.
     databaseHooks: {
       // Candidate sign-up: the consent row is written here, in the sign-up transaction, right after the user row and before the
-      // password account. A failure rolls the new account back. Only the email sign-up route makes candidates for now (Google is not built yet).
-      ...(name === "candidate" ? { account: { create: { before: async (a: { userId: string }, ctx: { path?: string; body?: unknown; context: { adapter: unknown } } | null) => {
-        if (ctx?.path !== "/sign-up/email") return;
-        await writeConsent(ctx.context.adapter, a.userId, checkSignup(ctx.body, false));
-      } } } } : {}),
+      // account (password or Google). A failure rolls the new account back. Email sign-up reads the answers from the request body;
+      // a Google sign-in reads them from the sign-in state (additionalData), checked by the user-create step before any row exists.
+      ...(name === "candidate" ? {
+        user: { create: { before: async (u: { emailVerified?: unknown }, ctx: Ctx | null) => {
+          if (ctx?.path === "/sign-up/email") return;
+          if (u.emailVerified !== true) throw new APIError("FORBIDDEN", { message: "Google has not confirmed this email address.", code: "EMAIL_NOT_VERIFIED_BY_PROVIDER" });
+          fromGoogle.set(ctx as object, checkSignup(await getOAuthState(), false));
+        } } },
+        account: { create: { before: async (a: { userId: string }, ctx: Ctx | null) => {
+          if (ctx?.path === "/sign-up/email") return void (await writeConsent(ctx.context.adapter, a.userId, checkSignup(ctx.body, false)));
+          const answers = ctx && fromGoogle.get(ctx); // none when Google joins an existing candidate: no second consent row
+          if (answers) await writeConsent(ctx.context.adapter, a.userId, answers);
+        } } },
+      } : {}),
       session: {
         create: {
           before: async (s) => {

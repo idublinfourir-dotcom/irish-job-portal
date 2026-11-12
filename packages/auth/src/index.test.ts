@@ -1,7 +1,7 @@
 // No database: the pool points at a closed port, and nothing here sends a query.
 import pg from "pg";
 import { describe, expect, it } from "vitest";
-import { authSettings, candidateSettings, checkSettings, createAuth, refuseEmail, STAFF_IDLE_SECONDS, STAFF_REFRESH_SECONDS, staffSettings, type LoginPool } from ".";
+import { authSettings, candidateSettings, checkSettings, createAuth, googleSettings, refuseEmail, STAFF_IDLE_SECONDS, STAFF_REFRESH_SECONDS, staffSettings, type LoginPool } from ".";
 
 const secret = "a".repeat(32);
 const database = new pg.Pool({ connectionString: "postgres://nobody:none@127.0.0.1:1/none" });
@@ -79,5 +79,24 @@ describe("candidate settings and sessions (#177)", () => {
     const rules = (await make("candidate").$context).options.rateLimit?.customRules ?? {};
     expect(Object.keys(rules).sort()).toEqual(["/request-password-reset", "/send-verification-email", "/sign-in/email", "/sign-up/email"]);
     expect(rules["/send-verification-email"]).toEqual({ window: 300, max: 3 });
+  });
+});
+
+describe("Google sign-in settings (#179)", () => {
+  const g = { clientId: "fake-id", clientSecret: "fake-secret" };
+  it("is on only when both variables are set and not empty", () => {
+    expect(googleSettings({ GOOGLE_CLIENT_ID: "fake-id", GOOGLE_CLIENT_SECRET: "fake-secret" })).toEqual(g);
+    for (const env of [{}, { GOOGLE_CLIENT_ID: "fake-id" }, { GOOGLE_CLIENT_SECRET: "fake-secret" }, { GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: "fake-secret" }, { GOOGLE_CLIENT_ID: "fake-id", GOOGLE_CLIENT_SECRET: "" }])
+      expect(googleSettings(env), JSON.stringify(env)).toBeUndefined();
+  });
+  it("only the candidate pool gets the provider, and only when settings are passed", async () => {
+    const on = (name: LoginPool, google?: typeof g) => createAuth(name, { database, baseURL: "http://localhost:3000", secret, sendEmail: async () => {}, google }).$context;
+    expect((await on("candidate", g)).socialProviders.map((p) => p.id)).toEqual(["google"]);
+    expect((await on("candidate")).socialProviders).toEqual([]);
+    for (const name of ["portal", "staff"] as const) expect((await on(name, g)).socialProviders, name).toEqual([]);
+  });
+  it("account linking is pinned: no trusted providers, and the local email must be confirmed", async () => {
+    const o = (await make("candidate").$context).options.account?.accountLinking;
+    expect(o).toEqual({ enabled: true, requireLocalEmailVerified: true, trustedProviders: [] });
   });
 });
