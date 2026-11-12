@@ -229,9 +229,14 @@ sections[2] = async () => {
 // ---- job helpers (portal side)
 let jobSrc;
 const getSrc = async () => (await q1("app_fetcher", null, "insert into job_source(kind, board) values ('employer','portal') on conflict (kind, board) do update set kind = excluded.kind returning id")).id;
+// Since 0019 (D8, #227) a portal write names an active poster, recruiter or owner of the company: the company's own one when it has one
+// (so the #132 "sole member" cases keep their single member), else a new poster.
+const posterOf = async (orgId) => (await su("select id from membership where organisation_id=$1 and status='active' and role in ('poster','recruiter','account_owner') order by id limit 1", [orgId])).rows[0]?.id
+  ?? await F.member(orgId, await F.portal(), { role: "poster" });
 const portalJob = async (orgId, o = {}) => {
   jobSrc ??= await getSrc();
-  return (await q1("app_portal", null, `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status${o.pay === false ? "" : ", salary_low"}) values ($1,'employer',$2,'Job','Acme','x','general', now() + interval '5 days','https://acme.test/j','draft'${o.pay === false ? "" : ", 1"}) returning id`, [orgId, jobSrc])).id;
+  const member = o.member ?? await posterOf(orgId);
+  return (await q1("app_portal", null, `insert into job(organisation_id, posted_by_membership_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status${o.pay === false ? "" : ", salary_low"}) values ($1,$3,'employer',$2,'Job','Acme','x','general', now() + interval '5 days','https://acme.test/j','draft'${o.pay === false ? "" : ", 1"}) returning id`, [orgId, jobSrc, member])).id;
 };
 const goLive = (jid) => q1("app_portal", null, "update job set status='live', search_vector = to_tsvector('x') where id=$1 returning status, posted_at", [jid]);
 // restricted_until in the past (time has passed): superuser fixture with triggers off, after a full legal strike 2

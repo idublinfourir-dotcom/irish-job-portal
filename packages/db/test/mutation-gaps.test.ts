@@ -91,7 +91,7 @@ async function sponsoredJob() {
     put(q, "sponsorship_statement", { job_id: job, organisation_id: org, kind: "own_company", consent_text_id: text, signer_membership_id: member, signer_name: "Fake Signer" });
   const job = await tx(db.pool("app_portal"), async (c) => {
     const q: Q = (s, a) => c.query(s, a);
-    const id = await put(q, "job", jobRow(org, { salary_low: 40000, badge: "sponsor_confirmed" }));
+    const id = await put(q, "job", jobRow(org, { salary_low: 40000, badge: "sponsor_confirmed", posted_by_membership_id: member }));
     await statement(q, id);
     await c.query("update job set status='live', search_vector=$2 where id=$1", [id, sv]);
     return id;

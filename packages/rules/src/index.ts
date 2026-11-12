@@ -3,3 +3,5 @@ export * from "./readers";
 export * from "./employers";
 export * from "./irish";
 export * from "./chain";
+export * from "./thresholds";
+export * from "./eligibility";

@@ -71,3 +71,12 @@ jobs:
         run: |
           export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
           node packages/db/src/dete-cli.ts refresh
+      # Employer and agency jobs close at day 30 and get one reminder 3 days before (D7, #48). Same admin login, given to this step only;
+      # it runs every day, even when the fetch failed or was skipped, since it does not depend on the fetch.
+      - name: Close expired employer jobs
+        if: ${{ !cancelled() }}
+        env:
+          EXPIRY_ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
+        run: |
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          node packages/db/src/job-expiry-cli.ts

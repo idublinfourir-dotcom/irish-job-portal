@@ -1,11 +1,11 @@
-import type { Assessment, AdvertInput } from "@portal/rules";
+import { NON_LIST_MINIMUM, type Assessment, type AdvertInput } from "@portal/rules";
 import type { BatchResult } from "./batch";
 
 /** Buckets the site shows with the Critical Skills badge (stated pay, big company rule, the two public pay tiers). */
 export const SHOWN = new Set<Assessment["bucket"]>(["stated_pay", "big_company", "public_hse", "public_s38"]);
 
 /** Pay over this opens the route for any occupation not on the Ineligible list (DETE, read 10 November 2026). */
-export const HIGH_PAY = 68_911;
+export const HIGH_PAY = NON_LIST_MINIMUM;
 
 /**
  * The rule for one badge job. Stated pay over 68,911 (high pay route): the AI's pick must not be on the Ineligible list ("none" is fine).

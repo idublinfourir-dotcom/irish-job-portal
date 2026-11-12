@@ -29,7 +29,7 @@ await blk("{ const c = await F.cand(), ct = await F.text(\"services_request\"), 
   const sc = await ins("postgres", "services_case", { candidate_user_id: c, consent_record_id: cr, permit_type: "critical_skills" });
   await ins("postgres", "case_document", { services_case_id: sc, storage_key: "k/passport-copy.pdf", file_name: "passport-copy.pdf", candidate_user_id: c });
   await ins("postgres", "notification", { candidate_user_id: c, category: "c", template_key: "t", params: { note: "fake" }, dedupe_key: id("dk") });
-  await ins("postgres", "notification_preference", { candidate_user_id: c, category: "alerts", channel: "email", enabled: false });
+  await ins("postgres", "notification_preference", { candidate_user_id: c, category: "job_alerts", channel: "email", enabled: false });
   for (const t of ["services_case", "case_document", "consent_record", "notification", "notification_preference"]) {
     const r = await P.app_portal.query(`select * from ${t} limit 1`).then((x) => `allowed, ${x.rowCount} rows`, (e) => e.code);
     rec("3 portal reads candidates", `app_portal: select * from table ${t}`, r === "42501", r); }
@@ -50,7 +50,7 @@ await blk("{ const c = await F.cand(), ct = await F.text(\"services_request\"), 
   rec("3 portal reads candidates", "writes through the views work: app_candidate adds a document to its case and reads its id back", wv3 === "accepted", wv3);
   const vu = await P.app_candidate.query("update candidate_notification set read_at=now() where candidate_user_id=$1", [c]).then((x) => `${x.rowCount} row`, (e) => e.message);
   rec("3 portal reads candidates", "writes through the views work: app_candidate marks its notices read", /^[12] row/.test(vu), `${vu} (the second is the notice app_portal wrote above)`);
-  const vp = await P.app_candidate.query("insert into candidate_notification_preference(candidate_user_id,category,channel,enabled) values($1,'jobs','in_app',true) on conflict do nothing", [c]).then(() => "ok", (e) => e.message);
+  const vp = await P.app_candidate.query("insert into candidate_notification_preference(candidate_user_id,category,channel,enabled) values($1,'apply_reminders','in_app',true) on conflict do nothing", [c]).then(() => "ok", (e) => e.message);
   rec("3 portal reads candidates", "writes through the views: app_candidate saves a preference with ON CONFLICT through its view", vp === "ok", vp);
   const vo = await P.app_portal.query("insert into portal_notification(portal_user_id,category,template_key,dedupe_key) values($1,'c','t',$2)", [pu, id("dk")]).then(() => "ok", (e) => `${e.code} ${e.message}`);
   rec("3 portal reads candidates", "app_portal inserts its own notice through portal_notification", vo === "ok" ? true : null, vo === "ok" ? "ok" : `${vo} (only select and update(read_at) are granted on the view; inserts go to the table)`); }
@@ -58,7 +58,7 @@ await blk("{ const c = await F.cand(), ct = await F.text(\"services_request\"), 
 
 // ---- 4 and 9. apps changing what they should only ask for: trust columns
 await blk("{ const o = await F.org(), j = await ins(\"app_portal\", \"job\", { organi", async () => {
-{ const o = await F.org(), j = await ins("app_portal", "job", { organisation_id: o, source: "employer", job_source_id: src, title: "t", employer_name: "e", sector: "it", permit_type: "general", status: "draft", closes_at: in30(), own_page_url: "u" });
+{ const o = await F.org(), om = await F.member(o, await F.portal(), { role: "poster" }), j = await ins("app_portal", "job", { organisation_id: o, posted_by_membership_id: om, source: "employer", job_source_id: src, title: "t", employer_name: "e", sector: "it", permit_type: "general", status: "draft", closes_at: in30(), own_page_url: "u" });
   for (const [what, sql] of [["organisation status", "update organisation set status='verified' where id=$1"], ["is_big_company", "update organisation set is_big_company=true where id=$1"],
       ["restricted_until", "update organisation set restricted_until=null where id=$1"], ["organisation permit_history", "update organisation set permit_history='has_history' where id=$1"],
       ["claims_removed_at", "update organisation set claims_removed_at=null where id=$1"], ["cro_number", "update organisation set cro_number='123' where id=$1"]])
@@ -134,7 +134,7 @@ async function fullCandidate() {
   await ins("postgres", "report", { target_kind: "job", target_job_id: j2, reason: "other", reporter_candidate_user_id: c, evidence_text: "Fake evidence" });
   await ins("postgres", "report", { target_kind: "profile", target_candidate_user_id: c, reason: "other", status: "cleared", decided_at: daysAgo(1) });
   await ins("postgres", "notification", { candidate_user_id: c, category: "a", template_key: "t", dedupe_key: id("dk") });
-  await ins("postgres", "notification_preference", { candidate_user_id: c, category: "a", channel: "email", enabled: false });
+  await ins("postgres", "notification_preference", { candidate_user_id: c, category: "job_alerts", channel: "email", enabled: false });
   await ins("postgres", "email_outbox", { template: "t", candidate_user_id: c, status: "pending", dedupe_key: id("dk") }, null);
   await ins("postgres", "email_outbox", { template: "t", candidate_user_id: c, status: "sent", sent_at: daysAgo(1), dedupe_key: id("dk") }, null);
   const cm = await ins("postgres", "contact_message", { surface: "candidate_site", candidate_user_id: c, from_name: "Fake Name", from_email: email, topic: "data_request", body: "Please delete my data" });

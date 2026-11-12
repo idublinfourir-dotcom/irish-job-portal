@@ -17,7 +17,8 @@ const src = await ins(P.postgres, "job_source", { kind: "portal", board: "portal
 const s1 = await F.staff(), s2 = await F.staff(), s3 = await F.staff();
 const org = await F.org(), org2 = await F.org(), pu = await F.portal(), pu2 = await F.portal();
 const mem = await F.member(org, pu, { role: "account_owner", signer: true }), mem2 = await F.member(org2, pu2, { role: "account_owner", signer: true });
-const J = (o = {}) => ({ organisation_id: org, source: "employer", job_source_id: src, title: "Fake job", employer_name: "Fake Org", sector: "it", permit_type: "critical_skills", status: "draft", closes_at: in30(), own_page_url: "https://example.test/apply", ...o });
+// 0019: a portal job write names an active poster of the job's company, so a job of `org` is posted by its owner unless the test says otherwise
+const J = (o = {}) => ({ organisation_id: org, source: "employer", job_source_id: src, title: "Fake job", employer_name: "Fake Org", sector: "it", permit_type: "critical_skills", status: "draft", closes_at: in30(), own_page_url: "https://example.test/apply", ...((o.organisation_id ?? org) === org && !o.posted_by_staff_id && o.source !== "fetched" ? { posted_by_membership_id: mem } : {}), ...o });
 const LJ = (o = {}) => J({ status: "live", salary_low: 40000, search_vector: sv, ...o });
 const FJ = (o = {}) => J({ source: "fetched", closes_at: "infinity", ...o });
 const job = (o, pool = "postgres") => ins(pool, "job", J(o));
@@ -49,7 +50,7 @@ await rule("job", "screening_questions is empty unless the route is on_site", { 
 await rule("job", "deferred check at commit: a live sponsor_confirmed job has a current sponsorship statement", {
   refuse: async () => tx("postgres", (c) => c.query("insert into job(organisation_id,source,job_source_id,title,employer_name,sector,permit_type,status,closes_at,own_page_url,salary_low,search_vector,badge) values($1,'employer',$2,'t','e','it','critical_skills','live',now()+interval '20 days','u',40000,$3,'sponsor_confirmed')", [org, src, sv])),
   /* ported change: the statement goes in as app_portal, so the pair is built as app_portal: a draft job, its own_company statement, then live */
-  ok: async () => { const ct = await F.text("sponsorship_statement"); await tx("app_portal", async (c) => { const j = (await c.query("insert into job(organisation_id,source,job_source_id,title,employer_name,sector,permit_type,status,closes_at,own_page_url,salary_low,badge) values($1,'employer',$2,'t','e','it','critical_skills','draft',now()+interval '20 days','u',40000,'sponsor_confirmed') returning id", [org, src])).rows[0].id; await c.query("insert into sponsorship_statement(job_id,organisation_id,kind,consent_text_id,signer_membership_id,signer_name) values($1,$2,'own_company',$3,$4,'Fake Signer')", [j, org, ct, mem]); await c.query("update job set status='live', search_vector=$2 where id=$1", [j, sv]); }); }, expect: "deferred check" });
+  ok: async () => { const ct = await F.text("sponsorship_statement"); await tx("app_portal", async (c) => { const j = (await c.query("insert into job(organisation_id,source,job_source_id,title,employer_name,sector,permit_type,status,closes_at,own_page_url,salary_low,badge,posted_by_membership_id) values($1,'employer',$2,'t','e','it','critical_skills','draft',now()+interval '20 days','u',40000,'sponsor_confirmed',$3) returning id", [org, src, mem])).rows[0].id; await c.query("insert into sponsorship_statement(job_id,organisation_id,kind,consent_text_id,signer_membership_id,signer_name) values($1,$2,'own_company',$3,$4,'Fake Signer')", [j, org, ct, mem]); await c.query("update job set status='live', search_vector=$2 where id=$1", [j, sv]); }); }, expect: "deferred check" });
 await blk("for (const st of [\"suspended\", \"banned\", \"closed\"]) { const o = await ", async () => {
 for (const st of ["suspended", "banned", "closed"]) { const o = await F.org({ status: st });
   await rule("job", `a trigger refuses live while the organisation is ${st}`, { refuse: async () => live({ organisation_id: o }), ok: async () => job({ organisation_id: o }), expect: "suspended, banned or closed" }); }
@@ -66,7 +67,8 @@ await blk("{ const restricted = await F.org({ status: \"verified_restricted\" })
 { const restricted = await F.org({ status: "verified_restricted" });
   /* ported change: the migrations tie "restricted" to a future restricted_until, set only by a strike 2; the fixture sets it with triggers off */
   await tx("postgres", async (c) => { await c.query("set local session_replication_role = replica"); await c.query("update organisation set restricted_until = now() + interval '30 days' where id=$1", [restricted]); });
-  const a = await ins("app_portal", "job", J({ salary_low: 40000 })), b = await ins("app_portal", "job", J({ organisation_id: restricted, salary_low: 40000 })), b2 = await ins("app_portal", "job", J({ organisation_id: restricted, salary_low: 40000 }));
+  const rmem = await F.member(restricted, await F.portal(), { role: "poster" });
+  const a = await ins("app_portal", "job", J({ salary_low: 40000 })), b = await ins("app_portal", "job", J({ organisation_id: restricted, salary_low: 40000, posted_by_membership_id: rmem })), b2 = await ins("app_portal", "job", J({ organisation_id: restricted, salary_low: 40000, posted_by_membership_id: rmem }));
   // the old check also expected a restricted organisation to be refused going live; the guard now changes it to in_review (0002, #44), so only the good half stays
   await rule("job", "write guard: app_portal draft to live (organisation not restricted)", { ok: async () => P.app_portal.query("update job set status='live', search_vector=$2 where id=$1", [a, sv]) });
   await rule("job", "write guard: app_portal draft to in_review (restricted organisation), and the trigger queues post_strike_job_review", { ok: async () => { await P.app_portal.query("update job set status='in_review', search_vector=$2 where id=$1", [b2, sv]); const q = (await su("select queue from review_item where job_id=$1", [b2])).rows.map((r) => r.queue); if (!q.includes("post_strike_job_review")) throw new Error(`queued: ${q}`); } });
@@ -80,7 +82,7 @@ await blk("{ const restricted = await F.org({ status: \"verified_restricted\" })
   await P.app_portal.query("update job set status='closed', closed_at=now() where id=$1", [ur]).then(() => line("job", "an employer can close (withdraw) its own job while it is under_review", null, true, "allowed"), (e) => line("job", "an employer can close (withdraw) its own job while it is under_review: the guard lists only live to closed, so this legitimate action is refused", null, false, e.message)); }
 });
 // write guard, app_fetcher
-await rule("job", "write guard: app_fetcher writes only fetched jobs", { refuse: async () => ins("app_fetcher", "job", J()), ok: async () => ins("app_fetcher", "job", FJ({ status: "live", search_vector: sv, badge: "critical_skills_eligible" })), expect: "job guard" });
+await rule("job", "write guard: app_fetcher writes only fetched jobs", { refuse: async () => ins("app_fetcher", "job", (({ posted_by_membership_id: _, ...x }) => x)(J())), ok: async () => ins("app_fetcher", "job", FJ({ status: "live", search_vector: sv, badge: "critical_skills_eligible" })), expect: "job guard" });
 await rule("job", "write guard: app_fetcher sets badge only critical_skills_eligible", { refuse: async () => ins("app_fetcher", "job", FJ({ badge: "sponsor_confirmed" })), ok: async () => ins("app_fetcher", "job", FJ({ badge: "critical_skills_eligible" })) });
 await blk("{ const h = await ins(\"postgres\", \"job\", FJ({ status: \"hidden\", hidden", async () => {
 { const h = await ins("postgres", "job", FJ({ status: "hidden", hidden_reason: "admin", search_vector: sv, badge: "critical_skills_eligible" }));
@@ -483,7 +485,7 @@ await blk("{ const c = await F.cand(), ct = await F.text(\"visibility\"); await 
   await rule("consent_record", "app roles update only withdrawn_at, through their view", { refuse: async () => P.app_candidate.query("update candidate_consent_record set details='{}' where id=$1", [cr]), ok: async () => P.app_candidate.query("update candidate_consent_record set withdrawn_at=now() where id=$1", [cr]) }); }
 });
 await blk("{ const c = await F.cand(); const np = (x) => ins(\"postgres\", \"notific", async () => {
-{ const c = await F.cand(); const np = (x) => ins("postgres", "notification_preference", { category: "alerts", channel: "email", enabled: false, ...x });
+{ const c = await F.cand(); const np = (x) => ins("postgres", "notification_preference", { category: "job_alerts", channel: "email", enabled: false, ...x });
   await rule("notification_preference", "exactly one of the three user columns", { refuse: async () => np({ candidate_user_id: c, portal_user_id: pu }), ok: async () => np({ candidate_user_id: c }) });
   await rule("notification_preference", "partial unique (person, category, channel) in each pool", { refuse: async () => np({ candidate_user_id: c }), ok: async () => np({ staff_user_id: s1 }) }); }
 });

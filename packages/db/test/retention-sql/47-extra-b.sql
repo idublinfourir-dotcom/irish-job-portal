@@ -6,7 +6,7 @@ select c3t.mkc('c3-ks'); select c3t.mkprof('c3-ks');
 insert into saved_job(candidate_user_id,job_id) values ('c3-ks',1010);
 insert into alert(candidate_user_id,frequency,unsubscribe_token) values ('c3-ks','daily','tok-ks');
 insert into notification(candidate_user_id,category,template_key,dedupe_key) values ('c3-ks','x','t','ks-n1');
-insert into notification_preference(candidate_user_id,category,channel,enabled) values ('c3-ks','alerts','email',false);
+insert into notification_preference(candidate_user_id,category,channel,enabled) values ('c3-ks','job_alerts','email',false);
 insert into candidate_hidden_organisation(candidate_user_id,organisation_id) values ('c3-ks',4);
 insert into apply_click(candidate_user_id,job_id,status) values ('c3-ks',1010,'pending');
 insert into consent_record(id,candidate_user_id,consent_text_id,job_id,organisation_id,details) overriding system value values (401,'c3-ks',4,1003,4,'{"x":1}'),(402,'c3-ks',5,null,4,'{"x":1}'),(403,'c3-ks',6,null,null,null),(404,'c3-ks',3,null,null,null);

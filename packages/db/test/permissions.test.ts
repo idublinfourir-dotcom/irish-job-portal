@@ -46,6 +46,8 @@ denied("app_portal", "write a strike reply or appeal directly", "update strike s
 for (const v of views.filter((v) => v.startsWith("candidate_"))) denied("app_portal", `read view ${v}`, `select * from ${v} limit 1`);
 for (const t of ["staff_user","staff_account","staff_session","staff_verification","staff_rate_limit","staff_role","approval_request","audit_event","membership","portal_user","portal_account","portal_session","portal_verification","portal_rate_limit","report","strike","ban","case_note","case_quote","review_item","email_outbox","organisation_domain","sponsorship_statement","pay_floor","fetched_advert","fetch_run","cro_company","wrc_licence","setting","content_page","services_case","case_document","consent_record","notification","notification_preference","contact_message"]) denied("app_candidate", `read ${t}`, `select * from ${t} limit 1`);
 for (const v of views.filter((v) => v.startsWith("portal_"))) denied("app_candidate", `read view ${v}`, `select * from ${v} limit 1`);
+denied("app_candidate", "write an occupation text block (0018)", "insert into content_page(kind,slug,title,body) values('occupation','9002','t','b')");
+denied("app_portal", "write an occupation text block (0018)", "insert into content_page(kind,slug,title,body) values('occupation','9002','t','b')");
 for (const c of ["is_big_company","cro_number","member_limit","restricted_until","signup_path","verified_at"]) denied("app_candidate", `read organisation.${c}`, `select ${c} from organisation limit 1`);
 for (const c of ["hire_answer","close_reason","posted_by_membership_id","posted_by_staff_id","hidden_reason","hidden_report_id","fetched_advert_id","pay_floor_id","permit_employer_name_id","screening_questions"]) denied("app_candidate", `read job.${c}`, `select ${c} from job limit 1`);
 for (const c of ["fetched_advert_id","quota_full","permit_history","posted_by_staff_id","hidden_reason","hidden_report_id"]) denied("app_portal", `read or write job.${c}`, `update job set ${c}=${c} where false`);
@@ -80,7 +82,7 @@ denied("app_portal", "manage its team: change a membership directly (members cha
 denied("app_portal", "add a member directly", "insert into membership(organisation_id,portal_user_id,role,status) values($1,$2,'viewer','active')", () => [org, pu]);
 denied("app_portal", "insert a Launch B contact_request", "insert into contact_request(organisation_id,membership_id,candidate_user_id) values($1,$2,$3)", () => [org, mem, cand]);
 // execute: exactly as section 2.1
-const want = { erase_candidate: ["app_admin"], erase_portal_user: ["app_admin"], run_retention: ["app_admin"], refresh_permit_history: ["app_admin"], mark_first_time: ["app_admin"], claim_organisation: ["app_portal"], register_organisation: ["app_portal"], answer_review: ["app_portal"], team_invite: ["app_portal"], team_accept: ["app_portal"], team_request: ["app_portal"], team_answer: ["app_portal"], team_remove: ["app_portal"], team_leave: ["app_portal"], team_set_role: ["app_portal"], team_transfer: ["app_portal"], status_page: ["app_portal"], status_write: ["app_portal"], audit_pseudonymise: [], audit_purge: [], move_application: [], search_visible_candidates: [], use_approval: [] };
+const want = { erase_candidate: ["app_admin"], erase_portal_user: ["app_admin"], run_retention: ["app_admin"], refresh_permit_history: ["app_admin"], mark_first_time: ["app_admin"], claim_organisation: ["app_portal"], register_organisation: ["app_portal"], answer_review: ["app_portal"], team_invite: ["app_portal"], team_accept: ["app_portal"], team_request: ["app_portal"], team_answer: ["app_portal"], team_remove: ["app_portal"], team_leave: ["app_portal"], team_set_role: ["app_portal"], team_transfer: ["app_portal"], status_page: ["app_portal"], status_write: ["app_portal"], portal_jobs: ["app_portal"], expire_employer_jobs: ["app_admin"], audit_pseudonymise: [], audit_purge: [], move_application: [], search_visible_candidates: [], use_approval: [] };
 for (const f of fns) for (const r of [...roles, "anon", "authenticated", "service_role"]) {
   const exp = (want[f.proname] || []).includes(r);
   it(`${exp ? "must" : "must not"}: ${r}: execute ${f.f}`, async () => {
@@ -118,8 +120,14 @@ const must = [
   ["app_candidate", "read organisation names and DETE counts", "select n.name, d.permits from organisation_name n left join dete_permit_count d on d.organisation_name_id=n.id limit 1"],
   ["app_candidate", "read consent texts", "select body from consent_text limit 1"],
   ["app_candidate", "read published content", "select title from published_content_page limit 1"],
+  ["app_candidate", "read the live jobs of one occupation", "select id,title,sponsor_sort from job where status='live' and occupation_code='9001' order by (not quota_full) desc, sponsor_sort desc, posted_at desc, id desc limit 21"],
   ["app_candidate", "save a job", "insert into saved_job(candidate_user_id,job_id) values($1,$2) on conflict do nothing", () => [cand, job]],
   ["app_candidate", "write a profile by column list", "insert into candidate_profile(candidate_user_id,full_name,occupation_code) values($1,'Fake','2231') on conflict (candidate_user_id) do update set full_name=excluded.full_name", () => [cand]],
+  // 0020: the candidate account routes
+  ["app_candidate", "save a preference with ON CONFLICT through its view", "insert into candidate_notification_preference(candidate_user_id,category,channel,enabled) values($1,'job_alerts','email',true) on conflict (candidate_user_id, category, channel) where candidate_user_id is not null do update set enabled=excluded.enabled", () => [cand]],
+  ["app_candidate", "pause its alerts", "update alert set status='paused', pause_reason='stamp_4' where candidate_user_id=$1", () => [cand]],
+  ["app_candidate", "count an apply click", "insert into job_daily_stat(job_id,day,apply_clicks) values($1,current_date,1) on conflict (job_id,day) do update set apply_clicks=job_daily_stat.apply_clicks+1", () => [job]],
+  ["app_candidate", "end its sessions", "delete from candidate_session where user_id=$1", () => [cand]],
   ["app_candidate", "write an alert", "insert into alert(candidate_user_id,frequency,unsubscribe_token) values($1,'daily',$2)", () => [cand, id("t")]],
   ["app_candidate", "file a report", "insert into report(target_kind,target_job_id,reason,reporter_candidate_user_id) values('job',$1,'other',$2) returning id", () => [job, cand]],
   ["app_candidate", "give consent through its view", "insert into candidate_consent_record(candidate_user_id,consent_text_id) values($1,$2) returning id", () => [cand, ct]],
@@ -163,6 +171,7 @@ const must = [
   ["app_admin", "update fetched_advert result (rejecting a queued advert; was a must-not in trial 2)", "update fetched_advert set result='rejected' where false"],
   ["app_admin", "insert a case_document (staff uploads; was a must-not in trial 2)", "select has_column_privilege('app_admin','case_document','storage_key','insert') and has_column_privilege('app_admin','case_document','staff_user_id','insert') as ok"],
   ["app_admin", "insert a content page", "insert into content_page(kind,slug,title,body) values('help',$1,'t','b')", () => [id("s")]],
+  ["app_admin", "insert an occupation text block (0018)", "insert into content_page(kind,slug,title,body) values('occupation','9001','t','b')"],
   ["app_admin", "run erase_candidate, erase_portal_user and run_retention", "select has_function_privilege('private.erase_candidate(text,boolean)','execute') and has_function_privilege('private.erase_portal_user(text,boolean)','execute') and has_function_privilege('private.run_retention(integer)','execute')"],
   ["app_admin", "delete a rejected queued job and its text", "delete from job where false"],
 ];

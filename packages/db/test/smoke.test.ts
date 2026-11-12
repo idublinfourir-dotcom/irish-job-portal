@@ -154,6 +154,9 @@ S("membership", "insert owner as the admin (optional columns NULL), update", "ap
   await q("app_admin", "insert into membership(organisation_id, portal_user_id, role, status, is_signer, joined_at) values ($1,'p1','account_owner','active',true, now())", [org1]);
   await q("app_admin", "insert into membership(organisation_id, portal_user_id, role, status, is_signer, joined_at) values ($1,'p2','recruiter','active',true, now())", [org1]);
   await q("app_admin", "insert into membership(organisation_id, portal_user_id, role, status, joined_at) values ($1,'p3','viewer','active', now())", [org1]);
+  // 0019: a portal job write names an active poster of the job's company, so Beta (org2) gets one too
+  await q("app_portal", "insert into portal_user(id, name, email, email_verified) values ('p9','p9','p9@beta.test',true)");
+  await q("app_admin", "insert into membership(organisation_id, portal_user_id, role, status, joined_at) values ($1,'p9','poster','active', now())", [org2]);
   await q("app_admin", "update membership set joined_at = now() where portal_user_id = 'p1'");
 });
 N("membership", "a viewer with the signer switch (new CHECK)", "app_admin", /check/i, () => q("app_admin", "update membership set is_signer = true where portal_user_id = 'p3'"));
@@ -195,8 +198,8 @@ S("fetch_run", "insert and update", "app_fetcher", async () => {
   await q("app_fetcher", "update fetch_run set finished_at = now() where job_source_id = $1", [srcF]);
 });
 S("job", "insert a draft as the portal (created_at defaults; optional columns NULL)", "app_portal", async () => {
-  jobE = (await one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, salary_low, status)
-     values ($1,'employer',$2,'Chef','Acme','hospitality','general', ${days(20)}, 'https://acme.test/jobs/1', 40000, 'draft') returning id`, [org1, src])).id;
+  jobE = (await one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, salary_low, status, posted_by_membership_id)
+     values ($1,'employer',$2,'Chef','Acme','hospitality','general', ${days(20)}, 'https://acme.test/jobs/1', 40000, 'draft', (select id from membership where organisation_id = $1 and status = 'active' and role <> 'viewer' order by id limit 1)) returning id`, [org1, src])).id;
   const r = await one("app_admin", "select created_at is not null c, permit_history from job where id = $1", [jobE]);
   if (!r.c) throw new Error("created_at null");
 });
@@ -205,8 +208,8 @@ S("job", "update draft to live as the portal (guard sets posted_at; org is verif
 });
 S("job", "trigger job_defaults: permit_history copied from the organisation on insert", "app_admin", async () => {
   await q("app_admin", "update organisation set permit_history = 'has_history' where id = $1", [org2]);
-  const j = await one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status, pay_grade)
-     values ($1,'employer',$2,'Cook','Beta','hospitality','general', ${days(10)}, 'https://b.test/1', 'draft', 'G1') returning id`, [org2, src]);
+  const j = await one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status, pay_grade, posted_by_membership_id)
+     values ($1,'employer',$2,'Cook','Beta','hospitality','general', ${days(10)}, 'https://b.test/1', 'draft', 'G1', (select id from membership where organisation_id = $1 and status = 'active' and role <> 'viewer' order by id limit 1)) returning id`, [org2, src]);
   const a = await one("app_admin", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status, pay_grade, permit_history)
      values ($1,'admin_manual',$2,'Cook2','Beta','hospitality','general', ${days(10)}, 'https://b.test/2', 'draft', 'G1', 'not_linked') returning id`, [org2, src]);
   const r = await q("app_admin", "select permit_history from job where id in ($1,$2)", [j.id, a.id]);
@@ -226,8 +229,8 @@ S("job", "portal withdraws its own draft (draft to closed, new rule)", "app_port
 N("job", "close_reason outside the list", "app_portal", /check/i, () => q("app_portal", "update job set close_reason = 'because' where id = $1", [jobR]));
 N("job", "source changes after insert", "app_admin", /source never changes/, () => q("app_admin", "update job set source = 'agency' where id = $1", [jobE]));
 S("job", "update live to closed as portal, then reopen is not needed", "app_portal", async () => {
-  const j = await one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status, salary_low, search_vector)
-     values ($1,'employer',$2,'Waiter','Acme','hospitality','general', ${days(5)}, 'https://acme.test/2', 'live', 30000, to_tsvector('english','waiter')) returning id, posted_at`, [org1, src]);
+  const j = await one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status, salary_low, search_vector, posted_by_membership_id)
+     values ($1,'employer',$2,'Waiter','Acme','hospitality','general', ${days(5)}, 'https://acme.test/2', 'live', 30000, to_tsvector('english','waiter'), (select id from membership where organisation_id = $1 and status = 'active' and role <> 'viewer' order by id limit 1)) returning id, posted_at`, [org1, src]);
   await q("app_portal", "update job set status = 'closed', closed_at = now(), close_reason = 'closed' where id = $1", [j.id]);
 });
 S("job", "fetched job by the fetcher: insert in_review (queue), update title", "app_fetcher", async () => {
@@ -243,8 +246,8 @@ S("job", "update quota_full as admin; fetcher cannot (no grant)", "app_admin", a
   try { await q("app_fetcher", "update job set quota_full = false where id = $1", [jobE]); throw new Error("accepted"); } catch (e) { if (!/permission denied/.test(e.message)) throw e; }
 });
 S("job", "trigger job_defaults: a client job is looked up in organisation_name (found / not_found, value sent is ignored); not_found queues agency_client_check", "app_portal", async () => {
-  const ins = (name) => one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status, permit_employer_kind, permit_employer_name, permit_employer_check)
-     values ($1,'employer',$2,'Dev','Acme','it','general', ${days(5)}, 'https://acme.test/3', 'draft', 'client', $3, 'found') returning id, permit_employer_check`, [org1, src, name]);
+  const ins = (name) => one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status, permit_employer_kind, permit_employer_name, permit_employer_check, posted_by_membership_id)
+     values ($1,'employer',$2,'Dev','Acme','it','general', ${days(5)}, 'https://acme.test/3', 'draft', 'client', $3, 'found', (select id from membership where organisation_id = $1 and status = 'active' and role <> 'viewer' order by id limit 1)) returning id, permit_employer_check`, [org1, src, name]);
   const a = await ins("ACME  Ltd."); const b = await ins("Nobody Plc");
   const ra = await one("app_admin", "select permit_employer_check c, permit_employer_name_id is not null linked from job where id = $1", [a.id]);
   const rb = await one("app_admin", "select permit_employer_check c from job where id = $1", [b.id]);
@@ -435,8 +438,8 @@ N("organisation", "restricted_until moved by hand (never changes once set)", "ap
 N("organisation", "restricted_until set on another organisation by one person", "app_admin", /only in the transaction/, () => q("app_admin", "update organisation set restricted_until = now() + interval '90 days' where id = $1", [org2]));
 N("organisation", "status banned with no ban row", "app_admin", /banned only while a ban row/, () => q("app_admin", "update organisation set status = 'banned' where id = $1", [org2]));
 S("job", "restricted organisation: portal draft to live becomes in_review; scam/post_strike item queued; sponsor_confirmed refused", "app_portal", async () => {
-  const j = await one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status, salary_low)
-     values ($1,'employer',$2,'R','Acme','x','general', ${days(5)}, 'https://acme.test/r', 'draft', 1) returning id`, [org1, src]);
+  const j = await one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status, salary_low, posted_by_membership_id)
+     values ($1,'employer',$2,'R','Acme','x','general', ${days(5)}, 'https://acme.test/r', 'draft', 1, (select id from membership where organisation_id = $1 and status = 'active' and role <> 'viewer' order by id limit 1)) returning id`, [org1, src]);
   const r = await one("app_portal", "update job set status = 'live', search_vector = to_tsvector('x') where id = $1 returning status", [j.id]);
   const rq = await one("app_admin", "select queue from review_item where job_id = $1", [j.id]);
   if (r.status !== "in_review" || rq.queue !== "post_strike_job_review") throw new Error(JSON.stringify({ r, rq }));
@@ -480,8 +483,8 @@ const orgWithDraft = async (slug, portalId, salary) => {
   await q("app_admin", "update organisation set status = 'verified', claimed_at = now(), verified_at = now(), signup_path = 'first_time' where id = $1", [o]);
   await q("app_portal", "insert into portal_user(id, name, email, email_verified) values ($1,$1,$2,true)", [portalId, portalId + "@corp.test"]);
   await q("app_admin", "insert into membership(organisation_id, portal_user_id, role, status, is_signer, joined_at) values ($1,$2,'account_owner','active',true, now())", [o, portalId]);
-  await q("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status ${salary ? ", salary_low" : ""})
-     values ($1,'employer',$2,'Draft','x','x','general', ${days(5)}, 'https://x.test/d', 'draft' ${salary ? ", 1" : ""})`, [o, src]);
+  await q("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status ${salary ? ", salary_low" : ""}, posted_by_membership_id)
+     values ($1,'employer',$2,'Draft','x','x','general', ${days(5)}, 'https://x.test/d', 'draft' ${salary ? ", 1" : ""}, (select id from membership where organisation_id = $1 and status = 'active' and role <> 'viewer' order by id limit 1))`, [o, src]);
   return o;
 };
 S("organisation", "return to unclaimed removes memberships, empties claim columns, closes draft jobs (trigger; the draft has a salary)", "app_admin", async () => {
@@ -495,8 +498,8 @@ S("organisation", "FINDING check: return to unclaimed when the organisation hold
   await q("app_admin", "update organisation set status = 'unclaimed' where id = $1", [o]);
 });
 S("job", "FINDING check: the portal withdraws its own draft that has no salary and no pay grade (draft to closed, Build 9)", "app_portal", async () => {
-  const j = await one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status)
-     values ($1,'employer',$2,'NoPay','x','x','general', ${days(5)}, 'https://x.test/n', 'draft') returning id`, [org2, src]);
+  const j = await one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status, posted_by_membership_id)
+     values ($1,'employer',$2,'NoPay','x','x','general', ${days(5)}, 'https://x.test/n', 'draft', (select id from membership where organisation_id = $1 and status = 'active' and role <> 'viewer' order by id limit 1)) returning id`, [org2, src]);
   await q("app_portal", "update job set status = 'closed', closed_at = now(), close_reason = 'closed' where id = $1", [j.id]);
 });
 S("organisation", "(trial setup line) org3 to needs_info, a refusal is ignored", "app_admin", () => q("app_admin", "update organisation set status = 'needs_info' where id = $1", [org3]).catch(() => {}));
@@ -609,8 +612,8 @@ S("run_retention()", "drains to rule = null; the audit row is written", "app_adm
   return `${n} calls`;
 });
 S("run_retention()", "FINDING check: draft_job closes an employer draft with no salary and no pay grade, 12 months old", "app_admin", async () => {
-  const j = await one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status)
-     values ($1,'employer',$2,'OldDraft','x','x','general', ${days(5)}, 'https://x.test/o', 'draft') returning id`, [org2, src]);
+  const j = await one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status, posted_by_membership_id)
+     values ($1,'employer',$2,'OldDraft','x','x','general', ${days(5)}, 'https://x.test/o', 'draft', (select id from membership where organisation_id = $1 and status = 'active' and role <> 'viewer' order by id limit 1)) returning id`, [org2, src]);
   await ow.query("update job set created_at = now() - interval '13 months' where id = $1", [j.id]);
   let r, n = 0; try { do { r = (await one("app_admin", "select private.run_retention(1000) as r")).r; n++; } while (r.rule !== null && n < 60); }
   finally { await ow.query("delete from job where id = $1", [j.id]); }
@@ -625,8 +628,8 @@ let appId, jobOn, crq;
 S("job", "on-site job, live", "app_admin", async () => {
   await q("app_admin", "update organisation set status = 'verified', claimed_at = now(), verified_at = now(), signup_path = 'first_time' where id = $1", [org1]);
   await q("app_admin", "insert into membership(organisation_id, portal_user_id, role, status, is_signer, joined_at) values ($1,'p1','account_owner','active',true, now())", [org1]).catch(() => {});
-  jobOn = (await one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, application_route, status, salary_low, search_vector)
-     values ($1,'employer',$2,'On-site','Acme','x','general', ${days(5)}, 'on_site', 'live', 1, to_tsvector('x')) returning id`, [org1, src])).id;
+  jobOn = (await one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, application_route, status, salary_low, search_vector, posted_by_membership_id)
+     values ($1,'employer',$2,'On-site','Acme','x','general', ${days(5)}, 'on_site', 'live', 1, to_tsvector('x'), (select id from membership where organisation_id = $1 and status = 'active' and role <> 'viewer' order by id limit 1)) returning id`, [org1, src])).id;
 });
 S("application", "insert as candidate (optional columns NULL), update withdraw", "app_candidate", async () => {
   const cr = (await one("app_candidate", "insert into candidate_consent_record(candidate_user_id, consent_text_id) values ('c1',$1) returning id", [ctApp])).id;
