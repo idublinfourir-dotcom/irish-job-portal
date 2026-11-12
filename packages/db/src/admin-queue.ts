@@ -1,6 +1,6 @@
 // The fetched-job admin queue (#166 to #168): list, look at, claim, approve and reject the `fetched_job` review items, run as app_admin.
-// Every action takes the acting staff member's id (#167): it must be an active staff_user, and it is set as app.staff_user_id for the
-// transaction, as the database's guards expect. Every statement is a constant with parameters. Only the claimer decides, under row locks.
+// Every action takes the acting staff member's id (#167): it must be an active staff_user holding the
+// fetched_job_reviewer role (#193), and it is set as app.staff_user_id for the transaction, as the database's guards expect. Every statement is a constant with parameters. Only the claimer decides, under row locks.
 import type pg from "pg";
 import { assess, type Assessment, type ChainData, type StaffInput } from "@portal/rules";
 import { isTime, PAGE_SIZE, validId } from "./search";
@@ -77,7 +77,10 @@ export async function getItem(db: Pick<pg.Pool, "query">, id: string | number): 
 }
 
 // ===== the actions =====
-const ACT = "select set_config('app.staff_user_id', $1, true), exists (select 1 from staff_user where id = $1 and status = 'active') as ok";
+// One statement: sets the acting id and answers two questions. A role is not implied by another (an administrator is not a fetched-job reviewer, #193).
+export const QUEUE_ACT =
+  "select set_config('app.staff_user_id', $1, true), exists (select 1 from staff_user where id = $1 and status = 'active') as active, " +
+  "exists (select 1 from staff_user u join staff_role r on r.staff_user_id = u.id where u.id = $1 and u.status = 'active' and r.role = 'fetched_job_reviewer') as reviewer";
 
 async function acting<T>(db: Db, staffUserId: string, itemId: string | number, fn: (c: pg.PoolClient, item: string) => Promise<T>): Promise<T> {
   if (typeof staffUserId !== "string" || staffUserId.length === 0 || staffUserId.length > 200) throw new QueueRefused("not_active_staff");
@@ -86,7 +89,9 @@ async function acting<T>(db: Db, staffUserId: string, itemId: string | number, f
   const c = await db.connect();
   try {
     await c.query("begin");
-    if (!(await c.query<{ ok: boolean }>(ACT, [staffUserId])).rows[0]!.ok) throw new QueueRefused("not_active_staff");
+    const r = (await c.query<{ active: boolean; reviewer: boolean }>(QUEUE_ACT, [staffUserId])).rows[0]!;
+    if (!r.active) throw new QueueRefused("not_active_staff");
+    if (!r.reviewer) throw new QueueRefused("not_reviewer");
     const out = await fn(c, key);
     await c.query("commit");
     return out;

@@ -13,7 +13,7 @@ import { GOOD_RUN_TODAY, utcDayStart } from "../../src/fetch-guard-cli";
 import { LAST_5_YEARS } from "../../src/dete";
 import { JOB_QUERY, listQuery, SORTS as LIST_SORTS, type Cursor, type Sort as ListSort } from "../../src/search";
 import { approveAccount, claimReview, REVIEW_AFTER, REVIEW_DECIDE, REVIEW_FIRST, REVIEW_ITEM, REVIEW_LOCK, listAccountReviews } from "../../src/account-review";
-import { approve, claim, DECIDE, listQueue, LOCK, QUEUE_AFTER, QUEUE_FIRST, QUEUE_ITEM, RELEASE, STALE_AFTER, TAKE_OVER } from "../../src/admin-queue";
+import { approve, claim, DECIDE, listQueue, LOCK, QUEUE_ACT, QUEUE_AFTER, QUEUE_FIRST, QUEUE_ITEM, RELEASE, STALE_AFTER, TAKE_OVER } from "../../src/admin-queue";
 import { fill } from "./fill";
 import { costOf, measurePages, pageOver, type PageCost, type Statement } from "./pages";
 
@@ -295,6 +295,8 @@ it("no page is over the limit after vacuum (analyze)", async () => {
 // page and a page from the middle, one item, and an approve (its lock and its write, measured on the real call inside a savepoint before each runs).
 it("the admin queue pages and an approve stay under the limit", async () => {
   const staff = "staf0000001x0123456789abcdef";
+  // the queue accepts only staff with the fetched_job_reviewer role (#193); the fill may already have given it to this one
+  await su.query("insert into staff_role(staff_user_id, role, seeded_by_owner) values ($1, 'fetched_job_reviewer', true) on conflict do nothing", [staff]);
   await su.query(
     "insert into review_item(queue, job_id, reason, created_at) select 'fetched_job', id, 'Fake reason', now() - g * interval '1 minute' " +
       "from (select id, row_number() over (order by id) g from job where status = 'closed' and source = 'fetched' order by id limit 300) s",
@@ -377,10 +379,11 @@ it("the admin queue pages and an approve stay under the limit", async () => {
   };
   const take = await one(other, TAKE_OVER, [stale, other, "fetched_job.take_over", STALE_AFTER]);
   const give = await one(staff, RELEASE, [stale, staff, "fetched_job.release"]);
-  expect([take.rows, give.rows]).toEqual([1, 1]); // each wrote its audit row, so the whole statement was measured
+  const who = await one(staff, QUEUE_ACT, [staff]); // the active-staff and role check every action starts with
+  expect([take.rows, give.rows, who.rows]).toEqual([1, 1, 1]); // each wrote its audit row, so the whole statement was measured
   const pages = [
     ["admin queue first page", [reads[0]!]], ["admin queue page from the middle", [reads[1]!]], ["admin queue item", [reads[2]!]], ["admin approve: lock + write", write],
-    ["admin take over a stale claim", [take.cost]], ["admin release a claim", [give.cost]],
+    ["admin take over a stale claim", [take.cost]], ["admin release a claim", [give.cost]], ["admin staff and role check", [who.cost]],
   ] as const;
   console.log(`\n=== admin queue (app_admin): ${pages.map(([n, c]) => `${n} ${sum([...c], "pages")} pages / ${Math.round(sum([...c], "ms") * 100) / 100} ms [${c.map((x) => x.scans).join(" ; ")}]`).join(" | ")}`);
   const failures = pages.flatMap(([n, c]) => {
