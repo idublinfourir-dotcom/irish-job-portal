@@ -12,6 +12,7 @@ import { createTestDb, tx, urlFor, type TestDb } from "../db";
 import { GOOD_RUN_TODAY, utcDayStart } from "../../src/fetch-guard-cli";
 import { LAST_5_YEARS } from "../../src/dete";
 import { JOB_QUERY, listQuery, SORTS as LIST_SORTS, type Cursor, type Sort as ListSort } from "../../src/search";
+import { approveAccount, claimReview, REVIEW_AFTER, REVIEW_DECIDE, REVIEW_FIRST, REVIEW_ITEM, REVIEW_LOCK, listAccountReviews } from "../../src/account-review";
 import { approve, claim, DECIDE, listQueue, LOCK, QUEUE_AFTER, QUEUE_FIRST, QUEUE_ITEM, RELEASE, STALE_AFTER, TAKE_OVER } from "../../src/admin-queue";
 import { fill } from "./fill";
 import { costOf, measurePages, pageOver, type PageCost, type Statement } from "./pages";
@@ -389,6 +390,69 @@ it("the admin queue pages and an approve stay under the limit", async () => {
   });
   expect(write).toHaveLength(2);
   expectNoneOver("admin queue", failures);
+});
+
+// The account review queue (src/account-review.ts), measured as app_admin on the same full-size fill: 300 pending companies with their owners among the
+// fill's data. The list's first page and a page from the middle, one item, and an approve with the domain (its lock and its write, measured on the real
+// call inside a savepoint before each runs). Same page and time limits as the fetched-job queue.
+it("the account review pages and an approve stay under the limit", async () => {
+  const staff = "gate-ar-staff";
+  await su.query("insert into staff_user(id, name, email, email_verified, created_at, updated_at) values ($1, 'Fake Reviewer', 'gate-ar@example.test', true, now(), now())", [staff]);
+  await su.query("insert into staff_role(staff_user_id, role, seeded_by_owner) values ($1, 'account_reviewer', true)", [staff]);
+  await su.query("insert into organisation(slug, display_name, kind, status, signup_path, claimed_at) select 'gate-ar-' || g, 'Gate Review ' || g, 'employer', 'pending_review', 'dete_claim', now() from generate_series(1, 300) g");
+  await su.query("insert into portal_user(id, name, email, email_verified, created_at, updated_at) select 'gate-ar-u' || g, 'Fake Owner', 'owner' || g || '@gate-ar-' || g || '.example.test', true, now(), now() from generate_series(1, 300) g");
+  await su.query("insert into membership(organisation_id, portal_user_id, role, status, is_signer, joined_at) select o.id, 'gate-ar-u' || substr(o.slug, 9), 'account_owner', 'active', true, now() from organisation o where o.slug like 'gate-ar-%'");
+  await su.query("insert into review_item(queue, organisation_id, reason, created_at) select 'account_review', o.id, 'claim', now() - o.id * interval '1 second' from organisation o where o.slug like 'gate-ar-%'");
+  await owner.query("vacuum (analyze) review_item, organisation, membership, portal_user, audit_event");
+  const pool = db.pool("app_admin");
+  const made = (await su.query("select r.id::text from review_item r join organisation o on o.id = r.organisation_id where o.slug like 'gate-ar-%' order by r.id desc limit 2")).rows.map((r) => r.id as string);
+  for (const item of made) await claimReview(pool, staff, item);
+
+  const client = new pg.Client({ connectionString: urlFor(db.name, "app_admin") });
+  await client.connect();
+  let reads: PageCost[];
+  try {
+    const mid = (await listAccountReviews(client, staff)).next!;
+    const [t, i] = Object.values(JSON.parse(Buffer.from(mid, "base64url").toString("utf8"))) as string[];
+    reads = await measurePages(client, [REVIEW_FIRST, { text: REVIEW_AFTER, values: [t, i] }, { text: REVIEW_ITEM, values: [made[1]] }]);
+  } finally {
+    await client.end();
+  }
+
+  let write: PageCost[] = [];
+  const measuring = {
+    query: pool.query.bind(pool),
+    connect: async () => {
+      const c = await pool.connect();
+      return Object.assign(Object.create(c), {
+        release: () => c.release(),
+        query: async (text: string, values?: unknown[]) => {
+          if (text === REVIEW_LOCK || text === REVIEW_DECIDE) {
+            await c.query("savepoint m");
+            const e = await c.query(`explain (analyze, buffers, serialize, format json) ${text}`, values);
+            await c.query("rollback to savepoint m");
+            write.push(costOf(text, e.rows[0]["QUERY PLAN"]));
+          }
+          return c.query(text, values);
+        },
+      });
+    },
+  } as unknown as pg.Pool;
+  for (const item of made) {
+    write = [];
+    await approveAccount(measuring, staff, item, { addDomain: true });
+  }
+  const pages = [
+    ["account review first page", [reads[0]!]], ["account review page from the middle", [reads[1]!]], ["account review item", [reads[2]!]], ["account approve: lock + write", write],
+  ] as const;
+  console.log(`\n=== account review (app_admin): ${pages.map(([n, c]) => `${n} ${sum([...c], "pages")} pages / ${Math.round(sum([...c], "ms") * 100) / 100} ms [${c.map((x) => x.scans).join(" ; ")}]`).join(" | ")}`);
+  const failures = pages.flatMap(([n, c]) => {
+    const over = pageOver(n, [...c], PAGE_LIMIT);
+    const ms = sum([...c], "ms");
+    return [...(over ? [over] : []), ...(ms > MS_LIMIT ? [`page "${n}" took ${ms} ms, budget ${MS_LIMIT} ms`] : [])];
+  });
+  expect(write).toHaveLength(2);
+  expectNoneOver("account review", failures);
 });
 
 // The daily fetch guard (src/fetch-guard-cli.ts): one statement as app_fetcher on a year of runs (22,700 rows; about 30 a day in real life, so
