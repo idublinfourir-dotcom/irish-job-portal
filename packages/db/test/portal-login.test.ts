@@ -6,7 +6,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { createAuth, requirePortal } from "../../auth/src";
-import { answers, seedSignupTerms } from "./better-auth-helper";
+import { answers, portalAnswers, seedSignupTerms } from "./better-auth-helper";
 import { fixtures } from "./fixtures";
 
 // Statements measured on 12 November 2026, counting every pg.Client.query call. requirePortal: 3 (the session read is 2, the
@@ -31,6 +31,7 @@ beforeAll(async () => {
   db = await createTestDb();
   su = db.pool("postgres");
   ({ F } = fixtures(db) as unknown as { F: typeof F });
+  await seedSignupTerms(su, "portal_signup_terms"); // portal sign-up needs the saved employer and agency terms and the tick (step 7 slice 4)
   Object.assign(process.env, { DATABASE_URL: urlFor(db.name, "app_portal"), DATABASE_SSL: "disable", PORTAL_AUTH_URL: BASE, PORTAL_AUTH_SECRET: secret });
   ({ GET, POST } = await import("../../../apps/portal/app/api/auth/portal/[...all]/route"));
   ({ POST: claimPOST } = await import("../../../apps/portal/app/api/portal/claim/route"));
@@ -73,7 +74,7 @@ async function counted<T>(fn: () => Promise<T>): Promise<[T, number]> {
   try { return [await fn(), n]; } finally { pg.Client.prototype.query = q; }
 }
 
-const person = (n: string, domain = "example.test") => ({ email: `fake.${n}@${domain}`, password: `Fake-${n}-password-1`, name: `Fake ${n}` });
+const person = (n: string, domain = "example.test") => ({ email: `fake.${n}@${domain}`, password: `Fake-${n}-password-1`, name: `Fake ${n}`, ...portalAnswers });
 const one = async (sql: string, args: unknown[] = []) => (await su.query(sql, args)).rows[0];
 const count = async (sql: string, args: unknown[] = []) => (await one(`select count(*)::int n from (${sql}) t`, args)).n as number;
 const linkFor = (email: string, kind: string) => mail().filter((m) => m.to === email && m.kind === kind).at(-1)!.link;

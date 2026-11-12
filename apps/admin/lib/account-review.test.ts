@@ -81,6 +81,7 @@ describe("statusFor", () => {
     expect(statusFor("not_found")).toBe(404);
     expect(statusFor("claimed_by_other")).toBe(409);
     expect(statusFor("free_email_domain")).toBe(409);
+    expect(statusFor("has_permit_history")).toBe(409);
     expect(statusFor("domain_owned_by_other")).toBe(409);
     expect(statusFor("claimant_not_active")).toBe(409);
   });

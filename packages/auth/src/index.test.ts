@@ -70,10 +70,11 @@ describe("candidate settings and sessions (#177)", () => {
     const c = (await make("candidate").$context).sessionConfig;
     expect([c.expiresIn, c.updateAge]).toEqual([604800, 86400]);
   });
-  it("the candidate pool checks the sign-up answers before the route runs; the other pools do not", async () => {
+  it("the candidate and portal pools check the sign-up answers before the route runs; the staff pool does not", async () => {
     const candidate = await make("candidate").$context, portal = await make("portal").$context;
     expect(candidate.options.plugins?.map((p) => p.id)).toEqual(["candidate-signup"]);
-    expect(portal.options.plugins ?? []).toEqual([]);
+    expect(portal.options.plugins?.map((p) => p.id)).toEqual(["portal-signup"]);
+    expect((await make("staff").$context).options.plugins?.map((p) => p.id)).not.toContain("staff-signup");
   });
   it("sign-in, sign-up, reset and resend each have their own rate limit", async () => {
     const rules = (await make("candidate").$context).options.rateLimit?.customRules ?? {};

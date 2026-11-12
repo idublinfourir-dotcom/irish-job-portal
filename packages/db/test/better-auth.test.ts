@@ -6,7 +6,7 @@
 import { afterAll, beforeAll, describe, it, vi } from "vitest";
 import pg from "pg";
 import { createTestDb, urlFor } from "./db";
-import { answers, makeAuth, mail, seedSignupTerms } from "./better-auth-helper";
+import { answers, makeAuth, mail, portalAnswers, seedSignupTerms } from "./better-auth-helper";
 
 // Statements one getSession sends, measured on 10 November 2026 with the cookie cache off: 2 per request (session by
 // token, then user by id), plus 2 more the first time an instance runs (Better Auth reads the column list once).
@@ -22,6 +22,7 @@ beforeAll(async () => {
   for (const [n, r] of Object.entries(roles)) { pools[n] = db.pool(r); auths[n] = makeAuth(n, pools[n]); }
   su = db.pool("postgres");
   await seedSignupTerms(su); // candidate sign-up needs a saved signup_terms text and the three answers (step 7 slice 2)
+  await seedSignupTerms(su, "portal_signup_terms"); // portal sign-up needs a saved portal_signup_terms text and the tick (step 7 slice 4)
 });
 afterAll(() => db.drop());
 // a failed check throws its detail, like the trial's FAIL line
@@ -29,7 +30,7 @@ const rec = (pass, detail = "") => { if (!pass) throw new Error(String(detail));
 
 let ipn = 10; const freshIp = () => `198.51.100.${ipn++}`;
 async function call(pool, path, body, cookie, ip = freshIp(), extra = {}) {
-  if (pool === "candidate" && path === "sign-up/email") body = { ...answers, ...body };
+  if (path === "sign-up/email" && pool !== "staff") body = { ...(pool === "candidate" ? answers : portalAnswers), ...body };
   const res = await auths[pool].handler(new Request(`http://localhost:3000/api/auth/${pool}/${path}`, {
     method: body ? "POST" : "GET", headers: { "content-type": "application/json", origin: "http://localhost:3000", "x-vercel-forwarded-for": ip, ...extra, ...(cookie ? { cookie } : {}) },
     body: body ? JSON.stringify(body) : undefined }));

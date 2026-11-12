@@ -1,6 +1,6 @@
 // Unit tests for the pure parts of the admin queue: the staff input check, the list answer and the re-run of the rules. No database.
 import { describe, expect, it } from "vitest";
-import { checkApproveInput, listAnswer, QueueRefused, reassess } from "./admin-queue";
+import { checkApproveInput, claim, listAnswer, QueueRefused, reassess } from "./admin-queue";
 
 const LISTS = [
   { code: "2134", list: "critical-skills" },
@@ -66,5 +66,42 @@ describe("reassess", () => {
   });
   it("a range that crosses the minimum goes live as stated pay, as the fetcher does (#66)", async () => {
     expect((await reassess(job({ advert_text: "Pay €38,000 to €56,000 a year." }), "2134", "yes", {}, CHAIN)).route).toBe("stated_pay");
+  });
+});
+
+// A fake database that answers the acting-staff statement with the given flags and records everything it is asked.
+const fakeDb = (answer: { active: boolean; reviewer: boolean }) => {
+  const sql: string[] = [];
+  const client = { query: async (text: string) => (sql.push(text), { rows: [answer], rowCount: 1 }), release: () => {} };
+  return { sql, db: { query: client.query, connect: async () => client } as never };
+};
+const claimWhy = async (answer: { active: boolean; reviewer: boolean }) => {
+  const f = fakeDb(answer);
+  try {
+    await claim(f.db, "staff1", "1");
+  } catch (e) {
+    return { why: e instanceof QueueRefused ? e.why : "other", sql: f.sql };
+  }
+  return { why: "accepted", sql: f.sql };
+};
+
+describe("acting staff check", () => {
+  it("not_active_staff comes before not_reviewer, and neither runs the action", async () => {
+    for (const reviewer of [true, false]) expect((await claimWhy({ active: false, reviewer })).why).toBe("not_active_staff");
+    const r = await claimWhy({ active: true, reviewer: false });
+    expect(r.why).toBe("not_reviewer");
+    expect(r.sql).toEqual([expect.stringMatching(/^begin/), expect.stringContaining("fetched_job_reviewer"), "rollback"]);
+  });
+  it("the role is checked in the same statement as active staff, and no other role stands in", async () => {
+    const r = await claimWhy({ active: true, reviewer: false });
+    expect(r.sql[1]).toMatch(/r\.role = 'fetched_job_reviewer'/);
+    expect(r.sql[1]).not.toMatch(/administrator|account_reviewer/);
+  });
+  it("an empty, huge or non-string staff id is refused before the database is touched", async () => {
+    for (const bad of ["", "x".repeat(201), undefined, 5]) {
+      const f = fakeDb({ active: true, reviewer: true });
+      await expect(claim(f.db, bad as never, "1")).rejects.toMatchObject({ why: "not_active_staff" });
+      expect(f.sql).toEqual([]);
+    }
   });
 });

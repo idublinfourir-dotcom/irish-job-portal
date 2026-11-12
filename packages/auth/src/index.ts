@@ -3,9 +3,9 @@ import { APIError, getOAuthState } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { generateRandomString } from "better-auth/crypto";
 import type { Pool } from "pg";
-import { candidateSignup, checkSignup, writeConsent, type Answers } from "./signup";
+import { checkPortalSignup, checkSignup, signupPlugin, writeConsent, type Answers } from "./signup";
 
-export { readAnswers, checkSignup, currentTermsId, writeConsent, type Answers } from "./signup";
+export { readAnswers, readPortalAnswers, checkSignup, checkPortalSignup, currentTermsId, writeConsent, type Answers, type PortalAnswers } from "./signup";
 export { createFakeEmail, type FakeEmail } from "./fake-email";
 
 // The pool is called portal, not employer: its tables are portal_user and so on (23-database-design.md).
@@ -117,7 +117,7 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
       ...(name === "staff" ? { expiresIn: STAFF_IDLE_SECONDS, updateAge: STAFF_REFRESH_SECONDS } : {}),
     },
     // Staff: server calls (requireStaff) refresh the session row, and this sends the new cookie back in Next.js route handlers and server actions.
-    plugins: name === "staff" ? [nextCookies()] : name === "candidate" ? [candidateSignup(database)] : [],
+    plugins: name === "staff" ? [nextCookies()] : name === "candidate" || name === "portal" ? [signupPlugin(database, name)] : [],
     // A Google sign-in joins an existing account with the same email only when Google says the email is verified AND that account's
     // email was confirmed here (Better Auth's defaults, written out so a change shows in review). No trusted providers: Google's word
     // alone is not enough for an unconfirmed email-and-password account, so there is no silent takeover.
@@ -143,6 +143,13 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
           const trx = (await getCurrentAdapter(ctx?.context.adapter as never)) as unknown as { count: (q: unknown) => Promise<number> };
           if (!(await trx.count({ model: "consentRecord", where: [{ field: "candidateUserId", value: a.userId }] })))
             throw new APIError("FORBIDDEN", { message: "Sign-up answers are missing.", code: "SIGNUP_CONSENT_MISSING" });
+        } } },
+      } : {}),
+      // Portal sign-up (#194): the same, with the one tick. The portal has no Google (#190), so an account made by any other route is refused.
+      ...(name === "portal" ? {
+        account: { create: { before: async (a: { userId: string }, ctx: Ctx | null) => {
+          if (ctx?.path !== "/sign-up/email") throw new APIError("FORBIDDEN", { message: "Sign-up answers are missing.", code: "SIGNUP_CONSENT_MISSING" });
+          await writeConsent(ctx.context.adapter, a.userId, checkPortalSignup(ctx.body), "portal");
         } } },
       } : {}),
       session: {

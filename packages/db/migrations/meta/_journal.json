@@ -85,6 +85,13 @@
       "when": 1794300007000,
       "tag": "0011_claim_needs_info_rule",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794300008000,
+      "tag": "0012_portal_signup_terms",
+      "breakpoints": true
     }
   ]
 }

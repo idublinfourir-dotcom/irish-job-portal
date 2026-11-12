@@ -207,6 +207,8 @@ const DOMAIN_OTHER = "select exists (select 1 from organisation_domain where dom
 const DOMAIN_ADD =
   "insert into organisation_domain(organisation_id, domain, source, added_by_staff_id) values ($1::bigint, $2, 'admin', $3) on conflict (organisation_id, domain) do nothing";
 
+const MARK_FIRST_TIME = "select private.mark_first_time($1::bigint)";
+
 /**
  * Approve: the organisation becomes verified. With `addDomain`, the claimant's own email domain is saved for the company (#186), so colleagues on it
  * pass without review next time; refused for a free email provider and for a domain another company holds.
@@ -228,7 +230,16 @@ export async function approveAccount(db: Db, staffUserId: string, itemId: string
       if ((await c.query<{ other: boolean }>(DOMAIN_OTHER, [domain, r.organisation_id])).rows[0]!.other) throw new QueueRefused("domain_owned_by_other");
       await c.query(DOMAIN_ADD, [r.organisation_id, domain, staffUserId]);
     }
-    await decide(c, id, staffUserId, r, "verified", "approved", "approved", { domain_added: domain !== null });
+    // a first-time employer gets the "First-time sponsor" label (#73), in this transaction so a refusal undoes everything; agencies and DETE claims do not
+    if (r.signup_path === "first_time") {
+      try {
+        await c.query(MARK_FIRST_TIME, [r.organisation_id]);
+      } catch (e) {
+        if (e instanceof Error && e.message.includes("has a DETE permit record")) throw new QueueRefused("has_permit_history");
+        throw e;
+      }
+    }
+    await decide(c, id, staffUserId, r, "verified", "approved", "approved", { domain_added: domain !== null, ...(r.signup_path === "first_time" ? { first_time_label: true } : {}) });
     return { organisationId: r.organisation_id, organisationStatus: "verified", domainAdded: domain };
   });
 }
