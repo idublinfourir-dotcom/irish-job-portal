@@ -150,16 +150,16 @@ S("cro_company", "insert and update (trigram index in extensions)", "app_fetcher
 S("cro_company", "trigram search by the admin role (extensions schema usage)", "app_admin", async () => {
   await q("app_admin", "select count(*) from cro_company where normalised_name operator(extensions.%) 'acme'");
 });
-S("membership", "insert owner as the portal (optional columns NULL), update", "app_portal", async () => {
-  await q("app_portal", "insert into membership(organisation_id, portal_user_id, role, status, is_signer, joined_at) values ($1,'p1','account_owner','active',true, now())", [org1]);
-  await q("app_portal", "insert into membership(organisation_id, portal_user_id, role, status, is_signer, joined_at) values ($1,'p2','recruiter','active',true, now())", [org1]);
-  await q("app_portal", "insert into membership(organisation_id, portal_user_id, role, status, joined_at) values ($1,'p3','viewer','active', now())", [org1]);
-  await q("app_portal", "update membership set joined_at = now() where portal_user_id = 'p1'");
+S("membership", "insert owner as the admin (optional columns NULL), update", "app_admin", async () => {
+  await q("app_admin", "insert into membership(organisation_id, portal_user_id, role, status, is_signer, joined_at) values ($1,'p1','account_owner','active',true, now())", [org1]);
+  await q("app_admin", "insert into membership(organisation_id, portal_user_id, role, status, is_signer, joined_at) values ($1,'p2','recruiter','active',true, now())", [org1]);
+  await q("app_admin", "insert into membership(organisation_id, portal_user_id, role, status, joined_at) values ($1,'p3','viewer','active', now())", [org1]);
+  await q("app_admin", "update membership set joined_at = now() where portal_user_id = 'p1'");
 });
-N("membership", "a viewer with the signer switch (new CHECK)", "app_portal", /check/i, () => q("app_portal", "update membership set is_signer = true where portal_user_id = 'p3'"));
-S("membership", "invite with a token hash; a second row with the same hash is refused", "app_portal", async () => {
-  await q("app_portal", "insert into membership(organisation_id, invited_email, role, status, invite_token_hash) values ($1,'new@corp.test','poster','invited','h1')", [org1]);
-  try { await q("app_portal", "insert into membership(organisation_id, invited_email, role, status, invite_token_hash) values ($1,'new2@corp.test','poster','invited','h1')", [org1]); throw new Error("accepted"); }
+N("membership", "a viewer with the signer switch (new CHECK)", "app_admin", /check/i, () => q("app_admin", "update membership set is_signer = true where portal_user_id = 'p3'"));
+S("membership", "invite with a token hash; a second row with the same hash is refused", "app_admin", async () => {
+  await q("app_admin", "insert into membership(organisation_id, invited_email, role, status, invite_token_hash) values ($1,'new@corp.test','poster','invited','h1')", [org1]);
+  try { await q("app_admin", "insert into membership(organisation_id, invited_email, role, status, invite_token_hash) values ($1,'new2@corp.test','poster','invited','h1')", [org1]); throw new Error("accepted"); }
   catch (e) { if (!/unique|duplicate/i.test(e.message)) throw e; }
 });
 const mem = async (u) => (await one("app_admin", "select id from membership where portal_user_id = $1", [u])).id;
@@ -479,7 +479,7 @@ const orgWithDraft = async (slug, portalId, salary) => {
   const o = (await one("app_fetcher", "insert into organisation(slug, display_name, kind) values ($1,$1,'employer') returning id", [slug])).id;
   await q("app_admin", "update organisation set status = 'verified', claimed_at = now(), verified_at = now(), signup_path = 'first_time' where id = $1", [o]);
   await q("app_portal", "insert into portal_user(id, name, email, email_verified) values ($1,$1,$2,true)", [portalId, portalId + "@corp.test"]);
-  await q("app_portal", "insert into membership(organisation_id, portal_user_id, role, status, is_signer, joined_at) values ($1,$2,'account_owner','active',true, now())", [o, portalId]);
+  await q("app_admin", "insert into membership(organisation_id, portal_user_id, role, status, is_signer, joined_at) values ($1,$2,'account_owner','active',true, now())", [o, portalId]);
   await q("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status ${salary ? ", salary_low" : ""})
      values ($1,'employer',$2,'Draft','x','x','general', ${days(5)}, 'https://x.test/d', 'draft' ${salary ? ", 1" : ""})`, [o, src]);
   return o;
@@ -624,7 +624,7 @@ S("Launch B migration", "09-launch-b.sql runs as the owner", "portal_owner", asy
 let appId, jobOn, crq;
 S("job", "on-site job, live", "app_admin", async () => {
   await q("app_admin", "update organisation set status = 'verified', claimed_at = now(), verified_at = now(), signup_path = 'first_time' where id = $1", [org1]);
-  await q("app_portal", "insert into membership(organisation_id, portal_user_id, role, status, is_signer, joined_at) values ($1,'p1','account_owner','active',true, now())", [org1]).catch(() => {});
+  await q("app_admin", "insert into membership(organisation_id, portal_user_id, role, status, is_signer, joined_at) values ($1,'p1','account_owner','active',true, now())", [org1]).catch(() => {});
   jobOn = (await one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, application_route, status, salary_low, search_vector)
      values ($1,'employer',$2,'On-site','Acme','x','general', ${days(5)}, 'on_site', 'live', 1, to_tsvector('x')) returning id`, [org1, src])).id;
 });

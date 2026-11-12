@@ -418,14 +418,14 @@ sections[5] = async () => {
   // ---------- #132: the last member of a verified organisation leaves
   const orgWithOwner = async () => { const o = await mkOrg(); const pu = await F.portal(); const m = await F.member(o.id, pu, { role: "account_owner", signer: true }); await su("update membership set joined_at=now() where id=$1", [m]); const j = await portalJob(o.id); await goLive(j); return { ...o, pu, m, j }; };
   await rule("organisation", "#132 must do: the last (only) member leaves: the organisation stays verified and its jobs stay live", { ok: async () => {
-    const x = await orgWithOwner(); await run("app_portal", null, "update membership set status='removed', removed_at=now() where id=$1", [x.m]);
+    const x = await orgWithOwner(); await su("update membership set status='removed', removed_at=now() where id=$1", [x.m]);
     const o = await org(x.id); const j = await su("select status from job where id=$1", [x.j]); const m = await su("select count(*)::int c from membership where organisation_id=$1 and status<>'removed'", [x.id]);
     must(o.status === "verified" && j.rows[0].status === "live" && m.rows[0].c === 0, JSON.stringify({ o, j: j.rows[0], m: m.rows[0] })); } });
   await rule("organisation", "#132 must do: the last member is erased (erase_portal_user): organisation stays verified, jobs stay live", { ok: async () => {
     const x = await orgWithOwner(); const r = await q1("app_admin", S.A, "select private.erase_portal_user($1, true) r", [x.pu]); must(r.r.erased === true, JSON.stringify(r.r));
     const o = await org(x.id); const j = await su("select status from job where id=$1", [x.j]); must(o.status === "verified" && j.rows[0].status === "live", JSON.stringify({ o, j: j.rows[0] })); } });
   await rule("organisation", "#132 must do: an administrator reassigns the orphan organisation to a new owner (after the 20b checks, outside the database)", { ok: async () => {
-    const x = await orgWithOwner(); await run("app_portal", null, "update membership set status='removed', removed_at=now() where id=$1", [x.m]); const p2 = await F.portal();
+    const x = await orgWithOwner(); await su("update membership set status='removed', removed_at=now() where id=$1", [x.m]); const p2 = await F.portal();
     await run("app_admin", S.A, "insert into membership(organisation_id, portal_user_id, role, status, is_signer, joined_at) values ($1,$2,'account_owner','active',true,now())", [x.id, p2]); } });
   await rule("organisation", "#132 must not: the portal can still not move its own organisation to unclaimed (status is not in the portal's grant)", { refuse: async () => { const x = await orgWithOwner(); await run("app_portal", null, "update organisation set status='unclaimed' where id=$1", [x.id]); }, expect: "permission denied" });
 
@@ -554,7 +554,7 @@ sections[8] = async () => {
   // ---------- #132 through the retention loop: the sole member left 13 months ago, is erased by the rule, the organisation stays
   const org132 = await mkOrg(); const pu = await F.portal(); const m = await F.member(org132.id, pu, { role: "account_owner", signer: true }); await su("update membership set joined_at = now() - interval '2 years' where id=$1", [m]);
   const j = await portalJob(org132.id); await goLive(j);
-  await run("app_portal", null, "update membership set status='removed', removed_at=now() where id=$1", [m]);
+  await su("update membership set status='removed', removed_at=now() where id=$1", [m]);
   await su("update membership set removed_at = now() - interval '13 months' where id=$1", [m]);
   await loop();
   await rule("organisation", "#132 retention: after the rule erases the removed last member, the organisation is still verified with its live job, and does not go to unclaimed", { ok: async () => {

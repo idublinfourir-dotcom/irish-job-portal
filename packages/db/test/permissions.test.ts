@@ -73,6 +73,8 @@ for (const r of roles) {
   denied(r, "update or delete a consent text", "update consent_text set body='x'");
   for (const t of ["application","contact_request","message","candidate_hidden_organisation"]) { denied(r, `read Launch B ${t}`, `select * from ${t} limit 1`); denied(r, `delete Launch B ${t}`, `delete from ${t}`); } }
 denied("app_candidate", "insert a Launch B application", "insert into application(candidate_user_id,job_id,organisation_id,consent_record_id) values($1,$2,$3,$4)", () => [cand, job, org, cons]);
+denied("app_portal", "manage its team: change a membership directly (members change through functions)", "update membership set is_signer=true where id=$1", () => [mem]);
+denied("app_portal", "add a member directly", "insert into membership(organisation_id,portal_user_id,role,status) values($1,$2,'viewer','active')", () => [org, pu]);
 denied("app_portal", "insert a Launch B contact_request", "insert into contact_request(organisation_id,membership_id,candidate_user_id) values($1,$2,$3)", () => [org, mem, cand]);
 // execute: exactly as section 2.1
 const want = { erase_candidate: ["app_admin"], erase_portal_user: ["app_admin"], run_retention: ["app_admin"], refresh_permit_history: ["app_admin"], mark_first_time: ["app_admin"], claim_organisation: ["app_portal"], register_organisation: ["app_portal"], audit_pseudonymise: [], audit_purge: [], move_application: [], search_visible_candidates: [], use_approval: [] };
@@ -131,7 +133,6 @@ const must = [
   ["app_portal", "post a job", "insert into job(organisation_id,source,job_source_id,title,employer_name,sector,permit_type,status,closes_at,own_page_url,posted_by_membership_id) values($1,'employer',$2,'t','e','it','general','draft',now()+interval '20 days','u',$3) returning id", () => [org, src, mem]],
   ["app_portal", "write advert text", "insert into job_text(job_id,advert_text) values($1,'text') on conflict (job_id) do update set advert_text=excluded.advert_text", () => [job]],
   ["app_portal", "read its jobs' stats", "select views from job_daily_stat limit 1"],
-  ["app_portal", "manage its team", "update membership set is_signer=true where id=$1", () => [mem]],
   ["app_portal", "edit its company profile", "update organisation set website='https://example.test' where id=$1", () => [org]],
   ["app_portal", "read names, the CRO register and the WRC register for sign-up", "select (select count(*) from organisation_name where normalised_name operator(extensions.%) 'fake'), (select count(*) from cro_company), (select count(*) from wrc_licence)"],
   ["app_portal", "claim or register through the functions", "select has_function_privilege('private.claim_organisation(text,bigint)','execute') and has_function_privilege('private.register_organisation(text,text,text,text,text)','execute')"],
