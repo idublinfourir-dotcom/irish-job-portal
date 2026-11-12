@@ -595,7 +595,7 @@ S("run_retention()", "one batch per call: deleted_account_grace erases a due can
 });
 S("run_retention()", "application_and_cv, application_record: rule empties, keeps the row; later deletes it", "app_admin", async () => { return "tested after Launch B below"; });
 S("run_retention()", "claim_needs_info returns a stale needs_info organisation to unclaimed (status_changed_at clock)", "app_admin", async () => {
-  await ow.query("update organisation set status = 'needs_info' where id = $1", [org3]);
+  await ow.query("update organisation set status = 'needs_info', signup_path = 'dete_claim' where id = $1", [org3]); // a claim (a registration would become rejected, migration 0011)
   await ow.query("alter table organisation disable trigger organisation_guard");
   await ow.query("update organisation set status_changed_at = now() - interval '40 days' where id = $1", [org3]);
   await ow.query("alter table organisation enable trigger organisation_guard");

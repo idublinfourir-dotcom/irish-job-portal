@@ -17,7 +17,7 @@ insert into organisation(id,slug,display_name,kind,status,signup_path,claimed_at
  select g, 'c3-org-'||g, 'C3 Org '||g, 'employer', 'verified', 'first_time', now(), now(), now(), 'not_linked' from generate_series(1,12) g;
 -- org 20: needs_info 31 days, org 21: needs_info 10 days
 insert into organisation(id,slug,display_name,kind,status,signup_path,claimed_at,status_changed_at,permit_history) overriding system value
- values (20,'c3-needs-old','C3 Needs Old','employer','needs_info','first_time',now()-interval '40 days',now()-interval '31 days','not_linked'),
+ values (20,'c3-needs-old','C3 Needs Old','employer','needs_info','dete_claim',now()-interval '40 days',now()-interval '31 days','not_linked'),
         (21,'c3-needs-new','C3 Needs New','employer','needs_info','first_time',now()-interval '40 days',now()-interval '10 days','not_linked');
 -- people --------------------------------------------------------------
 -- candidate_user(id,name,email,email_verified,created_at,last_active_at,deleted_at,inactive_warned_at)

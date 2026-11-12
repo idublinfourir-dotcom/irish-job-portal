@@ -2,7 +2,7 @@
 // asks for more or rejects. Every call needs a signed-in staff member; the account_reviewer role check is inside each database call.
 import { StaffRefused, staffSettings } from "@portal/auth";
 import { approveAccount, askForMoreInfo, claimReview, getAccountReview, getPool, listAccountReviews, QueueRefused, rejectAccount, releaseReview } from "@portal/db";
-import { BadRequest, checkOrigin, parseBody, statusFor } from "../../../lib/account-review";
+import { BadRequest, checkLength, checkOrigin, parseBody, statusFor } from "../../../lib/account-review";
 import { requireStaff } from "../../../lib/staff";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +36,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     checkOrigin(request.headers.get("origin"), new URL(staffSettings(process.env).baseURL).origin);
+    checkLength(request.headers.get("content-length"));
     const staff = await requireStaff(request.headers);
     const b = parseBody(await request.text());
     const db = getPool();

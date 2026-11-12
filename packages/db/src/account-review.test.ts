@@ -16,6 +16,7 @@ describe("domainOf", () => {
 describe("isFreeEmailDomain", () => {
   it("catches the common free providers and not a company domain", () => {
     for (const d of ["gmail.com", "outlook.com", "hotmail.ie", "yahoo.ie", "icloud.com", "proton.me", "eircom.net"]) expect(isFreeEmailDomain(d), d).toBe(true);
+    for (const d of ["hotmail.fr", "outlook.co.uk", "yahoo.co.in", "rediffmail.com", "gmx.de", "web.de", "qq.com", "163.com", "tutanota.com", "fastmail.com"]) expect(isFreeEmailDomain(d), d).toBe(true);
     for (const d of ["acme.ie", "gmail.com.acme.ie", "notgmail.com", "mail.gmail.com.example.test"]) expect(isFreeEmailDomain(d), d).toBe(false);
   });
   it("holds only lower case names, because domains are compared lower case", () => {

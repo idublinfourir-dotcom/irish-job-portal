@@ -146,28 +146,39 @@ export async function releaseReview(db: Db, staffUserId: string, itemId: string 
 
 // The item and its organisation, locked, so two reviewers cannot decide one item at once. The claimant is the active account owner.
 export const REVIEW_LOCK =
-  "select r.status, r.claimed_by_staff_user_id, o.id as organisation_id, o.status as organisation_status, o.signup_path, u.email as claimant_email " +
+  "select r.status, r.claimed_by_staff_user_id, o.id as organisation_id, o.status as organisation_status, o.signup_path, u.email as claimant_email, " +
+  "u.status as claimant_status, u.deleted_at is not null as claimant_deleted, " +
+  // a ban added after the claim: the owner's email domain, or one of the company's CRO numbers (the same two checks claim_organisation makes)
+  "exists (select 1 from ban b where b.email_domain = lower(split_part(u.email, '@', 2)) or b.cro_number in " +
+  "(select o.cro_number union select n.cro_number from organisation_name n where n.organisation_id = o.id)) as claimant_banned " +
   "from review_item r join organisation o on o.id = r.organisation_id " +
   "left join membership m on m.organisation_id = o.id and m.role = 'account_owner' and m.status = 'active' left join portal_user u on u.id = m.portal_user_id " +
   "where r.id = $1::bigint and r.queue = 'account_review' for update of r, o";
-type Locked = { status: string; claimed_by_staff_user_id: string | null; organisation_id: string; organisation_status: string; signup_path: string | null; claimant_email: string | null };
+type Locked = {
+  status: string; claimed_by_staff_user_id: string | null; organisation_id: string; organisation_status: string; signup_path: string | null; claimant_email: string | null;
+  claimant_status: string | null; claimant_deleted: boolean | null; claimant_banned: boolean;
+};
 
 // One statement for the organisation, the item and the audit row. $1 item, $2 organisation, $3 staff, $4 new organisation status, $5 outcome,
-// $6 action, $7 reason code, $8 audit "after". Reason codes only, never free text (#182). The organisation must still be pending_review.
+// $6 action, $7 reason code, $8 audit "after", $9 the organisation's status as locked (the audit "before"). Reason codes only, never free text (#182).
+// The organisation must still be pending_review or needs_info. Ask for more ($5 = needs_info) leaves the item open and unclaimed: it stays the one
+// open item, so a reviewer can claim it again and approve or reject; every other outcome closes it.
 export const REVIEW_DECIDE =
   "with o as (update organisation set status = $4::text, verified_at = case when $4::text = 'verified' then now() else verified_at end " +
-  "where id = $2::bigint and status = 'pending_review' returning id), " +
-  "r as (update review_item set status = 'done', decided_by_staff_user_id = $3, decided_at = now(), outcome = $5 " +
+  "where id = $2::bigint and status in ('pending_review','needs_info') returning id), " +
+  "r as (update review_item set status = case when $5::text = 'needs_info' then 'open' else 'done' end, " +
+  "claimed_by_staff_user_id = case when $5::text = 'needs_info' then null else claimed_by_staff_user_id end, " +
+  "claimed_at = case when $5::text = 'needs_info' then null else claimed_at end, decided_by_staff_user_id = $3, decided_at = now(), outcome = $5 " +
   "where id = $1::bigint and status = 'claimed' and claimed_by_staff_user_id = $3 and exists (select 1 from o) returning id) " +
   "insert into audit_event(kind, actor_staff_user_id, action, object_type, object_id, changed_columns, before, after, reason_code, source) " +
-  "select 'admin_action', $3, $6, 'organisation', $2::text, '{status}', jsonb_build_object('status', 'pending_review'), $8::jsonb, $7, 'panel' from r returning id";
+  "select 'admin_action', $3, $6, 'organisation', $2::text, '{status}', jsonb_build_object('status', $9::text), $8::jsonb, $7, 'panel' from r returning id";
 
 async function lockForDecision(c: pg.PoolClient, id: string, staffUserId: string): Promise<Locked> {
   const r = (await c.query<Locked>(REVIEW_LOCK, [id])).rows[0];
   if (!r) throw new QueueRefused("not_found");
   if (r.status !== "claimed") throw new QueueRefused(r.status === "open" ? "not_claimed" : "already_decided");
   if (r.claimed_by_staff_user_id !== staffUserId) throw new QueueRefused("not_claimer");
-  if (r.organisation_status !== "pending_review") throw new QueueRefused("organisation_not_pending");
+  if (r.organisation_status !== "pending_review" && r.organisation_status !== "needs_info") throw new QueueRefused("organisation_not_pending");
   return r;
 }
 
@@ -176,7 +187,7 @@ async function decide(
   c: pg.PoolClient, id: string, staffUserId: string, r: Locked, status: string, outcome: string, reason: string, extraAfter: object = {},
 ): Promise<void> {
   const after = JSON.stringify({ status, ...extraAfter });
-  const w = await c.query(REVIEW_DECIDE, [id, r.organisation_id, staffUserId, status, outcome, `account_review.${outcome}`, reason, after]);
+  const w = await c.query(REVIEW_DECIDE, [id, r.organisation_id, staffUserId, status, outcome, `account_review.${outcome}`, reason, after, r.organisation_status]);
   if (w.rowCount !== 1) throw new Error("the decision did not write exactly one audit row"); // rolls back; the locks above make this unreachable
 }
 
@@ -184,9 +195,9 @@ async function decide(
 // ponytail: a short fixed list of free and consumer email providers, mostly the ones Irish applicants use. It misses new or regional providers; when one
 // slips through, a reviewer simply does not tick "add domain". Swap in a maintained list (disposable and free-mail data) if reviewers ever need help here.
 export const FREE_EMAIL_DOMAINS: ReadonlySet<string> = new Set([
-  "gmail.com", "googlemail.com", "outlook.com", "outlook.ie", "hotmail.com", "hotmail.ie", "hotmail.co.uk", "live.com", "live.ie", "msn.com",
-  "yahoo.com", "yahoo.ie", "yahoo.co.uk", "ymail.com", "icloud.com", "me.com", "mac.com", "aol.com", "proton.me", "protonmail.com", "pm.me",
-  "gmx.com", "gmx.net", "mail.com", "zoho.com", "yandex.com", "eircom.net", "iol.ie", "btinternet.com", "sky.com",
+  "gmail.com", "googlemail.com", "outlook.com", "outlook.ie", "hotmail.com", "hotmail.ie", "hotmail.co.uk", "hotmail.fr", "outlook.co.uk", "live.com", "live.ie", "msn.com",
+  "yahoo.com", "yahoo.ie", "yahoo.co.uk", "yahoo.co.in", "rediffmail.com", "ymail.com", "icloud.com", "me.com", "mac.com", "aol.com", "proton.me", "protonmail.com", "pm.me",
+  "gmx.com", "gmx.net", "gmx.de", "web.de", "qq.com", "163.com", "tutanota.com", "fastmail.com", "mail.com", "zoho.com", "yandex.com", "eircom.net", "iol.ie", "btinternet.com", "sky.com",
 ]);
 export const isFreeEmailDomain = (domain: string) => FREE_EMAIL_DOMAINS.has(domain);
 const DOMAIN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
@@ -204,6 +215,9 @@ export async function approveAccount(db: Db, staffUserId: string, itemId: string
   if (opts.addDomain !== undefined && typeof opts.addDomain !== "boolean") throw new QueueRefused("bad_input");
   return acting(db, staffUserId, itemId, async (c, id) => {
     const r = await lockForDecision(c, id, staffUserId);
+    // the claimant is checked again at approval: they may have been blocked, erased or banned (by domain or company number) since the claim was made
+    if (r.claimant_email === null) throw new QueueRefused("no_claimant");
+    if (r.claimant_status !== "active" || r.claimant_deleted || r.claimant_banned) throw new QueueRefused("claimant_not_active");
     let domain: string | null = null;
     if (opts.addDomain === true) {
       domain = domainOf(r.claimant_email);
@@ -227,9 +241,9 @@ const checkReason = (reason: unknown): string => {
 };
 
 /**
- * Ask for more information: the organisation becomes needs_info and the item is closed (outcome needs_info). Closing keeps the one-open-item rule
- * simple: when the company answers, the answer makes a fresh item, and nothing stale sits in the queue (a needs_info company that never answers is
- * returned to unclaimed by the 30 day claim_needs_info retention rule). The reason is a code; the default is "needs_info".
+ * Ask for more information: the organisation becomes needs_info and the item goes back to open (unclaimed). It stays the company's one open item, so
+ * a reviewer can claim it again and approve or reject at any time, and the answer path (not built yet) reuses it. A needs_info company that never
+ * answers is dealt with by the 30 day claim_needs_info retention rule (migration 0011), which also drops the item. The reason is a code; the default is "needs_info".
  */
 export async function askForMoreInfo(db: Db, staffUserId: string, itemId: string | number, reason: string = "needs_info"): Promise<Decided> {
   const code = checkReason(reason);

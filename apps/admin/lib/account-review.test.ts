@@ -1,7 +1,7 @@
 // Unit tests for the account review route's pure parts: the body check, the Origin test and the refusal-to-status map. No database.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { BadRequest, checkOrigin, MAX_BODY, parseBody, statusFor } from "./account-review";
+import { BadRequest, checkLength, checkOrigin, MAX_BODY, parseBody, statusFor } from "./account-review";
 
 const code = (f: () => unknown) => {
   try {
@@ -55,6 +55,13 @@ describe("parseBody", () => {
   });
 });
 
+describe("checkLength", () => {
+  it("refuses a content-length over the limit before the body is read, and lets a small, missing or odd one through", () => {
+    for (const h of [String(MAX_BODY + 1), "999999999", "1e9"]) expect(code(() => checkLength(h)), h).toBe("bad_body");
+    for (const h of [null, "", "0", "120", String(MAX_BODY), "abc"]) expect(code(() => checkLength(h)), String(h)).toBe("accepted");
+  });
+});
+
 describe("checkOrigin", () => {
   const own = "https://admin.example.test";
   it("accepts only the admin app's own origin", () => {
@@ -75,6 +82,7 @@ describe("statusFor", () => {
     expect(statusFor("claimed_by_other")).toBe(409);
     expect(statusFor("free_email_domain")).toBe(409);
     expect(statusFor("domain_owned_by_other")).toBe(409);
+    expect(statusFor("claimant_not_active")).toBe(409);
   });
   it("does not know a made-up code, so the route answers a plain 500", () => {
     expect(statusFor("db password is hunter2")).toBeNull();

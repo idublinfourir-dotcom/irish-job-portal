@@ -11,6 +11,11 @@ const ACTIONS: readonly string[] = ["claim", "release", "approve", "ask_more", "
 const FIELDS = new Set(["action", "itemId", "addDomain", "reason"]);
 export const MAX_BODY = 1000; // characters; the biggest real body is about 100
 
+/** The content-length header, when there is one, must not be over the limit: checked before the body is read (a missing or odd header passes; parseBody still checks the text). */
+export function checkLength(header: string | null): void {
+  if (Number(header ?? 0) > MAX_BODY) throw new BadRequest("bad_body");
+}
+
 /** Strict check of the POST body text: a plain object with only the known fields, of the right types. Anything else is "bad_body". */
 export function parseBody(text: string): Body {
   if (text.length > MAX_BODY) throw new BadRequest("bad_body");
@@ -41,7 +46,7 @@ const STATUS = new Map<string, number>(Object.entries({
   bad_origin: 403, not_reviewer: 403, not_active_staff: 403,
   not_found: 404,
   already_decided: 409, not_claimed: 409, not_claimer: 409, claimed_by_other: 409, organisation_not_pending: 409,
-  free_email_domain: 409, domain_owned_by_other: 409, no_claimant: 409, bad_domain: 409,
+  free_email_domain: 409, domain_owned_by_other: 409, no_claimant: 409, claimant_not_active: 409, bad_domain: 409,
   no_session: 401, not_active: 401,
 }));
 /** The HTTP status for a refusal code; null for a code this route does not know, which the caller turns into a plain 500. */

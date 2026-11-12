@@ -12,11 +12,13 @@ import { fixtures } from "./fixtures";
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 
-// Statements measured on 12 November 2026 (list 2.5 ms, approve 10 ms on this machine); the time limit is about ten times that, for slow CI runners. Raise these only on purpose.
+// Statements measured on 12 November 2026. Times are the median of 9 calls (as portal-login.test.ts does; one slow moment on a busy machine must not fail
+// the run), and the limit is about 4 times the slowest median measured: medians over three runs on 12 November 2026: list 2.4 to 2.7 ms, item 1.7 to 2.0, claim 3.9 to 4.5, approve 6.4 to 6.6, approve with domain 8.2 to 8.5 (so 35 ms);
+// through the route: list 5.2 to 5.5, approve with domain 10.4 to 11.0 (so 45 ms). Raise these only on purpose.
 // Function level: list = role check + page (2); one item = role check + read (2); claim = begin, role check, update, commit (4);
 // approve without domain = begin, role check, lock, decide, commit (5); with domain = + domain lock, other-owner check, add (8).
 // Route level adds requireStaff's 2 (session by token, user by id).
-const BUDGET = { list: 2, item: 2, claim: 4, approve: 5, approveDomain: 8, routeExtra: 2, ms: 100 };
+const BUDGET = { list: 2, item: 2, claim: 4, approve: 5, approveDomain: 8, routeExtra: 2, ms: 35, routeMs: 45 };
 
 const secret = "trial-only-secret-trial-only-secret-32";
 let db: TestDb;
@@ -108,6 +110,18 @@ const orgRow = async (org: number | string) => (await su.query("select status, c
 const itemRow = async (item: string) => (await su.query("select status, claimed_by_staff_user_id, decided_by_staff_user_id, decided_at, outcome from review_item where id = $1", [item])).rows[0];
 const domains = async (org: number | string) => (await su.query("select domain, source, added_by_staff_id from organisation_domain where organisation_id = $1", [org])).rows;
 const audits = async (org: number | string) => (await su.query("select * from audit_event where object_type = 'organisation' and object_id = $1 and action like 'account_review.%' order by id", [String(org)])).rows;
+// A ban row, written by the database owner with triggers and foreign keys off (a real ban needs a strike-3 case and an approval).
+async function ban(col: "email_domain" | "cro_number", value: string) {
+  const c = await su.connect();
+  try {
+    await c.query("begin");
+    await c.query("set local session_replication_role = replica");
+    await c.query(`insert into ban(${col}, reason_code, strike_id, approval_request_id) values ($1, 'fake_company', 0, 0)`, [value]);
+    await c.query("commit");
+  } finally {
+    c.release();
+  }
+}
 const members = async (org: number | string) => (await su.query("select status from membership where organisation_id = $1", [org])).rows.map((r) => r.status);
 
 // ===== the functions =====
@@ -259,6 +273,49 @@ describe("approve", () => {
     expect(await refusal(approveAccount(admin(), staff.reviewer!, a.item, { addDomain: true }))).toBe("no_claimant");
     expect(await domains(a.org)).toEqual([]);
   });
+  it("claimant checked again at approval: blocked, erased, or banned since the claim; all refused with nothing written, and reject still works", async () => {
+    const blocked = await claimed();
+    await su.query("update portal_user set status = 'blocked', blocked_at = now(), blocked_reason_code = 'fake_company' where id = $1", [blocked.user]);
+    const erased = await claimed();
+    expect((await admin().query("select private.erase_portal_user($1, true) r", [erased.user])).rows[0].r.erased).toBe(true);
+    const domainBanned = await claimed();
+    await ban("email_domain", domainBanned.domain);
+    const numberBanned = await registered();
+    await ban("cro_number", (await su.query("select cro_number from organisation where id = $1", [numberBanned.org])).rows[0].cro_number);
+    const cases = [[blocked, "claimant_not_active"], [erased, "no_claimant"], [domainBanned, "claimant_not_active"], [numberBanned, "claimant_not_active"]] as const;
+    for (const [c, why] of cases) {
+      await claimedBy("reviewer", c.item);
+      for (const addDomain of [false, true]) expect(await refusal(approveAccount(admin(), staff.reviewer!, c.item, { addDomain })), `${c.org} ${addDomain}`).toBe(why);
+      expect(await orgRow(c.org)).toMatchObject({ status: "pending_review", verified_at: null });
+      expect(await itemRow(c.item)).toMatchObject({ status: "claimed" });
+      expect(await domains(c.org)).toEqual([]);
+      expect(await audits(c.org)).toEqual([]);
+    }
+    for (const [c] of cases) expect(await rejectAccount(admin(), staff.reviewer!, c.item, "claimant_not_active")).toMatchObject({ organisationId: String(c.org) });
+    expect(await orgRow(blocked.org)).toMatchObject({ status: "unclaimed" });
+    expect(await orgRow(numberBanned.org)).toMatchObject({ status: "rejected" });
+  });
+  it("a ban on some other domain does not stop an approval", async () => {
+    const a = await claimed();
+    await ban("email_domain", "someone-else.example.test");
+    await claimedBy("reviewer", a.item);
+    await approveAccount(admin(), staff.reviewer!, a.item);
+    expect(await orgRow(a.org)).toMatchObject({ status: "verified" });
+  });
+  it("two reviewers adding one domain to two different companies at once: one succeeds, the other gets domain_owned_by_other (the advisory lock)", async () => {
+    for (let round = 0; round < 6; round++) {
+      const domain = `${id("race")}.example.test`;
+      const a = await claimed({ domain }), b = await claimed({ domain });
+      await claimedBy("reviewer", a.item);
+      await claimedBy("reviewer2", b.item);
+      const r = await Promise.all([
+        approveAccount(admin(), staff.reviewer!, a.item, { addDomain: true }).then(() => "ok", (e: QueueRefused) => e.why),
+        approveAccount(admin(), staff.reviewer2!, b.item, { addDomain: true }).then(() => "ok", (e: QueueRefused) => e.why),
+      ]);
+      expect(r.sort(), `round ${round}`).toEqual(["domain_owned_by_other", "ok"]);
+      expect((await su.query("select count(*)::int n from organisation_domain where domain = $1", [domain])).rows[0].n).toBe(1);
+    }
+  });
   it("approves a new registration too (first-time employer and agency)", async () => {
     for (const kind of ["employer", "agency"] as const) {
       const r = await registered({ kind });
@@ -301,16 +358,75 @@ describe("approve", () => {
 });
 
 describe("ask for more information", () => {
-  it("moves the company to needs_info and closes the item; the audit row holds the reason code; a fresh item can be opened later", async () => {
+  it("moves the company to needs_info and puts the item back to open, unclaimed; the audit row holds the reason code and the real old status", async () => {
     const a = await claimed();
     await claimedBy("reviewer", a.item);
     expect(await askForMoreInfo(admin(), staff.reviewer!, a.item, "need_cro_proof")).toEqual({ organisationId: String(a.org), organisationStatus: "needs_info", domainAdded: null });
     expect(await orgRow(a.org)).toMatchObject({ status: "needs_info" });
-    expect(await itemRow(a.item)).toMatchObject({ status: "done", outcome: "needs_info", decided_by_staff_user_id: staff.reviewer });
+    expect(await itemRow(a.item)).toMatchObject({ status: "open", claimed_by_staff_user_id: null, outcome: "needs_info" });
     expect(await members(a.org)).toEqual(["active"]); // the claimant keeps access so they can answer
-    expect((await audits(a.org))[0]).toMatchObject({ action: "account_review.needs_info", reason_code: "need_cro_proof", after: { status: "needs_info" } });
-    // the one-open-item rule does not block the item the answer will make
-    await su.query("insert into review_item(queue, organisation_id, reason) values ('account_review', $1, 'answered')", [a.org]);
+    expect((await audits(a.org))[0]).toMatchObject({ action: "account_review.needs_info", reason_code: "need_cro_proof", before: { status: "pending_review" }, after: { status: "needs_info" } });
+    // still the company's one open item
+    await expect(su.query("insert into review_item(queue, organisation_id, reason) values ('account_review', $1, 'answered')", [a.org])).rejects.toThrow(/review_item_org_unique/);
+  });
+  it("afterwards the item is claimed again and the case can be approved (audit before is needs_info), rejected, or asked again", async () => {
+    const a = await claimed();
+    await claimedBy("reviewer", a.item);
+    await askForMoreInfo(admin(), staff.reviewer!, a.item);
+    expect(await refusal(approveAccount(admin(), staff.reviewer!, a.item))).toBe("not_claimed"); // needs a fresh claim, by anyone
+    await claimedBy("reviewer2", a.item);
+    expect(await refusal(approveAccount(admin(), staff.reviewer!, a.item))).toBe("not_claimer");
+    await askForMoreInfo(admin(), staff.reviewer2!, a.item, "still_need_proof"); // needs_info again
+    await claimedBy("reviewer", a.item);
+    await approveAccount(admin(), staff.reviewer!, a.item, { addDomain: true });
+    expect(await orgRow(a.org)).toMatchObject({ status: "verified" });
+    expect(await itemRow(a.item)).toMatchObject({ status: "done", outcome: "approved", decided_by_staff_user_id: staff.reviewer });
+    expect((await audits(a.org)).map((r) => [r.reason_code, r.before.status, r.after.status])).toEqual([
+      ["needs_info", "pending_review", "needs_info"], ["still_need_proof", "needs_info", "needs_info"], ["approved", "needs_info", "verified"]]);
+
+    const c = await claimed();
+    await claimedBy("reviewer", c.item);
+    await askForMoreInfo(admin(), staff.reviewer!, c.item);
+    await claimedBy("reviewer", c.item);
+    expect(await rejectAccount(admin(), staff.reviewer!, c.item, "no_proof")).toMatchObject({ organisationStatus: "unclaimed" });
+    expect(await members(c.org)).toEqual(["removed"]);
+    expect(await itemRow(c.item)).toMatchObject({ status: "done", outcome: "rejected" });
+    expect((await audits(c.org)).at(-1)).toMatchObject({ before: { status: "needs_info" }, after: { status: "unclaimed" } });
+
+    const r = await registered();
+    await claimedBy("reviewer", r.item);
+    await askForMoreInfo(admin(), staff.reviewer!, r.item);
+    await claimedBy("reviewer", r.item);
+    expect(await rejectAccount(admin(), staff.reviewer!, r.item, "no_proof")).toMatchObject({ organisationStatus: "rejected" });
+    expect(await members(r.org)).toEqual(["removed"]);
+  });
+  it("retention rule 13 after 30 days: a claim goes back to unclaimed, a registration becomes rejected; members removed and the open item dropped", async () => {
+    const age = async (org: number | string) => {
+      await su.query("alter table organisation disable trigger organisation_guard");
+      await su.query("update organisation set status_changed_at = now() - interval '400 days' where id = $1", [org]);
+      await su.query("alter table organisation enable trigger organisation_guard");
+    };
+    const a = await claimed();
+    const r = await registered();
+    const fresh = await claimed(); // asked for more just now: the rule leaves it alone
+    for (const x of [a, r, fresh]) { await claimedBy("reviewer", x.item); await askForMoreInfo(admin(), staff.reviewer!, x.item); }
+    await claimedBy("reviewer", a.item); // claimed again when the rule runs: dropped all the same
+    await age(a.org);
+    await age(r.org);
+    for (let i = 0; i < 30; i++) {
+      const out = (await admin().query("select private.run_retention(1000) r")).rows[0].r;
+      if (out.rule === "claim_needs_info" || out.rule === null) { expect(out.done).toBe(2); break; }
+    }
+    expect(await orgRow(a.org)).toMatchObject({ status: "unclaimed", signup_path: null });
+    expect(await orgRow(r.org)).toMatchObject({ status: "rejected", signup_path: "first_time" });
+    expect(await members(a.org)).toEqual(["removed"]);
+    expect(await members(r.org)).toEqual(["removed"]);
+    for (const x of [a, r]) expect(await itemRow(x.item)).toMatchObject({ status: "dropped", outcome: "needs_info_expired" });
+    expect(await orgRow(fresh.org)).toMatchObject({ status: "needs_info" });
+    expect(await itemRow(fresh.item)).toMatchObject({ status: "open" });
+    // the real company can claim the page again; the rejected registration holds no number
+    const real = await F.portal({ email: `${id("real")}@real.example.test` });
+    expect((await portal().query("select private.claim_organisation($1, $2) r", [real, a.org])).rows[0].r.status).toBe("pending_review");
   });
   it("uses the code needs_info when no reason is given, and refuses free text", async () => {
     const a = await claimed();
@@ -503,6 +619,12 @@ describe("route: who may call it", () => {
 });
 
 describe("route: odd bodies", () => {
+  it("a content-length over the limit is refused with 400 before the body is read", async () => {
+    let read = false;
+    const req = { method: "POST", headers: new Headers({ origin: ORIGIN, "content-length": "99999999", cookie: cookies.reviewer! }), text: async () => { read = true; return "{}"; } } as unknown as Request;
+    const res = await POST(req);
+    expect([res.status, await res.json(), read]).toEqual([400, { error: "bad_body" }, false]);
+  });
   it("wrong types, extra fields, nested values, huge text and SQL-looking ids are refused with 400 and change nothing", async () => {
     const i = (await claimed()).item;
     await post("reviewer", { action: "claim", itemId: i });
@@ -553,37 +675,59 @@ async function counted<T>(fn: () => Promise<T>): Promise<[T, number, number]> {
   }
 }
 describe("performance budgets", () => {
-  it("function level: statement counts and time for list, one item, claim and approve (with and without the domain)", async () => {
+  it("function level: statement counts and median time (of 9) for list, one item, claim and approve (with and without the domain)", async () => {
     for (let i = 0; i < 25; i++) await registered();
-    const a = await claimed(), b = await claimed();
     const out: Record<string, [number, number]> = {};
+    // each state-changing call needs its own item, so 9 are made up front; the statements are counted on the first call, the time is the median of the 9
+    const measure = async <T>(fn: (n: number) => Promise<T>): Promise<[number, number]> => {
+      const ms: number[] = [];
+      let statements = 0;
+      for (let n = 0; n < 9; n++) {
+        const [, sent, took] = await counted(() => fn(n));
+        if (n === 0) statements = sent;
+        ms.push(took);
+      }
+      return [statements, ms.sort((x, y) => x - y)[4]!];
+    };
+    const items = async () => { const l: Awaited<ReturnType<typeof claimed>>[] = []; for (let n = 0; n < 9; n++) l.push(await claimed()); return l; };
+    const forClaim = await items(), plain = await items(), withDomain = await items();
+    for (const x of [...plain, ...withDomain]) await claimedBy("reviewer", x.item);
     await listAccountReviews(admin(), staff.reviewer!); // warm the pool
-    const stat = ([, n, ms]: [unknown, number, number]): [number, number] => [n, ms];
-    out.list = stat(await counted(() => listAccountReviews(admin(), staff.reviewer!)));
-    out.item = stat(await counted(() => getAccountReview(admin(), staff.reviewer!, a.item)));
-    out.claim = stat(await counted(() => claimReview(admin(), staff.reviewer!, a.item)));
-    out.approve = stat(await counted(() => approveAccount(admin(), staff.reviewer!, a.item)));
-    await claimReview(admin(), staff.reviewer!, b.item);
-    out.approveDomain = stat(await counted(() => approveAccount(admin(), staff.reviewer!, b.item, { addDomain: true })));
-    console.log("account review (statements, ms):", JSON.stringify(out));
+    out.list = await measure(() => listAccountReviews(admin(), staff.reviewer!));
+    out.item = await measure(() => getAccountReview(admin(), staff.reviewer!, plain[0]!.item));
+    out.claim = await measure((n) => claimReview(admin(), staff.reviewer!, forClaim[n]!.item));
+    out.approve = await measure((n) => approveAccount(admin(), staff.reviewer!, plain[n]!.item));
+    out.approveDomain = await measure((n) => approveAccount(admin(), staff.reviewer!, withDomain[n]!.item, { addDomain: true }));
+    console.log("account review (statements, median ms):", JSON.stringify(out));
     expect(out.list![0]).toBeLessThanOrEqual(BUDGET.list);
     expect(out.item![0]).toBeLessThanOrEqual(BUDGET.item);
     expect(out.claim![0]).toBeLessThanOrEqual(BUDGET.claim);
     expect(out.approve![0]).toBeLessThanOrEqual(BUDGET.approve);
     expect(out.approveDomain![0]).toBeLessThanOrEqual(BUDGET.approveDomain);
-    for (const [k, v] of Object.entries(out)) expect(v[1], `${k} took ${v[1]} ms`).toBeLessThanOrEqual(BUDGET.ms);
+    for (const [k, v] of Object.entries(out)) expect(v[1], `${k} median ${v[1]} ms`).toBeLessThanOrEqual(BUDGET.ms);
   });
-  it("route level: the same plus requireStaff's 2 statements", async () => {
-    const a = await claimed();
+  it("route level: the same plus requireStaff's 2 statements, median time of 9", async () => {
+    const made: Awaited<ReturnType<typeof claimed>>[] = [];
+    for (let n = 0; n < 9; n++) made.push(await claimed());
     await get("reviewer"); // warm
-    const l = await counted(() => call("GET", "reviewer"));
-    expect(l[0].status).toBe(200);
-    expect(l[1], `list sent ${l[1]}`).toBeLessThanOrEqual(BUDGET.list + BUDGET.routeExtra);
-    await post("reviewer", { action: "claim", itemId: a.item });
-    const p = await counted(() => call("POST", "reviewer", { body: { action: "approve", itemId: a.item, addDomain: true } }));
-    expect(p[0].status).toBe(200);
-    expect(p[1], `approve sent ${p[1]}`).toBeLessThanOrEqual(BUDGET.approveDomain + BUDGET.routeExtra);
-    expect(l[2]).toBeLessThanOrEqual(BUDGET.ms);
-    expect(p[2]).toBeLessThanOrEqual(BUDGET.ms);
+    const median = (xs: number[]) => xs.sort((x, y) => x - y)[4]!;
+    const lists: number[] = [], approves: number[] = [];
+    let listSent = 0, approveSent = 0;
+    for (let n = 0; n < 9; n++) {
+      const l = await counted(() => call("GET", "reviewer"));
+      expect(l[0].status).toBe(200);
+      if (n === 0) listSent = l[1];
+      lists.push(l[2]);
+      await post("reviewer", { action: "claim", itemId: made[n]!.item });
+      const p = await counted(() => call("POST", "reviewer", { body: { action: "approve", itemId: made[n]!.item, addDomain: true } }));
+      expect(p[0].status).toBe(200);
+      if (n === 0) approveSent = p[1];
+      approves.push(p[2]);
+    }
+    console.log("account review route (statements, median ms):", JSON.stringify({ list: [listSent, median(lists)], approve: [approveSent, median(approves)] }));
+    expect(listSent, `list sent ${listSent}`).toBeLessThanOrEqual(BUDGET.list + BUDGET.routeExtra);
+    expect(approveSent, `approve sent ${approveSent}`).toBeLessThanOrEqual(BUDGET.approveDomain + BUDGET.routeExtra);
+    expect(median(lists)).toBeLessThanOrEqual(BUDGET.routeMs);
+    expect(median(approves)).toBeLessThanOrEqual(BUDGET.routeMs);
   });
 });

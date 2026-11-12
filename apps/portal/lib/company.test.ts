@@ -24,6 +24,14 @@ describe("checkRegister", () => {
     expect(checkRegister({ ...agency, croNumber: "99" })?.croNumber).toBe("99");
     expect(checkRegister({ ...employer, displayName: "  Ó Briain Teo  " })?.displayName).toBe("Ó Briain Teo");
   });
+  it("writes each number one way: no leading zeros on a CRO number, an upper-case licence", () => {
+    for (const [given, want] of [["0777001", "777001"], ["00000777", "777"], ["777001", "777001"], ["0", "0"], ["000", "0"], ["10", "10"], ["00123456", "123456"]])
+      expect(checkRegister({ ...employer, croNumber: given })?.croNumber, given).toBe(want);
+    expect(checkRegister({ ...agency, wrcLicenceNumber: "ea-0901" })?.wrcLicenceNumber).toBe("EA-0901");
+    expect(checkRegister({ ...agency, wrcLicenceNumber: "Ea-0901x" })?.wrcLicenceNumber).toBe("EA-0901X");
+    expect(checkRegister({ ...agency, croNumber: "0099" })?.croNumber).toBe("99"); // an agency's optional CRO number too
+    expect(checkRegister({ ...agency, croNumber: "0abc" })).toBeNull(); // still refused when not digits
+  });
   it("refuses another kind, a missing or odd number, and the wrong number for the kind", () => {
     for (const bad of [
       { ...employer, kind: "public_body" }, { ...employer, kind: "EMPLOYER" }, { ...employer, kind: ["employer"] }, { displayName: "x", croNumber: "1" },
@@ -33,7 +41,8 @@ describe("checkRegister", () => {
     ]) expect(checkRegister(bad), JSON.stringify(bad)).toBeNull();
   });
   it("refuses an empty, huge, symbol-only, nested or control-character name", () => {
-    for (const displayName of ["", " ", "a", "x".repeat(161), "!!!", "日本", { name: "Fake" }, ["Fake"], 42, null, "Fake\u0000Ltd", "Fake\nLtd"])
+    for (const displayName of ["", " ", "a", "x".repeat(161), "!!!", "日本", { name: "Fake" }, ["Fake"], 42, null, "Fake\u0000Ltd", "Fake\nLtd",
+      "Fake\u202eLtd", "Fake\u200bLtd", "Fake\u200dLtd", "\u2066Fake Ltd", "Fake\ufeffLtd", "Fake\u00adLtd"])
       expect(checkRegister({ ...employer, displayName }), JSON.stringify(displayName)).toBeNull();
     expect(checkRegister({ ...employer, displayName: "Robert'); drop table organisation;--" })?.displayName).toBe("Robert'); drop table organisation;--");
   });

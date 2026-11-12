@@ -187,10 +187,15 @@ describe("requirePortal", () => {
     expect(n, `${n} statements`).toBeLessThanOrEqual(BUDGET.requirePortal);
     expect(me).toEqual({ userId: cat.id, email: cat.email, membership: null });
   });
-  it("a removed or awaiting membership is no company", async () => {
+  it("a removed membership is no company", async () => {
     const dan = await login("dan");
     await F.member(await newOrg(), dan.id, { status: "removed" });
     expect((await requirePortal(auth(), new Headers({ cookie: dan.cookie }))).membership).toBeNull();
+  });
+  it("an awaiting_approval membership is no company either (the login is not yet a member)", async () => {
+    const eve = await login("eve2");
+    await F.member(await newOrg(), eve.id, { status: "awaiting_approval" });
+    expect((await requirePortal(auth(), new Headers({ cookie: eve.cookie }))).membership).toBeNull();
   });
 });
 
@@ -365,6 +370,32 @@ describe("security", () => {
     expect([await memberships(bad.id), await memberships(ok.id), (await orgRow(org)).status, (await orgRow(bannedOrg)).status]).toEqual([0, 0, "unclaimed", "unclaimed"]);
     // sign-up itself does not check the ban (#191): the banned person has a login, which can do nothing
     expect((await requirePortal(auth(), new Headers({ cookie: bad.cookie }))).membership).toBeNull();
+  });
+  it("a number written another way is still the same number: a leading zero does not get past a ban or a held number, and a licence in lower case is the held licence", async () => {
+    await ban("cro_number", "777001");
+    await newOrg({ status: "verified", cro: "888001" });
+    await newOrg({ status: "verified", kind: "agency", wrc: "EA-0901" });
+    const zed = await login("zed");
+    const reg = (b: object) => company("register", b, { cookie: zed.cookie });
+    expect((await reg({ kind: "employer", displayName: "Zed Fake", croNumber: "0777001" })).json).toEqual({ code: "REFUSED" });
+    expect((await reg({ kind: "employer", displayName: "Zed Fake", croNumber: "00000777001" })).status).toBe(400); // over 8 digits: still refused by the digits rule
+    expect((await reg({ kind: "employer", displayName: "Zed Fake", croNumber: "00888001" })).json).toEqual({ code: "NUMBER_ALREADY_REGISTERED" });
+    expect((await reg({ kind: "agency", displayName: "Zed Agency", wrcLicenceNumber: "ea-0901" })).json).toEqual({ code: "NUMBER_ALREADY_REGISTERED" });
+    expect((await reg({ kind: "agency", displayName: "Zed Agency", wrcLicenceNumber: "EA-0666", croNumber: "0777001" })).json).toEqual({ code: "REFUSED" });
+    expect(await count("select 1 from organisation where display_name in ('Zed Fake','Zed Agency')")).toBe(0);
+    expect(await memberships(zed.id)).toBe(0);
+    // and the stored spelling is the plain one
+    const ok = await reg({ kind: "employer", displayName: "Zed Fake", croNumber: "0123456" });
+    expect(ok.status).toBe(200);
+    expect((await one("select cro_number from organisation where id=$1", [ok.json!.organisationId])).cro_number).toBe("123456");
+  });
+  it("a body whose content-length is over the limit is refused before the body is read", async () => {
+    for (const handler of [claimPOST, registerPOST]) {
+      let read = false;
+      const req = { headers: new Headers({ origin: BASE, "content-length": "99999999" }), text: async () => { read = true; return "{}"; } } as unknown as Request;
+      const res = await reply(await handler(req));
+      expect([res.status, res.json, read]).toEqual([413, { code: "BODY_TOO_LARGE" }, false]);
+    }
   });
   it("a missing or foreign Origin is refused on claim and register before anything is read", async () => {
     const vic = await login("vic"), org = await newOrg({ status: "unclaimed" });
