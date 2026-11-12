@@ -30,6 +30,15 @@ Read `docs/database.md` before touching the database and `docs/job-rules.md` bef
 
 Copy `.env.example` to `.env.local` in an app to connect a database. Pages work without one, and `/api/health` then reports the database as down.
 
+## Deploy (Vercel)
+
+Each app is its own Vercel project; today only `apps/admin` is deployed: project `job-portal-admin`, `https://job-portal-admin-idublinfourir-1308.vercel.app`, behind Vercel's login wall (automated checks send the project's protection bypass secret in `x-vercel-protection-bypass`).
+
+- Project settings: Root Directory `apps/admin` (or the app's folder), "Include files outside the root directory" on, Node.js 24.x. Each app's `vercel.json` sets the region (`dub1`) and installs from the repo root with `npm ci`, because an install inside the app folder skips the root's packages.
+- Environment values (Production, Secret type, never printed): `STAFF_AUTH_URL` (the project's own https address, exactly), `STAFF_AUTH_SECRET` (32 or more characters), `DATABASE_URL` (the app's own database login, for admin `app_admin` through the Supabase pooler), `DATABASE_CA_CERT`. A change reaches the app only with a new deploy.
+- On the Hobby plan only the account owner can trigger a deploy. Pushes and merges by anyone else show as BLOCKED with a Vercel bot comment; that is expected, not a code failure. The owner starts the deploy (dashboard, CLI or API) after a merge.
+- `apps/candidate` is not deployed: its email goes to the fake sender, which refuses to run anywhere but localhost until a real email service is wired in.
+
 ## Try Google sign-in on localhost (by hand, never in `npm run check`)
 
 Needs the candidate app on `http://localhost:3000`, a database with the migrations and one saved `signup_terms` text (the placeholder command in `docs/database.md`), and a Google OAuth client whose authorised redirect address is `http://localhost:3000/api/auth/candidate/callback/google`, with a real Google account added as a test user. Put the client ID and secret in your shell, not in a file in the repo.
