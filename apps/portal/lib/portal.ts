@@ -1,13 +1,13 @@
 // The employer and agency login (#184 to #191). Made on first use, not at import, so `next build` runs without the settings; a
 // request with any setting missing fails closed. DATABASE_URL is the app_portal login. Email and password only, no Google (#190).
-// Email goes to the fake sender, which runs on localhost only (#174).
-import { createAuth, createFakeEmail, portalSettings, type FakeEmail } from "@portal/auth";
+// Email goes to Brevo when BREVO_API_KEY and EMAIL_FROM are set, else to the fake sender, which runs on localhost only (#174).
+import { createAuth, createMail, portalSettings, type FakeEmail } from "@portal/auth";
 import { getPool } from "@portal/db";
 
 let made: { auth: ReturnType<typeof createAuth>; mail: FakeEmail; origin: string } | undefined;
 function make() {
   const settings = portalSettings(process.env);
-  const mail = createFakeEmail(settings.baseURL);
+  const mail = createMail(settings.baseURL);
   return (made ??= { auth: createAuth("portal", { database: getPool(), ...settings, sendEmail: mail.send }), mail, origin: new URL(settings.baseURL).origin });
 }
 export const portalAuth = () => (made ?? make()).auth;
