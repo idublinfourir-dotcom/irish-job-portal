@@ -303,10 +303,11 @@ describe("email confirmation (#54)", () => {
   it("resend sends a new link, and the rate limit stops a fourth in five minutes", async () => {
     const ip = freshIp(), before = mail().filter((m) => m.to === eve.email).length;
     const seq = [];
-    for (let i = 0; i < 5; i++) seq.push((await call("send-verification-email", { email: eve.email }, { ip })).status);
+    // other addresses after the first, so only the per-IP limit counts here (the per-address limit has its own tests)
+    for (let i = 0; i < 5; i++) seq.push((await call("send-verification-email", { email: i ? `fake.ip${i}@example.test` : eve.email }, { ip })).status);
     expect(seq).toEqual([200, 200, 200, 429, 429]);
-    expect(mail().filter((m) => m.to === eve.email).length).toBe(before + 3);
-    // another address is not held back by it
+    expect(mail().filter((m) => m.to === eve.email).length).toBe(before + 1);
+    // another IP address is not held back by it
     expect((await call("send-verification-email", { email: eve.email })).status).toBe(200);
   });
   it("resend for an unknown address looks the same and sends nothing", async () => {
@@ -434,7 +435,7 @@ describe("password reset (#54)", () => {
     expect([unknown.status, unknown.json]).toEqual([known.status, known.json]);
     expect(mail().some((m) => m.to === "fake.nobody@example.test")).toBe(false);
     const ip = freshIp(), seq = [];
-    for (let i = 0; i < 4; i++) seq.push((await call("request-password-reset", { email: fay.email, redirectTo: `${BASE}/reset` }, { ip })).status);
+    for (let i = 0; i < 4; i++) seq.push((await call("request-password-reset", { email: `fake.ip${i}@example.test`, redirectTo: `${BASE}/reset` }, { ip })).status);
     expect(seq).toEqual([200, 200, 200, 429]);
   });
 });

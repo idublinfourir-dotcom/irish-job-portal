@@ -4,11 +4,13 @@ import { nextCookies } from "better-auth/next-js";
 import { generateRandomString } from "better-auth/crypto";
 import type { Pool } from "pg";
 import { checkPortalSignup, checkSignup, signupPlugin, writeConsent, type Answers } from "./signup";
+import { emailLimitPlugin } from "./email-limit";
 
 export { readAnswers, readPortalAnswers, checkSignup, checkPortalSignup, currentTermsId, writeConsent, type Answers, type PortalAnswers } from "./signup";
 export { createFakeEmail, type FakeEmail } from "./fake-email";
 export { createMail, emailText } from "./mail";
 export { createBrevoMail, type SendMail } from "./brevo";
+export { EMAIL_LIMIT, emailLimitKey } from "./email-limit";
 
 // The pool is called portal, not employer: its tables are portal_user and so on (23-database-design.md).
 export type LoginPool = "candidate" | "portal" | "staff";
@@ -17,7 +19,9 @@ export type EmailKind = "verify" | "reset" | "invite"; // invite: a portal team 
 export type SendEmail = (pool: LoginPool, kind: EmailKind, to: string, link: string) => Promise<void>;
 export type GoogleSettings = { clientId: string; clientSecret: string };
 // google is for the candidate pool only, and only when set; without it the Google routes answer "provider not found".
-export type AuthOptions = { database: Pool; baseURL: string; secret: string; sendEmail: SendEmail; google?: GoogleSettings };
+// background: how the app keeps a task alive after the reply (Next's after() in the apps). With it, sign-up and reset answer without
+// waiting for the email send (slice 2 review finding 4), so the reply time does not show whether an address has an account.
+export type AuthOptions = { database: Pool; baseURL: string; secret: string; sendEmail: SendEmail; google?: GoogleSettings; background?: (task: Promise<unknown>) => void };
 
 // Better Auth's camelCase fields mapped to the lowercase columns of the migrations.
 const snake = {
@@ -83,8 +87,13 @@ const fromGoogle = new WeakMap<object, Answers>();
 // Three separate login pools in one database (#97): the same email can exist once in each, with its own
 // tables and its own cookie. The options are the ones the tests in packages/db/test/better-auth.test.ts prove
 // (23-database-design.md section 2.2).
-export function createAuth(name: LoginPool, { database, baseURL, secret, sendEmail, google }: AuthOptions) {
+export function createAuth(name: LoginPool, { database, baseURL, secret, sendEmail: send, google, background }: AuthOptions) {
   const { secure } = checkSettings(baseURL, secret);
+  // A send that runs after the reply has no caller to fail, so its error is logged here (never the address). Without background the
+  // error reaches the caller as before (staff: refuseEmail).
+  const sendEmail: SendEmail = background
+    ? (pool, kind, to, link) => send(pool, kind, to, link).catch((e) => console.error(`[auth] ${pool} ${kind} email not sent: ${(e as Error).message}`))
+    : send;
   return betterAuth({
     appName: `portal-${name}`,
     baseURL,
@@ -119,7 +128,7 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
       ...(name === "staff" ? { expiresIn: STAFF_IDLE_SECONDS, updateAge: STAFF_REFRESH_SECONDS } : {}),
     },
     // Staff: server calls (requireStaff) refresh the session row, and this sends the new cookie back in Next.js route handlers and server actions.
-    plugins: name === "staff" ? [nextCookies()] : name === "candidate" || name === "portal" ? [signupPlugin(database, name)] : [],
+    plugins: name === "staff" ? [nextCookies()] : name === "candidate" || name === "portal" ? [emailLimitPlugin(database, name, secret), signupPlugin(database, name)] : [],
     // A Google sign-in joins an existing account with the same email only when Google says the email is verified AND that account's
     // email was confirmed here (Better Auth's defaults, written out so a change shows in review). No trusted providers: Google's word
     // alone is not enough for an unconfirmed email-and-password account, so there is no silent takeover.
@@ -145,6 +154,17 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
           const trx = (await getCurrentAdapter(ctx?.context.adapter as never)) as unknown as { count: (q: unknown) => Promise<number> };
           if (!(await trx.count({ model: "consentRecord", where: [{ field: "candidateUserId", value: a.userId }] })))
             throw new APIError("FORBIDDEN", { message: "Sign-up answers are missing.", code: "SIGNUP_CONSENT_MISSING" });
+          // Pre-hijack (slice 2 review finding 3): someone may have signed up with this address and their own password before the owner
+          // confirmed it. Google has now proved the owner holds the address, so the password goes and every earlier session ends, as
+          // Better Auth's revokeUnprovenAccountAccess does for magic links. The owner can set a password again by reset. A link started
+          // by a signed-in candidate (state.link, or the /link-social route) is the owner adding Google on purpose, so it is left alone.
+          // Google joins on the redirect callback and on an id-token sign-in (/sign-in/social with idToken; without one, that route
+          // only makes the Google address and writes no account row).
+          if ((ctx?.path?.startsWith("/callback/") || ctx?.path === "/sign-in/social") && !(await getOAuthState())?.link) {
+            const del = trx as unknown as { deleteMany: (q: unknown) => Promise<number> };
+            if (await del.deleteMany({ model: "account", where: [{ field: "userId", value: a.userId }, { field: "providerId", value: "credential" }] }))
+              await del.deleteMany({ model: "session", where: [{ field: "userId", value: a.userId }] });
+          }
         } } },
       } : {}),
       // Portal sign-up (#194): the same, with the one tick. The portal has no Google (#190), so an account made by any other route is refused.
@@ -168,7 +188,7 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
     },
     // The client address comes from the header Vercel sets, not X-Forwarded-For, which any client can send.
     // consent_record's id is made by the database (identity column); every other table keeps Better Auth's own ids.
-    advanced: { disableOriginCheck: false, database: { generateId: ({ model }: { model: string }) => (model === "consentRecord" ? false : generateRandomString(32, "a-z", "A-Z", "0-9")) }, cookiePrefix: name, useSecureCookies: secure, ipAddress: { ipAddressHeaders: ["x-vercel-forwarded-for"] } },
+    advanced: { ...(background ? { backgroundTasks: { handler: background } } : {}), disableOriginCheck: false, database: { generateId: ({ model }: { model: string }) => (model === "consentRecord" ? false : generateRandomString(32, "a-z", "A-Z", "0-9")) }, cookiePrefix: name, useSecureCookies: secure, ipAddress: { ipAddressHeaders: ["x-vercel-forwarded-for"] } },
   });
 }
 

@@ -2,12 +2,17 @@
 // any setting missing fails closed. Google sign-in is on only when GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are both set. DATABASE_URL is the app_candidate login. Email goes to the fake sender, which runs on localhost only.
 import { candidateSettings, createAuth, createMail, googleSettings, type FakeEmail } from "@portal/auth";
 import { getPool } from "@portal/db";
+import { after } from "next/server";
+
+// Email sends run after the reply (slice 2 review finding 4). after() keeps the function alive until they end; outside a Next request
+// (the tests call the route handler directly) it throws, and the send, already started, simply runs on.
+const background = (task: Promise<unknown>) => { try { after(task); } catch { /* not in a Next request */ } };
 
 let made: { auth: ReturnType<typeof createAuth>; mail: FakeEmail } | undefined;
 function make() {
   const settings = candidateSettings(process.env);
   const mail = createMail(settings.baseURL);
-  return (made ??= { auth: createAuth("candidate", { database: getPool(), ...settings, sendEmail: mail.send, google: googleSettings(process.env) }), mail });
+  return (made ??= { auth: createAuth("candidate", { database: getPool(), ...settings, sendEmail: mail.send, background, google: googleSettings(process.env) }), mail });
 }
 export const candidateAuth = () => (made ?? make()).auth;
 /** The emails the fake sender kept (tests read the links here). */

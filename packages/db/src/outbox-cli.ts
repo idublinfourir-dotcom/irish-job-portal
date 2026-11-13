@@ -2,7 +2,7 @@
 //   DATABASE_URL=... BREVO_API_KEY=... EMAIL_FROM=... node packages/db/src/outbox-cli.ts [--batch N]
 // A row is marked `sending` (attempts + 1) in its own committed statement BEFORE Brevo is called, so a crash never sends it twice; a row
 // left in `sending` by a crash is a human's call (look at it, then set it to pending or dropped). After MAX_ATTEMPTS failed tries a row is `failed`.
-// A row with no address (person erased or deleted, invite gone) is `dropped`. Two runs at once share the work (skip locked).
+// A row with no address (person erased or deleted, invite gone) is `dropped`; account_deleted uses params.email. Two runs at once share the work (skip locked).
 // The wording is PLACEHOLDER text until the real templates exist. Logs hold counts and row ids only, never an address or the key.
 import pg from "pg";
 import { createBrevoMail, type SendMail } from "../../auth/src/brevo.ts";
@@ -16,7 +16,9 @@ export const CLAIM =
   "with c as (select id from email_outbox where status = 'pending' and send_after <= now() order by send_after, id limit $1 for update skip locked) " +
   "update email_outbox o set status = 'sending', attempts = o.attempts + 1 from c where o.id = c.id returning o.id, o.template, o.attempts, o.send_after";
 export const ADDRESSES =
-  "select o.id, coalesce(cu.email, pu.email, su.email, mu.email, m.invited_email, cm.from_email) as email from email_outbox o " +
+  "select o.id, coalesce(cu.email, pu.email, su.email, mu.email, m.invited_email, cm.from_email, " +
+  // The deleted-account notice goes to a login that is already deleted, so its address is the one deleteAccount copied into params.
+  "case when o.template = 'account_deleted' then o.params->>'email' end) as email from email_outbox o " +
   "left join candidate_user cu on cu.id = o.candidate_user_id and cu.deleted_at is null " +
   "left join portal_user pu on pu.id = o.portal_user_id and pu.deleted_at is null " +
   "left join staff_user su on su.id = o.staff_user_id " +

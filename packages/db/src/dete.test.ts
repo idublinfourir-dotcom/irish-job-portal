@@ -59,10 +59,14 @@ describe("parsePermits", () => {
   });
 
   it("accepts a name of exactly 300 characters and odd Unicode", () => {
-    const names = ["x".repeat(300), "Café Ünïcode Ltd", "株式会社テスト", "Emoji 🚀 Ltd", "Zero​width Ltd", "é combined", "עברית Ltd", "Obrien'; drop table dete_permit_count;-- Ltd"];
+    const names = ["x".repeat(300), "Café Ünïcode Ltd", "株式会社テスト", "Emoji 🚀 Ltd", "é combined", "עברית Ltd", "Obrien'; drop table dete_permit_count;-- Ltd"];
     const r = parsePermits(H + names.map((n) => `${n}\t2024\t5\tf`).join("\n") + "\n");
     expect(r.errors).toEqual([]);
     expect(r.rows.map((x) => x.deteName)).toEqual(names);
+  });
+
+  it.each([["a zero-width space", "Zero\u200bwidth Ltd"], ["a right-to-left override", "Evil \u202eLtd"], ["a byte order mark", "Bom\ufeffLtd"], ["a line separator", "Line\u2028Ltd"]])("refuses a name with %s", (_, name) => {
+    expect(parsePermits(H + `${name}\t2024\t5\tf\n`).errors).toEqual(["line 2: the name is empty, over 300 characters or has control characters"]);
   });
 
   it("stops listing after 20 errors", () => {
