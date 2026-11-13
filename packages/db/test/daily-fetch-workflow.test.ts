@@ -51,5 +51,15 @@ it("applies the retention rules last, every day, with the admin login only in th
   expect(s).toMatch(/RETENTION_ADMIN_DATABASE_URL: \$\{\{ secrets\.ADMIN_DATABASE_URL \}\}/);
   expect(s).not.toMatch(/FETCHER_/);
   expect(yml.trimEnd().endsWith("node packages/db/src/retention-cli.ts")).toBe(true);
-  expect(yml.match(/secrets\.ADMIN_DATABASE_URL/g)).toHaveLength(4); // refresh, expiry, minimum, retention: one step each
+  expect(yml.match(/secrets\.ADMIN_DATABASE_URL/g)).toHaveLength(5); // refresh, expiry, minimum, alerts, retention: one step each
+});
+it("queues job alerts every day, after the fetch and the minimum and before retention, with the admin login only in that step (0024)", () => {
+  const s = step("Queue job alerts");
+  expect(s).toMatch(/if: \$\{\{ !cancelled\(\) \}\}/);
+  expect(s).toMatch(/ALERTS_ADMIN_DATABASE_URL: \$\{\{ secrets\.ADMIN_DATABASE_URL \}\}/);
+  expect(s).toMatch(/node packages\/db\/src\/alerts-run-cli\.ts/);
+  expect(s).not.toMatch(/FETCHER_/);
+  expect(yml.indexOf("name: Queue job alerts")).toBeGreaterThan(yml.indexOf("name: Fetch\n"));
+  expect(yml.indexOf("name: Queue job alerts")).toBeGreaterThan(yml.indexOf("name: Apply a new minimum"));
+  expect(yml.indexOf("name: Apply the retention rules")).toBeGreaterThan(yml.indexOf("name: Queue job alerts"));
 });

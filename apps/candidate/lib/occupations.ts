@@ -1,4 +1,2 @@
-// The occupation codes a candidate may pick: the two lists the badges use (Critical Skills and ineligible), the same file the fetcher reads.
-import lists from "../../../packages/fetcher/data/occupation-lists.json";
-
-export const OCCUPATION_CODES: ReadonlySet<string> = new Set(lists.map((e) => e.code));
+// The occupation codes a candidate may pick: every SOC 2010 unit group (the two badge lists are a subset). Relative import: this app does not depend on @portal/rules.
+export { SOC2010_CODES as OCCUPATION_CODES } from "../../../packages/rules/src/soc";

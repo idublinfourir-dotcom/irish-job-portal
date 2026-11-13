@@ -3,7 +3,7 @@
 // adverts, on the structured fields the employer typed; the database has the last word (job_guard, signer_check, job_org_live, the deferred
 // statement check). There is no row level security: every read and write here is filtered by the login's own company.
 import { getPool, getRules, listAnswer } from "@portal/db";
-import { assess, chainRules, minimumForHours, type RulesSnapshot } from "@portal/rules";
+import { assess, chainRules, isSoc2010, minimumForHours, type RulesSnapshot } from "@portal/rules";
 import type pg from "pg";
 import { isObject, no, only, portalLogin, readPost, withinLimit, type Refusal } from "./company";
 
@@ -65,7 +65,7 @@ export function checkPost(b: unknown, keys = POST_KEYS): Post | null {
   const description = typeof b.description === "string" ? b.description.trim() : "";
   if (!title || !ownPageUrl || description.length < 20 || description.length > 10_000 || BAD_TEXT.test(description)) return null;
   const county = COUNTIES.find((c) => c === b.county);
-  const occupationCode = typeof b.occupationCode === "string" && /^[1-9][0-9]{3}$/.test(b.occupationCode) ? b.occupationCode : null;
+  const occupationCode = isSoc2010(b.occupationCode) ? b.occupationCode : null;
   if (!county || !occupationCode) return null;
   const contractMonths = opt(b.contractMonths, (v) => int(v, 1, 600));
   if (contractMonths === undefined || (contractType === "fixed_term") !== (contractMonths !== null)) return null;

@@ -1,8 +1,10 @@
 // The real email sender: one call to Brevo's transactional email API through fetch (no SDK).
 // API: POST https://api.brevo.com/v3/smtp/email, key in the `api-key` header, body sender, to, subject, textContent
 // (https://developers.brevo.com/reference/sendtransacemail and https://developers.brevo.com/docs/send-a-transactional-email).
+// Optional custom headers go in the body's `headers` map (Title-Case names). Brevo's reference says "Standard email headers are not supported",
+// so a List-Unsubscribe header may be ignored or replaced; the job alert email's one-click header is to be checked at the switch-on (step 11 D5).
 // Stands alone (no imports) so the outbox command can load it with plain node.
-export type SendMail = (to: string, subject: string, text: string) => Promise<void>;
+export type SendMail = (to: string, subject: string, text: string, headers?: Record<string, string>) => Promise<void>;
 export type BrevoOptions = { apiKey: string; from: string; fetch?: typeof fetch; timeoutMs?: number };
 
 export const BREVO_URL = "https://api.brevo.com/v3/smtp/email";
@@ -14,14 +16,16 @@ export const isAddress = (s: string) => s.length <= 254 && ADDRESS.test(s);
 export function createBrevoMail({ apiKey, from, fetch: f = fetch, timeoutMs = BREVO_TIMEOUT_MS }: BrevoOptions): SendMail {
   if (!apiKey) throw new Error("BREVO_API_KEY is empty.");
   if (!isAddress(from)) throw new Error("EMAIL_FROM must be one plain address such as no-reply@example.com.");
-  return async (to, subject, text) => {
+  return async (to, subject, text, headers) => {
     if (!isAddress(to)) throw new Error("Brevo send refused: the recipient is not a plain address.");
+    if (headers && Object.entries(headers).some(([k, v]) => !/^[A-Za-z][A-Za-z0-9-]{0,63}$/.test(k) || /[\r\n]/.test(v)))
+      throw new Error("Brevo send refused: a header name or value is not allowed.");
     let res: Response;
     try {
       res = await f(BREVO_URL, {
         method: "POST",
         headers: { "api-key": apiKey, accept: "application/json", "content-type": "application/json" },
-        body: JSON.stringify({ sender: { email: from }, to: [{ email: to }], subject, textContent: text }),
+        body: JSON.stringify({ sender: { email: from }, to: [{ email: to }], subject, textContent: text, ...(headers && Object.keys(headers).length ? { headers } : {}) }),
         signal: AbortSignal.timeout(timeoutMs),
         redirect: "error", // a redirect would carry the key header elsewhere
       });

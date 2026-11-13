@@ -220,6 +220,12 @@ describe("manual posting (#232)", () => {
       expect((await candidate.query("select id from job where id = $1 and status = 'live'", [r.jobId])).rowCount).toBe(0);
     }
   });
+  it("refuses a four-digit code that is not SOC 2010, with nothing written", async () => {
+    const o = await org({ status: "verified" });
+    const before = (await one("select count(*)::int c from job where source = 'admin_manual'")).c;
+    for (const occupationCode of ["9999", "0000", "1110"]) await refused(createManualPost(admin, staff.account_reviewer!, post(o, { occupationCode })), "bad_occupation_code");
+    expect((await one("select count(*)::int c from job where source = 'admin_manual'")).c).toBe(before);
+  });
   it("every other role, no role and a disabled login are refused, and nothing is written", async () => {
     const o = await org({ status: "verified" });
     const before = (await one("select count(*)::int c from job where source = 'admin_manual'")).c;

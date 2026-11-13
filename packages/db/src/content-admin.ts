@@ -3,6 +3,7 @@
 // help without a source and a checked-on date (content_page_check); that stays the last word and is mapped to a short code here. The writer is recorded in
 // updated_by_staff_user_id. Terms and privacy texts keep their own two-person command (posting-texts-cli.ts, signup-terms-cli.ts) and are not here.
 import type pg from "pg";
+import { isSoc2010 } from "@portal/rules";
 import { QueueRefused } from "./admin-queue";
 import { validSlug } from "./content";
 import { isTime, validId } from "./search";
@@ -49,9 +50,9 @@ function checkFields(i: Edit): void {
   if (i.sourceUrl !== undefined && !sourceUrl(i.sourceUrl)) throw new QueueRefused("bad_source_url");
   if (i.checkedOn !== undefined && !checkedOn(i.checkedOn)) throw new QueueRefused("bad_checked_on");
 }
-/** Slug rules: lower-case letters, digits and hyphens as the public reads accept (content.ts); an occupation page's slug is its four-digit code (0018). */
+/** Slug rules: lower-case letters, digits and hyphens as the public reads accept (content.ts); an occupation page's slug is its SOC 2010 code (0018). */
 export function checkSlug(kind: string, slug: unknown): string {
-  if (!validSlug(slug) || (kind === "occupation" && !/^[0-9]{4}$/.test(slug))) throw new QueueRefused("bad_slug");
+  if (!validSlug(slug) || (kind === "occupation" && !isSoc2010(slug))) throw new QueueRefused("bad_slug");
   return slug;
 }
 const isKind = (k: unknown): k is Kind => typeof k === "string" && (KINDS as readonly string[]).includes(k);

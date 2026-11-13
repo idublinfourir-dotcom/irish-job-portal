@@ -169,6 +169,13 @@
       "when": 1794300019000,
       "tag": "0023_staff_admin",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794300020000,
+      "tag": "0024_job_alerts",
+      "breakpoints": true
     }
   ]
 }

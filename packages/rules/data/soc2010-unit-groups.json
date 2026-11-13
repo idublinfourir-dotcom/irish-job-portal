@@ -1,0 +1,1483 @@
+{
+ "source": "https://www.ons.gov.uk/file?uri=/methodology/classificationsandstandards/standardoccupationalclassificationsoc/soc2010/soc2010volume1structureanddescriptionsofunitgroups/structuresoc2010tcm771813191.xls",
+ "licence": "All content is available under the Open Government Licence v3.0, except where otherwise stated (ONS site footer, https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/)",
+ "read_on": "2026-11-13",
+ "unit_groups": [
+  {
+   "code": "1115",
+   "title": "Chief executives and senior officials"
+  },
+  {
+   "code": "1116",
+   "title": "Elected officers and representatives"
+  },
+  {
+   "code": "1121",
+   "title": "Production managers and directors in manufacturing"
+  },
+  {
+   "code": "1122",
+   "title": "Production managers and directors in construction"
+  },
+  {
+   "code": "1123",
+   "title": "Production managers and directors in mining and energy"
+  },
+  {
+   "code": "1131",
+   "title": "Financial managers and directors"
+  },
+  {
+   "code": "1132",
+   "title": "Marketing and sales directors"
+  },
+  {
+   "code": "1133",
+   "title": "Purchasing managers and directors"
+  },
+  {
+   "code": "1134",
+   "title": "Advertising and public relations directors"
+  },
+  {
+   "code": "1135",
+   "title": "Human resource managers and directors"
+  },
+  {
+   "code": "1136",
+   "title": "Information technology and telecommunications directors"
+  },
+  {
+   "code": "1139",
+   "title": "Functional managers and directors n.e.c."
+  },
+  {
+   "code": "1150",
+   "title": "Financial institution managers and directors"
+  },
+  {
+   "code": "1161",
+   "title": "Managers and directors in transport and distribution"
+  },
+  {
+   "code": "1162",
+   "title": "Managers and directors in storage and warehousing"
+  },
+  {
+   "code": "1171",
+   "title": "Officers in armed forces"
+  },
+  {
+   "code": "1172",
+   "title": "Senior police officers"
+  },
+  {
+   "code": "1173",
+   "title": "Senior officers in fire, ambulance, prison and related services"
+  },
+  {
+   "code": "1181",
+   "title": "Health services and public health managers and directors"
+  },
+  {
+   "code": "1184",
+   "title": "Social services managers and directors"
+  },
+  {
+   "code": "1190",
+   "title": "Managers and directors in retail and wholesale"
+  },
+  {
+   "code": "1211",
+   "title": "Managers and proprietors in agriculture and horticulture"
+  },
+  {
+   "code": "1213",
+   "title": "Managers and proprietors in forestry, fishing and related services"
+  },
+  {
+   "code": "1221",
+   "title": "Hotel and accommodation managers and proprietors"
+  },
+  {
+   "code": "1223",
+   "title": "Restaurant and catering establishment managers and proprietors"
+  },
+  {
+   "code": "1224",
+   "title": "Publicans and managers of licensed premises"
+  },
+  {
+   "code": "1225",
+   "title": "Leisure and sports managers"
+  },
+  {
+   "code": "1226",
+   "title": "Travel agency managers and proprietors"
+  },
+  {
+   "code": "1241",
+   "title": "Health care practice managers"
+  },
+  {
+   "code": "1242",
+   "title": "Residential, day and domiciliary  care managers and proprietors"
+  },
+  {
+   "code": "1251",
+   "title": "Property, housing and estate managers"
+  },
+  {
+   "code": "1252",
+   "title": "Garage managers and proprietors"
+  },
+  {
+   "code": "1253",
+   "title": "Hairdressing and beauty salon managers and proprietors"
+  },
+  {
+   "code": "1254",
+   "title": "Shopkeepers and proprietors - wholesale and retail"
+  },
+  {
+   "code": "1255",
+   "title": "Waste disposal and environmental services managers"
+  },
+  {
+   "code": "1259",
+   "title": "Managers and proprietors in other services n.e.c."
+  },
+  {
+   "code": "2111",
+   "title": "Chemical scientists"
+  },
+  {
+   "code": "2112",
+   "title": "Biological scientists and biochemists"
+  },
+  {
+   "code": "2113",
+   "title": "Physical scientists"
+  },
+  {
+   "code": "2114",
+   "title": "Social and humanities scientists"
+  },
+  {
+   "code": "2119",
+   "title": "Natural and social science professionals n.e.c."
+  },
+  {
+   "code": "2121",
+   "title": "Civil engineers"
+  },
+  {
+   "code": "2122",
+   "title": "Mechanical engineers"
+  },
+  {
+   "code": "2123",
+   "title": "Electrical engineers"
+  },
+  {
+   "code": "2124",
+   "title": "Electronics engineers"
+  },
+  {
+   "code": "2126",
+   "title": "Design and development engineers"
+  },
+  {
+   "code": "2127",
+   "title": "Production and process engineers"
+  },
+  {
+   "code": "2129",
+   "title": "Engineering professionals n.e.c."
+  },
+  {
+   "code": "2133",
+   "title": "IT specialist managers"
+  },
+  {
+   "code": "2134",
+   "title": "IT project and programme managers"
+  },
+  {
+   "code": "2135",
+   "title": "IT business analysts, architects and systems designers"
+  },
+  {
+   "code": "2136",
+   "title": "Programmers and software development professionals"
+  },
+  {
+   "code": "2137",
+   "title": "Web design and development professionals"
+  },
+  {
+   "code": "2139",
+   "title": "Information technology and telecommunications professionals n.e.c."
+  },
+  {
+   "code": "2141",
+   "title": "Conservation professionals"
+  },
+  {
+   "code": "2142",
+   "title": "Environment professionals"
+  },
+  {
+   "code": "2150",
+   "title": "Research and development managers"
+  },
+  {
+   "code": "2211",
+   "title": "Medical practitioners"
+  },
+  {
+   "code": "2212",
+   "title": "Psychologists"
+  },
+  {
+   "code": "2213",
+   "title": "Pharmacists"
+  },
+  {
+   "code": "2214",
+   "title": "Ophthalmic opticians"
+  },
+  {
+   "code": "2215",
+   "title": "Dental practitioners"
+  },
+  {
+   "code": "2216",
+   "title": "Veterinarians"
+  },
+  {
+   "code": "2217",
+   "title": "Medical radiographers"
+  },
+  {
+   "code": "2218",
+   "title": "Podiatrists"
+  },
+  {
+   "code": "2219",
+   "title": "Health professionals n.e.c."
+  },
+  {
+   "code": "2221",
+   "title": "Physiotherapists"
+  },
+  {
+   "code": "2222",
+   "title": "Occupational therapists"
+  },
+  {
+   "code": "2223",
+   "title": "Speech and language therapists"
+  },
+  {
+   "code": "2229",
+   "title": "Therapy professionals n.e.c."
+  },
+  {
+   "code": "2231",
+   "title": "Nurses"
+  },
+  {
+   "code": "2232",
+   "title": "Midwives"
+  },
+  {
+   "code": "2311",
+   "title": "Higher education teaching professionals"
+  },
+  {
+   "code": "2312",
+   "title": "Further education teaching professionals"
+  },
+  {
+   "code": "2314",
+   "title": "Secondary education teaching professionals"
+  },
+  {
+   "code": "2315",
+   "title": "Primary and nursery education teaching professionals"
+  },
+  {
+   "code": "2316",
+   "title": "Special needs education teaching professionals"
+  },
+  {
+   "code": "2317",
+   "title": "Senior professionals of educational establishments"
+  },
+  {
+   "code": "2318",
+   "title": "Education advisers and school inspectors"
+  },
+  {
+   "code": "2319",
+   "title": "Teaching and other educational professionals n.e.c."
+  },
+  {
+   "code": "2412",
+   "title": "Barristers and judges"
+  },
+  {
+   "code": "2413",
+   "title": "Solicitors"
+  },
+  {
+   "code": "2419",
+   "title": "Legal professionals n.e.c."
+  },
+  {
+   "code": "2421",
+   "title": "Chartered and certified accountants"
+  },
+  {
+   "code": "2423",
+   "title": "Management consultants and business analysts"
+  },
+  {
+   "code": "2424",
+   "title": "Business and financial project management professionals"
+  },
+  {
+   "code": "2425",
+   "title": "Actuaries, economists and statisticians"
+  },
+  {
+   "code": "2426",
+   "title": "Business and related research professionals"
+  },
+  {
+   "code": "2429",
+   "title": "Business, research and administrative professionals n.e.c."
+  },
+  {
+   "code": "2431",
+   "title": "Architects"
+  },
+  {
+   "code": "2432",
+   "title": "Town planning officers"
+  },
+  {
+   "code": "2433",
+   "title": "Quantity surveyors"
+  },
+  {
+   "code": "2434",
+   "title": "Chartered surveyors"
+  },
+  {
+   "code": "2435",
+   "title": "Chartered architectural technologists"
+  },
+  {
+   "code": "2436",
+   "title": "Construction project managers and related professionals"
+  },
+  {
+   "code": "2442",
+   "title": "Social workers"
+  },
+  {
+   "code": "2443",
+   "title": "Probation officers"
+  },
+  {
+   "code": "2444",
+   "title": "Clergy"
+  },
+  {
+   "code": "2449",
+   "title": "Welfare professionals n.e.c."
+  },
+  {
+   "code": "2451",
+   "title": "Librarians"
+  },
+  {
+   "code": "2452",
+   "title": "Archivists and curators"
+  },
+  {
+   "code": "2461",
+   "title": "Quality control and planning engineers"
+  },
+  {
+   "code": "2462",
+   "title": "Quality assurance and regulatory professionals"
+  },
+  {
+   "code": "2463",
+   "title": "Environmental health professionals"
+  },
+  {
+   "code": "2471",
+   "title": "Journalists, newspaper and periodical editors"
+  },
+  {
+   "code": "2472",
+   "title": "Public relations professionals"
+  },
+  {
+   "code": "2473",
+   "title": "Advertising accounts managers and creative directors"
+  },
+  {
+   "code": "3111",
+   "title": "Laboratory technicians"
+  },
+  {
+   "code": "3112",
+   "title": "Electrical and electronics technicians"
+  },
+  {
+   "code": "3113",
+   "title": "Engineering technicians"
+  },
+  {
+   "code": "3114",
+   "title": "Building and civil engineering technicians"
+  },
+  {
+   "code": "3115",
+   "title": "Quality assurance technicians"
+  },
+  {
+   "code": "3116",
+   "title": "Planning, process and production technicians"
+  },
+  {
+   "code": "3119",
+   "title": "Science, engineering and production technicians n.e.c."
+  },
+  {
+   "code": "3121",
+   "title": "Architectural and town planning technicians"
+  },
+  {
+   "code": "3122",
+   "title": "Draughtspersons"
+  },
+  {
+   "code": "3131",
+   "title": "IT operations technicians"
+  },
+  {
+   "code": "3132",
+   "title": "IT user support technicians"
+  },
+  {
+   "code": "3213",
+   "title": "Paramedics"
+  },
+  {
+   "code": "3216",
+   "title": "Dispensing opticians"
+  },
+  {
+   "code": "3217",
+   "title": "Pharmaceutical technicians"
+  },
+  {
+   "code": "3218",
+   "title": "Medical and dental technicians"
+  },
+  {
+   "code": "3219",
+   "title": "Health associate professionals n.e.c."
+  },
+  {
+   "code": "3231",
+   "title": "Youth and community workers"
+  },
+  {
+   "code": "3233",
+   "title": "Child and early years officers"
+  },
+  {
+   "code": "3234",
+   "title": "Housing officers"
+  },
+  {
+   "code": "3235",
+   "title": "Counsellors"
+  },
+  {
+   "code": "3239",
+   "title": "Welfare and housing associate professionals n.e.c."
+  },
+  {
+   "code": "3311",
+   "title": "NCOs and other ranks"
+  },
+  {
+   "code": "3312",
+   "title": "Police officers (sergeant and below)"
+  },
+  {
+   "code": "3313",
+   "title": "Fire service officers (watch manager and below)"
+  },
+  {
+   "code": "3314",
+   "title": "Prison service officers (below principal officer)"
+  },
+  {
+   "code": "3315",
+   "title": "Police community support officers"
+  },
+  {
+   "code": "3319",
+   "title": "Protective service associate professionals n.e.c."
+  },
+  {
+   "code": "3411",
+   "title": "Artists"
+  },
+  {
+   "code": "3412",
+   "title": "Authors, writers and translators"
+  },
+  {
+   "code": "3413",
+   "title": "Actors, entertainers and presenters"
+  },
+  {
+   "code": "3414",
+   "title": "Dancers and choreographers"
+  },
+  {
+   "code": "3415",
+   "title": "Musicians"
+  },
+  {
+   "code": "3416",
+   "title": "Arts officers, producers and directors"
+  },
+  {
+   "code": "3417",
+   "title": "Photographers, audio-visual and broadcasting equipment operators"
+  },
+  {
+   "code": "3421",
+   "title": "Graphic designers"
+  },
+  {
+   "code": "3422",
+   "title": "Product, clothing and related designers"
+  },
+  {
+   "code": "3441",
+   "title": "Sports players"
+  },
+  {
+   "code": "3442",
+   "title": "Sports coaches, instructors and officials"
+  },
+  {
+   "code": "3443",
+   "title": "Fitness instructors"
+  },
+  {
+   "code": "3511",
+   "title": "Air traffic controllers"
+  },
+  {
+   "code": "3512",
+   "title": "Aircraft pilots and flight engineers"
+  },
+  {
+   "code": "3513",
+   "title": "Ship and hovercraft officers"
+  },
+  {
+   "code": "3520",
+   "title": "Legal associate professionals"
+  },
+  {
+   "code": "3531",
+   "title": "Estimators, valuers and assessors"
+  },
+  {
+   "code": "3532",
+   "title": "Brokers"
+  },
+  {
+   "code": "3533",
+   "title": "Insurance underwriters"
+  },
+  {
+   "code": "3534",
+   "title": "Finance and investment analysts and advisers"
+  },
+  {
+   "code": "3535",
+   "title": "Taxation experts"
+  },
+  {
+   "code": "3536",
+   "title": "Importers and exporters"
+  },
+  {
+   "code": "3537",
+   "title": "Financial and accounting technicians"
+  },
+  {
+   "code": "3538",
+   "title": "Financial accounts managers"
+  },
+  {
+   "code": "3539",
+   "title": "Business and related associate professionals n.e.c."
+  },
+  {
+   "code": "3541",
+   "title": "Buyers and procurement officers"
+  },
+  {
+   "code": "3542",
+   "title": "Business sales executives"
+  },
+  {
+   "code": "3543",
+   "title": "Marketing associate professionals"
+  },
+  {
+   "code": "3544",
+   "title": "Estate agents and auctioneers"
+  },
+  {
+   "code": "3545",
+   "title": "Sales accounts and business development managers"
+  },
+  {
+   "code": "3546",
+   "title": "Conference and exhibition managers and organisers"
+  },
+  {
+   "code": "3550",
+   "title": "Conservation and environmental associate professionals"
+  },
+  {
+   "code": "3561",
+   "title": "Public services associate professionals"
+  },
+  {
+   "code": "3562",
+   "title": "Human resources and industrial relations officers"
+  },
+  {
+   "code": "3563",
+   "title": "Vocational and industrial trainers and instructors"
+  },
+  {
+   "code": "3564",
+   "title": "Careers advisers and vocational guidance specialists"
+  },
+  {
+   "code": "3565",
+   "title": "Inspectors of standards and regulations"
+  },
+  {
+   "code": "3567",
+   "title": "Health and safety officers"
+  },
+  {
+   "code": "4112",
+   "title": "National government administrative occupations"
+  },
+  {
+   "code": "4113",
+   "title": "Local government administrative occupations"
+  },
+  {
+   "code": "4114",
+   "title": "Officers of non-governmental organisations"
+  },
+  {
+   "code": "4121",
+   "title": "Credit controllers"
+  },
+  {
+   "code": "4122",
+   "title": "Book-keepers, payroll managers and wages clerks"
+  },
+  {
+   "code": "4123",
+   "title": "Bank and post office clerks"
+  },
+  {
+   "code": "4124",
+   "title": "Finance officers"
+  },
+  {
+   "code": "4129",
+   "title": "Financial administrative occupations n.e.c."
+  },
+  {
+   "code": "4131",
+   "title": "Records clerks and assistants"
+  },
+  {
+   "code": "4132",
+   "title": "Pensions and insurance clerks and assistants"
+  },
+  {
+   "code": "4133",
+   "title": "Stock control clerks and assistants"
+  },
+  {
+   "code": "4134",
+   "title": "Transport and distribution clerks and assistants"
+  },
+  {
+   "code": "4135",
+   "title": "Library clerks and assistants"
+  },
+  {
+   "code": "4138",
+   "title": "Human resources administrative occupations"
+  },
+  {
+   "code": "4151",
+   "title": "Sales administrators"
+  },
+  {
+   "code": "4159",
+   "title": "Other administrative occupations n.e.c."
+  },
+  {
+   "code": "4161",
+   "title": "Office managers"
+  },
+  {
+   "code": "4162",
+   "title": "Office supervisors"
+  },
+  {
+   "code": "4211",
+   "title": "Medical secretaries"
+  },
+  {
+   "code": "4212",
+   "title": "Legal secretaries"
+  },
+  {
+   "code": "4213",
+   "title": "School secretaries"
+  },
+  {
+   "code": "4214",
+   "title": "Company secretaries"
+  },
+  {
+   "code": "4215",
+   "title": "Personal assistants and other secretaries"
+  },
+  {
+   "code": "4216",
+   "title": "Receptionists"
+  },
+  {
+   "code": "4217",
+   "title": "Typists and related keyboard occupations"
+  },
+  {
+   "code": "5111",
+   "title": "Farmers"
+  },
+  {
+   "code": "5112",
+   "title": "Horticultural trades"
+  },
+  {
+   "code": "5113",
+   "title": "Gardeners and landscape gardeners"
+  },
+  {
+   "code": "5114",
+   "title": "Groundsmen and greenkeepers"
+  },
+  {
+   "code": "5119",
+   "title": "Agricultural and fishing trades n.e.c."
+  },
+  {
+   "code": "5211",
+   "title": "Smiths and forge workers"
+  },
+  {
+   "code": "5212",
+   "title": "Moulders, core makers and die casters"
+  },
+  {
+   "code": "5213",
+   "title": "Sheet metal workers"
+  },
+  {
+   "code": "5214",
+   "title": "Metal plate workers, and riveters"
+  },
+  {
+   "code": "5215",
+   "title": "Welding trades"
+  },
+  {
+   "code": "5216",
+   "title": "Pipe fitters"
+  },
+  {
+   "code": "5221",
+   "title": "Metal machining setters and setter-operators"
+  },
+  {
+   "code": "5222",
+   "title": "Tool makers, tool fitters and markers-out"
+  },
+  {
+   "code": "5223",
+   "title": "Metal working production and maintenance fitters"
+  },
+  {
+   "code": "5224",
+   "title": "Precision instrument makers and repairers"
+  },
+  {
+   "code": "5225",
+   "title": "Air-conditioning and refrigeration engineers"
+  },
+  {
+   "code": "5231",
+   "title": "Vehicle technicians, mechanics and electricians"
+  },
+  {
+   "code": "5232",
+   "title": "Vehicle body builders and repairers"
+  },
+  {
+   "code": "5234",
+   "title": "Vehicle paint technicians"
+  },
+  {
+   "code": "5235",
+   "title": "Aircraft maintenance and related trades"
+  },
+  {
+   "code": "5236",
+   "title": "Boat and ship builders and repairers"
+  },
+  {
+   "code": "5237",
+   "title": "Rail and rolling stock builders and repairers"
+  },
+  {
+   "code": "5241",
+   "title": "Electricians and electrical fitters"
+  },
+  {
+   "code": "5242",
+   "title": "Telecommunications engineers"
+  },
+  {
+   "code": "5244",
+   "title": "TV, video and audio engineers"
+  },
+  {
+   "code": "5245",
+   "title": "IT engineers"
+  },
+  {
+   "code": "5249",
+   "title": "Electrical and electronic trades n.e.c."
+  },
+  {
+   "code": "5250",
+   "title": "Skilled metal, electrical and electronic trades supervisors"
+  },
+  {
+   "code": "5311",
+   "title": "Steel erectors"
+  },
+  {
+   "code": "5312",
+   "title": "Bricklayers and masons"
+  },
+  {
+   "code": "5313",
+   "title": "Roofers, roof tilers and slaters"
+  },
+  {
+   "code": "5314",
+   "title": "Plumbers and heating and ventilating engineers"
+  },
+  {
+   "code": "5315",
+   "title": "Carpenters and joiners"
+  },
+  {
+   "code": "5316",
+   "title": "Glaziers, window fabricators and fitters"
+  },
+  {
+   "code": "5319",
+   "title": "Construction and building trades n.e.c."
+  },
+  {
+   "code": "5321",
+   "title": "Plasterers"
+  },
+  {
+   "code": "5322",
+   "title": "Floorers and wall tilers"
+  },
+  {
+   "code": "5323",
+   "title": "Painters and decorators"
+  },
+  {
+   "code": "5330",
+   "title": "Construction and building trades supervisors"
+  },
+  {
+   "code": "5411",
+   "title": "Weavers and knitters"
+  },
+  {
+   "code": "5412",
+   "title": "Upholsterers"
+  },
+  {
+   "code": "5413",
+   "title": "Footwear and leather working trades"
+  },
+  {
+   "code": "5414",
+   "title": "Tailors and dressmakers"
+  },
+  {
+   "code": "5419",
+   "title": "Textiles, garments and related trades n.e.c."
+  },
+  {
+   "code": "5421",
+   "title": "Pre-press technicians"
+  },
+  {
+   "code": "5422",
+   "title": "Printers"
+  },
+  {
+   "code": "5423",
+   "title": "Print finishing and binding workers"
+  },
+  {
+   "code": "5431",
+   "title": "Butchers"
+  },
+  {
+   "code": "5432",
+   "title": "Bakers and flour confectioners"
+  },
+  {
+   "code": "5433",
+   "title": "Fishmongers and poultry dressers"
+  },
+  {
+   "code": "5434",
+   "title": "Chefs"
+  },
+  {
+   "code": "5435",
+   "title": "Cooks"
+  },
+  {
+   "code": "5436",
+   "title": "Catering and bar managers"
+  },
+  {
+   "code": "5441",
+   "title": "Glass and ceramics makers, decorators and finishers"
+  },
+  {
+   "code": "5442",
+   "title": "Furniture makers and other craft woodworkers"
+  },
+  {
+   "code": "5443",
+   "title": "Florists"
+  },
+  {
+   "code": "5449",
+   "title": "Other skilled trades n.e.c."
+  },
+  {
+   "code": "6121",
+   "title": "Nursery nurses and assistants"
+  },
+  {
+   "code": "6122",
+   "title": "Childminders and related occupations"
+  },
+  {
+   "code": "6123",
+   "title": "Playworkers"
+  },
+  {
+   "code": "6125",
+   "title": "Teaching assistants"
+  },
+  {
+   "code": "6126",
+   "title": "Educational support assistants"
+  },
+  {
+   "code": "6131",
+   "title": "Veterinary nurses"
+  },
+  {
+   "code": "6132",
+   "title": "Pest control officers"
+  },
+  {
+   "code": "6139",
+   "title": "Animal care services occupations n.e.c."
+  },
+  {
+   "code": "6141",
+   "title": "Nursing auxiliaries and assistants"
+  },
+  {
+   "code": "6142",
+   "title": "Ambulance staff (excluding paramedics)"
+  },
+  {
+   "code": "6143",
+   "title": "Dental nurses"
+  },
+  {
+   "code": "6144",
+   "title": "Houseparents and residential wardens"
+  },
+  {
+   "code": "6145",
+   "title": "Care workers and home carers"
+  },
+  {
+   "code": "6146",
+   "title": "Senior care workers"
+  },
+  {
+   "code": "6147",
+   "title": "Care escorts"
+  },
+  {
+   "code": "6148",
+   "title": "Undertakers, mortuary and crematorium assistants"
+  },
+  {
+   "code": "6211",
+   "title": "Sports and leisure assistants"
+  },
+  {
+   "code": "6212",
+   "title": "Travel agents"
+  },
+  {
+   "code": "6214",
+   "title": "Air travel assistants"
+  },
+  {
+   "code": "6215",
+   "title": "Rail travel assistants"
+  },
+  {
+   "code": "6219",
+   "title": "Leisure and travel service occupations n.e.c."
+  },
+  {
+   "code": "6221",
+   "title": "Hairdressers and barbers"
+  },
+  {
+   "code": "6222",
+   "title": "Beauticians and related occupations"
+  },
+  {
+   "code": "6231",
+   "title": "Housekeepers and related occupations"
+  },
+  {
+   "code": "6232",
+   "title": "Caretakers"
+  },
+  {
+   "code": "6240",
+   "title": "Cleaning and housekeeping managers and supervisors"
+  },
+  {
+   "code": "7111",
+   "title": "Sales and retail assistants"
+  },
+  {
+   "code": "7112",
+   "title": "Retail cashiers and check-out operators"
+  },
+  {
+   "code": "7113",
+   "title": "Telephone salespersons"
+  },
+  {
+   "code": "7114",
+   "title": "Pharmacy and other dispensing assistants"
+  },
+  {
+   "code": "7115",
+   "title": "Vehicle and parts salespersons and advisers"
+  },
+  {
+   "code": "7121",
+   "title": "Collector salespersons and credit agents"
+  },
+  {
+   "code": "7122",
+   "title": "Debt, rent and other cash collectors"
+  },
+  {
+   "code": "7123",
+   "title": "Roundspersons and van salespersons"
+  },
+  {
+   "code": "7124",
+   "title": "Market and street traders and assistants"
+  },
+  {
+   "code": "7125",
+   "title": "Merchandisers and window dressers"
+  },
+  {
+   "code": "7129",
+   "title": "Sales related occupations n.e.c."
+  },
+  {
+   "code": "7130",
+   "title": "Sales supervisors"
+  },
+  {
+   "code": "7211",
+   "title": "Call and contact centre occupations"
+  },
+  {
+   "code": "7213",
+   "title": "Telephonists"
+  },
+  {
+   "code": "7214",
+   "title": "Communication operators"
+  },
+  {
+   "code": "7215",
+   "title": "Market research interviewers"
+  },
+  {
+   "code": "7219",
+   "title": "Customer service occupations n.e.c."
+  },
+  {
+   "code": "7220",
+   "title": "Customer service managers and supervisors"
+  },
+  {
+   "code": "8111",
+   "title": "Food, drink and tobacco process operatives"
+  },
+  {
+   "code": "8112",
+   "title": "Glass and ceramics process operatives"
+  },
+  {
+   "code": "8113",
+   "title": "Textile process operatives"
+  },
+  {
+   "code": "8114",
+   "title": "Chemical and related process operatives"
+  },
+  {
+   "code": "8115",
+   "title": "Rubber process operatives"
+  },
+  {
+   "code": "8116",
+   "title": "Plastics process operatives"
+  },
+  {
+   "code": "8117",
+   "title": "Metal making and treating process operatives"
+  },
+  {
+   "code": "8118",
+   "title": "Electroplaters"
+  },
+  {
+   "code": "8119",
+   "title": "Process operatives n.e.c."
+  },
+  {
+   "code": "8121",
+   "title": "Paper and wood machine operatives"
+  },
+  {
+   "code": "8122",
+   "title": "Coal mine operatives"
+  },
+  {
+   "code": "8123",
+   "title": "Quarry workers and related operatives"
+  },
+  {
+   "code": "8124",
+   "title": "Energy plant operatives"
+  },
+  {
+   "code": "8125",
+   "title": "Metal working machine operatives"
+  },
+  {
+   "code": "8126",
+   "title": "Water and sewerage plant operatives"
+  },
+  {
+   "code": "8127",
+   "title": "Printing machine assistants"
+  },
+  {
+   "code": "8129",
+   "title": "Plant and machine operatives n.e.c."
+  },
+  {
+   "code": "8131",
+   "title": "Assemblers (electrical and electronic products)"
+  },
+  {
+   "code": "8132",
+   "title": "Assemblers (vehicles and metal goods)"
+  },
+  {
+   "code": "8133",
+   "title": "Routine inspectors and testers"
+  },
+  {
+   "code": "8134",
+   "title": "Weighers, graders and sorters"
+  },
+  {
+   "code": "8135",
+   "title": "Tyre, exhaust and windscreen fitters"
+  },
+  {
+   "code": "8137",
+   "title": "Sewing machinists"
+  },
+  {
+   "code": "8139",
+   "title": "Assemblers and routine operatives n.e.c."
+  },
+  {
+   "code": "8141",
+   "title": "Scaffolders, stagers and riggers"
+  },
+  {
+   "code": "8142",
+   "title": "Road construction operatives"
+  },
+  {
+   "code": "8143",
+   "title": "Rail construction and maintenance operatives"
+  },
+  {
+   "code": "8149",
+   "title": "Construction operatives n.e.c."
+  },
+  {
+   "code": "8211",
+   "title": "Large goods vehicle drivers"
+  },
+  {
+   "code": "8212",
+   "title": "Van drivers"
+  },
+  {
+   "code": "8213",
+   "title": "Bus and coach drivers"
+  },
+  {
+   "code": "8214",
+   "title": "Taxi and cab drivers and chauffeurs"
+  },
+  {
+   "code": "8215",
+   "title": "Driving instructors"
+  },
+  {
+   "code": "8221",
+   "title": "Crane drivers"
+  },
+  {
+   "code": "8222",
+   "title": "Fork-lift truck drivers"
+  },
+  {
+   "code": "8223",
+   "title": "Agricultural machinery drivers"
+  },
+  {
+   "code": "8229",
+   "title": "Mobile machine drivers and operatives n.e.c."
+  },
+  {
+   "code": "8231",
+   "title": "Train and tram drivers"
+  },
+  {
+   "code": "8232",
+   "title": "Marine and waterways transport operatives"
+  },
+  {
+   "code": "8233",
+   "title": "Air transport operatives"
+  },
+  {
+   "code": "8234",
+   "title": "Rail transport operatives"
+  },
+  {
+   "code": "8239",
+   "title": "Other drivers and transport operatives n.e.c."
+  },
+  {
+   "code": "9111",
+   "title": "Farm workers"
+  },
+  {
+   "code": "9112",
+   "title": "Forestry workers"
+  },
+  {
+   "code": "9119",
+   "title": "Fishing and other elementary agriculture occupations n.e.c."
+  },
+  {
+   "code": "9120",
+   "title": "Elementary construction occupations"
+  },
+  {
+   "code": "9132",
+   "title": "Industrial cleaning process occupations"
+  },
+  {
+   "code": "9134",
+   "title": "Packers, bottlers, canners and fillers"
+  },
+  {
+   "code": "9139",
+   "title": "Elementary process plant occupations n.e.c."
+  },
+  {
+   "code": "9211",
+   "title": "Postal workers, mail sorters, messengers and couriers"
+  },
+  {
+   "code": "9219",
+   "title": "Elementary administration occupations n.e.c."
+  },
+  {
+   "code": "9231",
+   "title": "Window cleaners"
+  },
+  {
+   "code": "9232",
+   "title": "Street cleaners"
+  },
+  {
+   "code": "9233",
+   "title": "Cleaners and domestics"
+  },
+  {
+   "code": "9234",
+   "title": "Launderers, dry cleaners and pressers"
+  },
+  {
+   "code": "9235",
+   "title": "Refuse and salvage occupations"
+  },
+  {
+   "code": "9236",
+   "title": "Vehicle valeters and cleaners"
+  },
+  {
+   "code": "9239",
+   "title": "Elementary cleaning occupations n.e.c."
+  },
+  {
+   "code": "9241",
+   "title": "Security guards and related occupations"
+  },
+  {
+   "code": "9242",
+   "title": "Parking and civil enforcement occupations"
+  },
+  {
+   "code": "9244",
+   "title": "School midday and crossing patrol occupations"
+  },
+  {
+   "code": "9249",
+   "title": "Elementary security occupations n.e.c."
+  },
+  {
+   "code": "9251",
+   "title": "Shelf fillers"
+  },
+  {
+   "code": "9259",
+   "title": "Elementary sales occupations n.e.c."
+  },
+  {
+   "code": "9260",
+   "title": "Elementary storage occupations"
+  },
+  {
+   "code": "9271",
+   "title": "Hospital porters"
+  },
+  {
+   "code": "9272",
+   "title": "Kitchen and catering assistants"
+  },
+  {
+   "code": "9273",
+   "title": "Waiters and waitresses"
+  },
+  {
+   "code": "9274",
+   "title": "Bar staff"
+  },
+  {
+   "code": "9275",
+   "title": "Leisure and theme park attendants"
+  },
+  {
+   "code": "9279",
+   "title": "Other elementary services occupations n.e.c."
+  }
+ ]
+}

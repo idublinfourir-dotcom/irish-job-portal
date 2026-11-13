@@ -1,5 +1,6 @@
 // The eligibility checker (#94, #223): a pure function from a person's or an offer's facts to "qualifies or not, which minimum, why".
 // Built on the same numbers as the badges: the rules snapshot (#229), its minimums and its Critical Skills / Ineligible lists. The caller passes it.
+import { isSoc2010 } from "./soc";
 import type { Minimums } from "./snapshot";
 import { minimumForHours, standingLine } from "./thresholds";
 
@@ -53,7 +54,7 @@ export function checkEligibility(
   const done = (qualifies: boolean, reason: EligibilityReason, minimum: number | null, why: string): EligibilityResult =>
     ({ qualifies, reason, minimum, why, standingLine: standingLine(m.checkedOn), rulesCheckedOn: m.checkedOn });
 
-  if (!/^[0-9]{4}$/.test(code)) return done(false, "unknown_code", null, "That is not a four-digit occupation code.");
+  if (!isSoc2010(code)) return done(false, "unknown_code", null, "That is not an official SOC 2010 occupation code.");
   // ponytail: 2229 is on both lists (orthoptists listed, other therapists ineligible); like listAnswer in admin-queue, the Critical Skills entry wins.
   const onList = lists.some((e) => e.code === code && e.list === "critical-skills");
   if (!onList && lists.some((e) => e.code === code && e.list === "ineligible"))

@@ -154,6 +154,15 @@ describe("POST /api/portal/jobs", () => {
     const h = await post(c.owner.cookie, { ...good, salaryLow: 41954, salaryHigh: null, weeklyHours: 40 });
     expect((await job(h.json!.jobId)).weekly_hours).toBe(40);
   });
+  it("refuses a four-digit code that is not SOC 2010, with nothing written", async () => {
+    const c = await company();
+    for (const occupationCode of ["9999", "0000", "1110", "2136; drop table job", 2136]) {
+      const r = await post(c.owner.cookie, { ...good, occupationCode });
+      expect([r.status, r.json?.code], String(occupationCode)).toEqual([400, "BAD_REQUEST"]);
+    }
+    expect(await jobCount(c.org)).toBe(0);
+    expect((await post(c.owner.cookie, { ...good, occupationCode: "3545", salaryLow: 68911, salaryHigh: null })).status).toBe(200); // a SOC code on neither list still posts
+  });
   it("scam wording and an unverified or restricted company: review, not live (#44)", async () => {
     const c = await company();
     const s = await post(c.owner.cookie, { ...good, description: desc + " Candidates must pay a registration fee before the interview." });

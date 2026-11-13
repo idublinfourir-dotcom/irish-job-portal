@@ -1,12 +1,16 @@
 // Integration: pay floors from the employer portal (step 9, part 12b), end to end on the test database through the real /api/portal/pay-floors handlers,
 // connected as app_portal, with real portal sessions (sign-up, confirm and sign-in through the real auth route). No test calls the real network. Fake people only.
 // Companies, members and the big-company flag are written as postgres (every CHECK, foreign key and trigger still fires).
+import { SOC2010_CODES } from "@portal/rules";
+import lists from "../../fetcher/data/occupation-lists.json";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { portalAnswers, seedSignupTerms } from "./better-auth-helper";
 import { fixtures } from "./fixtures";
 import { confirmedApproval, makeBig } from "./pay-floors-helpers";
+
+const SOC = [...SOC2010_CODES].filter((c) => !lists.some((e) => e.code === c)); // real codes on neither list, for the loops
 
 // Statements counted on every pg.Client.query call, measured on 12 November 2026 (median of 9 calls, warm): a sign = requirePortal 3, rate count 1, current wording 1,
 // insert 1 = 6 (the triggers run inside the insert); a list = requirePortal 3, wording 1, floors 1 = 5; a withdraw = requirePortal 3, rate count 1, update 1 = 5.
@@ -131,7 +135,7 @@ describe("GET", () => {
   it("shows the wording and the company's own floors to every active member, never another company's", async () => {
     const c = await company(), other = await company();
     expect((await sign(c.owner.cookie)).status).toBe(200);
-    expect((await sign(other.owner.cookie, { roleFamily: "2230" })).status).toBe(200);
+    expect((await sign(other.owner.cookie, { roleFamily: "3414" })).status).toBe(200);
     for (const m of [c.owner, c.signer, c.poster, c.recruiter, c.viewer]) {
       const r = await list(m.cookie);
       expect(r.status).toBe(200);
@@ -139,7 +143,7 @@ describe("GET", () => {
       expect(r.json!.floors.map((f: { roleFamily: string }) => f.roleFamily)).toEqual(["2134"]);
       expect(Object.keys(r.json!.floors[0]).sort()).toEqual(["endedAt", "floorEur", "id", "roleFamily", "signedAt", "signerName", "signerTitle", "status", "validUntil"]);
     }
-    expect((await list(other.viewer.cookie)).json!.floors.map((f: { roleFamily: string }) => f.roleFamily)).toEqual(["2230"]);
+    expect((await list(other.viewer.cookie)).json!.floors.map((f: { roleFamily: string }) => f.roleFamily)).toEqual(["3414"]);
   });
 });
 
@@ -155,11 +159,11 @@ describe("POST sign", () => {
   });
   it("lets a poster with the signer switch sign, and refuses a poster without it, a recruiter without it and a viewer", async () => {
     const c = await company();
-    const ok = await sign(c.signer.cookie, { roleFamily: "3434" });
+    const ok = await sign(c.signer.cookie, { roleFamily: "3412" });
     expect(ok.status, ok.text).toBe(200);
     expect((await floors(c.org))[0]).toMatchObject({ signer_title: "Poster", signer_membership_id: String(c.signer.mem) });
     for (const who of [c.poster, c.recruiter, c.viewer]) {
-      const r = await sign(who.cookie, { roleFamily: "3435" });
+      const r = await sign(who.cookie, { roleFamily: "3413" });
       expect([r.status, r.json]).toEqual([403, { code: "NOT_SIGNER" }]);
     }
     expect((await floors(c.org)).length).toBe(1);
@@ -195,11 +199,11 @@ describe("POST sign", () => {
   });
   it("refuses a second pending floor for the same family, but not a different family", async () => {
     const c = await company();
-    expect((await sign(c.owner.cookie, { roleFamily: "3434" })).status).toBe(200);
-    const r = await sign(c.owner.cookie, { roleFamily: "3434" });
+    expect((await sign(c.owner.cookie, { roleFamily: "3412" })).status).toBe(200);
+    const r = await sign(c.owner.cookie, { roleFamily: "3412" });
     expect([r.status, r.json]).toEqual([409, { code: "ALREADY_PENDING" }]);
-    expect((await sign(c.owner.cookie, { roleFamily: "3435" })).status).toBe(200);
-    expect((await floors(c.org)).map((f) => f.role_family)).toEqual(["3434", "3435"]);
+    expect((await sign(c.owner.cookie, { roleFamily: "3413" })).status).toBe(200);
+    expect((await floors(c.org)).map((f) => f.role_family)).toEqual(["3412", "3413"]);
   });
   it("refuses a family that is not a four-digit code or is on the Ineligible list (#231)", async () => {
     const c = await company();
@@ -250,7 +254,7 @@ describe("POST sign", () => {
   });
   it("refuses unknown fields and bad values, and nothing is written", async () => {
     const c = await company();
-    const base = { action: "sign", roleFamily: "3434", floorEur: 45000, consentTextId: textId };
+    const base = { action: "sign", roleFamily: "3412", floorEur: 45000, consentTextId: textId };
     const bad: object[] = [
       { ...base, organisationId: 1 }, { ...base, status: "active" }, { ...base, signerMembershipId: 1 }, { ...base, approvalRequestId: 1 }, { ...base, validUntil: "2099-01-01" },
       { ...base, floorEur: 0 }, { ...base, floorEur: -5 }, { ...base, floorEur: 1.5 }, { ...base, floorEur: "45000" }, { ...base, floorEur: 1_000_001 }, { ...base, floorEur: null },
@@ -266,7 +270,7 @@ describe("POST sign", () => {
   it("limits one login to 10 calls in 10 minutes", async () => {
     const c = await company();
     let last = 0;
-    for (let i = 0; i < 11; i++) last = (await sign(c.owner.cookie, { roleFamily: String(4000 + i) })).status;
+    for (let i = 0; i < 11; i++) last = (await sign(c.owner.cookie, { roleFamily: SOC[i] })).status;
     expect(last).toBe(429);
     expect((await floors(c.org)).length).toBe(10);
   });
@@ -348,7 +352,7 @@ describe("performance", () => {
   it("sign, list and withdraw stay inside their statement and time budgets", async () => {
     const c = await company();
     let i = 0;
-    const [r, signN] = await counted(() => sign(c.owner.cookie, { roleFamily: String(5000 + i++) }));
+    const [r, signN] = await counted(() => sign(c.owner.cookie, { roleFamily: SOC[20 + i++] }));
     expect(r.status).toBe(200);
     const [, listN] = await counted(() => list(c.owner.cookie));
     const id = Number((await floors(c.org))[0].id);
@@ -358,7 +362,7 @@ describe("performance", () => {
     expect(signN).toBeLessThanOrEqual(BUDGET.sign);
     expect(listN).toBeLessThanOrEqual(BUDGET.list);
     expect(withdrawN).toBeLessThanOrEqual(BUDGET.withdraw);
-    expect(await median(() => sign(c.owner.cookie, { roleFamily: String(6000 + i++) }))).toBeLessThan(BUDGET.signMs);
+    expect(await median(() => sign(c.owner.cookie, { roleFamily: SOC[40 + i++] }))).toBeLessThan(BUDGET.signMs);
     expect(await median(() => list(c.owner.cookie))).toBeLessThan(BUDGET.listMs);
     const ids = (await floors(c.org)).filter((f) => f.status === "pending_check").map((f) => Number(f.id));
     let k = 0;

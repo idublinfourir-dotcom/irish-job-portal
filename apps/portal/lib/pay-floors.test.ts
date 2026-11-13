@@ -25,7 +25,8 @@ describe("checkFloor", () => {
   it("refuses a family on the Ineligible list, and lets one on both lists or on neither through (#231)", () => {
     expect(checkFloor({ ...sign, roleFamily: "1225" })).toBeNull(); // Ineligible only
     expect(checkFloor({ ...sign, roleFamily: "2229" })).not.toBeNull(); // on both lists: the Critical Skills entry stands (listAnswer)
-    expect(checkFloor({ ...sign, roleFamily: "4000" })).not.toBeNull(); // on neither
+    expect(checkFloor({ ...sign, roleFamily: "3111" })).not.toBeNull(); // on neither
+    for (const f of ["9999", "0000", "1110"]) expect(checkFloor({ ...sign, roleFamily: f }), f).toBeNull(); // four digits, not SOC 2010
   });
   it("refuses bad amounts, families and ids", () => {
     for (const eur of [0, -1, 1.5, "45000", null, Number.NaN, Infinity, 1_000_001, 1e21, [45000]]) expect(checkFloor({ ...sign, floorEur: eur }), String(eur)).toBeNull();

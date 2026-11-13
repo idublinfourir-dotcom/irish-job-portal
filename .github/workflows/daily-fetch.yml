@@ -2,7 +2,7 @@ name: Daily fetch
 
 # Fetches every board in packages/fetcher/data/boards.json into the live database as app_fetcher (step 6 slice 3).
 # Secrets (set by the engineer): FETCHER_DATABASE_URL (app_fetcher's Supabase session pooler string), FETCHER_MODEL_KEY (OpenRouter),
-# ADMIN_DATABASE_URL (app_admin's string, used only by the last step).
+# ADMIN_DATABASE_URL (app_admin's string, given only to the admin steps after the fetch, one step at a time).
 on:
   schedule:
     - cron: "17 5 * * *" # daily, 05:17 UTC; GitHub may start it late
@@ -96,6 +96,15 @@ jobs:
         run: |
           export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
           node packages/db/src/rules-run-cli.ts
+      # Job alerts (#236): one email row per candidate with new jobs since their alert last ran, sent later by the outbox command. Same admin
+      # login, given to this step only; it runs every day after the jobs are fetched, closed and checked, and before retention.
+      - name: Queue job alerts
+        if: ${{ !cancelled() }}
+        env:
+          ALERTS_ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
+        run: |
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          node packages/db/src/alerts-run-cli.ts
       # The retention periods in `setting` (placeholders until the solicitor's, #99): one rule per database call, looped until nothing is due.
       # Same admin login, given to this step only; last, and it runs every day. There is no file storage yet: if a call returns stored file
       # keys the step prints them and goes red, and the files are deleted by hand.

@@ -39,10 +39,10 @@ describe("checkEligibility outcomes", () => {
     ["listed, no degree, below 68,911", { annualPay: 60_000, relevantDegree: false }, false, "degree_needed", 68_911],
     ["listed, no degree, exactly 68,911", { annualPay: 68_911, relevantDegree: false }, true, "non_list_route", 68_911],
     ["listed, degree, high pay still names its own route", { annualPay: 90_000 }, true, "listed_degree", 40_904],
-    ["not on a list, exactly 68,911", { occupationCode: "3333", annualPay: 68_911, relevantDegree: false }, true, "non_list_route", 68_911],
-    ["not on a list, one euro below", { occupationCode: "3333", annualPay: 68_910, relevantDegree: false }, false, "below_minimum", 68_911],
-    ["not on a list, a degree does not lower the minimum", { occupationCode: "3333", annualPay: 50_000 }, false, "below_minimum", 68_911],
-    ["not on a list, 40 hours needs more", { occupationCode: "3333", annualPay: 68_911, weeklyHours: 40 }, false, "below_minimum", 70_678.4],
+    ["not on a list, exactly 68,911", { occupationCode: "3111", annualPay: 68_911, relevantDegree: false }, true, "non_list_route", 68_911],
+    ["not on a list, one euro below", { occupationCode: "3111", annualPay: 68_910, relevantDegree: false }, false, "below_minimum", 68_911],
+    ["not on a list, a degree does not lower the minimum", { occupationCode: "3111", annualPay: 50_000 }, false, "below_minimum", 68_911],
+    ["not on a list, 40 hours needs more", { occupationCode: "3111", annualPay: 68_911, weeklyHours: 40 }, false, "below_minimum", 70_678.4],
     ["ineligible, any pay", { occupationCode: "1225", annualPay: 500_000 }, false, "ineligible", null],
     ["both lists: the Critical Skills entry wins", { occupationCode: "2229", annualPay: 40_904 }, true, "listed_degree", 40_904],
     ["contract 23 months", { contractMonths: 23 }, false, "contract_too_short", null],
@@ -51,6 +51,9 @@ describe("checkEligibility outcomes", () => {
     ["short contract beats high pay", { contractMonths: 6, annualPay: 200_000 }, false, "contract_too_short", null],
     ["ineligible beats a short contract", { occupationCode: "1225", contractMonths: 6 }, false, "ineligible", null],
     ["code not four digits", { occupationCode: "21" }, false, "unknown_code", null],
+    ["four digits but not SOC 2010", { occupationCode: "9999" }, false, "unknown_code", null],
+    ["0000", { occupationCode: "0000" }, false, "unknown_code", null],
+    ["1110, just outside a real range", { occupationCode: "1110" }, false, "unknown_code", null],
     ["code with letters", { occupationCode: "21a6" }, false, "unknown_code", null],
     ["code with SQL", { occupationCode: "1; drop table job" }, false, "unknown_code", null],
   ];
@@ -68,11 +71,11 @@ describe("checkEligibility outcomes", () => {
     expect(run({ relevantDegree: false, annualPay: 70_000 }).why).toMatch(/necessary level of experience/);
   });
   it("with the 68,911 route closed (#225), a non-list role and a degree-less listed role cannot qualify", () => {
-    expect(run({ occupationCode: "3333", annualPay: 200_000 }, { nonListRoute: false })).toMatchObject({ qualifies: false, reason: "non_list_route_blocked" });
+    expect(run({ occupationCode: "3111", annualPay: 200_000 }, { nonListRoute: false })).toMatchObject({ qualifies: false, reason: "non_list_route_blocked" });
     expect(run({ relevantDegree: false, annualPay: 200_000 }, { nonListRoute: false })).toMatchObject({ qualifies: false, reason: "degree_needed" });
     expect(run({ annualPay: 40_904 }, { nonListRoute: false }).qualifies).toBe(true);
   });
-  it("the route is open as shipped", () => expect(run({ occupationCode: "3333", annualPay: 70_000 }).qualifies).toBe(true));
+  it("the route is open as shipped", () => expect(run({ occupationCode: "3111", annualPay: 70_000 }).qualifies).toBe(true));
   it("the date is 12 November 2026", () => expect(RULES_CHECKED_ON).toBe("2026-11-12"));
 });
 

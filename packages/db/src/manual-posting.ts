@@ -5,7 +5,7 @@
 // This file does not import from apps/portal: `manualVerdict` is the small check of apps/portal/lib/jobs.ts (`rulesFor`), written again on the same
 // rules in force (#229, `getRules`), with the same pay rule (#107, #150, #225). Every write sets the acting staff id for the transaction and checks the role in the database.
 import type pg from "pg";
-import { assess, chainRules, minimumForHours, type RulesSnapshot } from "@portal/rules";
+import { assess, chainRules, isSoc2010, minimumForHours, type RulesSnapshot } from "@portal/rules";
 import { QueueRefused, listAnswer } from "./admin-queue";
 import { companyRefusal } from "./merges";
 import { getRules } from "./rules-data";
@@ -62,7 +62,7 @@ export function checkManualPost(b: unknown): ManualPost {
   const description = typeof o.description === "string" ? o.description.trim() : "";
   if (description.length < 20 || description.length > 10_000 || BAD_TEXT.test(description)) bad("description");
   const county = COUNTIES.find((c) => c === o.county) ?? bad("county");
-  const occupationCode = typeof o.occupationCode === "string" && /^[1-9][0-9]{3}$/.test(o.occupationCode) ? o.occupationCode : bad("occupation_code");
+  const occupationCode = isSoc2010(o.occupationCode) ? o.occupationCode : bad("occupation_code");
   const contractMonths = opt(o.contractMonths, (v) => int(v, 1, 600));
   if (contractMonths === undefined) bad("contract_months");
   const salaryLow = opt(o.salaryLow, (v) => int(v, 1, MAX_PAY)), salaryHigh = opt(o.salaryHigh, (v) => int(v, 1, MAX_PAY));
