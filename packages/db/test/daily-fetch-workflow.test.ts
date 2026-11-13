@@ -8,15 +8,18 @@ const step = (name: string) => yml.split(/^ {6}- /m).find((s) => s.startsWith(`n
 it("has the first slot and the backup slot", () => {
   expect([...yml.matchAll(/^\s*- cron: "([^"]+)"/gm)].map((m) => m[1])).toEqual(["17 5 * * *", "2 6 * * *"]);
 });
-it("the guard runs for scheduled runs only, as the fetcher login, and only reads", () => {
+it("the guard runs for scheduled runs and for runs started with guarded=true (the fetch watch), as the fetcher login, and only reads", () => {
   const g = step("Already fetched today?");
   expect(g).toMatch(/id: guard/);
-  expect(g).toMatch(/if: \$\{\{ github\.event_name == 'schedule' \}\}/);
+  expect(g).toMatch(/if: \$\{\{ github\.event_name == 'schedule' \|\| inputs\.guarded \}\}/);
   expect(g).toMatch(/FETCHER_DATABASE_URL: \$\{\{ secrets\.FETCHER_DATABASE_URL \}\}/);
   expect(g).toMatch(/node packages\/db\/src\/fetch-guard-cli\.ts/);
   expect(g).not.toMatch(/continue-on-error/); // a guard failure must fail the run
   expect(yml.indexOf("Already fetched today?")).toBeGreaterThan(yml.indexOf("run: npm ci"));
   expect(yml.indexOf("Already fetched today?")).toBeLessThan(yml.indexOf("name: Fetch\n"));
+});
+it("the guarded input exists, is a boolean, and is off by default so a run started by a person always fetches", () => {
+  expect(yml).toMatch(/workflow_dispatch:\n {4}inputs:\n(?: {6}#.*\n)? {6}guarded:\n {8}description: .*\n {8}type: boolean\n {8}default: false/);
 });
 it("the Fetch and Refresh steps both wait for the guard", () => {
   expect(step("Fetch")).toMatch(/if: \$\{\{ steps\.guard\.outputs\.skip != 'true' \}\}/);
@@ -40,5 +43,13 @@ it("applies a new minimum last, after the expiry step, every day, with the admin
   expect(s).toMatch(/if: \$\{\{ !cancelled\(\) \}\}/);
   expect(s).toMatch(/RULES_ADMIN_DATABASE_URL: \$\{\{ secrets\.ADMIN_DATABASE_URL \}\}/);
   expect(yml.indexOf("name: Apply a new minimum")).toBeGreaterThan(yml.indexOf("name: Close expired employer jobs"));
-  expect(yml.trimEnd().endsWith("node packages/db/src/rules-run-cli.ts")).toBe(true);
+  expect(yml.indexOf("name: Apply the retention rules")).toBeGreaterThan(yml.indexOf("name: Apply a new minimum"));
+});
+it("applies the retention rules last, every day, with the admin login only in that step", () => {
+  const s = step("Apply the retention rules");
+  expect(s).toMatch(/if: \$\{\{ !cancelled\(\) \}\}/);
+  expect(s).toMatch(/RETENTION_ADMIN_DATABASE_URL: \$\{\{ secrets\.ADMIN_DATABASE_URL \}\}/);
+  expect(s).not.toMatch(/FETCHER_/);
+  expect(yml.trimEnd().endsWith("node packages/db/src/retention-cli.ts")).toBe(true);
+  expect(yml.match(/secrets\.ADMIN_DATABASE_URL/g)).toHaveLength(4); // refresh, expiry, minimum, retention: one step each
 });

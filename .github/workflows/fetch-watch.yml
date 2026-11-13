@@ -1,0 +1,40 @@
+name: Fetch watch
+
+# Late-day check that today's daily fetch worked (step 15a). A failed run already emails the engineer; this catches a run that never started.
+# If no fetch worked today (UTC) it starts a guarded "Daily fetch" run (unless one is already queued or running) and ends RED, so GitHub sends its email.
+# Secret: FETCHER_DATABASE_URL only (app_fetcher may select from fetch_run). The job's own token starts the run (actions: write).
+on:
+  schedule:
+    - cron: "11 12 * * *" # 12:11 UTC; GitHub may start it late
+    - cron: "41 17 * * *" # 17:41 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: fetch-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Check today's fetch
+        env:
+          FETCHER_DATABASE_URL: ${{ secrets.FETCHER_DATABASE_URL }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          node packages/db/src/fetch-watch-cli.ts

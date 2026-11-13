@@ -10,6 +10,12 @@ on:
     # one do nothing when the first already fetched today (a second full run would spend the model's free daily requests and hit 429).
     - cron: "2 6 * * *"
   workflow_dispatch:
+    inputs:
+      # Set by the fetch watch (fetch-watch.yml) so a run it starts goes through the guard like a scheduled one. A run started by a person leaves it off and always fetches.
+      guarded:
+        description: "Skip when a fetch already worked today"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -33,11 +39,11 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      # Scheduled runs only (a run started by hand always fetches). Skips the next two steps when a fetch already worked today (UTC).
+      # Scheduled runs and runs the fetch watch started (a run started by hand always fetches). Skips the next two steps when a fetch already worked today (UTC).
       # If the guard cannot tell (database unreachable) it fails, so the run goes red and nothing is fetched.
       - name: Already fetched today?
         id: guard
-        if: ${{ github.event_name == 'schedule' }}
+        if: ${{ github.event_name == 'schedule' || inputs.guarded }}
         env:
           FETCHER_DATABASE_URL: ${{ secrets.FETCHER_DATABASE_URL }}
         run: |
@@ -90,3 +96,13 @@ jobs:
         run: |
           export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
           node packages/db/src/rules-run-cli.ts
+      # The retention periods in `setting` (placeholders until the solicitor's, #99): one rule per database call, looped until nothing is due.
+      # Same admin login, given to this step only; last, and it runs every day. There is no file storage yet: if a call returns stored file
+      # keys the step prints them and goes red, and the files are deleted by hand.
+      - name: Apply the retention rules
+        if: ${{ !cancelled() }}
+        env:
+          RETENTION_ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
+        run: |
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          node packages/db/src/retention-cli.ts
