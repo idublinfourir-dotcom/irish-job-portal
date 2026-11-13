@@ -122,6 +122,13 @@ describe("profile", () => {
     expect((await call(R.profile, "GET", null, b)).json.profile).toMatchObject({ fullName: "Other Person", currentStamp: "1G" });
     expect(await one("select count(*)::int c from candidate_profile where candidate_user_id = any($1)", [[a.id, b.id]])).toEqual([{ c: 2 }]);
   });
+  it("PUT accepts any SOC 2010 code, not only the badge lists, and refuses a four-digit code outside it", async () => {
+    const a = await login();
+    expect((await call(R.profile, "PUT", { ...profile, occupationCode: "3111" }, a)).status).toBe(200); // on neither badge list
+    expect((await call(R.profile, "GET", null, a)).json.profile).toMatchObject({ occupationCode: "3111" });
+    for (const occupationCode of ["9999", "0000", "1110"]) expect(await call(R.profile, "PUT", { ...profile, occupationCode }, a), occupationCode).toMatchObject({ status: 400, code: "BAD_REQUEST" });
+    expect((await call(R.profile, "GET", null, a)).json.profile).toMatchObject({ occupationCode: "3111" }); // nothing replaced
+  });
   it("a body that names another candidate or visibility is refused and nothing is stored", async () => {
     const a = await login(), b = await login();
     for (const extra of [{ candidateUserId: b.id }, { candidate_user_id: b.id }, { visibleToEmployers: true }, { visible_to_employers: true }, { id: 1 }])

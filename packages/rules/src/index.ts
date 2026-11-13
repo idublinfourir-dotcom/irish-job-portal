@@ -7,3 +7,4 @@ export * from "./thresholds";
 export * from "./eligibility";
 export * from "./snapshot";
 export * from "./current";
+export * from "./soc";

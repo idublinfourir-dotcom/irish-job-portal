@@ -1,6 +1,7 @@
 // Integration: the content editor (step 13d, #234 D3) through the real /api/content handler, real staff sessions, the real test database as app_admin.
 // A content editor writes drafts, publishes help pages and updates and withdraws any page; a rules-data editor publishes guides and occupation texts;
 // nobody else touches content. The database still wants a source and a checked-on date to publish anything but help. No network. Fake people only.
+import { SOC2010_CODES } from "@portal/rules";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CONTENT_LIST } from "../src/content-admin";
@@ -22,13 +23,14 @@ const ok = (r: ReturnType<typeof call>) => h.ok(r);
 const no = (r: ReturnType<typeof call>, status: number, error: string) => h.no(r, status, error);
 const TODAY = new Date().toISOString().slice(0, 10);
 let n = 0;
+const SOC = [...SOC2010_CODES];
 const slug = (p = "page") => `${p}-${n++}`;
 const draft = (o: object = {}) => ({ action: "create", kind: "help", slug: slug(), title: "A fake title", body: "Fake body text.", ...o });
 const row = async (id: string) => (await su.query("select kind, slug, title, body, status, source_url, checked_on::text checked_on, published_at is not null as published, updated_by_staff_user_id by from content_page where id = $1", [id])).rows[0];
 const audits = (id: string) => su.query("select action, actor_staff_user_id a, after from audit_event where object_type = 'content_page' and object_id = $1 order by id", [id]).then((r) => r.rows);
 /** A page in the given state, made by a content editor (publishing as whoever the kind needs). */
 async function page(kind: string, state: "draft" | "published" | "withdrawn" = "draft") {
-  const id = (await ok(call("ce1", draft({ kind, slug: kind === "occupation" ? String(1000 + n++) : slug(kind), sourceUrl: "https://example.test/source", checkedOn: TODAY })))).id as string;
+  const id = (await ok(call("ce1", draft({ kind, slug: kind === "occupation" ? SOC[n++] : slug(kind), sourceUrl: "https://example.test/source", checkedOn: TODAY })))).id as string;
   if (state !== "draft") {
     await ok(act(kind === "guide" || kind === "occupation" ? "re1" : "ce1", "publish", { id }));
     if (state === "withdrawn") await ok(act("ce1", "withdraw", { id }));
@@ -97,9 +99,9 @@ describe("drafts", () => {
       expect((await audits(r.id)).map((a) => [a.action, a.a, a.after])).toEqual([["content.create", h.staff.ce1, { kind, slug: s }]]);
     }
   });
-  it("applies the slug rules: lower-case words with hyphens, four digits for an occupation, one per kind", async () => {
+  it("applies the slug rules: lower-case words with hyphens, a SOC 2010 code for an occupation, one per kind", async () => {
     for (const s of ["Bad", "has space", "-lead", "a/b", "a_b", "a".repeat(101), "", "ü", "a\nb"]) await no(call("ce1", draft({ slug: s })), 400, "bad_slug");
-    for (const s of ["213", "21345", "abcd", "2134 ", "-123"]) await no(call("ce1", draft({ kind: "occupation", slug: s })), 400, "bad_slug");
+    for (const s of ["213", "21345", "abcd", "2134 ", "-123", "9999", "0000", "1110"]) await no(call("ce1", draft({ kind: "occupation", slug: s })), 400, "bad_slug");
     const a = await ok(call("ce1", draft({ slug: "same-slug" })));
     expect(a.id).toMatch(/^\d+$/);
     await no(call("ce1", draft({ slug: "same-slug" })), 409, "slug_taken");
@@ -169,7 +171,7 @@ describe("publish and withdraw", () => {
   });
   it("the database still wants a source and a checked-on date for a guide, an update or an occupation text, and not for help", async () => {
     for (const kind of ["guide", "update", "occupation"]) {
-      const id = (await ok(call("ce1", draft({ kind, slug: kind === "occupation" ? String(1000 + n++) : slug(kind) })))).id;
+      const id = (await ok(call("ce1", draft({ kind, slug: kind === "occupation" ? SOC[n++] : slug(kind) })))).id;
       const who = kind === "update" ? "ce1" : "re1";
       await no(act(who, "publish", { id }), 409, "needs_source_and_checked_on");
       await ok(act("ce1", "edit", { id, sourceUrl: "https://example.test/s" }));

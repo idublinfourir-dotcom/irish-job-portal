@@ -29,7 +29,7 @@ describe("checkManualPost", () => {
     const cases: [object, string][] = [
       [{ organisationId: 7 }, "bad_organisation_id"], [{ organisationId: "0" }, "bad_organisation_id"], [{ title: "a\nb" }, "bad_title"], [{ title: "​ab" }, "bad_title"],
       [{ title: "x".repeat(201) }, "bad_title"], [{ description: "short" }, "bad_description"], [{ description: "x".repeat(10_001) }, "bad_description"],
-      [{ description: desc + "\u0007" }, "bad_description"], [{ county: "dublin" }, "bad_county"], [{ occupationCode: "02136" }, "bad_occupation_code"],
+      [{ description: desc + "\u0007" }, "bad_description"], [{ county: "dublin" }, "bad_county"], [{ occupationCode: "02136" }, "bad_occupation_code"], [{ occupationCode: "9999" }, "bad_occupation_code"], [{ occupationCode: "1110" }, "bad_occupation_code"], [{ occupationCode: "0000" }, "bad_occupation_code"],
       [{ contractMonths: 0 }, "bad_contract_months"], [{ contractMonths: 601 }, "bad_contract_months"], [{ contractMonths: 24.5 }, "bad_contract_months"],
       [{ salaryLow: "5" }, "bad_salary"], [{ salaryLow: 0 }, "bad_salary"], [{ salaryHigh: 49999 }, "bad_salary"], [{ salaryLow: null, salaryHigh: null }, "bad_salary"],
       [{ payGrade: "" }, "bad_pay_grade"], [{ healthInsuranceEur: 50_001 }, "bad_health_insurance"], [{ weeklyHours: 39.5 }, "bad_weekly_hours"],

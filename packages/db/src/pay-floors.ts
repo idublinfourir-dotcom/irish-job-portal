@@ -3,6 +3,7 @@
 // proposer) confirms it and the floor becomes active; either may reject it. The database stays the guard (pay_floor_insert, signer_check, pay_floor_guard,
 // approval_check, approval_request_guard); the checks here only give short refusal codes first. 0023 adds the four-digit family check and drops a withdrawn floor's queue item.
 import type pg from "pg";
+import { isSoc2010 } from "@portal/rules";
 import { QueueRefused } from "./admin-queue";
 import { decodeReviewCursor, REASON } from "./account-review";
 import { PAGE_SIZE, validId } from "./search";
@@ -23,9 +24,9 @@ export class FloorRefused extends Error {}
 export type FloorMember = { membershipId: number; organisationId: number; role: string };
 const TITLE: Record<string, string> = { account_owner: "Account owner", poster: "Poster", recruiter: "Recruiter" };
 
-/** The role family is a four-digit occupation code (#231, and pay_floor_role_family_check in 0023). Null for anything else; the portal route also refuses an Ineligible code. */
+/** The role family is a SOC 2010 occupation code (#231, and pay_floor_role_family_check in 0023). Null for anything else; the portal route also refuses an Ineligible code. */
 export function cleanFamily(s: unknown): string | null {
-  return typeof s === "string" && /^[0-9]{4}$/.test(s) ? s : null;
+  return isSoc2010(s) ? s : null;
 }
 
 const CURRENT_TEXT = "select id::text as id, version, body from consent_text where purpose = 'pay_floor' order by published_at desc, id desc limit 1";
