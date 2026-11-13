@@ -51,7 +51,7 @@ export const checkProfile = (occupations: ReadonlySet<string>) => (b: unknown): 
 };
 
 const COLUMNS = PROFILE(new Set()).map((f) => [f[0], f[1]] as const);
-const SELECT_PROFILE = COLUMNS.map(([k, c]) => (c === "degree_awarded_month" ? `to_char(${c}, 'YYYY-MM-DD') as "${k}"` : `${c} as "${k}"`)).join(", ");
+export const SELECT_PROFILE = COLUMNS.map(([k, c]) => (c === "degree_awarded_month" ? `to_char(${c}, 'YYYY-MM-DD') as "${k}"` : `${c} as "${k}"`)).join(", ");
 
 export async function getProfile(db: pg.Pool, userId: string) {
   const r = await db.query(`select ${SELECT_PROFILE} from candidate_profile where candidate_user_id = $1`, [userId]);
@@ -239,4 +239,38 @@ export async function deleteAccount(db: pg.Pool, userId: string) {
        from candidate_user u where u.id = $1 on conflict do nothing`, [userId]);
     return { ok: true };
   });
+}
+
+// ===== the data export (GDPR access and portability, 20d line 154) =====
+// Two statements: EXPORT_SQL (the tables app_candidate may read, and the audit row of this export) and private.candidate_export_extras (migration 0025: the
+// candidate's emails, their own actions and who accessed their data, which app_candidate cannot select). The extras run second, so this export is in "your actions".
+// Applications and contact requests are Launch B: the candidate role cannot create either at Launch A, so they are empty lists.
+export const exportFilename = (now: Date) => `my-data-${now.toISOString().slice(0, 10)}.json`;
+// Still truly missing: the candidate role may read neither table (select on id only). Named, not shown as empty lists, which would be untrue.
+const NOT_INCLUDED = ["contactFormMessages", "reportsYouMade"].map((section) => ({
+  section, reason: "not available in this file yet; ask for it through the contact form (topic: data request)",
+}));
+const list = (select: string, from: string, order: string) => `(select coalesce(jsonb_agg(to_jsonb(t) order by ${order}), '[]') from (select ${select} from ${from}) t)`;
+// Every statement part filters by $1, the signed-in candidate. Left out on purpose: password and token columns, unsubscribe tokens, dedupe keys, storage keys.
+export const EXPORT_SQL = `with logged as (
+  insert into audit_event(kind, actor_candidate_user_id, action, object_type, object_id, subject_candidate_user_id, source)
+  values ('data_access', $1, 'candidate.export', 'candidate_user', $1, $1, 'site') returning 1)
+select (select count(*) from logged) as logged, jsonb_build_object(
+  'account', (select jsonb_build_object('name', u.name, 'email', u.email, 'emailConfirmed', u.email_verified, 'createdAt', u.created_at, 'lastActiveAt', u.last_active_at,
+      'signInMethods', (select coalesce(jsonb_agg(distinct a.provider_id), '[]') from candidate_account a where a.user_id = u.id)) from candidate_user u where u.id = $1),
+  'profile', (select to_jsonb(t) from (select ${SELECT_PROFILE}, visible_to_employers as "visibleToEmployers", visible_fields as "visibleFields" from candidate_profile where candidate_user_id = $1) t),
+  'cv', ${list('c.file_name as "fileName", c.content_type as "contentType", c.size_bytes as "sizeBytes", c.uploaded_at as "uploadedAt"', "candidate_cv c where c.candidate_user_id = $1", '"uploadedAt"')},
+  'savedJobs', ${list('j.id::text as "jobId", j.title, j.employer_name as "employerName", s.created_at as "savedAt"', "saved_job s join job j on j.id = s.job_id where s.candidate_user_id = $1", '"savedAt" desc')},
+  'tracker', ${list('j.id::text as "jobId", j.title, j.employer_name as "employerName", t.route, t.origin, t.stage, t.updated_at as "updatedAt"', "tracker_entry t join job j on j.id = t.job_id where t.candidate_user_id = $1", '"updatedAt" desc')},
+  'didYouApply', ${list('k.id::text as "clickId", j.id::text as "jobId", j.title, j.employer_name as "employerName", k.clicked_at as "clickedAt", k.status, k.times_asked as "timesAsked", k.answered_at as "answeredAt"', "apply_click k join job j on j.id = k.job_id where k.candidate_user_id = $1", '"clickedAt" desc')},
+  'alerts', ${list('a.id::text as id, a.occupation_code as "occupationCode", a.sector, a.county, a.badge, a.salary_min as "salaryMin", a.search_text as "searchText", a.frequency, a.status, a.pause_reason as "pauseReason", a.created_at as "createdAt", a.last_sent_at as "lastSentAt"', "alert a where a.candidate_user_id = $1", "id::bigint")},
+  'consents', ${list('x.purpose, x.version as "textVersion", c.given_at as "givenAt", c.withdrawn_at as "withdrawnAt", c.details, o.display_name as "organisation"', "candidate_consent_record c join consent_text x on x.id = c.consent_text_id left join organisation o on o.id = c.organisation_id where c.candidate_user_id = $1", '"givenAt"')},
+  'notificationSettings', ${list("p.category, p.channel, p.enabled", "candidate_notification_preference p where p.candidate_user_id = $1", "category, channel")},
+  'notifications', ${list('n.category, n.template_key as "templateKey", n.params, n.created_at as "createdAt", n.read_at as "readAt"', "candidate_notification n where n.candidate_user_id = $1", '"createdAt" desc')},
+  'applications', '[]'::jsonb, 'contactRequests', '[]'::jsonb) as data`;
+
+export async function exportData(db: pg.Pool, userId: string) {
+  const r = await db.query(EXPORT_SQL, [userId]);
+  const x = await db.query("select private.candidate_export_extras($1) as extras", [userId]);
+  return { exportedAt: new Date().toISOString(), ...r.rows[0].data, ...x.rows[0].extras, notIncluded: NOT_INCLUDED };
 }
