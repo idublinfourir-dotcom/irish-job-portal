@@ -21,6 +21,26 @@ describe("createBrevoMail", () => {
     expect(String(url)).not.toContain(KEY);
     expect(init!.redirect).toBe("error");
   });
+  it("sends optional headers in the body's headers map, and no headers key when there are none", async () => {
+    const f = ok();
+    const send = mailWith(f as unknown as typeof fetch);
+    const h = { "List-Unsubscribe": "<https://x.example.ie/api/alerts/unsubscribe?token=abc&scope=all>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" };
+    await send("pat@example.com", "s", "t", h);
+    await send("pat@example.com", "s", "t");
+    await send("pat@example.com", "s", "t", {});
+    expect(JSON.parse(f.mock.calls[0]![1]!.body as string).headers).toEqual(h);
+    expect(JSON.parse(f.mock.calls[0]![1]!.body as string).textContent).toBe("t");
+    expect(JSON.parse(f.mock.calls[1]![1]!.body as string)).not.toHaveProperty("headers");
+    expect(JSON.parse(f.mock.calls[2]![1]!.body as string)).not.toHaveProperty("headers");
+    expect(f.mock.calls[0]![1]!.headers).not.toHaveProperty("List-Unsubscribe"); // the request's own headers are not touched
+  });
+  it("refuses a header name or value that could inject another header, before any request", async () => {
+    const f = ok();
+    const send = mailWith(f as unknown as typeof fetch);
+    for (const bad of [{ "X-A\r\nBcc": "v" }, { "X A": "v" }, { "": "v" }, { "X-A": "v\r\nBcc: x@y.com" }, { "X-A": "v\nBcc" }, { "1X": "v" }] as Record<string, string>[])
+      await expect(send("pat@example.com", "s", "t", bad), JSON.stringify(bad)).rejects.toThrow("header");
+    expect(f).not.toHaveBeenCalled();
+  });
   it("accepts 201 and 202", async () => {
     await expect(mailWith(ok(202) as unknown as typeof fetch)("pat@example.com", "s", "t")).resolves.toBeUndefined();
   });
