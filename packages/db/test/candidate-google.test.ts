@@ -9,8 +9,9 @@ import { createAuth } from "../../auth/src";
 import { answers, seedSignupTerms } from "./better-auth-helper";
 
 // Statements measured on 12 November 2026, counting every pg.Client.query call (begin and commit included). The callback that creates
-// an account (user, Google account, consent row, session): 17 for a new person (no password hashing, so far faster than email sign-up); a returning user: 12; joining an existing confirmed account: 14 (includes the one consent-row lookup). The sign-in start call is not counted. Raise only on purpose.
-const BUDGET = { newUser: 17, returning: 12, link: 14, newUserMs: 200 };
+// an account (user, Google account, consent row, session): 17 for a new person (no password hashing, so far faster than email sign-up); a returning user: 12; joining an existing confirmed account: 14 (includes the one consent-row lookup), 16 since 13 November 2026 (step 15: the password
+// account and the earlier sessions are deleted, review finding 3). The sign-in start call is not counted. Raise only on purpose.
+const BUDGET = { newUser: 17, returning: 12, link: 16, newUserMs: 200 };
 // Time measured three times on 12 November 2026: a new person 39 ms (budget 200, about 5 times).
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
@@ -338,9 +339,9 @@ describe("an existing candidate with the same email (no silent takeover)", () =>
     expect(r.statements, `joining sent ${r.statements} statements`).toBeLessThanOrEqual(BUDGET.link);
     expect((await sessionOf(r.callback.cookie))?.user.id).toBe(idBefore);
     expect([await users(e.email), await consents(e.email), await googleAccounts(e.email)]).toEqual([1, 1, 1]);
-    // the password still works and was not changed
+    // the password set before Google proved the address is gone (review finding 3; the full case is in "pre-hijack" below)
     const login = await call("sign-in/email", { email: e.email, password: e.password });
-    expect(login.status).toBe(200);
+    expect(login.status).toBe(401);
   });
   it("a confirmed account is not joined when Google says the email is unverified", async () => {
     const e = pw("confirmed");
@@ -366,6 +367,68 @@ describe("an existing candidate with the same email (no silent takeover)", () =>
       expect(r.callback.cookie, col).not.toMatch(/session_token=[^;]/);
       await su.query(`update candidate_user set ${col}=null where email=$1`, [p.email]);
     }
+  });
+});
+
+describe("pre-hijack: Google proves the address, so a password set before that proof goes (review finding 3)", () => {
+  const victim = { email: "fake.g.victim@example.test", password: "Fake-attacker-password-1", name: "Fake victim", ...answers };
+  const sessions = (email: string) => count("select 1 from candidate_session s join candidate_user u on u.id=s.user_id where u.email=$1", [email]);
+  const passwords = (email: string) => count("select 1 from candidate_account a join candidate_user u on u.id=a.user_id where u.email=$1 and a.provider_id='credential'", [email]);
+  it("the attacker's password stops working and every earlier session ends when the owner signs in with Google", async () => {
+    // someone else signs up with the owner's address and a password they chose
+    expect((await call("sign-up/email", victim)).status).toBe(200);
+    // the owner confirms by the link in the email, then the attacker signs in with their password
+    const link = new URL(mail().filter((m) => m.to === victim.email && m.kind === "verify").at(-1)!.link);
+    expect((await call(link.pathname.replace("/api/auth/candidate/", "") + link.search)).status).toBe(302);
+    const attacker = await call("sign-in/email", { email: victim.email, password: victim.password });
+    expect(attacker.status).toBe(200);
+    expect((await sessionOf(attacker.cookie))?.user.email).toBe(victim.email);
+    const id = (await su.query("select id from candidate_user where email=$1", [victim.email])).rows[0].id;
+    // the owner signs in with Google
+    const owner = await viaGoogle(person("victim", { email: victim.email }), { additionalData: undefined });
+    expect(owner.ok, owner.callback.location ?? "").toBe(true);
+    expect((await sessionOf(owner.callback.cookie))?.user.id).toBe(id);
+    expect(await sessionOf(attacker.cookie)).toBeNull();
+    expect(await sessions(victim.email)).toBe(1); // only the owner's new one
+    expect(await passwords(victim.email)).toBe(0);
+    expect((await call("sign-in/email", { email: victim.email, password: victim.password })).status).toBe(401);
+    expect([await users(victim.email), await consents(victim.email), await googleAccounts(victim.email)]).toEqual([1, 1, 1]);
+  });
+  it("the owner can set a password again by reset, and it signs in", async () => {
+    expect((await call("request-password-reset", { email: victim.email, redirectTo: `${BASE}/reset` })).status).toBe(200);
+    const token = new URL(mail().filter((m) => m.to === victim.email && m.kind === "reset").at(-1)!.link).pathname.split("/").at(-1)!;
+    expect((await call("reset-password", { newPassword: "Fake-owner-password-2", token })).status).toBe(200);
+    expect(await passwords(victim.email)).toBe(1);
+    expect((await call("sign-in/email", { email: victim.email, password: "Fake-owner-password-2" })).status).toBe(200);
+    // and a later Google sign-in (the link already exists) leaves the owner's own password alone
+    expect((await viaGoogle(person("victim", { email: victim.email }), { additionalData: undefined })).ok).toBe(true);
+    expect(await passwords(victim.email)).toBe(1);
+  });
+  it("the same on an id-token sign-in (/sign-in/social with idToken): the first password no longer signs in and the earlier sessions are gone", async () => {
+    const v = { ...victim, email: "fake.g.victim-idtoken@example.test" };
+    expect((await call("sign-up/email", v)).status).toBe(200);
+    const link = new URL(mail().filter((m) => m.to === v.email && m.kind === "verify").at(-1)!.link);
+    expect((await call(link.pathname.replace("/api/auth/candidate/", "") + link.search)).status).toBe(302);
+    const attacker = await call("sign-in/email", { email: v.email, password: v.password });
+    expect(attacker.status).toBe(200);
+    // Google's token check forced to pass, as in the id-token test above
+    const auth = createAuth("candidate", { database: db.pool("app_candidate"), baseURL: BASE, secret, sendEmail: async () => {}, google: { clientId: "fake-client-id", clientSecret: "x", verifyIdToken: async () => true } as never });
+    const token = `${b64({ alg: "RS256" })}.${b64({ iss: "https://accounts.google.com", aud: "fake-client-id", ...person("victim-idtoken", { email: v.email }) })}.x`;
+    const owner = await call("sign-in/social", { provider: "google", idToken: { token } }, { auth });
+    expect([owner.status, owner.json?.user?.email], owner.text).toEqual([200, v.email]);
+    expect(await sessionOf(attacker.cookie)).toBeNull();
+    expect(await sessions(v.email)).toBe(1);
+    expect(await passwords(v.email)).toBe(0);
+    expect((await call("sign-in/email", { email: v.email, password: v.password })).status).toBe(401);
+  });
+  it("a candidate who signed up with Google only is unaffected: signing in again, or a second Google identity, ends no session", async () => {
+    const p = person("only");
+    const first = await viaGoogle(p);
+    expect(first.ok).toBe(true);
+    expect((await viaGoogle(p, { additionalData: undefined })).ok).toBe(true);
+    expect((await viaGoogle(person("only-2", { email: p.email }), { additionalData: undefined })).ok).toBe(true);
+    expect((await sessionOf(first.callback.cookie))?.user.email).toBe(p.email);
+    expect(await sessions(p.email)).toBe(3);
   });
 });
 

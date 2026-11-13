@@ -8,6 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { fixtures } from "./fixtures";
 import { main, sendPending, MAX_ATTEMPTS } from "../src/outbox-cli.ts";
+import { deleteAccount } from "../src/candidate.ts";
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 let db: TestDb, su: pg.Pool, admin: pg.Pool;
@@ -110,6 +111,18 @@ describe("outbox sender", () => {
     const f = fake();
     expect((await sendPending(admin, f.send)).sent).toBe(1);
     expect(f.sent).toHaveLength(1);
+  });
+  it("the deleted-account notice goes to the address in params.email; another template for a deleted login with the same params is still dropped", async () => {
+    const gone = await F.cand();
+    await deleteAccount(db.pool("app_candidate"), gone); // the real D2 delete: deleted_at set, the notice queued with params.email
+    const notice = Number((await su.query("select id from email_outbox where template='account_deleted' and candidate_user_id=$1", [gone])).rows[0].id);
+    const other = await queue({ candidate_user_id: gone, template: "t", params: JSON.stringify({ email: "gone@example.test" }) });
+    const noEmail = await queue({ candidate_user_id: gone, template: "account_deleted", params: JSON.stringify({}) });
+    const f = fake();
+    expect(await sendPending(admin, f.send)).toEqual({ sent: 1, retry: 0, failed: 0, dropped: 2 });
+    expect(f.sent.map((x) => x.to)).toEqual([`${gone}@example.test`]);
+    expect(await row(notice)).toMatchObject({ status: "sent" });
+    for (const id of [other, noEmail]) expect((await row(id)).status).toBe("dropped");
   });
   it("drops a row with no address: a deleted candidate, an erased person, an invite-less member", async () => {
     const gone = await F.cand({ deleted: new Date() });
