@@ -1,0 +1,38 @@
+name: Monthly DETE import
+
+# Loads DETE's company permit file for this year (and last year's final one in January) into the live database as app_admin (step 15b).
+# DETE posts one file per year at a fixed address and adds the new month to it around the 9th, so the run is on the 15th.
+# Secret (the existing one, no new secret): ADMIN_DATABASE_URL (app_admin), the import step only.
+# A red run means the download or the file was refused or the import failed: nothing wrong was written. Linking new names stays by hand.
+on:
+  schedule:
+    - cron: "17 7 15 * *" # monthly, the 15th at 07:17 UTC; GitHub may start it late
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never two runs at once; a second one waits.
+concurrency:
+  group: monthly-dete
+  cancel-in-progress: false
+
+jobs:
+  dete:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Import the DETE company file
+        env:
+          DETE_ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
+        run: |
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          node packages/db/src/dete-monthly-cli.ts

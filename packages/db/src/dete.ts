@@ -8,7 +8,8 @@ type Db = Pick<pg.Pool, "query" | "connect">;
 const MAX_NAME = 300;
 const MAX_ERRORS = 20;
 const MAX_PERMITS = 1_000_000;
-const CONTROL = /[\u0000-\u001f\u007f-\u009f�]/;
+// Control characters, the replacement character and format characters (zero-width, direction marks, BOM): never part of a company name.
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\ufffd\p{Cf}\u2028\u2029]/u;
 
 export type PermitRow = { deteName: string; year: number; permits: number; sourceFile: string | null };
 export type Link = { organisationNameId: string; deteName: string };
@@ -123,20 +124,40 @@ export async function refreshPermitHistory(db: Db): Promise<number> {
   return (await db.query<{ changed: number }>(REFRESH)).rows[0]!.changed;
 }
 
-/** Upserts the rows in one transaction, 10,000 per statement, then refreshes the labels in that transaction. Run as app_admin. Never touches organisation_name_id. */
-export async function importPermits(db: Db, rows: PermitRow[]): Promise<{ inserted: number; updated: number; unchanged: number; labelsChanged: number }> {
+// With replaceYears: each year's stored total, and the rows of those years the file no longer has (set to 0, so a link survives).
+const YEAR_TOTALS = "select year::int, coalesce(sum(permits), 0)::bigint as total from dete_permit_count where year = any($1::int[]) group by year";
+const ZERO_MISSING =
+  "update dete_permit_count d set permits = 0, imported_at = now() where d.year = any($1::int[]) and d.permits <> 0 " +
+  "and not exists (select 1 from unnest($2::text[], $3::int[]) as t(name, year) where t.name = d.dete_name and t.year = d.year)";
+
+/**
+ * Upserts the rows in one transaction, 10,000 per statement, then refreshes the labels in that transaction. Run as app_admin. Never touches organisation_name_id.
+ * `replaceYears` is for a newer cumulative file of a year (the monthly import): afterwards each year in the file totals exactly what the file says, so a
+ * name the file dropped is set to 0 (never deleted, its link stays). It refuses a file whose total for a year is under half of what is stored (a cut-off file).
+ */
+export async function importPermits(db: Db, rows: PermitRow[], opts: { replaceYears?: boolean } = {}): Promise<{ inserted: number; updated: number; unchanged: number; labelsChanged: number; zeroed?: number }> {
   let inserted = 0;
   let updated = 0;
   let labelsChanged = 0;
+  let zeroed: number | undefined;
   await inTransaction(db, async (c) => {
+    if (opts.replaceYears) {
+      const years = [...new Set(rows.map((r) => r.year))];
+      const stored = new Map((await c.query<{ year: number; total: string }>(YEAR_TOTALS, [years])).rows.map((r) => [r.year, Number(r.total)]));
+      for (const y of years) {
+        const now = rows.reduce((n, r) => n + (r.year === y ? r.permits : 0), 0);
+        if (now * 2 < (stored.get(y) ?? 0)) throw new Error(`the file's total for ${y} is ${now}, under half of the ${stored.get(y)} stored: refusing, nothing was written`);
+      }
+    }
     for (let i = 0; i < rows.length; i += CHUNK) {
       const part = rows.slice(i, i + CHUNK);
       const r = await c.query<{ inserted: boolean }>(UPSERT, [part.map((x) => x.deteName), part.map((x) => x.year), part.map((x) => x.permits), part.map((x) => x.sourceFile)]);
       for (const row of r.rows) if (row.inserted) inserted++; else updated++;
     }
+    if (opts.replaceYears) zeroed = (await c.query(ZERO_MISSING, [[...new Set(rows.map((r) => r.year))], rows.map((r) => r.deteName), rows.map((r) => r.year)])).rowCount ?? 0;
     labelsChanged = await refresh(c);
   });
-  return { inserted, updated, unchanged: rows.length - inserted - updated, labelsChanged };
+  return { inserted, updated, unchanged: rows.length - inserted - updated, labelsChanged, ...(zeroed === undefined ? {} : { zeroed }) };
 }
 
 /** Sets organisation_name_id on the DETE rows of each name, then refreshes the labels in the same transaction. A name or id that is not in the database is reported and skipped. */
