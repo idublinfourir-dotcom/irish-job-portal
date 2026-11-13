@@ -27,10 +27,10 @@ it("the Fetch and Refresh steps both wait for the guard", () => {
   expect(r).toMatch(/steps\.guard\.outputs\.skip != 'true'/);
   expect(r).toMatch(/steps\.guard\.outcome != 'failure'/); // it runs after a failed fetch, but not after a failed guard
 });
-it("keeps read-only permissions, the one-at-a-time group, and adds no secret", () => {
+it("keeps read-only permissions, the one-at-a-time group, and only the known secrets", () => {
   expect(yml).toMatch(/^permissions:\n {2}contents: read$/m);
   expect(yml).toMatch(/group: daily-fetch\n\s+cancel-in-progress: false/);
-  expect([...new Set([...yml.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]))].sort()).toEqual(["ADMIN_DATABASE_URL", "FETCHER_DATABASE_URL", "FETCHER_MODEL_KEY"]);
+  expect([...new Set([...yml.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]))].sort()).toEqual(["ADMIN_DATABASE_URL", "BREVO_API_KEY", "FETCHER_DATABASE_URL", "FETCHER_MODEL_KEY"]);
 });
 it("closes expired employer jobs every day, with the admin login only in that step (0019)", () => {
   const s = step("Close expired employer jobs");
@@ -51,7 +51,7 @@ it("applies the retention rules last, every day, with the admin login only in th
   expect(s).toMatch(/RETENTION_ADMIN_DATABASE_URL: \$\{\{ secrets\.ADMIN_DATABASE_URL \}\}/);
   expect(s).not.toMatch(/FETCHER_/);
   expect(yml.trimEnd().endsWith("node packages/db/src/retention-cli.ts")).toBe(true);
-  expect(yml.match(/secrets\.ADMIN_DATABASE_URL/g)).toHaveLength(5); // refresh, expiry, minimum, alerts, retention: one step each
+  expect(yml.match(/secrets\.ADMIN_DATABASE_URL/g)).toHaveLength(6); // refresh, expiry, minimum, alerts, outbox, retention: one step each
 });
 it("queues job alerts every day, after the fetch and the minimum and before retention, with the admin login only in that step (0024)", () => {
   const s = step("Queue job alerts");
@@ -62,4 +62,18 @@ it("queues job alerts every day, after the fetch and the minimum and before rete
   expect(yml.indexOf("name: Queue job alerts")).toBeGreaterThan(yml.indexOf("name: Fetch\n"));
   expect(yml.indexOf("name: Queue job alerts")).toBeGreaterThan(yml.indexOf("name: Apply a new minimum"));
   expect(yml.indexOf("name: Apply the retention rules")).toBeGreaterThan(yml.indexOf("name: Queue job alerts"));
+});
+it("sends the queued emails every day after the alerts are queued and before retention, and does nothing while email is off (8.1b)", () => {
+  const s = step("Send queued emails");
+  expect(s).toMatch(/if: \$\{\{ !cancelled\(\) \}\}/);
+  expect(s).toMatch(/DATABASE_URL: \$\{\{ secrets\.ADMIN_DATABASE_URL \}\}/);
+  expect(s).toMatch(/BREVO_API_KEY: \$\{\{ secrets\.BREVO_API_KEY \}\}/);
+  expect(s).toMatch(/EMAIL_FROM: \$\{\{ vars\.EMAIL_FROM \}\}/);
+  expect(s).toMatch(/SITE_URL: \$\{\{ vars\.SITE_URL \}\}/);
+  expect(s).toMatch(/if \[ -z "\$BREVO_API_KEY" \]; then echo "email is off \(no BREVO_API_KEY secret\): nothing sent"; exit 0; fi/);
+  expect(s).toMatch(/node packages\/db\/src\/outbox-cli\.ts --batch 200$/m);
+  expect(s).not.toMatch(/FETCHER_/);
+  expect(yml.match(/secrets\.BREVO_API_KEY/g)).toHaveLength(1);
+  expect(yml.indexOf("name: Send queued emails")).toBeGreaterThan(yml.indexOf("name: Queue job alerts"));
+  expect(yml.indexOf("name: Apply the retention rules")).toBeGreaterThan(yml.indexOf("name: Send queued emails"));
 });

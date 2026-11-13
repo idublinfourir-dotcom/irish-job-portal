@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "workspaces": ["apps/*", "packages/*"],
-  "engines": { "node": ">=24" },
+  "engines": { "node": "24.x" },
   "scripts": {
     "dev:candidate": "npm run dev -w @portal/candidate",
     "dev:portal": "npm run dev -w @portal/portal",
