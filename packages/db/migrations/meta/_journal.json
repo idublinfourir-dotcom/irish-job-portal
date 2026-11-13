@@ -176,6 +176,13 @@
       "when": 1794300020000,
       "tag": "0024_job_alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794300021000,
+      "tag": "0025_candidate_export",
+      "breakpoints": true
     }
   ]
 }

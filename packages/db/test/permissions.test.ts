@@ -82,7 +82,7 @@ denied("app_portal", "manage its team: change a membership directly (members cha
 denied("app_portal", "add a member directly", "insert into membership(organisation_id,portal_user_id,role,status) values($1,$2,'viewer','active')", () => [org, pu]);
 denied("app_portal", "insert a Launch B contact_request", "insert into contact_request(organisation_id,membership_id,candidate_user_id) values($1,$2,$3)", () => [org, mem, cand]);
 // execute: exactly as section 2.1
-const want = { erase_candidate: ["app_admin"], erase_portal_user: ["app_admin"], run_retention: ["app_admin"], refresh_permit_history: ["app_admin"], mark_first_time: ["app_admin"], claim_organisation: ["app_portal"], register_organisation: ["app_portal"], answer_review: ["app_portal"], team_invite: ["app_portal"], team_accept: ["app_portal"], team_request: ["app_portal"], team_answer: ["app_portal"], team_remove: ["app_portal"], team_leave: ["app_portal"], team_set_role: ["app_portal"], team_transfer: ["app_portal"], status_page: ["app_portal"], status_write: ["app_portal"], portal_jobs: ["app_portal"], expire_employer_jobs: ["app_admin"], audit_pseudonymise: [], audit_purge: [], move_application: [], search_visible_candidates: [], use_approval: [], companies_staff_check: ["app_admin"], merge_organisations: ["app_admin"], owner_reassign_request: ["app_admin"], owner_reassign_complete: ["app_admin"], owner_reassign_cancel: ["app_admin"], queue_job_alerts: ["app_admin"] };
+const want = { erase_candidate: ["app_admin"], erase_portal_user: ["app_admin"], run_retention: ["app_admin"], refresh_permit_history: ["app_admin"], mark_first_time: ["app_admin"], claim_organisation: ["app_portal"], register_organisation: ["app_portal"], answer_review: ["app_portal"], team_invite: ["app_portal"], team_accept: ["app_portal"], team_request: ["app_portal"], team_answer: ["app_portal"], team_remove: ["app_portal"], team_leave: ["app_portal"], team_set_role: ["app_portal"], team_transfer: ["app_portal"], status_page: ["app_portal"], status_write: ["app_portal"], portal_jobs: ["app_portal"], expire_employer_jobs: ["app_admin"], audit_pseudonymise: [], audit_purge: [], move_application: [], search_visible_candidates: [], use_approval: [], companies_staff_check: ["app_admin"], merge_organisations: ["app_admin"], owner_reassign_request: ["app_admin"], owner_reassign_complete: ["app_admin"], owner_reassign_cancel: ["app_admin"], queue_job_alerts: ["app_admin"], candidate_export_extras: ["app_candidate"] };
 for (const f of fns) for (const r of [...roles, "anon", "authenticated", "service_role"]) {
   const exp = (want[f.proname] || []).includes(r);
   it(`${exp ? "must" : "must not"}: ${r}: execute ${f.f}`, async () => {
@@ -90,7 +90,8 @@ for (const f of fns) for (const r of [...roles, "anon", "authenticated", "servic
     expect(has, `has ${has}, design ${exp}`).toBe(exp);
   });
 }
-for (const r of ["app_candidate", "app_fetcher"]) denied(r, "call a private function (no usage on schema private)", "select private.audit_purge()");
+denied("app_fetcher", "call a private function (no usage on schema private)", "select private.audit_purge()");
+denied("app_candidate", "call a private function other than its export read (no execute)", "select private.audit_purge()");
 denied("app_admin", "run audit_purge", "select private.audit_purge()");
 denied("app_admin", "run audit_pseudonymise", "select private.audit_pseudonymise('x')");
 denied("app_portal", "run move_application before the licence", "select private.move_application(1,'viewed',1)");

@@ -2,7 +2,7 @@
 import { candidateSettings } from "@portal/auth";
 import {
   answerClick, applyClick, candidateRead, candidateWrite, checkAnswer, checkDelete, checkJobId, checkProfile, checkSettings, checkStage, deleteAccount,
-  didYouApplyPrompts, getProfile, getSettings, listSaved, markApplied, putProfile, putSettings, saveJob, savedJob, setStage, unsaveJob,
+  didYouApplyPrompts, exportData, exportFilename, getProfile, getSettings, listSaved, markApplied, putProfile, putSettings, saveJob, savedJob, setStage, unsaveJob,
 } from "@portal/db";
 import { signedInCandidate } from "./candidate";
 import { OCCUPATION_CODES } from "./occupations";
@@ -23,3 +23,11 @@ export const jobGet = (r: Request) => candidateRead(r, env(), savedJob);
 export const settingsGet = (r: Request) => candidateRead(r, env(), getSettings);
 export const settingsPut = (r: Request) => candidateWrite(r, env(), checkSettings, putSettings);
 export const accountDelete = (r: Request) => candidateWrite(r, env(), checkDelete, (db, userId) => deleteAccount(db, userId));
+
+/** The candidate's own data as one downloadable file (GET, changes nothing but one audit row). Query parameters are ignored. */
+export async function exportGet(r: Request) {
+  const res = await candidateRead(r, env(), (db, userId) => exportData(db, userId));
+  res.headers.set("cache-control", "no-store");
+  if (res.ok) res.headers.set("content-disposition", `attachment; filename="${exportFilename(new Date())}"`);
+  return res;
+}

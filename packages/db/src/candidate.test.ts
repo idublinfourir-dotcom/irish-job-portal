@@ -1,6 +1,6 @@
 // No database: the body checks of the candidate account routes. Everything that is not exactly a good body is refused (null).
 import { describe, expect, it } from "vitest";
-import { checkAnswer, checkDelete, checkJobId, checkProfile, checkSettings, checkStage, isStamp4, STAMPS } from "./candidate";
+import { checkAnswer, checkDelete, checkJobId, checkProfile, checkSettings, checkStage, EXPORT_SQL, exportFilename, isStamp4, STAMPS } from "./candidate";
 
 const check = checkProfile(new Set(["2136", "2229"]));
 const good = { fullName: "Fake Person", phone: "+353 1 234 5678", occupationCode: "2136", yearsExperience: 5, hasRelevantDegree: true, degreeField: "Computing",
@@ -74,5 +74,17 @@ describe("the small body checks", () => {
   it("Stamp 4 is every stamp that starts with 4", () => {
     expect(STAMPS.filter(isStamp4)).toEqual(["4", "4EUFAM", "4D", "4S"]);
     expect(isStamp4(null)).toBe(false);
+  });
+});
+
+describe("the data export", () => {
+  it("names the file by the UTC date", () => {
+    expect(exportFilename(new Date("2026-11-13T23:59:59Z"))).toBe("my-data-2026-11-13.json");
+    expect(exportFilename(new Date("2026-11-14T00:00:00Z"))).toBe("my-data-2026-11-14.json");
+  });
+  it("reads no password, token, key or dedupe column, and filters by the candidate id", () => {
+    expect(EXPORT_SQL).not.toMatch(/password|token|storage_key|dedupe_key|unsubscribe/i);
+    expect(EXPORT_SQL).not.toMatch(/select \*|\.\*/);
+    expect(EXPORT_SQL.match(/\$1/g)!.length).toBeGreaterThanOrEqual(12);
   });
 });
