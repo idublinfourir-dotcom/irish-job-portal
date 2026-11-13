@@ -1,0 +1,49 @@
+name: Deploy
+
+# Deploys the three apps to Vercel production after every push to main, and by hand (#183, step 15). On Vercel Hobby a Git deploy of a commit
+# by anyone but the account owner is BLOCKED, and so is a deploy hook (tried 13 November 2026), so this deploys as the owner with a token, from a
+# plain copy of the commit (git archive: no .git, so Vercel sees a CLI deploy, as the laptop deploys do).
+# Secrets (set by the engineer): VERCEL_TOKEN_ADMIN, VERCEL_TOKEN_CANDIDATE, VERCEL_TOKEN_PORTAL, each a token of the owner's account scoped to
+# its one project. An app whose secret is not set is skipped with one line, so nothing deploys until the tokens exist.
+# Never on pull_request: code from a branch never runs with these secrets.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; a newer push waits for the one running.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Deploy the three apps
+        env:
+          VERCEL_ORG_ID: team_pZOOvJvO0ATGeXTxzS8DVJLV
+          TOKEN_ADMIN: ${{ secrets.VERCEL_TOKEN_ADMIN }}
+          TOKEN_CANDIDATE: ${{ secrets.VERCEL_TOKEN_CANDIDATE }}
+          TOKEN_PORTAL: ${{ secrets.VERCEL_TOKEN_PORTAL }}
+        run: |
+          failed=0
+          deploy() { # <app> <project id> <token>
+            if [ -z "$3" ]; then echo "$1: its token secret is not set: skipped"; return 0; fi
+            local copy="$RUNNER_TEMP/$1"; mkdir -p "$copy"; git archive HEAD | tar -x -C "$copy"
+            (cd "$copy" && VERCEL_TOKEN="$3" VERCEL_PROJECT_ID="$2" npx -y vercel@65.14.0 deploy --prod --yes) || { echo "$1: deploy FAILED"; failed=1; }
+          }
+          deploy admin prj_d4UD3QwfTfojpF7tFp1KZtYdGmP1 "$TOKEN_ADMIN"
+          deploy candidate prj_ihOGwSmteseWB7oWfpFkMk4QD5Ut "$TOKEN_CANDIDATE"
+          deploy portal prj_cba6rpOgoMrlynCFTz7Y5QUPWtd8 "$TOKEN_PORTAL"
+          exit "$failed"
