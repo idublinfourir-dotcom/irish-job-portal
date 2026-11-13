@@ -640,6 +640,7 @@ export const alert = pgTable("alert", {
 	pauseReason: text("pause_reason"),
 	unsubscribeToken: text("unsubscribe_token").notNull(),
 	lastSentAt: timestamp("last_sent_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("alert_candidate_idx").using("btree", table.candidateUserId.asc().nullsLast().op("text_ops")),
 	index("alert_send_idx").using("btree", table.frequency.asc().nullsLast().op("text_ops"), table.lastSentAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'active'::text)`),
