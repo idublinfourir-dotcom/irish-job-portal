@@ -14,6 +14,13 @@ import { sslOptions } from "./ssl.ts";
 
 export const MAX_AGE_HOURS = 48;
 export const APP_ROLES = ["portal_owner", "app_candidate", "app_portal", "app_admin", "app_fetcher", "app_backup"];
+// The dump's table of contents (pg_restore -l) without the default privileges of roles that are not ours: on live, Supabase's supabase_admin holds
+// default privileges in public, only a member of supabase_admin may set them (restoring them as postgres fails: "permission denied to change
+// default privileges", 16 Nov), and a new Supabase project has them already. A real restore runs as postgres too, so it skips them the same way.
+export function restoreList(toc: string): { list: string; skipped: number } {
+  const keep = toc.split("\n").filter((l) => { const m = / DEFAULT ACL .* (\S+)$/.exec(l); return !m || m[1] === "postgres" || APP_ROLES.includes(m[1]!); });
+  return { list: keep.join("\n"), skipped: toc.split("\n").length - keep.length };
+}
 const isInt = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 0;
 const isHash = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{64}$/.test(v);
 
@@ -119,11 +126,25 @@ export async function runRestoreCheck(o: CheckOptions): Promise<boolean> {
     await target.end();
 
     const conn = connOf(o.adminUrl, o.env, dbName, undefined);
-    const restore = tool(o.env, conn, "pg_restore", ["--exit-on-error", "--no-owner", "--dbname", conninfo(conn)]);
-    createReadStream(o.dump).pipe(restore.p.stdin);
-    const code = await restore.done;
-    if (code !== 0) return fail("restore", [`pg_restore exit ${code}: ${restore.err().trim().slice(0, 500)}`]);
-    ok("restore", "pg_restore --exit-on-error finished with no errors");
+    // Each tool call reads stdin (the dump, or text); with PG_TOOLS_PREFIX it runs where pg_restore runs, so the list file lands there too.
+    const run = async (name: string, args: string[], input: string | (() => NodeJS.ReadableStream)) => {
+      const t = tool(o.env, conn, name, args);
+      let out = "";
+      t.p.stdout.on("data", (d) => (out += d));
+      if (typeof input === "string") t.p.stdin.end(input); else input().pipe(t.p.stdin);
+      const code = await t.done;
+      return { code, out, err: t.err().trim().slice(0, 500) };
+    };
+    const listFile = `/tmp/${dbName}.list`; // dbName is hex: safe in a shell word
+    const toc = await run("pg_restore", ["--list"], () => createReadStream(o.dump));
+    if (toc.code !== 0) return fail("restore", [`pg_restore --list exit ${toc.code}: ${toc.err}`]);
+    const { list, skipped } = restoreList(toc.out);
+    const saved = await run("sh", ["-c", `cat > ${listFile}`], list);
+    if (saved.code !== 0) return fail("restore", [`could not write the restore list: ${saved.err}`]);
+    const restore = await run("pg_restore", ["--exit-on-error", "--no-owner", "--use-list", listFile, "--dbname", conninfo(conn)], () => createReadStream(o.dump));
+    await run("sh", ["-c", `rm -f ${listFile}`], "");
+    if (restore.code !== 0) return fail("restore", [`pg_restore exit ${restore.code}: ${restore.err}`]);
+    ok("restore", `pg_restore --exit-on-error finished with no errors (${skipped} default privileges of roles not ours left out)`);
 
     const check = new pg.Client({ connectionString: urlFor(o.adminUrl, dbName), ssl: sslOptions(o.env) });
     await check.connect();
