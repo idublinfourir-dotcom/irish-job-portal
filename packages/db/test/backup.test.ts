@@ -2,12 +2,14 @@
 // server, and the check passes; a changed count fails; the snapshot holds while another connection writes. pg_dump and pg_restore run inside the
 // test container (backup-helpers.ts). Fake data only, no network beyond the local container.
 import { readdir, readFile, writeFile } from "node:fs/promises";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { runBackup } from "../src/backup-cli";
 import { repoMigrationHashes, runRestoreCheck } from "../src/restore-check-cli";
 import { createTestDb, urlFor, testPassword, type TestDb } from "./db";
 import { seed, tempDir, toolEnv } from "./backup-helpers";
 
+// A dump and a restore take about 1 s alone here; the first one on GitHub's runner, beside the other test files, passed 5 s (16 Nov, PR #56).
+vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 let db: TestDb;
 beforeAll(async () => {
   db = await createTestDb();
