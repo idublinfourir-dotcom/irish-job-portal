@@ -68,9 +68,10 @@ export function checkSalary(low: number | null, high: number | null, minimum: nu
 export type SalaryStage = Extract<Stage, `8 ${string}` | `PASS ${string}`>;
 
 /** R13 use. The stage the salary step gives (classify.py:225-229); `bigCompany` and `agency` are the plain flags the Python holds in `r["big"]` and `r["agency"]`. */
-export function salaryStage(check: SalaryCheck, bigCompany: boolean, agency: boolean): SalaryStage {
-  if (check === "below") return "8 salary below €40,904";
-  if (check === "range crosses") return "8 range crosses €40,904 (no rule yet)";
+export function salaryStage(check: SalaryCheck, bigCompany: boolean, agency: boolean, minimum: number): SalaryStage {
+  // the figure is the minimum the check used (#229), written as the Python wrote 40,904
+  if (check === "below") return `8 salary below €${minimum.toLocaleString("en-IE")}`;
+  if (check === "range crosses") return `8 range crosses €${minimum.toLocaleString("en-IE")} (no rule yet)`;
   if (check === "not stated" && !(bigCompany && !agency)) return "8 no salary, not a big company";
   return check === "pass" ? "PASS (salary stated)" : "PASS (big-company rule)";
 }

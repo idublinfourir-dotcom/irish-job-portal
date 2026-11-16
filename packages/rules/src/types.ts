@@ -12,12 +12,12 @@ export type Stage =
   | "5 occupation not recognised" // classify.py:214
   | "5 unsure occupation (admin queue)" // classify.py:216
   | "6 not on Critical Skills list" // classify.py:215
-  | "7 contract under 2 years" // classify.py:220
+  | `7 contract under ${string}` // classify.py:220; the minimum in force (#229), "2 years" for 24 months
   | "7 contract unclear (admin queue)" // classify.py:221
   | "7 doctor grade, contract unconfirmed (admin queue, #95)" // run_day.py:102
   | "7 permanent or specified purpose (admin queue, #95)" // run_day.py:105
-  | "8 salary below €40,904" // classify.py:226
-  | "8 range crosses €40,904 (no rule yet)" // classify.py:227
+  | `8 salary below €${string}` // classify.py:226; the minimum in force (#229), "€40,904" in version 1
+  | `8 range crosses €${string} (no rule yet)` // classify.py:227
   | "8 no salary, not a big company" // classify.py:228
   | "PASS (salary stated)" // classify.py:229
   | "PASS (big-company rule)"; // classify.py:229

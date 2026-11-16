@@ -1,6 +1,6 @@
 // Unit tests for the decision chain. Made-up text only; the matcher is a fake the test controls.
 import { describe, expect, it, vi } from "vitest";
-import { assess, type AdvertInput, type ChainData, type ChainMatcher } from "./assess";
+import { assess, monthsText, type AdvertInput, type ChainData, type ChainMatcher } from "./assess";
 import { cleanEmployerName } from "../employers";
 import { CHAIN_RULES_V1 } from "../snapshot";
 
@@ -126,6 +126,15 @@ describe("the order of the rules", () => {
 
   it("8: salary below the minimum", async () => {
     expect(await run({ description: "Salary €30,000." })).toMatchObject({ stage: "8 salary below €40,904", salaryCheck: "below", salaryLow: 30000, bucket: "rejected" });
+  });
+
+  it("the stage texts carry the minimums in force, not fixed figures (#229)", async () => {
+    const m = (o: object) => ({ minimums: { ...CHAIN_RULES_V1.minimums, ...o } });
+    expect((await run({ description: "Salary €42,000." }, m({ criticalSkills: 45000 }))).stage).toBe("8 salary below €45,000");
+    expect((await run({ description: "Salary €42,000 to €50,000." }, m({ criticalSkills: 45000 }))).stage).toBe("8 range crosses €45,000 (no rule yet)");
+    expect((await run({ description: "A 6 month contract. Salary €60,000." }, m({ minContractMonths: 12 }))).stage).toBe("7 contract under 1 year");
+    expect((await run({ description: "A 6 month contract. Salary €60,000." }, m({ minContractMonths: 18 }))).stage).toBe("7 contract under 18 months");
+    expect([monthsText(24), monthsText(12), monthsText(36), monthsText(18), monthsText(1)]).toEqual(["2 years", "1 year", "3 years", "18 months", "1 month"]);
   });
 
   it("8: no salary and not a big company", async () => {

@@ -57,6 +57,9 @@ export type ChainData = {
 export const INPUT_LIMITS = { title: 300, employer: 200, location: 500, employmentType: 100, salaryBox: 1000, description: 30000 } as const;
 
 /** More than `max` code points? Cheap for huge strings: no copy, and the full count only when the length is in doubt. */
+/** The contract minimum in words, as the Python wrote it for 24 months: "2 years"; "1 year", "18 months", "1 month". */
+export const monthsText = (n: number) => (n % 12 === 0 ? `${n / 12} year${n === 12 ? "" : "s"}` : `${n} month${n === 1 ? "" : "s"}`);
+
 function overLimit(s: string | null | undefined, max: number): boolean {
   if (!s || s.length <= max) return false; // a code point is at least one UTF-16 unit, so this is never over
   if (s.length > 2 * max) return true; // a code point is at most two units, so this is always over
@@ -205,7 +208,7 @@ export async function assess(advert: AdvertInput, data: ChainData, staff: StaffI
     const c = readContract(title, advert.employmentType, description, data.minimums.minContractMonths);
     out.contract = c.result;
     out.contractReason = c.reason;
-    if (c.result === "short") stage = "7 contract under 2 years";
+    if (c.result === "short") stage = `7 contract under ${monthsText(data.minimums.minContractMonths)}`;
     else if (c.result === "unclear" && !staff.contractConfirmed) stage = "7 contract unclear (admin queue)";
   }
 
@@ -216,7 +219,7 @@ export async function assess(advert: AdvertInput, data: ChainData, staff: StaffI
     out.salaryHigh = high;
     out.salaryCheck = checkSalary(low, high, data.minimums.criticalSkills);
     out.bigCompany = isBigCompany(employer, data.bigCompanyNames);
-    stage = salaryStage(out.salaryCheck, out.bigCompany, out.agency);
+    stage = salaryStage(out.salaryCheck, out.bigCompany, out.agency, data.minimums.criticalSkills);
   }
 
   // run_day.py:92. D2: every non-LinkedIn advert counts as known.
