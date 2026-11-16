@@ -218,6 +218,7 @@ export const job = pgTable("job", {
 	hireAnsweredByMembershipId: bigint("hire_answered_by_membership_id", { mode: "number" }),
 	sponsorSort: integer("sponsor_sort").default(sql`'-1'`).notNull(),
 	weeklyHours: smallint("weekly_hours"),
+	underReviewSince: timestamp("under_review_since", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("job_closed_idx").using("btree", table.closedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'closed'::text)`),
 	index("job_company_page_idx").using("btree", sql`organisation_id`, sql`((NOT quota_full))`, sql`posted_at`, sql`id`).where(sql`(status = 'live'::text)`),
@@ -233,6 +234,7 @@ export const job = pgTable("job", {
 	index("job_live_sector_salary").using("btree", sql`sector`, sql`((NOT quota_full))`, sql`salary_sort`, sql`id`, sql`quota_full`, sql`closes_at`).where(sql`(status = 'live'::text)`),
 	index("job_organisation_idx").using("btree", table.organisationId.asc().nullsLast().op("int8_ops"), table.postedAt.desc().nullsFirst().op("int8_ops"), table.id.desc().nullsFirst().op("int8_ops")),
 	index("job_pay_floor_idx").using("btree", table.payFloorId.asc().nullsLast().op("int8_ops")),
+	index("job_under_review_idx").using("btree", table.underReviewSince.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'under_review'::text)`),
 	foreignKey({
 			columns: [table.organisationId],
 			foreignColumns: [organisation.id],

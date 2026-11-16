@@ -478,6 +478,7 @@ trigger job_org_live on job: CREATE TRIGGER job_org_live BEFORE INSERT OR UPDATE
 trigger job_queue_review on job: CREATE TRIGGER job_queue_review AFTER INSERT OR UPDATE OF status, permit_employer_check ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_queue_review()
 trigger job_sponsor_statement on job: CREATE CONSTRAINT TRIGGER job_sponsor_statement AFTER INSERT OR UPDATE ON public.job DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION private.job_sponsor_statement()
 trigger job_text_guard on job_text: CREATE TRIGGER job_text_guard BEFORE INSERT OR DELETE OR UPDATE ON public.job_text FOR EACH ROW EXECUTE FUNCTION private.job_text_guard()
+trigger job_under_review_since on job: CREATE TRIGGER job_under_review_since BEFORE INSERT OR UPDATE OF status ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_under_review_since()
 trigger last_active_guard on candidate_user: CREATE TRIGGER last_active_guard BEFORE INSERT OR UPDATE OF last_active_at ON public.candidate_user FOR EACH ROW EXECUTE FUNCTION private.last_active_guard()
 trigger message_parent_accepted on message: CREATE TRIGGER message_parent_accepted BEFORE INSERT ON public.message FOR EACH ROW EXECUTE FUNCTION private.message_parent_accepted()
 trigger message_wipe_reports on message: CREATE TRIGGER message_wipe_reports BEFORE DELETE ON public.message FOR EACH ROW EXECUTE FUNCTION private.message_wipe_reports()
