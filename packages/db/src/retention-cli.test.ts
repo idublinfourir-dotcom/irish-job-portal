@@ -1,5 +1,6 @@
 // No database: the retention loop with a fake run_retention. The real rules on real rows are packages/db/test/retention-cli.test.ts.
 import { describe, expect, it } from "vitest";
+import { memoryStore, s3Settings, s3Store } from "./file-store.ts";
 import { drain, main } from "./retention-cli.ts";
 
 type S = { rule: string | null; target?: string; done: number; left: number; skipped?: unknown[]; storage_keys?: string[] };
@@ -41,10 +42,37 @@ describe("retention loop", () => {
     expect(r).toMatchObject({ code: 1 });
     expect(r.lines.at(-1)).toMatch(/no progress/);
   });
-  it("storage keys are printed (escaped), the loop finishes, and the run goes red", async () => {
-    const r = await run([{ rule: "application_and_cv", done: 1, left: 0, storage_keys: ["cv/a.pdf", "x\ny"] }, { rule: null, done: 0, left: 0 }]);
-    expect(r.code).toBe(1);
-    expect(r.lines.join("\n")).toContain('2 stored files must be deleted by hand: "cv/a.pdf" "x\\ny"');
+  it("storage keys are removed from the store and counted, and the run stays green", async () => {
+    const store = memoryStore();
+    for (const k of ["cv/a", "case/b"]) await store.put(k, new Uint8Array([1]), "application/pdf");
+    const lines: string[] = [];
+    const f = fake([{ rule: "application_and_cv", done: 1, left: 0, storage_keys: ["cv/a", "case/b"] }, { rule: null, done: 0, left: 0 }]);
+    expect(await drain(f.db, (l) => lines.push(l), undefined, undefined, () => store)).toBe(0);
+    expect(store.objects.size).toBe(0);
+    expect(lines.at(-1)).toBe("stored files: 2 removed, 0 failed");
+  });
+  it("a failed removal finishes the loop, prints only the failed key (escaped), and goes red", async () => {
+    const store = memoryStore();
+    store.failNext();
+    const lines: string[] = [];
+    const f = fake([{ rule: "application_and_cv", done: 1, left: 0, storage_keys: ["x\ny", "cv/ok"] }, { rule: null, done: 0, left: 0 }]);
+    expect(await drain(f.db, (l) => lines.push(l), undefined, undefined, () => store)).toBe(1);
+    expect(f.calls()).toBe(2);
+    expect(lines.join("\n")).toContain("stored files: 1 removed, 1 failed");
+    expect(lines.at(-1)).toBe('not removed (file store: fake failure), delete by hand: "x\\ny"');
+    expect(lines.join("\n")).not.toContain("cv/ok");
+  });
+  it("missing FILES_S3_ settings make every removal fail, naming the settings, never their values", async () => {
+    const lines: string[] = [];
+    const f = fake([{ rule: "inactive_profile_warning", done: 1, left: 0, storage_keys: ["cv/a"] }, { rule: null, done: 0, left: 0 }]);
+    const off = () => s3Store(s3Settings({ FILES_S3_KEY_ID: "fake-key-id" }));
+    expect(await drain(f.db, (l) => lines.push(l), undefined, undefined, off)).toBe(1);
+    expect(lines.at(-1)).toMatch(/FILES_S3_SECRET, FILES_S3_BUCKET, FILES_S3_REGION not set/);
+    expect(lines.join()).not.toContain("fake-key-id");
+  });
+  it("no stored files: the store is never made", async () => {
+    const r = await run([{ rule: "apply_click", done: 1, left: 0 }, { rule: null, done: 0, left: 0 }]);
+    expect(r.code).toBe(0); // the default store would throw without FILES_S3_* set
   });
 });
 

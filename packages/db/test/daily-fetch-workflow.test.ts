@@ -30,7 +30,7 @@ it("the Fetch and Refresh steps both wait for the guard", () => {
 it("keeps read-only permissions, the one-at-a-time group, and only the known secrets", () => {
   expect(yml).toMatch(/^permissions:\n {2}contents: read$/m);
   expect(yml).toMatch(/group: daily-fetch\n\s+cancel-in-progress: false/);
-  expect([...new Set([...yml.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]))].sort()).toEqual(["ADMIN_DATABASE_URL", "BREVO_API_KEY", "FETCHER_DATABASE_URL", "FETCHER_MODEL_KEY"]);
+  expect([...new Set([...yml.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]))].sort()).toEqual(["ADMIN_DATABASE_URL", "BREVO_API_KEY", "FETCHER_DATABASE_URL", "FETCHER_MODEL_KEY", "FILES_S3_KEY_ID", "FILES_S3_SECRET"]);
 });
 it("closes expired employer jobs every day, with the admin login only in that step (0019)", () => {
   const s = step("Close expired employer jobs");
@@ -51,6 +51,9 @@ it("applies the retention rules last, every day, with the admin login only in th
   expect(s).toMatch(/RETENTION_ADMIN_DATABASE_URL: \$\{\{ secrets\.ADMIN_DATABASE_URL \}\}/);
   expect(s).not.toMatch(/FETCHER_/);
   expect(yml.trimEnd().endsWith("node packages/db/src/retention-cli.ts")).toBe(true);
+  // the S3 files key reaches this step only: bucket and region are plain values
+  expect(s).toMatch(/FILES_S3_KEY_ID: \$\{\{ secrets\.FILES_S3_KEY_ID \}\}\n {10}FILES_S3_SECRET: \$\{\{ secrets\.FILES_S3_SECRET \}\}\n {10}FILES_S3_BUCKET: irish-job-portal-files\n {10}FILES_S3_REGION: eu-west-1\n/);
+  expect(yml.match(/^ +FILES_S3_\w+:/gm)).toHaveLength(4); // set on no other step
   expect(yml.match(/secrets\.ADMIN_DATABASE_URL/g)).toHaveLength(6); // refresh, expiry, minimum, alerts, outbox, retention: one step each
 });
 it("queues job alerts every day, after the fetch and the minimum and before retention, with the admin login only in that step (0024)", () => {

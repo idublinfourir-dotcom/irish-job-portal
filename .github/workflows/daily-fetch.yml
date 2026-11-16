@@ -120,12 +120,16 @@ jobs:
           export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
           node packages/db/src/outbox-cli.ts --batch 200
       # The retention periods in `setting` (placeholders until the solicitor's, #99): one rule per database call, looped until nothing is due.
-      # Same admin login, given to this step only; last, and it runs every day. There is no file storage yet: if a call returns stored file
-      # keys the step prints them and goes red, and the files are deleted by hand.
+      # Same admin login, given to this step only; last, and it runs every day. The stored files the rules return are removed from S3 with the
+      # files key (this step only); a removal that fails prints its random key and goes red, and that file is deleted by hand.
       - name: Apply the retention rules
         if: ${{ !cancelled() }}
         env:
           RETENTION_ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
+          FILES_S3_KEY_ID: ${{ secrets.FILES_S3_KEY_ID }}
+          FILES_S3_SECRET: ${{ secrets.FILES_S3_SECRET }}
+          FILES_S3_BUCKET: irish-job-portal-files
+          FILES_S3_REGION: eu-west-1
         run: |
           export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
           node packages/db/src/retention-cli.ts

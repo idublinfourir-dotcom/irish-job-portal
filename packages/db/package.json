@@ -3,8 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts", "./ssl": "./src/ssl.ts",
-    "./rules-data": "./src/rules-data.ts" },
+  "exports": {
+    ".": "./src/index.ts",
+    "./ssl": "./src/ssl.ts",
+    "./rules-data": "./src/rules-data.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
@@ -18,6 +21,7 @@
   "dependencies": {
     "@portal/rules": "*",
     "@vercel/functions": "3.11.0",
+    "aws4fetch": "1.0.20",
     "better-auth": "1.7.17",
     "drizzle-orm": "0.45.4",
     "pg": "8.23.1"
