@@ -63,6 +63,7 @@ export * from "./content";
 export * from "./public-pages";
 export * from "./candidate-route";
 export * from "./candidate";
+export * from "./files";
 
 export * from "./pay-floors";
 export * from "./job-stats";

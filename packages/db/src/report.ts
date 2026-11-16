@@ -1,7 +1,7 @@
 // "Report a job" (slice 8.5 item 1): the POST behind the candidate site and the portal. The reporter id always comes from the
 // session, never the body. The reporter is never shown to the employer: the reply says only { ok: true }. The database is the
 // guard: the app roles may insert only the columns below (migration 0015), so a report cannot be filed as already decided.
-import { randomUUID } from "node:crypto";
+import { withinRate } from "./candidate-route";
 import { getPool } from "./index";
 import { validId } from "./search";
 
@@ -35,15 +35,8 @@ export type ReportLogin = { userId: string } | { refused: "no_session" | "refuse
 
 const no = (status: number, code: string) => Response.json({ code }, { status });
 
-// One statement: counts this login's reports in the pool's rate-limit table (same shape as the company POSTs).
-async function withinLimit(side: ReportSide, userId: string): Promise<boolean> {
-  const now = Date.now();
-  const { rows } = await getPool().query(
-    `insert into ${SIDES[side].limit}(id, key, count, last_request) values ($1, $2, 1, $3)
-     on conflict (key) do update set count = case when ${SIDES[side].limit}.last_request < $3 - $4 then 1 else ${SIDES[side].limit}.count + 1 end, last_request = $3
-     returning count`, [randomUUID(), `report:${userId}`, now, RATE.windowMs]);
-  return rows[0].count <= RATE.max;
-}
+// Counts this login's reports in the pool's rate-limit table.
+const withinLimit = (side: ReportSide, userId: string) => withinRate(SIDES[side].limit, `report:${userId}`, RATE);
 
 export async function handleReport(request: Request, o: { origin: string; side: ReportSide; login: (headers: Headers) => Promise<ReportLogin> }): Promise<Response> {
   if (request.headers.get("origin") !== o.origin) return no(403, "BAD_ORIGIN");

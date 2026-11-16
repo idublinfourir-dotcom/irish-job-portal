@@ -1,0 +1,63 @@
+name: Backup
+
+# The daily backup of the live database (step 15, decisions #115 and #126): pg_dump of public, private and drizzle in one exported snapshot, with a
+# manifest of row counts, uploaded to the S3 bucket irish-job-portal-backups (eu-west-1; versioning on, a lifecycle rule expires old ones, both set in
+# the AWS console). public.cro_company rows are left out (re-imported weekly). The restore is proved by restore-check.yml.
+# Secrets (set by the engineer): BACKUP_DATABASE_URL (app_backup's Supabase session pooler string), BACKUP_S3_KEY_ID and BACKUP_S3_SECRET (the
+# job-portal-backup IAM user: put, get and list only, no delete). A red run emails the engineer.
+on:
+  schedule:
+    # Daily, 02:47 UTC; GitHub may start it 4 to 8 hours late. Clear of the fetch (05:17, 06:02) and its watch (12:11, 17:41).
+    # Before the first real account, change this one line to "47 */6 * * *" (every 6 hours).
+    - cron: "47 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never two runs at once; a second one waits.
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # pg_dump must be version 17 like the server (the runner has 16). The PGDG apt repository is Postgres's own; its script adds it.
+      - name: Install the Postgres 17 client
+        run: |
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-17
+          echo /usr/lib/postgresql/17/bin >> "$GITHUB_PATH"
+      - name: Back up the database
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          pg_dump --version
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          mkdir "$RUNNER_TEMP/backup"
+          node packages/db/src/backup-cli.ts "$RUNNER_TEMP/backup"
+      # The dump first, the manifest last: a manifest in the bucket always has its dump.
+      - name: Upload to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET }}
+          AWS_DEFAULT_REGION: eu-west-1
+        run: |
+          name="$(basename "$RUNNER_TEMP"/backup/db-*.json .json)"
+          stamp="${name#db-}"
+          prefix="s3://irish-job-portal-backups/db/${stamp:0:4}/${stamp:4:2}/"
+          aws s3 cp --only-show-errors "$RUNNER_TEMP/backup/$name.dump" "$prefix"
+          aws s3 cp --only-show-errors "$RUNNER_TEMP/backup/$name.json" "$prefix"
+          echo "uploaded $name.dump and $name.json"

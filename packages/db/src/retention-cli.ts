@@ -1,9 +1,11 @@
 // The daily retention run: applies the periods in `setting` by calling private.run_retention (0002_functions.sql), which does ONE rule per call
 // and says `rule: null` when nothing is due. Run from the repo root with the app_admin login, as the last step of .github/workflows/daily-fetch.yml:
 //   RETENTION_ADMIN_DATABASE_URL=... node packages/db/src/retention-cli.ts
-// One line per call and a total. Exit 1 (red run) when: any call returned storage_keys (no file storage exists yet, so those files are
-// deleted by hand: every key is printed), the call cap was reached, a rule made no progress (it would repeat for ever), or the database refused.
+// One line per call and a total. Every stored file a call returns (storage_keys) is removed from the file store (FILES_S3_*, read only when there is
+// one to remove) and counted. Exit 1 (red run) when: a removal failed (its key is printed: keys are random ids, never names; the row is already
+// gone, so the file is removed by hand), the call cap was reached, a rule made no progress (it would repeat for ever), or the database refused.
 import pg from "pg";
+import { fileStore, type FileStore } from "./file-store.ts";
 import { sslOptions } from "./ssl.ts";
 
 export const BATCH = 1000;
@@ -11,7 +13,7 @@ export const MAX_CALLS = 200;
 
 type Step = { rule: string | null; target?: string | null; done: number; left: number; skipped: unknown[]; storage_keys: string[] };
 
-export async function drain(db: Pick<pg.ClientBase, "query">, log: (line: string) => void, batch = BATCH, maxCalls = MAX_CALLS): Promise<number> {
+export async function drain(db: Pick<pg.ClientBase, "query">, log: (line: string) => void, batch = BATCH, maxCalls = MAX_CALLS, store: () => FileStore = fileStore): Promise<number> {
   let total = 0;
   const keys: string[] = [];
   let problem = "";
@@ -25,9 +27,15 @@ export async function drain(db: Pick<pg.ClientBase, "query">, log: (line: string
     if (s.done === 0) { problem = `${s.rule} made no progress: stopped`; break; }
   }
   log(`retention: ${total} rows handled`);
-  if (keys.length) log(`${keys.length} stored files must be deleted by hand: ${keys.map((k) => JSON.stringify(k)).join(" ")}`);
+  const failed: string[] = [];
+  let why = "";
+  for (const k of keys) {
+    try { await store().remove(k); } catch (e) { failed.push(k); why ||= (e as Error).message; }
+  }
+  if (keys.length) log(`stored files: ${keys.length - failed.length} removed, ${failed.length} failed`);
+  if (failed.length) log(`not removed (${why}), delete by hand: ${failed.map((k) => JSON.stringify(k)).join(" ")}`);
   if (problem) log(problem);
-  return keys.length || problem ? 1 : 0;
+  return failed.length || problem ? 1 : 0;
 }
 
 export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: string) => void): Promise<number> {

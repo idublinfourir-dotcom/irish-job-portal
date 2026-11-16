@@ -1,0 +1,68 @@
+name: Restore check
+
+# Proves the newest backup can be restored (step 15, decisions #115 and #126): downloads it from the S3 bucket irish-job-portal-backups, restores it
+# with pg_restore --exit-on-error into a fresh Supabase Postgres container (the same image as the tests), and compares every table's row count and the
+# migrations with the manifest and the repo. It also fails when the newest backup is more than 48 hours old, which catches a backup that stopped.
+# Secrets (the same two as backup.yml, the download step only): BACKUP_S3_KEY_ID and BACKUP_S3_SECRET. It touches no real database.
+on:
+  schedule:
+    - cron: "37 4 1 * *" # monthly, the 1st at 04:37 UTC; GitHub may start it late
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never two runs at once; a second one waits.
+concurrency:
+  group: restore-check
+  cancel-in-progress: false
+
+jobs:
+  restore-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The empty server to restore into: the same image as packages/db/test/test-db.sh and check.yml. Keep them in step.
+    services:
+      postgres:
+        image: supabase/postgres:17.11.0.018
+        env:
+          POSTGRES_PASSWORD: test
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # Keys are db/<yyyy>/<mm>/db-<yyyymmddThhmmZ>.json, so the last one in sorted order is the newest. The manifest is uploaded after its dump.
+      - name: Download the newest backup
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET }}
+          AWS_DEFAULT_REGION: eu-west-1
+        run: |
+          key="$(aws s3 ls s3://irish-job-portal-backups/db/ --recursive | awk '{print $4}' | grep '\.json$' | sort | tail -n 1)"
+          if [ -z "$key" ]; then echo "no backup found in the bucket"; exit 1; fi
+          echo "newest backup: $key"
+          mkdir "$RUNNER_TEMP/restore"
+          aws s3 cp --only-show-errors "s3://irish-job-portal-backups/$key" "$RUNNER_TEMP/restore/"
+          aws s3 cp --only-show-errors "s3://irish-job-portal-backups/${key%.json}.dump" "$RUNNER_TEMP/restore/"
+      # pg_restore runs inside the service container (version 17, no client to install); the dump is read from the runner and piped in.
+      - name: Restore and check
+        env:
+          RESTORE_ADMIN_URL: postgres://postgres:test@127.0.0.1:54329/postgres
+          PG_TOOLS_ADDR: 127.0.0.1:5432
+          DATABASE_SSL: disable
+        run: |
+          export PG_TOOLS_PREFIX="docker exec -i -e PGPASSWORD $(docker ps -q --filter ancestor=supabase/postgres:17.11.0.018)"
+          m="$(ls "$RUNNER_TEMP"/restore/db-*.json)"
+          node packages/db/src/restore-check-cli.ts --manifest "$m" --dump "${m%.json}.dump"

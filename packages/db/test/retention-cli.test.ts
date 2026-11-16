@@ -2,6 +2,7 @@
 // run does nothing, the cap holds, and other logins are refused. Fake data only. Periods are the starting values in `setting` (placeholders).
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { memoryStore } from "../src/file-store.ts";
 import { drain, main } from "../src/retention-cli.ts";
 import { createTestDb, urlFor } from "./db";
 
@@ -97,5 +98,47 @@ describe("retention security", () => {
     const lines: string[] = [];
     expect(await main(["--batch", "1; drop table candidate_user"], env("app_admin"), (l) => lines.push(l))).toBe(2);
     expect(await count("candidate_user", "c-keep")).toBe(1);
+  });
+});
+
+describe("retention removes stored files", () => {
+  const consent = async (who: string) => (await su("insert into consent_record(candidate_user_id, consent_text_id) values ($1, (select id from consent_text limit 1)) returning id", [who])).rows[0].id;
+  const drainWith = async (store: ReturnType<typeof memoryStore>) => {
+    const c = new pg.Client({ connectionString: urlFor(db.name, "app_admin") });
+    await c.connect();
+    const lines: string[] = [];
+    try { return { code: await drain(c, (l) => lines.push(l), undefined, undefined, () => store), lines }; } finally { await c.end(); }
+  };
+  beforeAll(async () => {
+    await su("insert into consent_text(purpose, version, body) values ('services_request', 'v-files', 'Fake wording')");
+  });
+  it("a due erase (a deleted account's CV) and a due case copy return their keys, and the run removes exactly those objects", async () => {
+    await candidate("c-files-gone", true, "90 days");
+    await su("update candidate_user set deleted_at = now() - interval '40 days' where id = 'c-files-gone'");
+    await su("insert into candidate_cv(candidate_user_id, storage_key, file_name, content_type, size_bytes) values ('c-files-gone', 'cv/gone', 'a.pdf', 'pdf', 10)");
+    await candidate("c-files-case", true, "1 day");
+    const sc = (await su("insert into services_case(candidate_user_id, consent_record_id, status, closed_at, close_reason) values ('c-files-case', $1, 'closed', now() - interval '40 days', 'withdrawn') returning id", [await consent("c-files-case")])).rows[0].id;
+    const doc = (await su("insert into case_document(services_case_id, storage_key, file_name, content_type, byte_size, candidate_user_id) values ($1, 'case/old', 'p.pdf', 'pdf', 10, 'c-files-case') returning id", [sc])).rows[0].id;
+    const store = memoryStore();
+    for (const k of ["cv/gone", "case/old", "cv/keep"]) await store.put(k, new Uint8Array([1]), "application/pdf");
+    const r = await drainWith(store);
+    expect(r.code, r.lines.join("\n")).toBe(0);
+    expect([...store.objects.keys()]).toEqual(["cv/keep"]);
+    expect(r.lines.join("\n")).toMatch(/deleted_account_grace \(candidate\): 1 done/);
+    expect(r.lines.join("\n")).toMatch(/services_case_copy: 1 done/);
+    expect(r.lines.at(-1)).toBe("stored files: 2 removed, 0 failed");
+    expect(r.lines.join("\n")).not.toMatch(/cv\/gone|case\/old/);
+    expect((await su("select storage_key, copy_deleted_at is not null gone from case_document where id = $1", [doc])).rows[0]).toEqual({ storage_key: null, gone: true });
+  });
+  it("a failed removal makes the run red and prints that key", async () => {
+    await candidate("c-files-fail", true, "90 days");
+    await su("update candidate_user set deleted_at = now() - interval '40 days' where id = 'c-files-fail'");
+    await su("insert into candidate_cv(candidate_user_id, storage_key, file_name, content_type, size_bytes) values ('c-files-fail', 'cv/fail', 'a.pdf', 'pdf', 10)");
+    const store = memoryStore();
+    store.failNext();
+    const r = await drainWith(store);
+    expect(r.code).toBe(1);
+    expect(r.lines.at(-1)).toBe('not removed (file store: fake failure), delete by hand: "cv/fail"');
+    expect((await runMain()).code).toBe(0); // the row went with the erase: tomorrow's run has nothing left to remove
   });
 });
