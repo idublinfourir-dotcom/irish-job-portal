@@ -438,6 +438,12 @@
   "list": "ineligible"
  },
  {
+  "id": "in-3217",
+  "code": "3217",
+  "title": "Health Associate Professionals: Pharmaceutical technician (with the exception of Pharmaceutical Technicians working in healthcare settings that provide medical care, diagnosis, treatment, or preventative services only excluding pharmacies operating in the retail market)",
+  "list": "ineligible"
+ },
+ {
   "id": "in-3219",
   "code": "3219",
   "title": "Health Associate Professionals: Health associate professionals not elsewhere classified (includes Acupuncturists, Homeopaths, Hypnotherapists, Massage therapists, Reflexologists, Sports therapists) (with the exception of Genetic Counsellor)",

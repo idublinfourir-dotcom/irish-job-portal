@@ -18,6 +18,11 @@ export type Minimums = {
   minContractMonths: number; // today MIN_CONTRACT_MONTHS, 24
   standardWeekHours: number; // today STANDARD_WEEK_HOURS, 39
   checkedOn: string;         // today RULES_CHECKED_ON, "2026-11-12"
+  // General Employment Permit posting (S.I. 643/2025 Schedule 8). All four or none: version 1 has none, so a General post is refused until a version has them.
+  general?: number;               // the standard minimum, GENERAL_MINIMUM
+  generalLower?: number;          // the lower rate, GENERAL_LOWER_MINIMUM
+  generalLowerCodes?: string[];   // four-digit codes at the lower rate, GENERAL_LOWER_CODES
+  generalQuotaFullCodes?: string[]; // four-digit codes whose quota is full: no new General posts (#85); may be empty
 };
 export type RulesSnapshot = {
   minimums: Minimums;

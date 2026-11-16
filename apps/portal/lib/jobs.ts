@@ -26,9 +26,12 @@ export type Post = {
   status: "draft" | "live"; title: string; description: string; county: (typeof COUNTIES)[number]; occupationCode: string;
   contractType: "permanent" | "fixed_term"; contractMonths: number | null; salaryLow: number | null; salaryHigh: number | null;
   payGrade: string | null; healthInsuranceEur: number | null; weeklyHours: number; ownPageUrl: string; clientName: string | null; statement: Statement | null;
+  permitType: "critical_skills" | "general";
+  /** The employer ticked the exception wording of an Ineligible entry ("with the exception of ..."). Not stored: it only lets this check pass. */
+  exceptionConfirmed: boolean;
 };
 const POST_KEYS = ["status", "title", "description", "county", "occupationCode", "contractType", "contractMonths", "salaryLow", "salaryHigh", "payGrade",
-  "healthInsuranceEur", "weeklyHours", "ownPageUrl", "clientName", "statement"];
+  "healthInsuranceEur", "weeklyHours", "ownPageUrl", "clientName", "statement", "permitType", "exceptionConfirmed"];
 
 const BAD_LINE = /[\p{Cc}\p{Cf}]/u; // one line: no control or format characters (right-to-left overrides and zero-width characters included)
 const BAD_TEXT = /[\p{Cf}]|[^\P{Cc}\n\r\t]/u; // a text: line breaks and tabs allowed
@@ -74,12 +77,14 @@ export function checkPost(b: unknown, keys = POST_KEYS): Post | null {
   const weeklyHours = b.weeklyHours === undefined ? 39 : int(b.weeklyHours, 1, 60);
   const clientName = opt(b.clientName, (v) => line(v, 2, 160));
   const statement = opt(b.statement, checkStatement);
+  const permitType = b.permitType === undefined ? "critical_skills" : b.permitType;
+  if ((permitType !== "critical_skills" && permitType !== "general") || (b.exceptionConfirmed !== undefined && typeof b.exceptionConfirmed !== "boolean")) return null;
   if (salaryLow === undefined || salaryHigh === undefined || payGrade === undefined || healthInsuranceEur === undefined || weeklyHours === null
     || clientName === undefined || statement === undefined) return null;
   if (salaryLow === null && (salaryHigh !== null || payGrade === null)) return null; // pay or a public pay grade; a top needs a bottom
   if (salaryHigh !== null && salaryLow !== null && salaryHigh < salaryLow) return null;
   return { status, title, description, county, occupationCode, contractType, contractMonths, salaryLow, salaryHigh, payGrade, healthInsuranceEur,
-    weeklyHours, ownPageUrl, clientName, statement };
+    weeklyHours, ownPageUrl, clientName, statement, permitType, exceptionConfirmed: b.exceptionConfirmed === true };
 }
 
 const id = (v: unknown) => (typeof v === "number" && Number.isSafeInteger(v) && v > 0 ? v : null);
@@ -102,22 +107,38 @@ export function checkClose(b: unknown): { jobId: number; hireAnswer: Hire } | nu
 }
 
 // ===== the rules
-export type Verdict = { ok: true; passRoute: "stated_pay" | "public_pay"; status: "live" | "in_review"; sector: string; stage: string } | { ok: false; code: string; stage?: string };
+export type Verdict = { ok: true; passRoute: "stated_pay" | "public_pay"; status: "live" | "in_review"; sector: string; stage: string }
+  | { ok: false; code: string; stage?: string; exception?: string };
 
 /**
  * The rules on the structured fields: the occupation list, the contract, the rules chain (Ireland, "no sponsorship", Irish employer, contract text, scam wording), then the pay.
+ * A General Employment Permit post (4.2): no occupation list or contract length, a quota check, the General minimum (a lower rate for some codes), stated pay only,
+ * and the sponsorship statement always. The General figures are optional in the minimums, so a version without them refuses with GENERAL_RULES_NOT_SET.
  * `rules`: the minimums and lists in force (#229, `getRules(db)` from the database); the DETE names are not loaded: the chain uses them only for LinkedIn adverts (assess.ts, `known`).
  */
 export async function rulesFor(p: Post, employerName: string, r: RulesSnapshot): Promise<Verdict> {
   const m = r.minimums;
+  const general = p.permitType === "general";
+  if (general && (m.general === undefined || m.generalLower === undefined || !m.generalLowerCodes || !m.generalQuotaFullCodes)) return { ok: false, code: "GENERAL_RULES_NOT_SET" };
   const onList = listAnswer(r.occupationLists, p.occupationCode);
-  if (onList === "no") return { ok: false, code: "OCCUPATION_INELIGIBLE" };
-  if (onList === null && !m.nonListRoute) return { ok: false, code: "OCCUPATION_NOT_ON_LIST" };
-  // a Critical Skills post needs a contract of at least 2 years (#32)
-  if (p.contractType === "fixed_term" && p.contractMonths! < m.minContractMonths) return { ok: false, code: "CONTRACT_TOO_SHORT" };
+  if (onList === "no") {
+    // an Ineligible entry that names an exception passes when the employer confirmed they meet it; the reply carries the wording so the page can show it
+    const title = r.occupationLists.find((e) => e.code === p.occupationCode && e.list === "ineligible")?.title;
+    const exception = title?.includes("with the exception of") ? title : undefined;
+    if (!(exception && p.exceptionConfirmed)) return { ok: false, code: "OCCUPATION_INELIGIBLE", ...(exception ? { exception } : {}) };
+  }
+  if (general && m.generalQuotaFullCodes!.includes(p.occupationCode)) return { ok: false, code: "QUOTA_FULL" }; // #85: a full quota blocks new postings
+  if (!general) {
+    if (onList === null && !m.nonListRoute) return { ok: false, code: "OCCUPATION_NOT_ON_LIST" };
+    // a Critical Skills post needs a contract of at least 2 years (#32); a General post has no minimum length
+    if (p.contractType === "fixed_term" && p.contractMonths! < m.minContractMonths) return { ok: false, code: "CONTRACT_TOO_SHORT" };
+  }
+  // ponytail: for a General post the chain's text reader gets a 1-month minimum, so "6 months" in the advert is not "short" (maternity, intern and temporary wording still stop it)
+  const chain = chainRules(r);
+  if (general) chain.minimums = { ...m, minContractMonths: 1 };
   const a = await assess(
     { source: "employer", employer: employerName, title: p.title, location: `${p.county}, Ireland`, description: p.description, employmentType: "", salaryBox: "" },
-    { deteNames: new Set(), ...chainRules(r), matcher: async () => ({ occupationCode: p.occupationCode, onCriticalSkillsList: "yes", confidence: "high" }) },
+    { deteNames: new Set(), ...chain, matcher: async () => ({ occupationCode: p.occupationCode, onCriticalSkillsList: "yes", confidence: "high" }) },
     // The contract is stated in its own fields (checked above), so the chain's "contract unclear" stops do not apply; a short contract in the text still fails.
     { contractConfirmed: true, ...(p.salaryLow !== null ? { salary: { low: p.salaryLow, high: p.salaryHigh ?? p.salaryLow } } : {}) },
   );
@@ -125,16 +146,19 @@ export async function rulesFor(p: Post, employerName: string, r: RulesSnapshot):
   // Pay: the top of a range counts (#66), with employer-paid health insurance (#68), against the minimum for the stated hours. Compared with >=:
   // DETE's page says "over 68,911" and its checklist "is 68,911 or more"; we follow the checklist.
   // #225 (step9/dete-thresholds-research.md): a role not on the Critical Skills list and not Ineligible qualifies at the non-list minimum.
-  const minimum = minimumForHours(onList === "yes" ? m.criticalSkills : m.nonList, p.weeklyHours, m.standardWeekHours);
+  // General: the lower rate covers code 6145 only (ponytail: meat processor and horticulture sit inside 8111 and 9119, which also hold standard-rate roles; add per-entry rates if those sectors are posted).
+  const base = general ? (m.generalLowerCodes!.includes(p.occupationCode) ? m.generalLower! : m.general!) : onList === "yes" ? m.criticalSkills : m.nonList;
+  const minimum = minimumForHours(base, p.weeklyHours, m.standardWeekHours);
   const pay = p.salaryLow === null ? null : (p.salaryHigh ?? p.salaryLow) + (p.healthInsuranceEur ?? 0);
   let passRoute: "stated_pay" | "public_pay";
   if (pay !== null && pay >= minimum) passRoute = "stated_pay";
-  else if (a.publicPayTier > 0 && onList === "yes") passRoute = "public_pay"; // a public pay-scale employer on a list role (#67)
+  else if (!general && a.publicPayTier > 0 && onList === "yes") passRoute = "public_pay"; // a public pay-scale employer on a list role (#67)
   else return { ok: false, code: pay === null ? "PAY_REQUIRED" : "PAY_BELOW_MINIMUM" };
+  if (general && !p.statement) return { ok: false, code: "STATEMENT_REQUIRED" }; // #31: a General job appears only when the employer confirms sponsorship
   return { ok: true, passRoute, status: a.bucket === "queue" || a.scamFlag ? "in_review" : "live", sector: a.sector, stage: a.stage };
 }
 export function verdictReply(v: Verdict & { ok: false }): Response {
-  return Response.json({ code: v.code, ...(v.stage ? { stage: v.stage } : {}) }, { status: 422 });
+  return Response.json({ code: v.code, ...(v.stage ? { stage: v.stage } : {}), ...(v.exception ? { exception: v.exception } : {}) }, { status: 422 });
 }
 
 // ===== database refusals
@@ -189,12 +213,12 @@ const TEXT = "select id from consent_text where purpose = 'sponsorship_statement
 const INSERT_JOB =
   "insert into job(organisation_id, source, job_source_id, title, employer_name, county, sector, occupation_code, contract_type, contract_months, permit_type, badge, " +
   "salary_low, salary_high, health_insurance_eur, pay_grade, weekly_hours, pass_route, status, closes_at, search_vector, own_page_url, permit_employer_kind, permit_employer_name, posted_by_membership_id) " +
-  "values ($1, $2, (select id from job_source where kind = 'portal' and board = 'employer'), $3::text, $4::text, $5, $6, $7, $8, $9, 'critical_skills', $10, $11, $12, $13, $14, $15, $16, $17, " +
+  "values ($1, $2, (select id from job_source where kind = 'portal' and board = 'employer'), $3::text, $4::text, $5, $6, $7, $8, $9, $23, $10, $11, $12, $13, $14, $15, $16, $17, " +
   "now() + interval '30 days', to_tsvector('english', $3::text || ' ' || $4::text || ' ' || $18::text), $19, $20, $21, $22) returning id, status, badge, pass_route";
 const UPDATE_JOB =
   "update job set title = $3::text, county = $4, sector = $5, occupation_code = $6, contract_type = $7, contract_months = $8, badge = $9, salary_low = $10, salary_high = $11, " +
   "health_insurance_eur = $12, pay_grade = $13, weekly_hours = $14, pass_route = $15, status = $16, own_page_url = $17, permit_employer_kind = $18, permit_employer_name = $19, " +
-  "posted_by_membership_id = $20, search_vector = to_tsvector('english', $3::text || ' ' || employer_name || ' ' || $21::text) " +
+  "posted_by_membership_id = $20, permit_type = $22, search_vector = to_tsvector('english', $3::text || ' ' || employer_name || ' ' || $21::text) " +
   "where id = $1 and organisation_id = $2 returning id, status, badge, pass_route";
 const UPSERT_TEXT = "insert into job_text(job_id, advert_text) values ($1, $2) on conflict (job_id) do update set advert_text = excluded.advert_text";
 const SUPERSEDE = "update sponsorship_statement set superseded_at = now() where job_id = $1 and superseded_at is null";
@@ -232,14 +256,14 @@ export async function jobPost(request: Request): Promise<Response> {
     const r = (await c.query(INSERT_JOB, [who.organisationId, org.kind === "agency" ? "agency" : "employer", p.title, org.display_name, p.county, v.sector, p.occupationCode,
       p.contractType, p.contractMonths, p.statement ? "sponsor_confirmed" : null, p.salaryLow, p.salaryHigh, p.healthInsuranceEur, p.payGrade, p.weeklyHours,
       p.status === "live" ? v.passRoute : null, p.status === "live" ? v.status : "draft", p.description, p.ownPageUrl, p.clientName ? "client" : "self", p.clientName,
-      who.membershipId])).rows[0];
+      who.membershipId, p.permitType])).rows[0];
     await c.query(UPSERT_TEXT, [r.id, p.description]);
     if (p.statement) { const refused = await sign(c, Number(r.id), who, p); if (refused) return refused; }
     return jobReply(r);
   });
 }
 
-const LOCK = "select status, badge, pass_route, sector, title, occupation_code, salary_low, salary_high, pay_grade, health_insurance_eur, weekly_hours from job " +
+const LOCK = "select status, badge, pass_route, sector, permit_type, title, occupation_code, salary_low, salary_high, pay_grade, health_insurance_eur, weekly_hours from job " +
   "where id = $1 and organisation_id = $2 and source in ('employer','agency') for update";
 
 /**
@@ -258,7 +282,7 @@ export async function jobEdit(request: Request): Promise<Response> {
     const org = (await c.query(ORG, [who.organisationId])).rows[0] as { display_name: string; kind: string };
     if (p.clientName && org.kind !== "agency") return no(400, "CLIENT_ONLY_FOR_AGENCIES");
     const key = j.title !== p.title || j.occupation_code !== p.occupationCode || j.salary_low !== p.salaryLow || j.salary_high !== p.salaryHigh
-      || j.pay_grade !== p.payGrade || j.health_insurance_eur !== p.healthInsuranceEur || (j.weekly_hours ?? 39) !== p.weeklyHours;
+      || j.permit_type !== p.permitType || j.pay_grade !== p.payGrade || j.health_insurance_eur !== p.healthInsuranceEur || (j.weekly_hours ?? 39) !== p.weeklyHours;
     const publish = j.status === "draft" && p.status === "live";
     let status: string = j.status, passRoute = j.pass_route, sector = j.sector;
     if (publish || (j.status !== "draft" && key)) {
@@ -272,7 +296,7 @@ export async function jobEdit(request: Request): Promise<Response> {
     const badge = p.statement ? "sponsor_confirmed" : j.status !== "draft" && key ? null : j.badge;
     const r = (await c.query(UPDATE_JOB, [p.jobId, who.organisationId, p.title, p.county, sector, p.occupationCode, p.contractType, p.contractMonths, badge, p.salaryLow,
       p.salaryHigh, p.healthInsuranceEur, p.payGrade, p.weeklyHours, passRoute, status, p.ownPageUrl, p.clientName ? "client" : "self", p.clientName, who.membershipId,
-      p.description])).rows[0];
+      p.description, p.permitType])).rows[0];
     await c.query(UPSERT_TEXT, [p.jobId, p.description]);
     if (p.statement) { const refused = await sign(c, p.jobId, who, p); if (refused) return refused; }
     return jobReply(r);

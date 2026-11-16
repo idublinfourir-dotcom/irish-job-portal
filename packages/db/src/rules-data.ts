@@ -28,6 +28,8 @@ const CLEANED = /^[a-z0-9]+( [a-z0-9]+)*$/;
 const TESTS: readonly string[] = ["brand", "250_staff", "dete_steady_sponsor"];
 const keysAre = (o: object, need: string[], may: string[] = []) =>
   need.every((k) => Object.hasOwn(o, k)) && Object.keys(o).every((k) => need.includes(k) || may.includes(k));
+const GENERAL = ["general", "generalLower", "generalLowerCodes", "generalQuotaFullCodes"];
+const codes = (v: unknown) => Array.isArray(v) && v.length <= 200 && v.every((c) => typeof c === "string" && /^\d{4}$/.test(c)) && new Set(v).size === v.length;
 const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 const int = (v: unknown, lo: number, hi: number) => Number.isInteger(v) && (v as number) >= lo && (v as number) <= hi;
 
@@ -47,16 +49,23 @@ function list<T>(kind: string, v: unknown, one: (e: unknown, i: number) => T, ke
 export function cleanData(kind: RulesKind, v: unknown): VersionData {
   switch (kind) {
     case "minimums": {
-      if (!isObject(v) || !keysAre(v, ["criticalSkills", "graduate", "graduateMonths", "nonList", "nonListRoute", "minContractMonths", "standardWeekHours", "checkedOn"]))
+      if (!isObject(v) || !keysAre(v, ["criticalSkills", "graduate", "graduateMonths", "nonList", "nonListRoute", "minContractMonths", "standardWeekHours", "checkedOn"], GENERAL))
         fail(kind, "a minimum is missing or an unknown field is present");
       for (const k of ["criticalSkills", "graduate", "nonList"]) if (!int(v[k], 1, 1_000_000)) fail(kind, `${k} is not a positive whole euro amount`);
       for (const k of ["graduateMonths", "minContractMonths"]) if (!int(v[k], 1, 120)) fail(kind, `${k} is not a positive number of months`);
       if (!int(v.standardWeekHours, 1, 60)) fail(kind, "standardWeekHours is not 1 to 60");
       if (typeof v.nonListRoute !== "boolean") fail(kind, "nonListRoute is not true or false");
       if (!validDate(v.checkedOn)) fail(kind, "checkedOn is not a date");
+      const has = GENERAL.filter((k) => Object.hasOwn(v, k)).length;
+      if (has !== 0 && has !== GENERAL.length) fail(kind, "the four General permit fields are all present or all absent");
+      if (has) {
+        for (const k of ["general", "generalLower"]) if (!int(v[k], 1, 1_000_000)) fail(kind, `${k} is not a positive whole euro amount`);
+        for (const k of ["generalLowerCodes", "generalQuotaFullCodes"]) if (!codes(v[k])) fail(kind, `${k} is not a list of four-digit codes`);
+      }
       const m = v as Minimums;
       return { criticalSkills: m.criticalSkills, graduate: m.graduate, graduateMonths: m.graduateMonths, nonList: m.nonList, nonListRoute: m.nonListRoute,
-        minContractMonths: m.minContractMonths, standardWeekHours: m.standardWeekHours, checkedOn: m.checkedOn };
+        minContractMonths: m.minContractMonths, standardWeekHours: m.standardWeekHours, checkedOn: m.checkedOn,
+        ...(has ? { general: m.general, generalLower: m.generalLower, generalLowerCodes: [...m.generalLowerCodes!], generalQuotaFullCodes: [...m.generalQuotaFullCodes!] } : {}) };
     }
     case "critical_skills_list":
     case "ineligible_list": {

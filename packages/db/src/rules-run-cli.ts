@@ -14,12 +14,18 @@ export const PICK =
   "order by effective_from desc, id desc limit 1 for update";
 // Portal posts that passed on their stated pay (public_pay posts pass on the employer's pay scale and are left alone).
 export const LIVE_STATED =
-  "select id::text as id, occupation_code, salary_low, salary_high, health_insurance_eur, weekly_hours from job " +
+  "select id::text as id, permit_type, occupation_code, salary_low, salary_high, health_insurance_eur, weekly_hours from job " +
   "where source in ('employer','agency') and status = 'live' and pass_route = 'stated_pay' for update";
-type Job = { id: string; occupation_code: string | null; salary_low: number | null; salary_high: number | null; health_insurance_eur: number | null; weekly_hours: number | null };
+type Job = { id: string; permit_type?: string; occupation_code: string | null; salary_low: number | null; salary_high: number | null; health_insurance_eur: number | null; weekly_hours: number | null };
 
 /** The posting check's pay rule (apps/portal/lib/jobs.ts): the top of the range plus employer-paid health insurance, >= the minimum for the stated hours. */
 export function belowMinimum(j: Job, m: Minimums, criticalSkills: ReadonlySet<string>): boolean {
+  if (j.permit_type === "general") { // the General minimum (a lower rate for some codes); with no General figures in force there is nothing to compare with, so it stays live
+    if (m.general === undefined || m.generalLower === undefined || !m.generalLowerCodes) return false;
+    if (j.salary_low === null) return true;
+    const base = j.occupation_code !== null && m.generalLowerCodes.includes(j.occupation_code) ? m.generalLower : m.general;
+    return (j.salary_high ?? j.salary_low) + (j.health_insurance_eur ?? 0) < minimumForHours(base, j.weekly_hours ?? undefined, m.standardWeekHours);
+  }
   const onList = j.occupation_code !== null && criticalSkills.has(j.occupation_code);
   if (!onList && !m.nonListRoute) return true;
   if (j.salary_low === null) return true;

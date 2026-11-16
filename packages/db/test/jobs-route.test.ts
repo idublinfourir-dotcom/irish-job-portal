@@ -344,3 +344,149 @@ describe("budgets: median of 9 calls", () => {
     console.log(`jobs budgets: post ${sp} statements (signed ${ss}), median ${postMs.toFixed(1)} ms; list ${sl} statements, median ${listMs.toFixed(1)} ms`);
   });
 });
+
+// General Employment Permit posts (feature plan 4.2) and the exception tick. The rules in force are read through getRules, which keeps them 5 minutes per
+// process, so the tests move the clock past that after changing the minimums row (only Date is faked; the other timers stay real).
+describe("General Employment Permit posts", () => {
+  const care = { ...good, title: "Healthcare Assistant", description: "We are hiring a healthcare assistant for our care home in Cork. Full sponsorship offered.", county: "Cork",
+    occupationCode: "6145", salaryLow: 33000, salaryHigh: null, permitType: "general", statement: signed };
+  const chef = { ...good, title: "Head Chef", description: "We are hiring a head chef for our restaurant in Galway. Full sponsorship offered.", county: "Galway",
+    occupationCode: "5434", salaryLow: 80000, salaryHigh: null };
+  const GENERAL = { general: 36605, generalLower: 32691, generalLowerCodes: ["6145"], generalQuotaFullCodes: [] as string[] };
+  let clock = Date.now();
+  const setMinimums = async (extra: object) => {
+    await su.query("update rules_version set data = (data - 'general' - 'generalLower' - 'generalLowerCodes' - 'generalQuotaFullCodes') || $1::jsonb where kind = 'minimums' and seeded_by_owner", [JSON.stringify(extra)]);
+    clock += 6 * 60_000; // past the 5 minute cache
+    vi.setSystemTime(clock);
+  };
+  beforeAll(async () => { await seedTexts(); vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(clock); });
+  afterAll(() => { vi.useRealTimers(); });
+
+  it("is refused with GENERAL_RULES_NOT_SET while the rules in force have no General figures; a draft still saves", async () => {
+    await setMinimums({});
+    const c = await company();
+    const r = await post(c.owner.cookie, care);
+    expect([r.status, r.json]).toEqual([422, { code: "GENERAL_RULES_NOT_SET" }]);
+    expect(await jobCount(c.org)).toBe(0);
+    expect((await post(c.owner.cookie, { ...care, status: "draft" })).json).toMatchObject({ status: "draft", passRoute: null });
+    expect((await one("select permit_type from job where organisation_id = $1", [c.org])).permit_type).toBe("general");
+  });
+
+  it("goes live with permit_type general, Sponsor confirmed and the stated pay route; refused without the statement", async () => {
+    await setMinimums(GENERAL);
+    const c = await company({ name: "Fake Care Home Limited" });
+    const r = await post(c.owner.cookie, care);
+    expect([r.status, r.json]).toMatchObject([200, { status: "live", badge: "sponsor_confirmed", passRoute: "stated_pay" }]);
+    expect(await job(r.json!.jobId)).toMatchObject({ permit_type: "general", badge: "sponsor_confirmed", pass_route: "stated_pay", sector: "other", status: "live" });
+    const before = await jobCount(c.org);
+    const nostate = await post(c.owner.cookie, { ...care, statement: undefined });
+    expect([nostate.status, nostate.json]).toEqual([422, { code: "STATEMENT_REQUIRED" }]);
+    for (const [o, code] of [[{ salaryLow: 32690 }, "PAY_BELOW_MINIMUM"], [{ occupationCode: "3545", salaryLow: 36604 }, "PAY_BELOW_MINIMUM"], [{ salaryLow: null, payGrade: "Care scale" }, "PAY_REQUIRED"],
+      [{ occupationCode: "4112" }, "OCCUPATION_INELIGIBLE"]] as [object, string][]) {
+      const x = await post(c.owner.cookie, { ...care, ...o });
+      expect([x.status, x.json?.code], JSON.stringify(o)).toEqual([422, code]);
+    }
+    expect(await jobCount(c.org)).toBe(before);
+    // a short fixed term is fine for General; the Critical Skills default still needs 24 months and its own minimum
+    expect((await post(c.owner.cookie, { ...care, contractType: "fixed_term", contractMonths: 6 })).status).toBe(200);
+    const cs = await post(c.owner.cookie, { ...care, permitType: undefined });
+    expect([cs.status, cs.json?.code]).toEqual([422, "PAY_BELOW_MINIMUM"]);
+    expect((await post(c.owner.cookie, { ...good, statement: signed })).json).toMatchObject({ status: "live", badge: "sponsor_confirmed" });
+    expect((await one("select permit_type from job where id = $1", [(await post(c.owner.cookie, good)).json!.jobId])).permit_type).toBe("critical_skills");
+  });
+
+  it("an update that switches the permit type runs the rules again", async () => {
+    await setMinimums(GENERAL);
+    const c = await company({ name: "Fake Care Home Limited" });
+    const id = (await post(c.owner.cookie, { ...good, statement: signed })).json!.jobId;
+    expect((await job(id)).permit_type).toBe("critical_skills");
+    const noState = await edit(c.owner.cookie, { ...good, jobId: id, permitType: "general" });
+    expect([noState.status, noState.json]).toEqual([422, { code: "STATEMENT_REQUIRED" }]);
+    expect((await job(id)).permit_type).toBe("critical_skills");
+    const toGeneral = await edit(c.owner.cookie, { ...care, jobId: id });
+    expect([toGeneral.status, toGeneral.json]).toMatchObject([200, { status: "live", badge: "sponsor_confirmed", passRoute: "stated_pay" }]);
+    expect(await job(id)).toMatchObject({ permit_type: "general", occupation_code: "6145", salary_low: 33000 });
+    const back = await edit(c.owner.cookie, { ...care, jobId: id, permitType: "critical_skills" });
+    expect([back.status, back.json]).toEqual([422, { code: "PAY_BELOW_MINIMUM" }]); // care work at 33,000 is not a Critical Skills pay
+    expect((await job(id)).permit_type).toBe("general");
+    const lower = await edit(c.owner.cookie, { ...care, jobId: id, salaryLow: 32000 });
+    expect(lower.json).toEqual({ code: "PAY_BELOW_MINIMUM" });
+  });
+
+  it("a full quota blocks the code", async () => {
+    await setMinimums({ ...GENERAL, generalQuotaFullCodes: ["6145"] });
+    const c = await company({ name: "Fake Care Home Limited" });
+    expect((await post(c.owner.cookie, care)).json).toEqual({ code: "QUOTA_FULL" });
+    expect((await post(c.owner.cookie, { ...care, occupationCode: "3545", salaryLow: 36605 })).status).toBe(200);
+    await setMinimums(GENERAL);
+  });
+
+  it("a chef is refused without the exception tick, with the wording, and passes with it, for both permit types", async () => {
+    await setMinimums(GENERAL);
+    const c = await company({ name: "Fake Restaurant Limited" });
+    for (const permitType of ["critical_skills", "general"]) {
+      const body = { ...chef, permitType, statement: signed, ...(permitType === "general" ? { salaryLow: 40000 } : {}) };
+      const no = await post(c.owner.cookie, body);
+      expect([no.status, no.json?.code, no.json?.exception]).toEqual([422, "OCCUPATION_INELIGIBLE", expect.stringContaining("Executive Chef")]);
+      const yes = await post(c.owner.cookie, { ...body, exceptionConfirmed: true });
+      expect([yes.status, yes.json], permitType).toMatchObject([200, { status: "live", passRoute: "stated_pay" }]);
+      expect((await job(yes.json!.jobId)).permit_type).toBe(permitType);
+    }
+    const plain = await post(c.owner.cookie, { ...good, occupationCode: "4112", exceptionConfirmed: true });
+    expect([plain.status, plain.json]).toEqual([422, { code: "OCCUPATION_INELIGIBLE" }]); // no exception wording on this entry, so no tick helps
+  });
+
+  it("security: every role and company state is tried with permitType general", async () => {
+    await setMinimums(GENERAL);
+    const c = await company({ name: "Fake Care Home Limited" });
+    const before = await jobCount(c.org);
+    expect((await post(c.viewer.cookie, care)).json).toEqual({ code: "NOT_A_POSTER" });
+    expect((await post((await login()).cookie, care)).json).toEqual({ code: "NOT_A_MEMBER" });
+    expect((await post(undefined, care)).status).toBe(401);
+    expect((await post(c.poster.cookie, care)).json).toEqual({ code: "NOT_A_SIGNER" }); // a poster without the signer switch cannot sign the statement
+    expect(await jobCount(c.org)).toBe(before);
+    expect((await post(c.poster.cookie, { ...care, statement: undefined })).json).toEqual({ code: "STATEMENT_REQUIRED" });
+    expect((await post((await company({ status: "pending_review" })).owner.cookie, care)).json).toEqual({ code: "COMPANY_NOT_ACTIVE" });
+    const susp = await company({ status: "suspended" });
+    expect((await post(susp.owner.cookie, care)).status).toBe(403);
+    const r = await company();
+    const k = await su.connect();
+    try {
+      await k.query("begin");
+      await k.query("set local session_replication_role = replica");
+      await k.query("update organisation set restricted_until = now() + interval '30 days' where id=$1", [r.org]);
+      await k.query("commit");
+    } finally { k.release(); }
+    expect((await post(r.owner.cookie, care)).json).toEqual({ code: "BADGE_RESTRICTED" });
+    expect((await post(r.owner.cookie, { ...care, statement: undefined, status: "draft" })).status).toBe(200);
+  });
+
+  it("security: hostile permitType and exceptionConfirmed are refused with nothing written, and a General job never gets critical_skills_eligible", async () => {
+    await setMinimums(GENERAL);
+    const c = await company({ name: "Fake Care Home Limited" });
+    const before = await jobCount(c.org);
+    for (const o of [{ permitType: "stamp4" }, { permitType: "General" }, { permitType: 1 }, { permitType: null }, { permitType: { a: 1 } }, { permitType: ["general"] }, { permitType: "general".repeat(2000) },
+      { exceptionConfirmed: "true" }, { exceptionConfirmed: 1 }, { exceptionConfirmed: null }, { exceptionConfirmed: { a: 1 } }, { exceptionConfirmed: "x".repeat(20_000) },
+      { badge: "critical_skills_eligible" }, { permitType: "general", badge: "critical_skills_eligible" }])
+      expect((await post(c.owner.cookie, { ...care, ...o })).status, JSON.stringify(o).slice(0, 60)).toBe(400);
+    expect((await edit(c.owner.cookie, { ...care, jobId: 1, permitType: "nope" })).status).toBe(400);
+    expect(await jobCount(c.org)).toBe(before);
+    const id = (await post(c.owner.cookie, care)).json!.jobId;
+    await expect(su.query("update job set badge = 'critical_skills_eligible' where id = $1", [id])).rejects.toMatchObject({ code: "23514" });
+    await expect(db.query("app_portal", "update job set badge = 'critical_skills_eligible' where id = $1", [id])).rejects.toBeDefined();
+    expect((await job(id)).badge).toBe("sponsor_confirmed");
+  });
+
+  it("budget: a signed General post uses no more statements than a signed Critical Skills one", async () => {
+    await setMinimums(GENERAL);
+    const c = await company({ name: "Fake Care Home Limited" });
+    expect((await post(c.owner.cookie, care)).status).toBe(200); // warms the rules cache
+    const [g, sg] = await counted(() => post(c.owner.cookie, care));
+    expect(g.status).toBe(200);
+    expect(sg, `${sg} signed General post statements`).toBeLessThanOrEqual(BUDGET.signed);
+    await su.query("delete from portal_rate_limit where key like 'jobs:%'");
+    const ms = await median(async () => { expect((await post(c.owner.cookie, care)).status).toBe(200); });
+    expect(ms).toBeLessThan(BUDGET.postMs);
+    console.log(`General post budget: ${sg} statements (signed Critical Skills budget ${BUDGET.signed}), median ${ms.toFixed(1)} ms`);
+  });
+});
