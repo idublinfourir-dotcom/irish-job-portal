@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FORMAT, type Manifest } from "./backup-cli.ts";
-import { ageProblems, countProblems, fileProblems, main, migrationProblems, parseManifest, repoMigrationHashes, runRestoreCheck } from "./restore-check-cli.ts";
+import { ageProblems, countProblems, fileProblems, main, migrationProblems, parseManifest, repoMigrationHashes, restoreList, runRestoreCheck } from "./restore-check-cli.ts";
 
 const H = (c: string) => c.repeat(64);
 const manifest = (over: Partial<Manifest> = {}): Manifest => ({
@@ -28,6 +28,26 @@ describe("parseManifest", () => {
     ["a dump file name that climbs out", JSON.stringify(manifest({ dump: { file: "../../etc/passwd", bytes: 1, sha256: H("c") } })), /dump entry/],
     ["a dump file name with a folder", JSON.stringify(manifest({ dump: { file: "x/db-20261116T1200Z.dump", bytes: 1, sha256: H("c") } })), /dump entry/],
   ])("refuses %s", (_n, text, why) => expect(() => parseManifest(text)).toThrow(why));
+});
+
+describe("restoreList", () => {
+  it("leaves out only the default privileges of roles that are not ours (the live dump's lines, 16 Nov)", () => {
+    const toc = [
+      "; Archive created at 2026-11-16 08:37:00 UTC",
+      "2823; 826 16490 DEFAULT ACL public DEFAULT PRIVILEGES FOR SEQUENCES postgres",
+      "2824; 826 16491 DEFAULT ACL public DEFAULT PRIVILEGES FOR SEQUENCES supabase_admin",
+      "2826; 826 16493 DEFAULT ACL public DEFAULT PRIVILEGES FOR FUNCTIONS supabase_admin",
+      "2825; 826 16492 DEFAULT ACL public DEFAULT PRIVILEGES FOR TABLES supabase_admin",
+      "2900; 826 16500 DEFAULT ACL private DEFAULT PRIVILEGES FOR FUNCTIONS app_admin",
+      "301; 1259 17001 TABLE public job postgres",
+      "4100; 0 17001 ACL public TABLE job postgres",
+      "",
+    ].join("\n");
+    const r = restoreList(toc);
+    expect(r.skipped).toBe(3);
+    expect(r.list).not.toContain("supabase_admin");
+    for (const kept of ["FOR SEQUENCES postgres", "FUNCTIONS app_admin", "TABLE public job postgres", "ACL public TABLE job"]) expect(r.list).toContain(kept);
+  });
 });
 
 describe("age", () => {
