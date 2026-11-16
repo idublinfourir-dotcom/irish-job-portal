@@ -2,6 +2,7 @@ name: Fetch watch
 
 # Late-day check that today's daily fetch worked (step 15a). A failed run already emails the engineer; this catches a run that never started.
 # If no fetch worked today (UTC) it starts a guarded "Daily fetch" run (unless one is already queued or running) and ends RED, so GitHub sends its email.
+# If a fetch worked but some boards' last try today failed (Workday's Saturday maintenance, 14 Nov 2026), it starts one unguarded retry and stays green.
 # Secret: FETCHER_DATABASE_URL only (app_fetcher may select from fetch_run). The job's own token starts the run (actions: write).
 on:
   schedule:
