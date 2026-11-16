@@ -10,6 +10,7 @@ export * from "./search";
 export * from "./admin-queue";
 export * from "./account-review";
 export * from "./trust-safety";
+export * from "./bot-check";
 export * from "./report";
 export * from "./contact";
 export * from "./contact-inbox";
