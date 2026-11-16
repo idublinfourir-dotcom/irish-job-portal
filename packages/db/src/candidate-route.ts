@@ -21,13 +21,16 @@ export const hasControl = (s: string) => /[\p{Cc}\p{Cf}]/u.test(s);
 
 const no = (status: number, code: string) => Response.json({ code }, { status });
 
-// One statement, the pool's rate-limit table (same shape as report.ts and the portal's withinLimit). The table is the app's own: each app role may write only its own.
+// One statement, the pool's rate-limit table; every own limit (candidate writes, uploads, reports, the portal's POSTs) goes through it. The table is
+// the app's own: each app role may write only its own. last_request holds the END of the window, as in packages/auth/src/email-limit.ts: Better
+// Auth deletes rows whose last_request is older than its longest window (better-auth rate-limiter, deleteExpiredRows), so storing the last call's
+// time would let a 10-minute or hour-long count restart after a few minutes' pause.
 export async function withinRate(table: "candidate_rate_limit" | "portal_rate_limit", key: string, rate: { windowMs: number; max: number }): Promise<boolean> {
-  const now = Date.now();
   const { rows } = await getPool().query(
-    `insert into ${table}(id, key, count, last_request) values ($1, $2, 1, $3)
-     on conflict (key) do update set count = case when ${table}.last_request < $3 - $4 then 1 else ${table}.count + 1 end, last_request = $3
-     returning count`, [randomUUID(), key, now, rate.windowMs]);
+    `insert into ${table} as r (id, key, count, last_request) values ($1, $2, 1, $3::bigint + $4::bigint)
+     on conflict (key) do update set count = case when r.last_request <= $3::bigint then 1 else r.count + 1 end,
+       last_request = case when r.last_request <= $3::bigint then $3::bigint + $4::bigint else r.last_request end
+     returning count`, [randomUUID(), key, Date.now(), rate.windowMs]);
   return rows[0].count <= rate.max;
 }
 const withinLimit = (userId: string) => withinRate("candidate_rate_limit", `candidate:${userId}`, CANDIDATE_RATE);

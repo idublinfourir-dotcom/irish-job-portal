@@ -2,8 +2,7 @@
 // body. The database functions do the real checks (ban, email confirmed, one company per login, #191); this file only refuses
 // bad requests early and turns the functions' refusals into short codes.
 import { PortalRefused, requirePortal, type PortalLogin } from "@portal/auth";
-import { getPool } from "@portal/db";
-import { randomUUID } from "node:crypto";
+import { getPool, withinRate } from "@portal/db";
 import { portalAuth, portalOrigin } from "./portal";
 
 export const MAX_BODY = 2048; // characters; the largest good body is about 250
@@ -64,16 +63,9 @@ export function refusalFor(e: unknown): Refusal | null {
 
 export const no = (status: number, code: string) => Response.json({ code }, { status });
 
-// One statement: counts this login's calls under one key in the pool's rate-limit table (a row per login and key, the window
-// restarts after rate.windowMs without a call). Old rows are swept by the retention job (rule 41).
-export async function withinLimit(key: string, rate: { windowMs: number; max: number } = RATE): Promise<boolean> {
-  const now = Date.now();
-  const { rows } = await getPool().query(
-    `insert into portal_rate_limit(id, key, count, last_request) values ($1, $2, 1, $3)
-     on conflict (key) do update set count = case when portal_rate_limit.last_request < $3 - $4 then 1 else portal_rate_limit.count + 1 end, last_request = $3
-     returning count`, [randomUUID(), key, now, rate.windowMs]);
-  return rows[0].count <= rate.max;
-}
+// Counts this login's calls under one key in the pool's rate-limit table (a row per login and key, a fixed window from the first call; see
+// withinRate). Old rows are swept by the retention job (rule 41).
+export const withinLimit = (key: string, rate: { windowMs: number; max: number } = RATE) => withinRate("portal_rate_limit", key, rate);
 
 // The checks every portal POST makes before its database call, in this order: the portal's own Origin, the body size (by header,
 // then by length), JSON, the body check, then a session from requirePortal. `max` is the body cap in characters (a job post carries its advert text). Returns the reply to send, or the login and the body.

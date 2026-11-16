@@ -331,6 +331,16 @@ describe("security", () => {
     expect((await call(R.docs, "POST", p, { body: file(PDF), params: { id: await caseFor(p.id) } })).code).toBe("TOO_MANY_REQUESTS");
     expect((await call(R.cv, "DELETE", p)).status).toBe(200); // not an upload
   });
+  it("the hour's count survives Better Auth's pruning of rows older than its own 5-minute window", async () => {
+    const p = await login();
+    for (let i = 0; i < 10; i++) expect((await call(R.cv, "PUT", p, { body: file(PDF) })).status).toBe(200);
+    // What better-auth's deleteExpiredRows runs, 6 minutes on: the row stays because last_request holds the window's end
+    await su.query("delete from candidate_rate_limit where last_request < $1", [Date.now() + 6 * 60_000 - 5 * 60_000]);
+    expect((await call(R.cv, "PUT", p, { body: file(PDF) })).code).toBe("TOO_MANY_REQUESTS");
+    // The window's end passed: a new count starts
+    await su.query("update candidate_rate_limit set last_request = $1 where key = $2", [Date.now() - 1, `upload:${p.id}`]);
+    expect((await call(R.cv, "PUT", p, { body: file(PDF) })).status).toBe(200);
+  });
   it("without the FILES_S3_ settings only the file work answers 503; reads that need no file still work", async () => {
     const p = await login();
     await call(R.cv, "PUT", p, { body: file(PDF) });
