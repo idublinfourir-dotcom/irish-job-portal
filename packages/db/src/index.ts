@@ -11,6 +11,8 @@ export * from "./admin-queue";
 export * from "./account-review";
 export * from "./trust-safety";
 export * from "./report";
+export * from "./contact";
+export * from "./contact-inbox";
 
 type Db = NodePgDatabase<typeof schema>;
 
