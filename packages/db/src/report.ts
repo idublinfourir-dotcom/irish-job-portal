@@ -1,6 +1,7 @@
 // "Report a job" (slice 8.5 item 1): the POST behind the candidate site and the portal. The reporter id always comes from the
 // session, never the body. The reporter is never shown to the employer: the reply says only { ok: true }. The database is the
 // guard: the app roles may insert only the columns below (migration 0015), so a report cannot be filed as already decided.
+import { botRefused, botResponse } from "./bot-check";
 import { withinRate } from "./candidate-route";
 import { getPool } from "./index";
 import { validId } from "./search";
@@ -39,6 +40,7 @@ const no = (status: number, code: string) => Response.json({ code }, { status })
 const withinLimit = (side: ReportSide, userId: string) => withinRate(SIDES[side].limit, `report:${userId}`, RATE);
 
 export async function handleReport(request: Request, o: { origin: string; side: ReportSide; login: (headers: Headers) => Promise<ReportLogin> }): Promise<Response> {
+  if (await botRefused(process.env)) return botResponse(); // before the body is read or the database is touched
   if (request.headers.get("origin") !== o.origin) return no(403, "BAD_ORIGIN");
   if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY) return no(413, "BODY_TOO_LARGE"); // before the body is read
   const text = await request.text();

@@ -178,13 +178,18 @@ const SET_STATUS = "update approval_request set status = $2 where id = $1::bigin
 const INSERT_VERSION =
   "insert into rules_version(kind, data, effective_from, approval_request_id) select target_id, change->'data', (change->>'effective_from')::date, id from approval_request " +
   "where id = $1::bigint returning id::text as id";
-// #234 D9: one notice per company with a live or draft employer or agency job, to its account owner. A second confirm cannot repeat it (dedupe key).
+// #234 D9, #93: one email and one portal notice per company with a live or draft employer or agency job, to its account owner, in one statement.
+// A second confirm cannot repeat either (dedupe key). Returns the emails queued. The notice holds this company's id only.
 export const NOTICES =
-  "insert into email_outbox(template, portal_user_id, params, dedupe_key) " +
-  "select 'rules_minimums_changed', m.portal_user_id, jsonb_build_object('organisationId', o.id, 'versionId', $1::bigint, 'effectiveFrom', $2::text), 'rules_minimums_changed:' || $1 || ':' || o.id " +
-  "from organisation o join membership m on m.organisation_id = o.id and m.role = 'account_owner' and m.status = 'active' " +
-  "where exists (select 1 from job j where j.organisation_id = o.id and j.source in ('employer','agency') and j.status in ('live','draft')) " +
-  "on conflict (dedupe_key) do nothing";
+  "with t as (select o.id as org, m.portal_user_id as u from organisation o join membership m on m.organisation_id = o.id and m.role = 'account_owner' and m.status = 'active' " +
+  "where exists (select 1 from job j where j.organisation_id = o.id and j.source in ('employer','agency') and j.status in ('live','draft'))), " +
+  "e as (insert into email_outbox(template, portal_user_id, params, dedupe_key) " +
+  "select 'rules_minimums_changed', u, jsonb_build_object('organisationId', org, 'versionId', $1::bigint, 'effectiveFrom', $2::text), 'rules_minimums_changed:' || $1 || ':' || org from t " +
+  "on conflict (dedupe_key) do nothing returning 1), " +
+  "n as (insert into notification(portal_user_id, category, template_key, params, dedupe_key) " +
+  "select u, 'rules', 'rules_minimums_changed', jsonb_build_object('organisationId', org, 'versionId', $1::bigint, 'effectiveFrom', $2::text), 'rules_minimums_changed:' || $1 || ':' || org from t " +
+  "on conflict (dedupe_key) do nothing returning 1) " +
+  "select (select count(*) from e)::int as emails";
 
 /** An administrator who did not propose confirms: the version is written (or the company's flag set) in the same transaction. */
 export async function confirmRules(db: Db, staff: string, requestId: unknown): Promise<{ versionId: string | null; notices: number }> {
@@ -201,7 +206,7 @@ export async function confirmRules(db: Db, staff: string, requestId: unknown): P
     if (r.change!.effective_from! < r.today) throw new QueueRefused("date_passed");
     await c.query(SET_STATUS, [r.id, "confirmed"]);
     const versionId = (await c.query<{ id: string }>(INSERT_VERSION, [r.id])).rows[0]!.id;
-    const notices = r.target_id === "minimums" ? ((await c.query(NOTICES, [versionId, r.change!.effective_from])).rowCount ?? 0) : 0;
+    const notices = r.target_id === "minimums" ? (await c.query<{ emails: number }>(NOTICES, [versionId, r.change!.effective_from])).rows[0]!.emails : 0;
     await audit(c, staff, "confirm", "rules_version", versionId, { request_id: r.id, kind: r.target_id, effective_from: r.change!.effective_from, notices }, r.proposed_by);
     return { versionId, notices };
   });

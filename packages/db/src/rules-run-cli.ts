@@ -33,6 +33,21 @@ export function belowMinimum(j: Job, m: Minimums, criticalSkills: ReadonlySet<st
   return pay < minimumForHours(onList ? m.criticalSkills : m.nonList, j.weekly_hours ?? undefined, m.standardWeekHours);
 }
 
+// #93: the jobs go under review and, in the same statement, each company's account owner gets one email and one portal notice naming them (the first 20
+// by id, with the count) and saying they close after 30 days unless the pay is edited. A company with no active owner gets none; a second run cannot repeat it (dedupe key).
+export const UNDER_REVIEW =
+  "with u as (update job set status = 'under_review' where id = any($1::bigint[]) and status = 'live' returning id, organisation_id, title), " +
+  "t as (select m.portal_user_id as p, g.org, g.n, g.jobs from (select organisation_id as org, count(*)::int as n, " +
+  "(array_agg(jsonb_build_object('id', id, 'title', title) order by id))[1:20] as jobs from u group by organisation_id) g " +
+  "join membership m on m.organisation_id = g.org and m.role = 'account_owner' and m.status = 'active'), " +
+  "e as (insert into email_outbox(template, portal_user_id, params, dedupe_key) " +
+  "select 'rules_jobs_under_review', p, jsonb_build_object('organisationId', org, 'versionId', $2::bigint, 'count', n, 'jobs', jobs, 'closeAfterDays', 30), 'rules_jobs_under_review:' || $2 || ':' || org from t " +
+  "on conflict (dedupe_key) do nothing returning 1), " +
+  "n as (insert into notification(portal_user_id, category, template_key, params, dedupe_key) " +
+  "select p, 'rules', 'rules_jobs_under_review', jsonb_build_object('organisationId', org, 'versionId', $2::bigint, 'count', n, 'jobs', jobs, 'closeAfterDays', 30), 'rules_jobs_under_review:' || $2 || ':' || org from t " +
+  "on conflict (dedupe_key) do nothing returning 1) " +
+  "select (select count(*) from u)::int as jobs";
+
 export type RunResult = { versionId: string | null; applied: boolean; underReview: number; floorsEnded: number };
 
 export async function runRules(c: pg.ClientBase): Promise<RunResult> {
@@ -46,7 +61,7 @@ export async function runRules(c: pg.ClientBase): Promise<RunResult> {
     const rules = await loadRules(c, v.today);
     const cs = new Set(rules.occupationLists.filter((o) => o.list === "critical-skills").map((o) => o.code));
     const ids = (await c.query<Job>(LIVE_STATED)).rows.filter((j) => belowMinimum(j, rules.minimums, cs)).map((j) => j.id);
-    const underReview = (await c.query("update job set status = 'under_review' where id = any($1::bigint[]) and status = 'live'", [ids])).rowCount ?? 0;
+    const underReview = (await c.query<{ jobs: number }>(UNDER_REVIEW, [ids, v.id])).rows[0]!.jobs;
     const floorsEnded = (await c.query("update pay_floor set status = 'expired' where status = 'active'")).rowCount ?? 0;
     await c.query("update rules_version set run_at = now() where id = $1::bigint", [v.id]);
     await c.query(

@@ -5,8 +5,8 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { seedStaff } from "../src/staff-seed-cli";
 import { IN_FORCE, loadRules, type Minimums } from "../src/rules-data";
-import { PENDING } from "../src/rules-admin";
-import { LIVE_STATED, runRules } from "../src/rules-run-cli";
+import { NOTICES, PENDING } from "../src/rules-admin";
+import { LIVE_STATED, runRules, UNDER_REVIEW } from "../src/rules-run-cli";
 import { seedData, seedRules } from "../src/rules-seed-cli";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { fixtures, in30 } from "./fixtures";
@@ -322,7 +322,7 @@ describe("the daily run and the notices (#234 D9)", () => {
   });
   it("a minimums version confirmed for today: one notice per company with a live or draft job, then the run marks the jobs below it and ends every floor, once", async () => {
     src = Number((await one("select id from job_source where kind = 'portal' and board = 'employer'")).id);
-    const a = await company({ big: true }), b = await company(), closedOnly = await company(), noJobs = await company();
+    const a = await company({ big: true }), b = await company(), closedOnly = await company(), noJobs = await company(), allPass = await company();
     const fetchedSrc = Number((await one("insert into job_source(kind, board) values ('board', 'fake-board') returning id")).id);
     const jobs = {
       below: await job(a, { pay: 41000 }),
@@ -334,6 +334,7 @@ describe("the daily run and the notices (#234 D9)", () => {
       nonList: await job(b, { code: "9999", pay: 68911 }),
       closed: await job(closedOnly, { status: "closed", pay: 1000 }),
       general: await job(b, { code: "6145", pay: 33000 }), // a General post is not judged against the Critical Skills minimum
+      passing: await job(allPass, { pay: 60000 }), // a company whose live jobs all pass: told about the new minimum, not about any job under review
     };
     await su.query("update job set permit_type = 'general' where id = $1", [jobs.general]);
     await su.query("update job set closed_at = now(), close_reason = 'closed' where id = $1", [jobs.closed]);
@@ -344,21 +345,57 @@ describe("the daily run and the notices (#234 D9)", () => {
 
     const { requestId } = await ok(propose("ed1", "minimums", today, { ...M, criticalSkills: 42000 }));
     const c = await ok(decide("ad1", "confirm", requestId));
-    expect(c.notices).toBe(2);
+    expect(c.notices).toBe(3);
     const sent = (await su.query("select template, portal_user_id u, params->>'effectiveFrom' f from email_outbox where template = 'rules_minimums_changed' order by id")).rows;
-    expect(sent.map((r) => r.u).sort()).toEqual([a.owner, b.owner].sort()); // owners only: never the recruiter, never a company with no live or draft job
+    expect(sent.map((r) => r.u).sort()).toEqual([a.owner, b.owner, allPass.owner].sort()); // owners only: never the recruiter, never a company with no live or draft job
     expect(sent.every((r) => r.f === today)).toBe(true);
+    // #93: the same people get a portal notice, one each, holding their own company's id and nothing else
+    const notes = async (key: string) => (await su.query("select portal_user_id u, category, params, read_at from notification where template_key = $1 order by id", [key])).rows;
+    const first = await notes("rules_minimums_changed");
+    expect(first.map((r) => r.u).sort()).toEqual([a.owner, b.owner, allPass.owner].sort());
+    expect(first.every((r) => r.category === "rules" && r.read_at === null && r.params.effectiveFrom === today && String(r.params.versionId) === c.versionId)).toBe(true);
+    expect(first.find((r) => r.u === a.owner).params).toEqual({ organisationId: a.org, versionId: Number(c.versionId), effectiveFrom: today });
+    const again = await db.pool("app_admin").query(NOTICES, [c.versionId, today]); // a second confirm of the same version cannot repeat either
+    expect(again.rows[0].emails).toBe(0);
+    expect((await notes("rules_minimums_changed")).length).toBe(3);
 
     const r = await run();
     expect(r).toEqual({ versionId: c.versionId, applied: true, underReview: 2, floorsEnded: 1 });
     expect(Object.fromEntries(await Promise.all(Object.entries(jobs).map(async ([k, id]) => [k, await status(id)])))).toEqual({
-      below: "under_review", atNew: "live", range: "live", hours: "under_review", publicPay: "live", draft: "draft", nonList: "live", closed: "closed", general: "live",
+      below: "under_review", atNew: "live", range: "live", hours: "under_review", publicPay: "live", draft: "draft", nonList: "live", closed: "closed", general: "live", passing: "live",
     });
     expect(await status(fetched)).toBe("live");
     expect(await one("select status, ended_at is not null ended from pay_floor where id = $1", [floor])).toEqual({ status: "expired", ended: true });
     // the employer reads why: the company's own job list gives under_review the reason pay_check (0019)
     const list = (await su.query("select private.portal_jobs($1) j", [a.owner])).rows[0].j as { id: number; reason: string }[];
     expect(list.find((x) => String(x.id) === jobs.below)?.reason).toBe("pay_check");
+
+    // #93: under_review_since is set on the two jobs and on no other; one email and one notice per company that has a job under review, naming its jobs
+    expect((await su.query("select id::text id from job where under_review_since is not null order by id")).rows.map((x) => x.id)).toEqual([jobs.below, jobs.hours].sort((x, y) => Number(x) - Number(y)));
+    const mails = (await su.query("select portal_user_id u, params, status from email_outbox where template = 'rules_jobs_under_review' order by id")).rows;
+    expect(mails.map((m) => m.u).sort()).toEqual([a.owner, b.owner].sort()); // owners only; not allPass, closedOnly or noJobs; nothing is sent here
+    expect(mails.every((m) => m.status === "pending")).toBe(true);
+    expect(mails.find((m) => m.u === a.owner).params).toEqual({ organisationId: a.org, versionId: Number(c.versionId), count: 1, jobs: [{ id: Number(jobs.below), title: "Fake role" }], closeAfterDays: 30 });
+    const under = await notes("rules_jobs_under_review");
+    expect(under.map((m) => m.u).sort()).toEqual([a.owner, b.owner].sort());
+    expect(under.find((m) => m.u === b.owner).params.jobs).toEqual([{ id: Number(jobs.hours), title: "Fake role" }]);
+    // security: every notice goes to an account owner of the company it names, and the jobs it lists belong to that company
+    const strays = await su.query(
+      "select count(*)::int n from notification n where n.template_key in ('rules_minimums_changed','rules_jobs_under_review') and (not exists (select 1 from membership m where m.portal_user_id = n.portal_user_id " +
+      "and m.role = 'account_owner' and m.organisation_id = (n.params->>'organisationId')::bigint) or exists (select 1 from jsonb_array_elements(coalesce(n.params->'jobs', '[]')) e join job j on j.id = (e->>'id')::bigint " +
+      "where j.organisation_id <> (n.params->>'organisationId')::bigint))");
+    expect(strays.rows[0].n).toBe(0);
+    // the employer edits the salary (as the portal): the job is live again and no longer waits for the 30 days
+    const restore = await db.pool("app_portal").query("update job set salary_low = 50000, status = 'live', posted_by_membership_id = $2 where id = $1 and organisation_id = $3", [jobs.below, a.recM, a.org]);
+    expect(restore.rowCount).toBe(1);
+    expect(await one("select status, under_review_since from job where id = $1", [jobs.below])).toEqual({ status: "live", under_review_since: null });
+    expect((await one("select under_review_since is not null as since from job where id = $1", [jobs.hours])).since).toBe(true);
+
+    // the same version cannot tell the same company twice: the restored job goes under review again, and no second email or notice is written
+    expect((await db.pool("app_admin").query(UNDER_REVIEW, [[jobs.below], c.versionId])).rows[0].jobs).toBe(1);
+    expect(await status(jobs.below)).toBe("under_review");
+    expect((await su.query("select count(*)::int n from email_outbox where template = 'rules_jobs_under_review'")).rows[0].n).toBe(2);
+    expect((await notes("rules_jobs_under_review")).length).toBe(2);
 
     expect(await run()).toEqual({ versionId: c.versionId, applied: false, underReview: 0, floorsEnded: 0 });
     expect((await su.query("select count(*)::int n from audit_event where action = 'rules.minimums_in_force'")).rows[0].n).toBe(1);
@@ -414,7 +451,6 @@ describe("performance", () => {
     const client = await su.connect();
     try {
       await client.query("begin");
-      const { NOTICES } = await import("../src/rules-admin");
       const costs = await measurePages(client, [{ text: IN_FORCE, values: [today] }, PENDING, LIVE_STATED, { text: NOTICES, values: [1, today] }]);
       assertPageBudget("rules: loader, pending list, run's job read, notices", costs, BUDGET.pages);
     } finally { await client.query("rollback"); client.release(); }

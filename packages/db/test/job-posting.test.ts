@@ -136,7 +136,7 @@ describe("expire_employer_jobs (D7)", () => {
   it("the command runs it as app_admin and refuses without its setting", async () => {
     const lines: string[] = [];
     expect(await expiryMain([], { EXPIRY_ADMIN_DATABASE_URL: urlFor(db.name, "app_admin"), DATABASE_SSL: "disable" }, (l) => lines.push(l))).toBe(0);
-    expect(lines.at(-1)).toMatch(/^\d+ employer jobs closed as expired, \d+ expiry reminders queued$/);
+    expect(lines.at(-1)).toMatch(/^\d+ employer jobs closed as expired, \d+ expiry reminders queued, \d+ jobs closed after 30 days under review$/);
     expect(await expiryMain([], {}, (l) => lines.push(l))).toBe(2);
     expect(await expiryMain(["x"], {}, (l) => lines.push(l))).toBe(2);
     expect(await expiryMain([], { EXPIRY_ADMIN_DATABASE_URL: urlFor(db.name, "app_portal"), DATABASE_SSL: "disable" }, (l) => lines.push(l))).toBe(1); // the portal login is refused
