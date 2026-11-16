@@ -117,16 +117,21 @@ describe("R13 salaryStage", () => {
   test("below, range crosses and pass do not depend on the flags", () => {
     for (const big of [false, true]) {
       for (const agency of [false, true]) {
-        expect(salaryStage("below", big, agency)).toBe("8 salary below €40,904");
-        expect(salaryStage("range crosses", big, agency)).toBe("8 range crosses €40,904 (no rule yet)");
-        expect(salaryStage("pass", big, agency)).toBe("PASS (salary stated)");
+        expect(salaryStage("below", big, agency, 40904)).toBe("8 salary below €40,904");
+        expect(salaryStage("range crosses", big, agency, 40904)).toBe("8 range crosses €40,904 (no rule yet)");
+        expect(salaryStage("pass", big, agency, 40904)).toBe("PASS (salary stated)");
       }
     }
   });
   test("no salary passes only for a big company that is not an agency", () => {
-    expect(salaryStage("not stated", true, false)).toBe("PASS (big-company rule)");
-    expect(salaryStage("not stated", true, true)).toBe("8 no salary, not a big company");
-    expect(salaryStage("not stated", false, false)).toBe("8 no salary, not a big company");
-    expect(salaryStage("not stated", false, true)).toBe("8 no salary, not a big company");
+    expect(salaryStage("not stated", true, false, 40904)).toBe("PASS (big-company rule)");
+    expect(salaryStage("not stated", true, true, 40904)).toBe("8 no salary, not a big company");
+    expect(salaryStage("not stated", false, false, 40904)).toBe("8 no salary, not a big company");
+    expect(salaryStage("not stated", false, true, 40904)).toBe("8 no salary, not a big company");
+  });
+  test("the figure is the minimum the check used, not a fixed 40,904 (#229)", () => {
+    expect(salaryStage("below", false, false, 45000)).toBe("8 salary below €45,000");
+    expect(salaryStage("range crosses", false, false, 102500)).toBe("8 range crosses €102,500 (no rule yet)");
+    expect(salaryStage("pass", false, false, 45000)).toBe("PASS (salary stated)");
   });
 });

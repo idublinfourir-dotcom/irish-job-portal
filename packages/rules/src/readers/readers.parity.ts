@@ -47,7 +47,7 @@ test("the TypeScript readers match the Python on every saved advert", () => {
     compare(ref, "low", low, ref.low);
     compare(ref, "high", high, ref.high);
     compare(ref, "check", check, ref.check);
-    for (const big of [false, true]) for (const agency of [false, true]) compare(ref, `stage big=${big} agency=${agency}`, salaryStage(check, big, agency), ref.stages[`${Number(big)}${Number(agency)}`]);
+    for (const big of [false, true]) for (const agency of [false, true]) compare(ref, `stage big=${big} agency=${agency}`, salaryStage(check, big, agency, MINIMUMS_V1.criticalSkills), ref.stages[`${Number(big)}${Number(agency)}`]);
   }
   console.log(`adverts compared: ${reference.length}, differences: ${differences.length}`);
   // NEW BEHAVIOUR (10 November 2026): scamWording drops warnings against scams and benefits. Measured on these adverts: the Python's

@@ -131,6 +131,26 @@ describe("claim, release, approve, reject", () => {
     const a = (await su.query("select action, actor_staff_user_id a from audit_event where object_type = 'job' and object_id = $1 order by id", [q.job])).rows;
     expect(a).toEqual([{ action: "fetched_job.approve", a: h.staff.jr2 }]);
   });
+  it("the stage names the minimum in force from the database, not a fixed 40,904 (#229)", async () => {
+    const q = await queued({ title: "Platform Engineer", text: "Salary €60,000.", county: null });
+    await ok(act("jr1", "claim", { itemId: q.item }));
+    const set = async (eur: number) => {
+      await su.query("update rules_version set data = jsonb_set(data, '{criticalSkills}', to_jsonb($1::int)) where kind = 'minimums' and seeded_by_owner", [eur]);
+      vi.setSystemTime(Date.now() + 6 * 60_000); // past the 5 minute rules cache
+    };
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      await set(45000);
+      const x = await call("jr1", { action: "approve", itemId: q.item, occupationCode: "2134", salaryLow: 42000 });
+      expect([x.status, x.json]).toEqual([409, { error: "rules_failed", stage: "8 salary below €45,000" }]);
+    } finally {
+      await set(40904);
+      const { getRules } = await import("../src");
+      await getRules(su); // read the restored rules while the clock is ahead, so the real clock finds a fresh cache with 40,904
+      vi.useRealTimers();
+    }
+    await ok(act("jr1", "reject", { itemId: q.item, reason: "salary_too_low" }));
+  });
   it("a failed rules check is a 409 that names the stage, and the item stays claimed so the reviewer can reject it", async () => {
     const q = await queued({ title: "Platform Engineer", text: "Salary €60,000.", county: null });
     await ok(act("jr1", "claim", { itemId: q.item }));

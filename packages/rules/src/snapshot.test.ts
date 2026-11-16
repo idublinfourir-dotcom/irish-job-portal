@@ -61,7 +61,7 @@ describe("a changed snapshot changes the result", () => {
   it("the chain: a longer minimum contract makes a 30 month contract short", async () => {
     const a = advert({ description: "Salary: €45,000. This is a 30 month contract. Visa sponsorship available." });
     expect((await run(today, a)).stage).not.toBe("7 contract under 2 years");
-    expect((await run(withMin({ minContractMonths: 36 }), a)).stage).toBe("7 contract under 2 years");
+    expect((await run(withMin({ minContractMonths: 36 }), a)).stage).toBe("7 contract under 3 years"); // the text follows the minimum (#229)
   });
   it("the chain and isBigCompany: a removed big-company name loses the big-company rule", async () => {
     const google = advert({ employer: "Google Ireland", description: "Permanent role. Visa sponsorship available." });
