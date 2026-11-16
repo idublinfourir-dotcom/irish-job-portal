@@ -70,6 +70,14 @@ describe("portal, BOT_CHECK=on, the fake says bot", () => {
     expect(statements).toBe(0);
     expect([await count("select 1 from portal_user"), await count("select 1 from portal_session"), await count("select 1 from portal_rate_limit"), await count("select 1 from report")]).toEqual([0, 0, 0, 0]);
   });
+  it("refuses a contact message before the body is read or the login is looked up (added at the combine)", async () => {
+    verdict.mockResolvedValue(bot);
+    const { POST: CONTACT } = await import("../../../apps/portal/app/api/portal/contact/route");
+    const req = post("/api/portal/contact", { topic: "general", body: "hello" });
+    const [r, statements] = await counted(() => CONTACT(req));
+    expect([r.status, await r.text(), req.bodyUsed, statements]).toEqual([403, '{"code":"BOT_SUSPECTED"}', false, 0]);
+    expect(await count("select 1 from contact_message")).toBe(0);
+  });
 });
 
 describe("portal, BOT_CHECK=on, the fake says human", () => {

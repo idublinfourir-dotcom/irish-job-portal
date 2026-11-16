@@ -79,6 +79,13 @@ describe("BOT_CHECK=on, the fake says bot", () => {
     expect([r.status, await r.text(), req.bodyUsed, statements]).toEqual([403, '{"code":"BOT_SUSPECTED"}', false, 0]);
     expect(await count("select 1 from report")).toBe(0);
   });
+  it("refuses a contact message before the body is read: nothing is counted or written (added at the combine)", async () => {
+    const { POST: CONTACT } = await import("../../../apps/candidate/app/api/contact/route");
+    const req = post("/api/contact", { topic: "general", name: "Fake Bot", email: "fake.bot.contact@example.test", body: "hello" });
+    const [r, statements] = await counted(() => CONTACT(req));
+    expect([r.status, await r.text(), req.bodyUsed, statements]).toEqual([403, '{"code":"BOT_SUSPECTED"}', false, 0]);
+    expect([await count("select 1 from contact_message"), await count("select 1 from candidate_rate_limit where key like 'contact:%'")]).toEqual([0, 0]);
+  });
   it("a bot is refused before the route reads the body: a refused sign-up with a broken body still says BOT_SUSPECTED", async () => {
     const r = await AUTH(new Request(`${BASE}/api/auth/candidate/sign-up/email`, { method: "POST", body: "not json", headers: { origin: BASE } }));
     expect([r.status, await r.text()]).toEqual([403, '{"code":"BOT_SUSPECTED"}']);

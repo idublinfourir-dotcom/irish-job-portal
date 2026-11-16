@@ -2,6 +2,7 @@
 // The sender's id always comes from the session, never the body. The reply is only { ok: true }: it never says whether an email belongs to an account.
 // The database is the guard: the app roles may insert only the columns below (0003), so a message cannot be filed as already answered.
 import { createHmac } from "node:crypto";
+import { botRefused, botResponse } from "./bot-check";
 import { hasControl, isObject, only, withinRate } from "./candidate-route";
 import { getPool } from "./index";
 import type { ReportLogin } from "./report";
@@ -56,6 +57,7 @@ const emailKey = (secret: string, email: string) => `contact:email:${createHmac(
  * candidate may need to write to us; on the portal side a login is required. `secret` is the side's auth secret, used only to hash email keys.
  */
 export async function handleContact(request: Request, o: { origin: string; side: ContactSide; secret: string; login: (headers: Headers) => Promise<ReportLogin> }): Promise<Response> {
+  if (await botRefused(process.env)) return botResponse(); // first, as in handleReport: a bot is neither read nor counted
   if (request.headers.get("origin") !== o.origin) return no(403, "BAD_ORIGIN");
   if (Number(request.headers.get("content-length") ?? 0) > MAX_CONTACT_BODY) return no(413, "BODY_TOO_LARGE"); // before the body is read
   const raw = await request.text();
@@ -72,7 +74,6 @@ export async function handleContact(request: Request, o: { origin: string; side:
   const ip = (request.headers.get("x-vercel-forwarded-for") ?? "").split(",")[0]!.trim().slice(0, 64) || "none";
   const keys = userId !== null ? [`contact:user:${userId}`] : [`contact:ip:${ip}`, emailKey(o.secret, body.email!)];
   for (const key of keys) if (!(await withinRate(side.limit, key, CONTACT_RATE))) return no(429, "TOO_MANY_REQUESTS");
-  // BOT CHECK GOES HERE: a check on the request (a challenge token) that returns no(400, "BOT_CHECK") before anything is written.
   const db = getPool();
   if (userId === null) {
     await db.query(CONTACT_SQL.visitor, [side.surface, body.name, body.email, body.topic, body.body]);
