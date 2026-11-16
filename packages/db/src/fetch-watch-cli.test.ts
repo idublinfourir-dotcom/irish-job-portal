@@ -1,24 +1,38 @@
 // No database, no network: the watch's decision with a fake database and a fake gh. The real query is packages/db/test/fetch-watch.test.ts.
 import { describe, expect, it } from "vitest";
-import { main, watch } from "./fetch-watch-cli.ts";
+import { FAILED_BOARDS_TODAY, main, watch } from "./fetch-watch-cli.ts";
 
 const NOW = new Date("2026-11-13T12:11:00Z");
-const fakeDb = (rows: number) => ({ query: async () => ({ rowCount: rows }) }) as never;
+// `good`: rows the guard's question finds; `failed`: boards whose last try today failed.
+const fakeDb = (good: number, failed = 0) => ({ query: async (sql: string) => (sql === FAILED_BOARDS_TODAY ? { rows: [{ n: failed }] } : { rowCount: good }) }) as never;
 const fakeGh = (statuses: string[]) => {
   const calls: string[][] = [];
   const gh = async (args: string[]) => (calls.push(args), args[0] === "run" ? JSON.stringify(statuses.map((status) => ({ status }))) : "");
   return { gh, calls };
 };
-const go = async (rows: number, statuses: string[]) => {
+const go = async (rows: number, statuses: string[], failed = 0) => {
   const lines: string[] = [];
   const g = fakeGh(statuses);
-  return { code: await watch(fakeDb(rows), (l) => lines.push(l), NOW, g.gh), lines, calls: g.calls };
+  return { code: await watch(fakeDb(rows, failed), (l) => lines.push(l), NOW, g.gh), lines, calls: g.calls };
 };
 
 describe("fetch watch decision", () => {
-  it("a fetch worked: green, one line, gh never called", async () => {
+  it("a fetch worked and no board failed: green, one line, gh never called", async () => {
     const r = await go(1, []);
     expect(r).toMatchObject({ code: 0, lines: ["a fetch worked today (UTC)"], calls: [] });
+  });
+  // 14 Nov 2026: Workday's maintenance failed 13 boards at 12:09 UTC and nothing tried them again that day.
+  it("a fetch worked but boards failed: starts one unguarded retry and stays green (a known maintenance window is no alarm)", async () => {
+    const r = await go(1, ["completed"], 13);
+    expect(r.code).toBe(0);
+    expect(r.lines).toEqual(["a fetch worked today (UTC) but 13 boards failed; started a retry"]);
+    expect(r.calls.at(-1)).toEqual(["workflow", "run", "daily-fetch.yml", "-f", "guarded=false"]);
+    expect(r.calls.filter((c) => c[0] === "workflow")).toHaveLength(1);
+  });
+  it("boards failed but a fetch is already queued or running: starts nothing, green", async () => {
+    const r = await go(1, ["in_progress"], 2);
+    expect(r).toMatchObject({ code: 0, lines: ["a fetch worked today (UTC) but 2 boards failed; one is already running"] });
+    expect(r.calls).toHaveLength(1);
   });
   it("none worked and nothing running: starts a guarded run and goes red", async () => {
     const r = await go(0, ["completed", "completed"]);
@@ -39,6 +53,20 @@ describe("fetch watch decision", () => {
     const bad = async (a: string[]) => (a[0] === "run" ? "{}" : (started.push(a), ""));
     expect(await watch(fakeDb(0), () => {}, NOW, bad).catch(() => "threw")).toBe("threw");
     expect(started).toEqual([]);
+  });
+  it("on the retry path too, garbage from gh throws (main makes it red) and starts nothing", async () => {
+    const started: string[][] = [];
+    const bad = async (a: string[]) => (a[0] === "run" ? "<html>not json" : (started.push(a), ""));
+    expect(await watch(fakeDb(1, 5), () => {}, NOW, bad).catch(() => "threw")).toBe("threw");
+    expect(started).toEqual([]);
+  });
+  it("a garbage count from the database never starts a run on its own", async () => {
+    const g = fakeGh([]);
+    for (const n of [0, null, undefined]) {
+      const db = { query: async (sql: string) => (sql === FAILED_BOARDS_TODAY ? { rows: [{ n }] } : { rowCount: 1 }) } as never;
+      expect(await watch(db, () => {}, NOW, g.gh)).toBe(0);
+    }
+    expect(g.calls).toEqual([]);
   });
 });
 

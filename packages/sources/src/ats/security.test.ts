@@ -229,7 +229,18 @@ describe("the adapter only calls the host it was given", () => {
     expect(b.calls.map((c) => c.method)).toEqual(["POST", "POST"]);
   });
   it("a redirect with no Location is a failure", async () => {
-    await expect(fetchGreenhouse(GH, none, fake(() => new Response(null, { status: 302 })).fetch)).rejects.toBeInstanceOf(FetchFailedError);
+    await expect(fetchGreenhouse(GH, none, fake(() => new Response(null, { status: 302 })).fetch)).rejects.toThrow("HTTP 302 redirect not followed");
+  });
+  // 14 Nov 2026: 13 Workday boards failed with a bare "HTTP 303 redirect not followed", so the log could not show where Workday sent us.
+  it("a refused redirect names where it pointed: no query, no fragment, no credentials, at most 120 characters of address", async () => {
+    const why = async (loc: string, status = 303) => (await fetchWorkday(WD, none, fake(() => redirect(loc, status)).fetch).catch((e: Error) => e.message)) as string;
+    expect(await why("https://community.workday.com/maintenance-page?token=s3cret#frag")).toBe("HTTP 303 redirect to https://community.workday.com/maintenance-page not followed");
+    expect(await why("/wday/maintenance", 302)).toBe("HTTP 302 redirect to https://acme.wd3.myworkdayjobs.com/wday/maintenance not followed");
+    expect(await why("https://admin:hunter2@evil.example/x")).toBe("HTTP 303 redirect to https://evil.example/x not followed");
+    const long = await why("/" + "a".repeat(5000));
+    expect(long.length).toBe("HTTP 303 redirect to  not followed".length + 120);
+    expect(await why("http://[not-an-address")).toBe("HTTP 303 redirect to an unreadable address not followed");
+    expect(await why("javascript:alert(1)//\u0007")).not.toMatch(/[\u0000-\u001f]/u);
   });
 });
 

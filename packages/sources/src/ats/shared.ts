@@ -161,6 +161,17 @@ export function safeName(board: string, ...names: string[]): void {
 
 export type Caller = (url: string, body?: unknown) => Promise<unknown>;
 
+/** Where a refused redirect pointed, for the log: no query, fragment or credentials (they can carry a token), at most 120 characters. */
+function target(loc: string, base: string): string {
+  try {
+    const u = new URL(loc, base);
+    u.username = u.password = u.search = u.hash = "";
+    return u.href.slice(0, 120);
+  } catch {
+    return "an unreadable address";
+  }
+}
+
 /**
  * A JSON caller that only talks to `origin`. Python requests follows redirects anywhere; here a redirect is followed only
  * to the same origin (and for POST only when the status keeps the method), at most 3 hops. Anything else is a failure.
@@ -187,7 +198,7 @@ export function makeCaller(board: string, fetch: Fetch, origin: string): Caller 
       if (res.status >= 300 && res.status < 400) {
         const loc = res.headers.get("location");
         const keeps = method === "GET" || res.status === 307 || res.status === 308;
-        if (!loc || !keeps || hop >= MAX_HOPS) throw fail(`HTTP ${res.status} redirect not followed`);
+        if (!loc || !keeps || hop >= MAX_HOPS) throw fail(`HTTP ${res.status} redirect${loc ? ` to ${target(loc, url)}` : ""} not followed`);
         url = new URL(loc, url).href; // the origin check at the top of the loop refuses another host
         continue;
       }
