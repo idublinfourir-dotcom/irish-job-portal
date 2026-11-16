@@ -22,7 +22,7 @@ describe("the seed gives exactly today's values", () => {
     const file = JSON.parse(readFileSync(new URL("../../fetcher/data/occupation-lists.json", import.meta.url), "utf8"));
     expect([...(s.critical_skills_list as unknown[]), ...(s.ineligible_list as unknown[])]).toEqual(file);
     expect((s.critical_skills_list as unknown[]).length).toBe(60);
-    expect((s.ineligible_list as unknown[]).length).toBe(187);
+    expect((s.ineligible_list as unknown[]).length).toBe(188);
     expect(s.public_pay_employers).toEqual(JSON.parse(readFileSync(new URL("../../fetcher/data/L2/public_employers_candidates.json", import.meta.url), "utf8")));
   });
   it("the big-company names are BIG_COMPANY_BRANDS then BIG_COMPANY_LIST_150, each with its test", () => {
@@ -53,6 +53,19 @@ describe("cleanData", () => {
     expect(bad("minimums", { ...M, nonListRoute: "yes" })).toBe("bad");
     for (const d of ["2026-02-30", "26-11-12", "2026-11-12T00:00", ""]) expect(bad("minimums", { ...M, checkedOn: d }), d).toBe("bad");
     for (const v of [null, [], "x", 1]) expect(bad("minimums", v)).toBe("bad");
+  });
+  it("the four General permit fields are optional, all or none (version 1 has none)", () => {
+    const G = { general: R.GENERAL_MINIMUM, generalLower: R.GENERAL_LOWER_MINIMUM, generalLowerCodes: [...R.GENERAL_LOWER_CODES], generalQuotaFullCodes: [] as string[] };
+    expect(cleanData("minimums", M)).toEqual(M); // no General fields in, none out
+    expect(Object.keys(cleanData("minimums", M) as object)).toHaveLength(8);
+    expect(cleanData("minimums", { ...M, ...G })).toEqual({ ...M, ...G });
+    expect(cleanData("minimums", { ...M, ...G, generalQuotaFullCodes: ["6145", "5434"] })).toMatchObject({ generalQuotaFullCodes: ["6145", "5434"] });
+    for (const k of Object.keys(G)) { const m: Record<string, unknown> = { ...M, ...G }; delete m[k]; expect(bad("minimums", m), `without ${k}`).toBe("bad"); }
+    for (const k of Object.keys(G)) expect(bad("minimums", { ...M, [k]: (G as Record<string, unknown>)[k] }), `only ${k}`).toBe("bad");
+    for (const v of [0, -1, 1.5, "36605", null, 2_000_000]) { expect(bad("minimums", { ...M, ...G, general: v })).toBe("bad"); expect(bad("minimums", { ...M, ...G, generalLower: v })).toBe("bad"); }
+    for (const v of [null, "6145", ["614"], ["61456"], ["61a5"], [6145], ["6145", "6145"], [["6145"]], { 0: "6145" }, Array(201).fill("6145")])
+      for (const k of ["generalLowerCodes", "generalQuotaFullCodes"]) expect(bad("minimums", { ...M, ...G, [k]: v }), `${k} ${JSON.stringify(v)?.slice(0, 20)}`).toBe("bad");
+    expect(bad("minimums", { ...M, ...G, generalExtra: 1 })).toBe("bad");
   });
   it("refuses an empty list, a duplicate, a wrong list name, a bad code and control or format characters", () => {
     const e = { id: "cs-1122", code: "1122", title: "Site Manager", list: "critical-skills" };
@@ -98,6 +111,25 @@ describe("the daily run's pay rule (as the posting check)", () => {
     expect(belowMinimum(job({ occupation_code: "9999", salary_low: 68911 }), M, cs)).toBe(false);
     expect(belowMinimum(job({ occupation_code: "9999", salary_low: 68910 }), M, cs)).toBe(true);
     expect(belowMinimum(job({ occupation_code: "9999", salary_low: 90000 }), { ...M, nonListRoute: false }, cs)).toBe(true);
+  });
+});
+
+describe("the daily run's pay rule for a General post", () => {
+  const cs = new Set(["2136"]);
+  const G: Minimums = { ...M, general: R.GENERAL_MINIMUM, generalLower: R.GENERAL_LOWER_MINIMUM, generalLowerCodes: ["6145"], generalQuotaFullCodes: [] };
+  const job = (o: object) => ({ id: "1", permit_type: "general", occupation_code: "6145", salary_low: 33000, salary_high: null, health_insurance_eur: null, weekly_hours: 39, ...o });
+  it("uses the General minimum, not the Critical Skills one", () => {
+    expect(belowMinimum(job({}), G, cs)).toBe(false);
+    expect(belowMinimum(job({ salary_low: 32690 }), G, cs)).toBe(true);
+    expect(belowMinimum(job({ occupation_code: "3545", salary_low: 36604 }), G, cs)).toBe(true);
+    expect(belowMinimum(job({ occupation_code: "3545", salary_low: 36605 }), G, cs)).toBe(false);
+    expect(belowMinimum(job({ salary_low: 30000, salary_high: 32691 }), G, cs)).toBe(false);
+    expect(belowMinimum(job({ salary_low: 31000, health_insurance_eur: 1691 }), G, cs)).toBe(false);
+    expect(belowMinimum(job({ salary_low: null }), G, cs)).toBe(true);
+    expect(belowMinimum(job({ permit_type: "critical_skills" }), G, cs)).toBe(true); // the same pay on a Critical Skills post is below 68,911
+  });
+  it("stays live when the minimums in force have no General figures", () => {
+    expect(belowMinimum(job({}), M, cs)).toBe(false);
   });
 });
 

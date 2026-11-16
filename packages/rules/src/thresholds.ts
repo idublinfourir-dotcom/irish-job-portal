@@ -19,6 +19,16 @@ export const MIN_CONTRACT_MONTHS = 24;
 /** DETE's figures assume this week. */
 export const STANDARD_WEEK_HOURS = 39;
 
+/**
+ * General Employment Permit minimums, S.I. 643/2025 Schedule 8, in force 1 March 2026 (read on 16 November 2026, step15/25-permit-salary-thresholds.md).
+ * Based on a 39-hour week. The Irish graduate rate (34,009) depends on the applicant, so the posting check does not use it.
+ * Not in version 1 of the rules (rules-seed-cli.ts does not write them): they are for tests and for the version 2 proposal.
+ */
+export const GENERAL_MINIMUM = 36_605;
+/** "Health care assistant, care worker or home carer" (DETE: SOC 6145). The meat processor and horticulture rate sits inside codes 8111 and 9119, which also hold standard-rate roles, so those are not listed. */
+export const GENERAL_LOWER_MINIMUM = 32_691;
+export const GENERAL_LOWER_CODES: readonly string[] = ["6145"];
+
 /** The date these figures were last read on DETE's pages: "Rules last checked on [date]" (#94). */
 export const RULES_CHECKED_ON = "2026-11-12";
 export const standingLine = (date: string = RULES_CHECKED_ON) =>

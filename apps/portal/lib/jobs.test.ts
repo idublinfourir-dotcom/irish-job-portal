@@ -1,7 +1,7 @@
 // No database: the post body checks, the hours minimum, the rules verdicts and the refusal codes. The routes end to end: packages/db/test/jobs-route.test.ts.
-import { rulesV1 } from "@portal/rules";
+import { GENERAL_LOWER_CODES, GENERAL_LOWER_MINIMUM, GENERAL_MINIMUM, rulesV1 } from "@portal/rules";
 import { describe, expect, it } from "vitest";
-import { checkClose, checkEdit, checkPost, checkRenew, jobRefusal, minimumForHours, rulesFor, type Post } from "./jobs";
+import { checkClose, checkEdit, checkPost, checkRenew, jobRefusal, minimumForHours, rulesFor, verdictReply, type Post, type Verdict } from "./jobs";
 
 const desc = "We are hiring a software engineer to build our payments platform in Dublin. Full sponsorship offered.";
 export const good = {
@@ -26,12 +26,14 @@ describe("checkPost", () => {
   it("accepts a good body, trims, and fills the defaults", () => {
     expect(checkPost({ ...good, title: "  Software Engineer " })).toEqual({
       ...good, title: "Software Engineer", contractMonths: null, payGrade: null, healthInsuranceEur: null, weeklyHours: 39, clientName: null, statement: null,
+      permitType: "critical_skills", exceptionConfirmed: false,
     });
     expect(post({ contractType: "fixed_term", contractMonths: 24 }).contractMonths).toBe(24);
     expect(post({ salaryLow: null, salaryHigh: null, payGrade: "Clinical Nurse Manager 2" }).payGrade).toBe("Clinical Nurse Manager 2");
     expect(post({ statement: { signerName: "Fake Signer", signerTitle: "HR Director" } }).statement).toEqual({ signerName: "Fake Signer", signerTitle: "HR Director", writtenAuthority: false });
     expect(post({ weeklyHours: 60 }).weeklyHours).toBe(60);
     expect(post({ status: "draft" }).status).toBe("draft");
+    expect(post({ permitType: "general", exceptionConfirmed: true })).toMatchObject({ permitType: "general", exceptionConfirmed: true });
   });
   it.each([
     ["null", null], ["array", []], ["unknown field", { ...good, badge: "sponsor_confirmed" }], ["passRoute sent", { ...good, passRoute: "big_company" }],
@@ -53,6 +55,11 @@ describe("checkPost", () => {
     ["health negative", { ...good, healthInsuranceEur: -5 }], ["http url", { ...good, ownPageUrl: "http://careers.example.ie/jobs/1" }],
     ["javascript url", { ...good, ownPageUrl: "javascript:alert(1)//aaaa" }], ["url with login", { ...good, ownPageUrl: "https://a:b@careers.example.ie/x" }],
     ["url not a url", { ...good, ownPageUrl: "not a url at all" }], ["client control", { ...good, clientName: "Acme\u0007" }],
+    ["permitType other", { ...good, permitType: "stamp4" }], ["permitType number", { ...good, permitType: 1 }], ["permitType null", { ...good, permitType: null }],
+    ["permitType object", { ...good, permitType: { x: 1 } }], ["permitType array", { ...good, permitType: ["general"] }], ["permitType huge", { ...good, permitType: "general".repeat(100_000) }],
+    ["permitType upper case", { ...good, permitType: "General" }], ["exception string", { ...good, exceptionConfirmed: "true" }],
+    ["exception number", { ...good, exceptionConfirmed: 1 }], ["exception object", { ...good, exceptionConfirmed: { a: 1 } }], ["exception null", { ...good, exceptionConfirmed: null }],
+    ["exception huge", { ...good, exceptionConfirmed: "x".repeat(100_000) }],
     ["statement extra", { ...good, statement: { signerName: "A Name", signerTitle: "CEO", kind: "admin_on_behalf" } }],
     ["statement no title", { ...good, statement: { signerName: "A Name" } }], ["statement authority string", { ...good, statement: { signerName: "A Name", signerTitle: "CEO", writtenAuthority: "yes" } }],
   ])("refuses %s", (_n, b) => expect(checkPost(b)).toBeNull());
@@ -134,5 +141,87 @@ describe("jobRefusal", () => {
     expect(jobRefusal(e("x", "23505"))).toBeNull();
     expect(jobRefusal(new Error("boom"))).toBeNull();
     expect(jobRefusal(undefined)).toBeNull();
+  });
+});
+
+describe("rulesFor: General Employment Permit posts", () => {
+  const sponsor = { signerName: "Fake Signer", signerTitle: "HR Director" };
+  const care = { occupationCode: "6145", title: "Healthcare Assistant", description: "We are hiring a healthcare assistant for our care home in Cork. Full sponsorship offered.", permitType: "general", statement: sponsor };
+  const withGeneral = async (m: object = {}) => {
+    const today = await rulesV1();
+    return { ...today, minimums: { ...today.minimums, general: GENERAL_MINIMUM, generalLower: GENERAL_LOWER_MINIMUM, generalLowerCodes: [...GENERAL_LOWER_CODES], generalQuotaFullCodes: [], ...m } };
+  };
+  const gen = async (o: object = {}, m: object = {}) => rulesFor(post({ ...care, salaryLow: 33000, salaryHigh: null, ...o }), "Fake Care Home Limited", await withGeneral(m));
+
+  it("the figures are the S.I. 643/2025 ones", () => {
+    expect([GENERAL_MINIMUM, GENERAL_LOWER_MINIMUM, GENERAL_LOWER_CODES]).toEqual([36605, 32691, ["6145"]]);
+  });
+  it("refuses GENERAL_RULES_NOT_SET when the rules in force have none of the General fields (version 1)", async () => {
+    expect(await rulesFor(post({ ...care, salaryLow: 33000, salaryHigh: null }), "Fake Care Home Limited", await rulesV1())).toEqual({ ok: false, code: "GENERAL_RULES_NOT_SET" });
+  });
+  it("passes at the lower rate for 6145 with stated pay, and needs the standard rate for another code on no list", async () => {
+    expect(await gen()).toMatchObject({ ok: true, passRoute: "stated_pay", status: "live" });
+    expect(await gen({ salaryLow: 32691 })).toMatchObject({ ok: true });
+    expect(await gen({ salaryLow: 32690 })).toEqual({ ok: false, code: "PAY_BELOW_MINIMUM" });
+    expect(await gen({ occupationCode: "3545", title: "Sales Executive" })).toEqual({ ok: false, code: "PAY_BELOW_MINIMUM" }); // 33,000 is under 36,605
+    expect(await gen({ occupationCode: "3545", title: "Sales Executive", salaryLow: 36605 })).toMatchObject({ ok: true });
+    expect(await gen({ occupationCode: "3545", title: "Sales Executive", salaryLow: 36604 })).toEqual({ ok: false, code: "PAY_BELOW_MINIMUM" });
+  });
+  it("scales with the hours, counts the top of a range and health insurance, and needs stated pay", async () => {
+    expect(await gen({ salaryLow: 33000, weeklyHours: 45 })).toEqual({ ok: false, code: "PAY_BELOW_MINIMUM" }); // 32,691 / 39 h * 45 h is about 37,720
+    expect(await gen({ salaryLow: 38000, weeklyHours: 45 })).toMatchObject({ ok: true });
+    expect(await gen({ salaryLow: 30000, salaryHigh: 33000 })).toMatchObject({ ok: true });
+    expect(await gen({ salaryLow: 30000, healthInsuranceEur: 2691 })).toMatchObject({ ok: true });
+    expect(await gen({ salaryLow: 30000, healthInsuranceEur: 2690 })).toEqual({ ok: false, code: "PAY_BELOW_MINIMUM" });
+    expect(await gen({ salaryLow: null, salaryHigh: null, payGrade: "Care assistant scale" }, {})).toEqual({ ok: false, code: "PAY_REQUIRED" });
+    expect(await gen({ salaryLow: null, salaryHigh: null, payGrade: "Care assistant scale" }, {})).not.toMatchObject({ passRoute: "public_pay" });
+  });
+  it("has no minimum contract length, in the fields or in the advert text", async () => {
+    expect(await gen({ contractType: "fixed_term", contractMonths: 6 })).toMatchObject({ ok: true });
+    expect(await gen({ description: care.description + " This is a 6 month contract role." })).toMatchObject({ ok: true });
+    expect(await gen({ description: care.description + " This is maternity cover." })).toMatchObject({ ok: false, code: "RULES_FAILED" });
+  });
+  it("needs the sponsorship statement for a live post", async () => {
+    expect(await gen({ statement: null })).toEqual({ ok: false, code: "STATEMENT_REQUIRED" });
+  });
+  it("refuses a code whose quota is full, and an Ineligible code", async () => {
+    expect(await gen({}, { generalQuotaFullCodes: ["6145"] })).toEqual({ ok: false, code: "QUOTA_FULL" });
+    expect(await gen({}, { generalQuotaFullCodes: ["3545"] })).toMatchObject({ ok: true });
+    expect(await gen({ occupationCode: "4112" })).toEqual({ ok: false, code: "OCCUPATION_INELIGIBLE" });
+  });
+  it("runs the chain: no sponsorship wording and a post outside Ireland are refused", async () => {
+    expect(await gen({ description: "We are hiring a healthcare assistant in Cork. We cannot offer visa sponsorship for this role." })).toMatchObject({ ok: false, code: "RULES_FAILED" });
+    expect(await gen({ description: care.description + " This role is located in Cork, Ireland or London, United Kingdom." })).toMatchObject({ ok: false, code: "RULES_FAILED" });
+  });
+  it("never uses the public pay route and the default type is still Critical Skills", async () => {
+    expect(post().permitType).toBe("critical_skills");
+    expect(await rulesFor(post(), "Fake Payments Limited", await withGeneral())).toMatchObject({ ok: true }); // the General fields do not change a Critical Skills post
+  });
+});
+
+describe("rulesFor: an Ineligible entry with an exception", () => {
+  const sponsor = { signerName: "Fake Signer", signerTitle: "HR Director" };
+  const chef = { occupationCode: "5434", title: "Head Chef", description: "We are hiring a head chef for our restaurant in Galway. Full sponsorship offered.", salaryLow: 80000, salaryHigh: null, statement: sponsor };
+  const run = async (o: object = {}, employer = "Fake Restaurant Limited") => rulesFor(post({ ...chef, ...o }), employer, await rulesV1());
+  it("refuses a chef without the tick, with the exception wording in the reply, for both permit types", async () => {
+    const v = await run();
+    expect(v).toMatchObject({ ok: false, code: "OCCUPATION_INELIGIBLE", exception: expect.stringContaining("with the exception of") });
+    expect(verdictReply(v as Verdict & { ok: false }).status).toBe(422);
+    expect(await (verdictReply(v as Verdict & { ok: false }).json())).toMatchObject({ code: "OCCUPATION_INELIGIBLE", exception: expect.stringContaining("Executive Chef") });
+    const today = await rulesV1();
+    const general = { ...today, minimums: { ...today.minimums, general: GENERAL_MINIMUM, generalLower: GENERAL_LOWER_MINIMUM, generalLowerCodes: ["6145"], generalQuotaFullCodes: [] } };
+    expect(await rulesFor(post({ ...chef, permitType: "general" }), "Fake Restaurant Limited", general)).toMatchObject({ ok: false, code: "OCCUPATION_INELIGIBLE", exception: expect.any(String) });
+    expect(await rulesFor(post({ ...chef, permitType: "general", exceptionConfirmed: true, salaryLow: 40000 }), "Fake Restaurant Limited", general)).toMatchObject({ ok: true, passRoute: "stated_pay" });
+  });
+  it("passes with the tick (a Critical Skills post then needs the non-list minimum)", async () => {
+    expect(await run({ exceptionConfirmed: true })).toMatchObject({ ok: true, passRoute: "stated_pay" });
+    expect(await run({ exceptionConfirmed: true, salaryLow: 50000 })).toEqual({ ok: false, code: "PAY_BELOW_MINIMUM" });
+  });
+  it("a code with no exception wording is refused with or without the tick, and no wording is returned", async () => {
+    expect(await run({ occupationCode: "4112", exceptionConfirmed: true })).toEqual({ ok: false, code: "OCCUPATION_INELIGIBLE" });
+  });
+  it("the pharmaceutical technician (3217, S.I. 558/2026) is Ineligible with an exception", async () => {
+    const v = await run({ occupationCode: "3217", title: "Pharmaceutical Technician" });
+    expect(v).toMatchObject({ ok: false, code: "OCCUPATION_INELIGIBLE", exception: expect.stringContaining("Pharmaceutical Technicians working in healthcare settings") });
   });
 });

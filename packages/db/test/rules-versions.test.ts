@@ -333,7 +333,9 @@ describe("the daily run and the notices (#234 D9)", () => {
       draft: await job(b, { status: "draft", pay: 1000 }),
       nonList: await job(b, { code: "9999", pay: 68911 }),
       closed: await job(closedOnly, { status: "closed", pay: 1000 }),
+      general: await job(b, { code: "6145", pay: 33000 }), // a General post is not judged against the Critical Skills minimum
     };
+    await su.query("update job set permit_type = 'general' where id = $1", [jobs.general]);
     await su.query("update job set closed_at = now(), close_reason = 'closed' where id = $1", [jobs.closed]);
     const fetched = String((await one(
       "insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, status, closes_at, salary_low, pass_route, badge, search_vector, own_page_url) values ($1, 'fetched', $2, 'Fake', 'Fake', 'it', 'critical_skills', 'live', $3, 1000, 'stated_pay', 'critical_skills_eligible', 'x', 'https://example.test/f') returning id",
@@ -350,7 +352,7 @@ describe("the daily run and the notices (#234 D9)", () => {
     const r = await run();
     expect(r).toEqual({ versionId: c.versionId, applied: true, underReview: 2, floorsEnded: 1 });
     expect(Object.fromEntries(await Promise.all(Object.entries(jobs).map(async ([k, id]) => [k, await status(id)])))).toEqual({
-      below: "under_review", atNew: "live", range: "live", hours: "under_review", publicPay: "live", draft: "draft", nonList: "live", closed: "closed",
+      below: "under_review", atNew: "live", range: "live", hours: "under_review", publicPay: "live", draft: "draft", nonList: "live", closed: "closed", general: "live",
     });
     expect(await status(fetched)).toBe("live");
     expect(await one("select status, ended_at is not null ended from pay_floor where id = $1", [floor])).toEqual({ status: "expired", ended: true });
