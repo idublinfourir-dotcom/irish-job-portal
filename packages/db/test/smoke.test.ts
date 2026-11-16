@@ -514,7 +514,7 @@ S("organisation", "the survivor takes the absorbed organisation's CRO number (me
 // ===== role settings and table settings (section 2.2, section 7)
 S("roles", "per-role timeouts are set (alter role ... set) and statement_timeout fires for app_candidate at 5 s", "app_candidate", async () => {
   const r = await su.query("select rolname, rolconfig from pg_roles where rolname like 'app\\_%' order by 1");
-  const want = { app_admin: "60s", app_candidate: "5s", app_fetcher: "30s", app_portal: "5s" };
+  const want = { app_admin: "60s", app_candidate: "5s", app_fetcher: "30s", app_portal: "5s", app_backup: "10min" };
   for (const x of r.rows) if (!x.rolconfig?.includes(`statement_timeout=${want[x.rolname]}`)) throw new Error(x.rolname + " " + JSON.stringify(x.rolconfig));
   try { await q("app_candidate", "select pg_sleep(6)"); throw new Error("did not time out"); } catch (e) { if (e.code !== "57014") throw e; }
 });

@@ -28,7 +28,7 @@ async function reach(role: Role, from: Pick<pg.Pool, "query"> = db.pool("postgre
 }
 
 describe("roles migration", () => {
-  test("the owner and the four app roles exist, can log in, and have no special powers", async () => {
+  test("the owner and the app roles exist, can log in, and have no special powers", async () => {
     const { rows } = await db.query(
       "postgres",
       "select rolname, rolcanlogin, rolsuper, rolcreaterole, rolcreatedb, rolbypassrls from pg_roles where rolname = any($1) order by rolname",
@@ -84,6 +84,7 @@ describe("roles migration", () => {
       app_portal: ["5s", "3s", "10s"],
       app_fetcher: ["30s", "5s", "30s"],
       app_admin: ["1min", "10s", "1min"],
+      app_backup: ["10min", "1min", "0"], // no idle limit: the backup holds its snapshot transaction open while pg_dump runs
     } as const;
     for (const [role, [statement, lock, idle]] of Object.entries(want)) {
       const { rows } = await db.query(

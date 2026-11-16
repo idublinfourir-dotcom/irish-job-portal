@@ -3,7 +3,7 @@
 import { randomBytes } from "node:crypto";
 import pg from "pg";
 
-export const ROLES = ["portal_owner", "app_candidate", "app_portal", "app_admin", "app_fetcher"] as const;
+export const ROLES = ["portal_owner", "app_candidate", "app_portal", "app_admin", "app_fetcher", "app_backup"] as const;
 // anon and authenticated come from Supabase's image. They cannot log in, so we connect as postgres and switch role.
 export type Role = (typeof ROLES)[number] | "postgres" | "anon" | "authenticated";
 
