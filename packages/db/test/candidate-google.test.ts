@@ -10,8 +10,9 @@ import { answers, seedSignupTerms } from "./better-auth-helper";
 
 // Statements measured on 12 November 2026, counting every pg.Client.query call (begin and commit included). The callback that creates
 // an account (user, Google account, consent row, session): 17 for a new person (no password hashing, so far faster than email sign-up); a returning user: 12; joining an existing confirmed account: 14 (includes the one consent-row lookup), 16 since 13 November 2026 (step 15: the password
-// account and the earlier sessions are deleted, review finding 3). The sign-in start call is not counted. Raise only on purpose.
-const BUDGET = { newUser: 17, returning: 12, link: 16, newUserMs: 200 };
+// account and the earlier sessions are deleted, review finding 3). Each one more since 17 November 2026 (C1: the update of last_active_at).
+// The sign-in start call is not counted. Raise only on purpose.
+const BUDGET = { newUser: 18, returning: 13, link: 17, newUserMs: 200 };
 // Time measured three times on 12 November 2026: a new person 39 ms (budget 200, about 5 times).
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });

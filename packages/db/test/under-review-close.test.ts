@@ -60,7 +60,7 @@ describe("the daily 30-day close", () => {
     const c = await company(), d = await company();
     const old = await underReview(c, 30), older = await underReview(d, 90), young = await underReview(c, 29);
     const restored = await underReview(c, 40);
-    await db.query("postgres", "update job set status = 'live' where id = $1", [restored]); // the employer edited the salary: live, stamp cleared
+    await db.query("postgres", "update job set status = 'live' where id = $1", [restored]); // live again, stamp cleared (the edit route's restore: jobs-route.test.ts, #93)
     const live = await job(c), draft = await job(c, { status: "draft" }), hidden = await job(c, { status: "hidden", hidden_reason: "admin" }), inReview = await job(c, { status: "in_review" });
     expect(await close()).toBe(2);
     for (const id of [old, older]) expect(await state(id)).toEqual({ status: "closed", close_reason: "under_review_expired", closed: true, since: false });

@@ -12,8 +12,9 @@ import { seedSignupTerms } from "./better-auth-helper";
 
 // Statements measured on 12 November 2026, counting every pg.Client.query call (begin and commit included). Sign-up (account plus
 // consent row, with the rate limit): 10 on the first request of an instance, which includes Better Auth's one-off column list read.
-// Sign-in: 6. A server-side getSession is 2, and 4 through the route (the rate limit adds 2). Raise these only on purpose.
-const BUDGET = { signUp: 10, signIn: 6, getSession: 2, signUpMs: 700, concurrentMs: 2100, signInMs: 740 };
+// Sign-in: 6, and 7 since 17 November 2026 (C1: the update of last_active_at). A server-side getSession is 2, and 4 through the route
+// (the rate limit adds 2). Raise these only on purpose.
+const BUDGET = { signUp: 10, signIn: 7, getSession: 2, signUpMs: 700, concurrentMs: 2100, signInMs: 740 };
 // Times measured three times on 12 November 2026 (about 5 times the measured value): sign-up 141 ms (budget 700), 10 concurrent sign-ups
 // 420 ms (2100), sign-in 148 ms (740). Hashing the password dominates sign-up and sign-in.
 
@@ -348,6 +349,23 @@ describe("email confirmation (#54)", () => {
     const [r, m] = await counted(() => call("get-session", undefined, { cookie }));
     expect(r.json?.user?.email).toBe(eve.email);
     expect(m, `${m} statements`).toBeLessThanOrEqual(BUDGET.getSession + 2);
+  });
+  it("C1: sign-in and the daily session refresh mark the candidate active, so the dormant rules pass them over and a warning already sent is cancelled", async () => {
+    const state = async () => (await su.query("select last_active_at > now() - interval '1 minute' as active, inactive_warned_at is null as unwarned from candidate_user where email = $1", [eve.email])).rows[0];
+    const dormant = async () => { // two statements: a change of last_active_at clears inactive_warned_at in the same row (0002 trigger)
+      await su.query("update candidate_user set last_active_at = now() - interval '13 months' where email = $1", [eve.email]);
+      await su.query("update candidate_user set inactive_warned_at = now() - interval '60 days' where email = $1", [eve.email]);
+      expect(await state()).toEqual({ active: false, unwarned: false });
+    };
+    await dormant();
+    expect((await call("sign-in/email", { email: eve.email, password: eve.password })).status).toBe(200);
+    expect(await state()).toEqual({ active: true, unwarned: true });
+    await dormant(); // a session used every day is refreshed once a day (Better Auth's updateAge), not made again
+    await su.query("update candidate_session s set expires_at = now() + interval '5 days' from candidate_user u where u.id = s.user_id and u.email = $1", [eve.email]);
+    expect((await call("get-session", undefined, { cookie })).json?.user?.email).toBe(eve.email);
+    expect(await state()).toEqual({ active: true, unwarned: true });
+    await db.query("app_admin", "select private.run_retention()");
+    expect((await su.query("select deleted_at from candidate_user where email = $1", [eve.email])).rows[0].deleted_at).toBeNull();
   });
   it("a wrong password is 401 and then the rate limit holds the address: 5 tries a minute, then 429", async () => {
     const ip = freshIp(), seq = [];

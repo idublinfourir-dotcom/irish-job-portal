@@ -245,6 +245,17 @@ describe("edit, renew, close", () => {
     expect(s[1].superseded_at).toBeNull();
     expect((await job(id)).salary_low).toBe(55000);
   });
+  it("#93: a job under review goes live again when an edit raises the pay past the minimum; any other edit leaves it under review", async () => {
+    const c = await company();
+    const id = (await post(c.owner.cookie, good)).json!.jobId;
+    await su.query("update job set status = 'under_review' where id = $1", [id]); // what the rules run does on the day the minimums rise
+    const title = await edit(c.owner.cookie, { ...good, jobId: id, title: "Senior Software Engineer" });
+    expect([title.status, title.json?.status]).toEqual([200, "under_review"]);
+    expect((await edit(c.owner.cookie, { ...good, jobId: id, salaryLow: 30000, salaryHigh: null })).json).toEqual({ code: "PAY_BELOW_MINIMUM" });
+    const raised = await edit(c.owner.cookie, { ...good, jobId: id, title: "Senior Software Engineer", salaryLow: 55000 });
+    expect([raised.status, raised.json?.status]).toEqual([200, "live"]);
+    expect(await job(id)).toMatchObject({ status: "live", under_review_since: null, salary_low: 55000 });
+  });
   it("another company's job is not found; closed and hidden jobs are not edited", async () => {
     const c = await company(), other = await company();
     const id = (await post(c.owner.cookie, good)).json!.jobId;
