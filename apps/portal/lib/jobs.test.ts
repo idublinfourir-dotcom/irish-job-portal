@@ -135,6 +135,7 @@ describe("jobRefusal", () => {
     ["job guard: the portal writes a job only for an active poster, recruiter or account owner of its company", 403, "NOT_A_POSTER"],
     ["signer refused: not an active poster", 403, "NOT_A_SIGNER"], ["job guard: sponsor_confirmed is refused while the organisation is restricted", 403, "BADGE_RESTRICTED"],
     ["job refused: the organisation is not verified", 403, "COMPANY_NOT_ACTIVE"], ["job guard: the portal may not move a job from closed to live", 409, "BAD_STATE"],
+    ["job guard: a client not found in the DETE names needs staff review", 409, "NEEDS_REVIEW"],
     ["status refused: NOT_A_MEMBER no active membership", 403, "NOT_A_MEMBER"], ["anything else", 403, "REFUSED"],
   ])("maps %s", (m, status, code) => expect(jobRefusal(e(m))).toEqual({ status, code }));
   it("leaves other errors alone", () => {

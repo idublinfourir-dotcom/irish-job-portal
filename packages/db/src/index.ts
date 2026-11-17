@@ -8,6 +8,7 @@ export * from "./dete";
 export * from "./registers";
 export * from "./search";
 export * from "./admin-queue";
+export * from "./job-queues";
 export * from "./account-review";
 export * from "./trust-safety";
 export * from "./bot-check";

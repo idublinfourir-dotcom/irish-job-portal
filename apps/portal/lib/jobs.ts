@@ -171,6 +171,7 @@ export function jobRefusal(e: unknown): Refusal | null {
   if (message.startsWith("job guard: sponsor_confirmed is refused")) return { status: 403, code: "BADGE_RESTRICTED" };
   if (message.startsWith("job refused")) return { status: 403, code: "COMPANY_NOT_ACTIVE" };
   if (message.startsWith("job guard: the portal may not move")) return { status: 409, code: "BAD_STATE" };
+  if (message.startsWith("job guard: a client not found")) return { status: 409, code: "NEEDS_REVIEW" }; // 0028 (#244 a): a live job names a new client not in the DETE names
   if (message.startsWith("status refused: NOT_A_MEMBER")) return { status: 403, code: "NOT_A_MEMBER" };
   return { status: 403, code: "REFUSED" };
 }
