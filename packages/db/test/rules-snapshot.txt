@@ -472,7 +472,7 @@ trigger contact_request_notify on contact_request: CREATE TRIGGER contact_reques
 trigger email_outbox_dedupe_key on email_outbox: CREATE TRIGGER email_outbox_dedupe_key BEFORE INSERT ON public.email_outbox FOR EACH ROW EXECUTE FUNCTION private.dedupe_key_per_role()
 trigger email_outbox_guard on email_outbox: CREATE TRIGGER email_outbox_guard BEFORE INSERT ON public.email_outbox FOR EACH ROW EXECUTE FUNCTION private.email_outbox_guard()
 trigger job_closed_at on job: CREATE TRIGGER job_closed_at BEFORE INSERT OR UPDATE OF status ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_closed_at()
-trigger job_defaults on job: CREATE TRIGGER job_defaults BEFORE INSERT OR UPDATE OF permit_employer_kind, permit_employer_name ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_defaults()
+trigger job_defaults on job: CREATE TRIGGER job_defaults BEFORE INSERT OR UPDATE OF permit_employer_kind, permit_employer_name, permit_employer_check ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_defaults()
 trigger job_guard on job: CREATE TRIGGER job_guard BEFORE INSERT OR UPDATE ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_guard()
 trigger job_org_live on job: CREATE TRIGGER job_org_live BEFORE INSERT OR UPDATE OF status ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_org_live()
 trigger job_queue_review on job: CREATE TRIGGER job_queue_review AFTER INSERT OR UPDATE OF status, permit_employer_check ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_queue_review()

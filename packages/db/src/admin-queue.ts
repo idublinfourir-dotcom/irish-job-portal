@@ -45,8 +45,8 @@ const item = (r: Row): QueueItem => ({
   stage: r.stage, reason: r.reason,
 });
 
-const encode = (r: Row) => Buffer.from(JSON.stringify({ t: r.created_text, i: r.id })).toString("base64url");
-function decode(token: unknown): [string, string] {
+export const queueCursor = (r: { created_text: string; id: string }) => Buffer.from(JSON.stringify({ t: r.created_text, i: r.id })).toString("base64url");
+export function readQueueCursor(token: unknown): [string, string] {
   const bad = new QueueRefused("bad_cursor");
   if (typeof token !== "string" || token.length > 200 || !/^[A-Za-z0-9_-]+$/.test(token)) throw bad;
   let o: { t?: unknown; i?: unknown };
@@ -69,11 +69,11 @@ async function checkReviewer(db: Pick<pg.Pool, "query">, staffUserId: string): P
 
 /** Open and claimed fetched_job items, oldest first, a page at a time. ponytail: next page only; add `before` when a page needs to go back. */
 export async function listQueue(db: Pick<pg.Pool, "query">, staffUserId: string, opts: { after?: string } = {}): Promise<{ items: QueueItem[]; next: string | null }> {
-  const cursor = opts.after === undefined ? undefined : decode(opts.after);
+  const cursor = opts.after === undefined ? undefined : readQueueCursor(opts.after);
   await checkReviewer(db, staffUserId);
   const all = (cursor ? await db.query<Row>(QUEUE_AFTER, cursor) : await db.query<Row>(QUEUE_FIRST)).rows;
   const rows = all.slice(0, PAGE_SIZE);
-  return { items: rows.map(item), next: all.length > PAGE_SIZE ? encode(rows.at(-1)!) : null };
+  return { items: rows.map(item), next: all.length > PAGE_SIZE ? queueCursor(rows.at(-1)!) : null };
 }
 
 export const QUEUE_ITEM = `select ${COLS.replace(" from ", ", t.advert_text from ")} left join job_text t on t.job_id = j.id where r.id = $1::bigint and r.queue = 'fetched_job'`;

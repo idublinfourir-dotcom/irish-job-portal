@@ -199,8 +199,20 @@ describe("POST /api/portal/jobs", () => {
     const no = await post(a.owner.cookie, { ...good, clientName: "Fake Payments Limited", statement: signed });
     expect([no.status, no.json]).toEqual([400, { code: "WRITTEN_AUTHORITY_REQUIRED" }]);
     const r = await post(a.owner.cookie, { ...good, clientName: "Fake Payments Limited", statement: { ...signed, writtenAuthority: true } });
-    expect(r.json).toMatchObject({ status: "live", badge: "sponsor_confirmed" });
+    // 0028 (#244 a): the client is not in the DETE names, so the job is held for staff with one agency_client_check item, never live first
+    expect(r.json).toMatchObject({ status: "in_review", badge: "sponsor_confirmed" });
     expect(await job(r.json!.jobId)).toMatchObject({ source: "agency", permit_employer_kind: "client", permit_employer_name: "Fake Payments Limited", permit_employer_check: "not_found" });
+    expect((await su.query("select queue from review_item where job_id = $1", [r.json!.jobId])).rows).toEqual([{ queue: "agency_client_check" }]);
+    expect((await list(a.owner.cookie)).json!.jobs.find((x: { id: number }) => x.id === r.json!.jobId)).toMatchObject({ status: "in_review", reason: "staff_check", clientCheck: true });
+    // a client found in the DETE names goes live with no item; editing that live job to name a client that is not found is refused, the job unchanged
+    await su.query("insert into organisation_name(name, normalised_name, kind, source) values ('Fake Known Client Limited', 'fake known client limited', 'alias', 'dete')");
+    const auth = { ...signed, writtenAuthority: true };
+    const found = await post(a.owner.cookie, { ...good, clientName: "Fake Known Client Limited", statement: auth });
+    expect(found.json).toMatchObject({ status: "live" });
+    expect((await su.query("select count(*)::int n from review_item where job_id = $1", [found.json!.jobId])).rows[0].n).toBe(0);
+    const moved = await edit(a.owner.cookie, { ...good, jobId: found.json!.jobId, clientName: "Fake Payments Limited", statement: auth });
+    expect([moved.status, moved.json]).toEqual([409, { code: "NEEDS_REVIEW" }]);
+    expect(await job(found.json!.jobId)).toMatchObject({ status: "live", permit_employer_name: "Fake Known Client Limited", permit_employer_check: "found" });
     expect((await statements(r.json!.jobId))[0]).toMatchObject({ kind: "on_behalf_of_client", on_behalf_of_name: "Fake Payments Limited", written_authority_on_file: true });
     const e = await company();
     expect((await post(e.owner.cookie, { ...good, clientName: "Someone Else" })).json).toEqual({ code: "CLIENT_ONLY_FOR_AGENCIES" });

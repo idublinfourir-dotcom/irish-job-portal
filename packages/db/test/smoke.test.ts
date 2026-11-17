@@ -245,14 +245,14 @@ S("job", "update quota_full as admin; fetcher cannot (no grant)", "app_admin", a
   await q("app_admin", "update job set quota_full = true where id = $1", [jobE]);
   try { await q("app_fetcher", "update job set quota_full = false where id = $1", [jobE]); throw new Error("accepted"); } catch (e) { if (!/permission denied/.test(e.message)) throw e; }
 });
-S("job", "trigger job_defaults: a client job is looked up in organisation_name (found / not_found, value sent is ignored); not_found queues agency_client_check", "app_portal", async () => {
+S("job", "trigger job_defaults: a client job is looked up in organisation_name (found / not_found, value sent is ignored); a not_found draft queues nothing yet (0028: agency_client_check once it leaves draft)", "app_portal", async () => {
   const ins = (name) => one("app_portal", `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, closes_at, own_page_url, status, permit_employer_kind, permit_employer_name, permit_employer_check, posted_by_membership_id)
      values ($1,'employer',$2,'Dev','Acme','it','general', ${days(5)}, 'https://acme.test/3', 'draft', 'client', $3, 'found', (select id from membership where organisation_id = $1 and status = 'active' and role <> 'viewer' order by id limit 1)) returning id, permit_employer_check`, [org1, src, name]);
   const a = await ins("ACME  Ltd."); const b = await ins("Nobody Plc");
   const ra = await one("app_admin", "select permit_employer_check c, permit_employer_name_id is not null linked from job where id = $1", [a.id]);
   const rb = await one("app_admin", "select permit_employer_check c from job where id = $1", [b.id]);
   const rq = await one("app_admin", "select count(*)::int n from review_item where queue = 'agency_client_check' and job_id = $1", [b.id]);
-  if (ra.c !== "found" || !ra.linked || rb.c !== "not_found" || rq.n !== 1) throw new Error(JSON.stringify({ ra, rb, rq }));
+  if (ra.c !== "found" || !ra.linked || rb.c !== "not_found" || rq.n !== 0) throw new Error(JSON.stringify({ ra, rb, rq }));
 });
 S("job_text", "insert and update as the portal", "app_portal", async () => {
   await q("app_portal", "insert into job_text(job_id, advert_text) values ($1,'text')", [jobE]);
