@@ -211,6 +211,13 @@
       "when": 1794300025000,
       "tag": "0029_fetcher_name_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794300026000,
+      "tag": "0030_search_indexes",
+      "breakpoints": true
     }
   ]
 }

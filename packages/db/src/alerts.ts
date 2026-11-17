@@ -3,17 +3,12 @@
 // Filters only, no free text (Q2): search_text is never written. The matching run that sends the email is part 11b.
 import { randomBytes } from "node:crypto";
 import type pg from "pg";
-import type { Sector } from "@portal/rules";
 import { socTitle } from "@portal/rules";
 import { inTransaction, isObject, only, Refuse } from "./candidate-route";
 import { isStamp4 } from "./candidate";
-import { COUNTIES } from "./manual-posting";
-import { validId } from "./search";
+import { checkJobFilters, validId } from "./search";
 
 export const MAX_ALERTS = 10; // per candidate, every row counts (D1)
-export const MAX_SALARY = 1_000_000; // whole euros a year, the posting check's ceiling
-// The six sectors the rules give a job (types.ts, Sector); a job is stored with one of them.
-export const ALERT_SECTORS: readonly Sector[] = ["health", "IT", "construction and engineering", "finance", "pharma and science", "other"];
 
 // ===== the bodies
 const FILTERS = ["occupationCode", "sector", "county", "salaryMin", "badge", "frequency"] as const;
@@ -21,18 +16,10 @@ export type AlertBody = { occupation_code: string | null; sector: string | null;
 
 /** Null means refuse. A filter that is absent or null means "any"; unknown fields and free text are refused. */
 const filters = (b: Record<string, unknown>, occupations: ReadonlySet<string>): AlertBody | null => {
-  const { occupationCode: occ, sector, county, salaryMin, badge, frequency } = b;
-  const any = (v: unknown) => v === undefined || v === null;
-  if (!any(occ) && !(typeof occ === "string" && occupations.has(occ))) return null;
-  if (!any(sector) && !(typeof sector === "string" && (ALERT_SECTORS as readonly string[]).includes(sector))) return null;
-  if (!any(county) && !(typeof county === "string" && (COUNTIES as readonly string[]).includes(county))) return null;
-  if (!any(salaryMin) && !(Number.isInteger(salaryMin) && (salaryMin as number) >= 0 && (salaryMin as number) <= MAX_SALARY)) return null;
-  if (!any(badge) && badge !== "sponsor_confirmed") return null;
-  if (frequency !== "daily" && frequency !== "weekly") return null;
-  return {
-    occupation_code: (occ as string) ?? null, sector: (sector as string) ?? null, county: (county as string) ?? null,
-    salary_min: (salaryMin as number) ?? null, badge: (badge as string) ?? null, frequency,
-  };
+  const f = checkJobFilters(b, occupations);
+  const { frequency } = b;
+  if (!f || (frequency !== "daily" && frequency !== "weekly")) return null;
+  return { occupation_code: f.occupationCode, sector: f.sector, county: f.county, salary_min: f.salaryMin, badge: f.badge, frequency };
 };
 export const checkAlert = (occupations: ReadonlySet<string>) => (b: unknown): AlertBody | null =>
   isObject(b) && only(b, FILTERS) ? filters(b, occupations) : null;
