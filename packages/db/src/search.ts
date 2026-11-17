@@ -1,8 +1,9 @@
 // The Search module (design 23, section 3): the two reads the candidate pages call, run as app_candidate. The job list and one job.
 // Every statement is a constant with parameters, every column is named (never `select job.*`: it would fetch search_vector and columns the
 // candidate role cannot read), and the list pages on the sort key plus id, never OFFSET. No advert text is read for a list.
+import { createHash } from "node:crypto";
 import type pg from "pg";
-import { RULES_CHECKED_ON as RULES_DATE } from "@portal/rules";
+import { RULES_CHECKED_ON as RULES_DATE, SOC2010_CODES, type Sector } from "@portal/rules";
 import { getRules } from "./rules-data";
 import { permitsLast5Years } from "./dete";
 
@@ -15,8 +16,130 @@ export const COUNT_CAP = 200; // #125: the count stops here ("200+")
 // The date on the standing line "Rules last checked on [date]" (#94), version 1. A job page reads the date in force from getRules(db) (#229).
 export const RULES_CHECKED_ON = RULES_DATE;
 
-/** A bad cursor, sort or id from a URL. A page answers 400 or shows the first page. */
+/** A bad cursor, sort, filter or id from a URL. A page answers 400 or shows the first page. */
 export class BadSearchInput extends Error {}
+
+// ===== filters (S1, S2, #247): the alert filters with the alert run's meaning (0024), plus keyword, posted within and pay stated =====
+// The six sectors the rules give a job (types.ts, Sector); a job is stored with one of them.
+export const ALERT_SECTORS: readonly Sector[] = ["health", "IT", "construction and engineering", "finance", "pharma and science", "other"];
+// The 26 counties of the Republic (the same list as apps/portal/lib/jobs.ts and packages/fetcher/src/county.ts).
+export const COUNTIES = [
+  "Carlow", "Cavan", "Clare", "Cork", "Donegal", "Dublin", "Galway", "Kerry", "Kildare", "Kilkenny", "Laois", "Leitrim", "Limerick",
+  "Longford", "Louth", "Mayo", "Meath", "Monaghan", "Offaly", "Roscommon", "Sligo", "Tipperary", "Waterford", "Westmeath", "Wexford", "Wicklow",
+] as const;
+export const MAX_SALARY = 1_000_000; // whole euros a year, the posting check's ceiling
+export const MAX_Q = 200; // characters of keyword text
+export const POSTED_WITHIN = [1, 3, 7, 30] as const;
+
+export type JobFilters = { occupationCode: string | null; sector: string | null; county: string | null; salaryMin: number | null; badge: string | null };
+/** The filters an alert and a search share, one check for both. Absent or null means "any"; null back means refuse. */
+export function checkJobFilters(b: Record<string, unknown>, occupations: ReadonlySet<string>): JobFilters | null {
+  const { occupationCode: occ, sector, county, salaryMin, badge } = b;
+  const any = (v: unknown) => v === undefined || v === null;
+  if (!any(occ) && !(typeof occ === "string" && occupations.has(occ))) return null;
+  if (!any(sector) && !(typeof sector === "string" && (ALERT_SECTORS as readonly string[]).includes(sector))) return null;
+  if (!any(county) && !(typeof county === "string" && (COUNTIES as readonly string[]).includes(county))) return null;
+  if (!any(salaryMin) && !(Number.isInteger(salaryMin) && (salaryMin as number) >= 0 && (salaryMin as number) <= MAX_SALARY)) return null;
+  if (!any(badge) && badge !== "sponsor_confirmed") return null;
+  return { occupationCode: (occ as string) ?? null, sector: (sector as string) ?? null, county: (county as string) ?? null, salaryMin: (salaryMin as number) ?? null, badge: (badge as string) ?? null };
+}
+
+/** A search: the alert filters plus three of its own. Absent means "any". */
+export type SearchFilters = Partial<{ [K in keyof JobFilters]: NonNullable<JobFilters[K]> }> & { q?: string; postedWithin?: (typeof POSTED_WITHIN)[number]; salaryStated?: true };
+const FILTER_KEYS = ["q", "occupationCode", "sector", "county", "salaryMin", "badge", "postedWithin", "salaryStated"] as const;
+
+/** Checks a filter object (from parseSearch or a page) and returns it with only the filters set. Throws BadSearchInput. */
+export function checkSearch(f: unknown): SearchFilters {
+  const bad = (why: string) => new BadSearchInput(`bad filter: ${why}`);
+  if (f === undefined) return {};
+  if (typeof f !== "object" || f === null || Array.isArray(f)) throw bad("not an object");
+  const o = f as Record<string, unknown>;
+  if (!Object.keys(o).every((k) => (FILTER_KEYS as readonly string[]).includes(k))) throw bad("unknown key");
+  const shared = checkJobFilters(o, SOC2010_CODES);
+  if (!shared) throw bad("alert filter");
+  const out: SearchFilters = {};
+  for (const [k, v] of Object.entries(shared)) if (v !== null) Object.assign(out, { [k]: v });
+  if (o.q !== undefined) {
+    if (typeof o.q !== "string") throw bad("q");
+    const q = o.q.trim();
+    if (q.length > MAX_Q) throw bad("q too long");
+    if (/\p{Cc}/u.test(q)) throw bad("q control character"); // null bytes, newlines, escapes: Postgres text refuses a null byte
+    if (q) out.q = q; // empty means no keyword
+  }
+  if (o.postedWithin !== undefined) {
+    if (!(POSTED_WITHIN as readonly unknown[]).includes(o.postedWithin)) throw bad("postedWithin");
+    out.postedWithin = o.postedWithin as SearchFilters["postedWithin"];
+  }
+  if (o.salaryStated !== undefined && o.salaryStated !== false) {
+    if (o.salaryStated !== true) throw bad("salaryStated");
+    out.salaryStated = true;
+  }
+  return out;
+}
+
+/**
+ * The filters from a page's URL. Keys are the filter names (q, occupationCode, sector, county, salaryMin, badge, postedWithin, salaryStated=true);
+ * an empty value means "any" (a form's blank select), a key given twice is refused, and other keys (sort, after, before, tracking tags) are ignored.
+ */
+export function parseSearch(params: URLSearchParams): SearchFilters {
+  const o: Record<string, unknown> = {};
+  for (const k of FILTER_KEYS) {
+    const all = params.getAll(k);
+    if (all.length > 1) throw new BadSearchInput(`bad filter: ${k} twice`);
+    const v = all[0];
+    if (v === undefined || v === "") continue;
+    if (k === "salaryMin" || k === "postedWithin") {
+      if (!/^\d{1,7}$/.test(v)) throw new BadSearchInput(`bad filter: ${k}`);
+      o[k] = Number(v);
+    } else if (k === "salaryStated") {
+      if (v !== "true") throw new BadSearchInput("bad filter: salaryStated");
+      o[k] = true;
+    } else o[k] = v;
+  }
+  return checkSearch(o);
+}
+
+/** The URL form of the filters, the inverse of parseSearch. */
+export const searchParams = (f: SearchFilters) => new URLSearchParams(FILTER_KEYS.filter((k) => f[k] !== undefined).map((k) => [k, String(f[k])]));
+
+/**
+ * The body checkAlert takes for the same search, without the frequency the candidate picks. q, postedWithin and salaryStated have no alert
+ * column the alert route accepts (it refuses free text, Q2), so they are left out: the alert then matches more than the search showed.
+ */
+export const toAlertBody = (f: SearchFilters) => ({
+  occupationCode: f.occupationCode ?? null, sector: f.sector ?? null, county: f.county ?? null, salaryMin: f.salaryMin ?? null, badge: f.badge ?? null,
+});
+
+/** A short hash of the checked filters, carried in the cursor so a cursor works only with the filters it was made for. */
+export const filterHash = (f: SearchFilters) =>
+  createHash("sha256").update(JSON.stringify(FILTER_KEYS.map((k) => f[k] ?? null))).digest("base64url").slice(0, 16);
+const NO_FILTERS = filterHash({});
+
+/**
+ * The filters as SQL, every value a parameter numbered after `values`: `with` is a CTE (the keyword's matches) or empty, `where`
+ * the terms to AND on. The keyword is matched once on the GIN index (job_live_search) in its own materialized CTE: checked row by row it reads
+ * each row's search_vector out of TOAST, which cost over 1,000 pages for a common word on the full-size fill (test/perf/search.perf.ts).
+ */
+export function filterSql(f: SearchFilters, values: unknown[]): { with: string; where: string } {
+  const p = (v: unknown) => (values.push(v), `$${values.length}`);
+  const pay = "num_nonnulls(job.salary_low, job.salary_high) > 0";
+  const t: string[] = [];
+  let cte = "";
+  if (f.q !== undefined) {
+    // A query of stop words or punctuation only parses to nothing: then there is no keyword filter (the list is not emptied).
+    const tq = `websearch_to_tsquery('english', ${p(f.q)}::text)`;
+    cte = `kw as materialized (select id from job where status = 'live' and search_vector @@ ${tq})`;
+    t.push(`(numnode(${tq}) = 0 or job.id in (select id from kw))`);
+  }
+  if (f.occupationCode !== undefined) t.push(`job.occupation_code = ${p(f.occupationCode)}::text`);
+  if (f.sector !== undefined) t.push(`job.sector = ${p(f.sector)}::text`);
+  if (f.county !== undefined) t.push(`job.county = ${p(f.county)}::text`);
+  if (f.salaryMin !== undefined) t.push(`${pay} and job.salary_sort >= ${p(f.salaryMin)}::int`);
+  if (f.badge !== undefined) t.push(`job.badge = ${p(f.badge)}::text`);
+  if (f.postedWithin !== undefined) t.push(`job.posted_at > now() - ${p(f.postedWithin)}::int * interval '1 day'`);
+  if (f.salaryStated) t.push(pay);
+  return { with: cte, where: t.map((x) => ` and ${x}`).join("") };
+}
 
 // The sort keys that follow (not quota_full) and come before id. Full-quota jobs sort last on every sort (#85).
 // sponsor (#154, #157): permits in the last 5 years, then newest. -1 means no confirmed DETE link, so those come after the rest.
@@ -41,22 +164,23 @@ export const isTime = (s: string) => TIME.test(s) && !Number.isNaN(Date.parse(s.
 const validKey = (kind: "int" | "time", s: unknown): s is string =>
   typeof s === "string" && (kind === "int" ? INT.test(s) && Number(s) >= -1 && Number(s) <= 2147483647 : isTime(s));
 
-export function encodeCursor(c: Cursor): string {
-  return Buffer.from(JSON.stringify({ s: c.sort, q: c.quotaFull, k: c.keys, i: c.id })).toString("base64url");
+/** `f` is the filterHash of the filters the cursor's list ran with. */
+export function encodeCursor(c: Cursor, f = NO_FILTERS): string {
+  return Buffer.from(JSON.stringify({ s: c.sort, q: c.quotaFull, k: c.keys, i: c.id, f })).toString("base64url");
 }
 
-/** Throws BadSearchInput for anything that is not exactly a token this module made for this sort. */
-export function decodeCursor(sort: Sort, token: unknown): Cursor {
+/** Throws BadSearchInput for anything that is not exactly a token this module made for this sort and these filters. */
+export function decodeCursor(sort: Sort, token: unknown, f = NO_FILTERS): Cursor {
   const bad = () => new BadSearchInput("bad cursor");
   if (typeof token !== "string" || token.length > 300 || !/^[A-Za-z0-9_-]+$/.test(token)) throw bad();
-  let o: { s?: unknown; q?: unknown; k?: unknown; i?: unknown };
+  let o: { s?: unknown; q?: unknown; k?: unknown; i?: unknown; f?: unknown };
   try {
     o = JSON.parse(Buffer.from(token, "base64url").toString("utf8"));
   } catch {
     throw bad();
   }
   const kinds = KEYS[sort];
-  if (o === null || typeof o !== "object" || o.s !== sort || typeof o.q !== "boolean" || !Array.isArray(o.k) || o.k.length !== kinds.length) throw bad();
+  if (o === null || typeof o !== "object" || o.s !== sort || o.f !== f || typeof o.q !== "boolean" || !Array.isArray(o.k) || o.k.length !== kinds.length) throw bad();
   if (!kinds.every((k, i) => validKey(k.kind, (o.k as unknown[])[i])) || !validId(o.i)) throw bad();
   return { sort, quotaFull: o.q, keys: o.k as string[], id: o.i };
 }
@@ -75,30 +199,35 @@ type Query = { text: string; values: unknown[] };
  * One page: the first page (with the capped count from the same index walk), or the page after or before a cursor.
  * Fetches one row more than a page, to know whether there is a further page.
  */
-export function listQuery(sort: Sort, cursor?: Cursor, dir: "after" | "before" = "after"): Query {
+export function listQuery(sort: Sort, cursor?: Cursor, dir: "after" | "before" = "after", filters: SearchFilters = {}): Query {
   const keys = KEYS[sort].map((k) => k.col);
   const desc = (d: string) => ["(not job.quota_full)", ...keys.map((k) => `job.${k}`), "job.id"].map((c) => `${c} ${d}`).join(", ");
   if (!cursor) {
     const ks = keys.map((k, i) => `${k} as k${i}`).join(", ");
     const page = keys.map((_, i) => `k${i}`);
+    const values: unknown[] = [];
+    const { with: kw, where } = filterSql(filters, values);
     return {
       text:
-        `with hits as materialized (select id, (not quota_full) as r, ${ks} from job where status = 'live' and closes_at > now() ` +
+        `with ${kw && `${kw}, `}hits as materialized (select id, (not quota_full) as r, ${ks} from job where ${LIVE}${where} ` +
         `order by (not quota_full) desc, ${keys.map((k) => `${k} desc`).join(", ")}, id desc limit ${COUNT_CAP + 1}) ` +
         `select ${LIST}, (select count(*) from hits)::int as capped ` +
         `from (select id, r, ${page.join(", ")} from hits order by r desc, ${page.map((k) => `${k} desc`).join(", ")}, id desc limit ${PAGE_SIZE + 1}) page ` +
         `join job on job.id = page.id ${SOURCE} order by page.r desc, ${page.map((k) => `page.${k} desc`).join(", ")}, page.id desc`,
-      values: [],
+      values,
     };
   }
   const row = ["$1::boolean", ...KEYS[sort].map((k, i) => `$${i + 2}::${CAST[k.kind]}`), `$${keys.length + 2}::bigint`].join(", ");
   const op = dir === "after" ? "<" : ">";
-  return {
-    text:
-      `select ${LIST} from job ${SOURCE} where ${LIVE} and ((not job.quota_full), ${keys.map((k) => `job.${k}`).join(", ")}, job.id) ${op} (${row}) ` +
-      `order by ${desc(dir === "after" ? "desc" : "asc")} limit ${PAGE_SIZE + 1}`,
-    values: [!cursor.quotaFull, ...cursor.keys, cursor.id],
-  };
+  const values: unknown[] = [!cursor.quotaFull, ...cursor.keys, cursor.id];
+  const { with: kw, where } = filterSql(filters, values);
+  const order = `order by ${desc(dir === "after" ? "desc" : "asc")}`;
+  const walk = `where ${LIVE}${where} and ((not job.quota_full), ${keys.map((k) => `job.${k}`).join(", ")}, job.id) ${op} (${row}) ${order} limit ${PAGE_SIZE + 1}`;
+  // With a keyword the walk takes only ids, so it stays in the index and does not read every row it skips (a rare word skips most rows).
+  const text = kw
+    ? `with ${kw}, page as materialized (select job.id from job ${walk}) select ${LIST} from page join job on job.id = page.id ${SOURCE} ${order}`
+    : `select ${LIST} from job ${SOURCE} ${walk}`;
+  return { text, values };
 }
 
 export type ListRow = {
@@ -140,33 +269,46 @@ export const card = (r: ListRow): JobCard => ({
   quotaFull: r.quota_full, postedAt: r.posted_at, sponsorPermits: r.sponsor_sort > 0 ? r.sponsor_sort : null, lastCheckedAt: r.last_ok_at,
 });
 
-export function cursorOf(sort: Sort, r: ListRow): string {
+export function cursorOf(sort: Sort, r: ListRow, f = NO_FILTERS): string {
   const value = { sponsor_sort: String(r.sponsor_sort), salary_sort: String(r.salary_sort), posted_at: r.posted_text } as Record<string, string>;
-  return encodeCursor({ sort, quotaFull: r.quota_full, keys: KEYS[sort].map((k) => value[k.col]!), id: r.id });
+  return encodeCursor({ sort, quotaFull: r.quota_full, keys: KEYS[sort].map((k) => value[k.col]!), id: r.id }, f);
 }
 
-/** Live jobs a candidate may see, sponsor history first by default (#157). At most one of `after` and `before`. */
-export async function listJobs(db: Db, opts: { sort?: Sort; after?: string; before?: string } = {}): Promise<JobList> {
+/**
+ * Live jobs a candidate may see, sponsor history first by default (#157), narrowed by `filters` (parseSearch). At most one of `after` and
+ * `before`; a cursor works only with the sort and filters it was made with.
+ */
+export async function listJobs(db: Db, opts: { sort?: Sort; after?: string; before?: string; filters?: SearchFilters } = {}): Promise<JobList> {
   const sort = opts.sort ?? "sponsor";
   if (!SORTS.includes(sort)) throw new BadSearchInput("unknown sort");
   if (opts.after !== undefined && opts.before !== undefined) throw new BadSearchInput("after and before together");
+  const filters = checkSearch(opts.filters);
+  const f = filterHash(filters);
   const dir = opts.before !== undefined ? "before" : "after";
   const token = opts.after ?? opts.before;
-  const { text, values } = listQuery(sort, token === undefined ? undefined : decodeCursor(sort, token), dir);
+  const { text, values } = listQuery(sort, token === undefined ? undefined : decodeCursor(sort, token, f), dir, filters);
   const all = (await db.query<ListRow>(text, values)).rows;
   const more = all.length > PAGE_SIZE;
   const rows = all.slice(0, PAGE_SIZE);
   if (dir === "before") rows.reverse(); // read backwards, shown forwards
   const first = rows[0];
   const last = rows.at(-1);
-  const beyond = more && first && last ? cursorOf(sort, dir === "before" ? first : last) : null;
+  const beyond = more && first && last ? cursorOf(sort, dir === "before" ? first : last, f) : null;
   return {
     jobs: rows.map(card),
-    next: dir === "before" ? (last ? cursorOf(sort, last) : null) : beyond,
-    previous: dir === "before" ? beyond : token !== undefined && first ? cursorOf(sort, first) : null,
+    next: dir === "before" ? (last ? cursorOf(sort, last, f) : null) : beyond,
+    previous: dir === "before" ? beyond : token !== undefined && first ? cursorOf(sort, first, f) : null,
     count: token === undefined ? { n: Math.min(all[0]?.capped ?? 0, COUNT_CAP), more: (all[0]?.capped ?? 0) > COUNT_CAP } : null,
   };
 }
+
+/** Each sector of ALERT_SECTORS with its live jobs (the LIVE rule), zero included, for a sector-first front page. */
+export async function sectorCounts(db: Db): Promise<{ sector: Sector; jobs: number }[]> {
+  const r = await db.query<{ sector: string; n: number }>(SECTOR_COUNTS);
+  const n = new Map(r.rows.map((x) => [x.sector, x.n]));
+  return ALERT_SECTORS.map((sector) => ({ sector, jobs: n.get(sector) ?? 0 }));
+}
+export const SECTOR_COUNTS = `select job.sector, count(*)::int as n from job where ${LIVE} group by job.sector`;
 
 // ===== one job =====
 const JOB =

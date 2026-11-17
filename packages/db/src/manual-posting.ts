@@ -9,17 +9,12 @@ import { assess, chainRules, isSoc2010, minimumForHours, type RulesSnapshot } fr
 import { QueueRefused, listAnswer } from "./admin-queue";
 import { companyRefusal } from "./merges";
 import { getRules } from "./rules-data";
-import { PAGE_SIZE, validId } from "./search";
+import { COUNTIES, PAGE_SIZE, validId } from "./search";
 
 type Db = Pick<pg.Pool, "query" | "connect">;
 
 export const MAX_MANUAL_BODY = 24_000; // characters: a 10,000-character advert with its JSON escaping and the other fields
 export const MAX_CLOSING_DAYS = 90; // the closing date is at most this many days ahead
-// The 26 counties of the Republic (the same list as apps/portal/lib/jobs.ts and packages/fetcher/src/county.ts).
-export const COUNTIES = [
-  "Carlow", "Cavan", "Clare", "Cork", "Donegal", "Dublin", "Galway", "Kerry", "Kildare", "Kilkenny", "Laois", "Leitrim", "Limerick",
-  "Longford", "Louth", "Mayo", "Meath", "Monaghan", "Offaly", "Roscommon", "Sligo", "Tipperary", "Waterford", "Westmeath", "Wexford", "Wicklow",
-] as const;
 const MAX_PAY = 1_000_000;
 
 
