@@ -6,7 +6,7 @@ import type pg from "pg";
 type Db = Pick<pg.Pool, "query" | "connect">;
 
 const MAX_NAME = 300;
-const MAX_ERRORS = 20;
+export const MAX_ERRORS = 20;
 const MAX_PERMITS = 1_000_000;
 // Control characters, the replacement character and format characters (zero-width, direction marks, BOM): never part of a company name.
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\ufffd\p{Cf}\u2028\u2029]/u;
@@ -16,14 +16,14 @@ export type Link = { organisationNameId: string; deteName: string };
 export type Parsed<T> = { rows: T[]; errors: string[] };
 
 // Splits a file into lines of cells after checking the header. Returns the data lines with their line numbers.
-function lines(text: string, header: string[]): { n: number; cells: string[] }[] | string {
+export function lines(text: string, header: string[]): { n: number; cells: string[] }[] | string {
   const all = text.replace(/^﻿/, "").split("\n").map((l) => l.replace(/\r$/, ""));
   if (all.at(-1) === "") all.pop();
   if (all[0] !== header.join("\t")) return `line 1: the header must be: ${header.join(" <tab> ")}`;
   return all.slice(1).map((l, i) => ({ n: i + 2, cells: l.split("\t") }));
 }
 
-function cleanName(raw: string): string | null {
+export function cleanName(raw: string): string | null {
   const name = raw.trim();
   return name && name.length <= MAX_NAME && !CONTROL.test(name) ? name : null;
 }
@@ -101,6 +101,8 @@ export const LAST_5_YEARS =
 const REFRESH = "select private.refresh_permit_history() as changed";
 
 const CHUNK = 10_000;
+// For the company seed (company-seed.ts). index.ts exports this module, where other modules use the names MAX_NAME and inTransaction.
+export { inTransaction as inOneTransaction, MAX_NAME as MAX_COMPANY_NAME };
 
 async function inTransaction<T>(db: Db, fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
   const client = await db.connect();

@@ -488,6 +488,7 @@ trigger organisation_cro_one on organisation: CREATE TRIGGER organisation_cro_on
 trigger organisation_guard on organisation: CREATE TRIGGER organisation_guard BEFORE INSERT OR UPDATE ON public.organisation FOR EACH ROW EXECUTE FUNCTION private.organisation_guard()
 trigger organisation_merge_check on organisation: CREATE TRIGGER organisation_merge_check BEFORE UPDATE OF merged_into_id ON public.organisation FOR EACH ROW EXECUTE FUNCTION private.organisation_merge_check()
 trigger organisation_name_cro_one on organisation_name: CREATE TRIGGER organisation_name_cro_one BEFORE INSERT OR UPDATE OF cro_number, organisation_id ON public.organisation_name FOR EACH ROW EXECUTE FUNCTION private.cro_one_organisation()
+trigger organisation_name_guard on organisation_name: CREATE TRIGGER organisation_name_guard BEFORE INSERT OR UPDATE ON public.organisation_name FOR EACH ROW EXECUTE FUNCTION private.organisation_name_guard()
 trigger organisation_permit_history on organisation: CREATE TRIGGER organisation_permit_history AFTER UPDATE OF permit_history, sponsor_sort ON public.organisation FOR EACH ROW EXECUTE FUNCTION private.organisation_permit_history()
 trigger pay_floor_approval on pay_floor: CREATE TRIGGER pay_floor_approval BEFORE INSERT OR UPDATE ON public.pay_floor FOR EACH ROW EXECUTE FUNCTION private.approval_check()
 trigger pay_floor_big_company on pay_floor: CREATE TRIGGER pay_floor_big_company BEFORE INSERT ON public.pay_floor FOR EACH ROW EXECUTE FUNCTION private.pay_floor_insert()
