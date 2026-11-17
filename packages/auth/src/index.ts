@@ -94,6 +94,9 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
   const sendEmail: SendEmail = background
     ? (pool, kind, to, link) => send(pool, kind, to, link).catch((e) => console.error(`[auth] ${pool} ${kind} email not sent: ${(e as Error).message}`))
     : send;
+  // C1: the dormant rules (retention rules 3 to 5, 0002_functions.sql) read last_active_at, so a sign-in and each session refresh set it;
+  // a trigger then clears inactive_warned_at, which cancels a warning already sent. A refresh of a row deleted meanwhile passes null.
+  const touchActive = async (s: { userId: string } | null) => void (s && (await database.query("update candidate_user set last_active_at = now() where id = $1", [s.userId])));
   return betterAuth({
     appName: `portal-${name}`,
     baseURL,
@@ -183,7 +186,10 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
             if (name === "staff") return { data: { ...s, expiresAt: new Date(Math.min(+s.expiresAt, Date.now() + STAFF_IDLE_SECONDS * 1000)) } };
             return { data: s };
           },
+          ...(name === "candidate" ? { after: touchActive } : {}),
         },
+        // Better Auth refreshes a session in use once a day (updateAge), so this marks a signed-in candidate active at most daily.
+        ...(name === "candidate" ? { update: { after: touchActive } } : {}),
       },
     },
     // The client address comes from the header Vercel sets, not X-Forwarded-For, which any client can send.

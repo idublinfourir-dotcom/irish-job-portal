@@ -281,8 +281,8 @@ export async function jobEdit(request: Request): Promise<Response> {
     if (j.status === "closed" || j.status === "hidden") return no(409, "BAD_STATE");
     const org = (await c.query(ORG, [who.organisationId])).rows[0] as { display_name: string; kind: string };
     if (p.clientName && org.kind !== "agency") return no(400, "CLIENT_ONLY_FOR_AGENCIES");
-    const key = j.title !== p.title || j.occupation_code !== p.occupationCode || j.salary_low !== p.salaryLow || j.salary_high !== p.salaryHigh
-      || j.permit_type !== p.permitType || j.pay_grade !== p.payGrade || j.health_insurance_eur !== p.healthInsuranceEur || (j.weekly_hours ?? 39) !== p.weeklyHours;
+    const pay = j.salary_low !== p.salaryLow || j.salary_high !== p.salaryHigh || j.pay_grade !== p.payGrade || j.health_insurance_eur !== p.healthInsuranceEur;
+    const key = pay || j.title !== p.title || j.occupation_code !== p.occupationCode || j.permit_type !== p.permitType || (j.weekly_hours ?? 39) !== p.weeklyHours;
     const publish = j.status === "draft" && p.status === "live";
     let status: string = j.status, passRoute = j.pass_route, sector = j.sector;
     if (publish || (j.status !== "draft" && key)) {
@@ -290,6 +290,8 @@ export async function jobEdit(request: Request): Promise<Response> {
       if (!v.ok) return verdictReply(v);
       if (publish) status = v.status;
       else if (v.status === "in_review" && j.status === "live") return no(409, "NEEDS_REVIEW"); // the guard keeps a live job live or closes it
+      // #93: a job under review (the minimums rose) goes live again when its new pay passes; the guard allows that only on a pay change.
+      else if (v.status === "live" && j.status === "under_review" && pay) status = "live";
       passRoute = v.passRoute; sector = v.sector;
     }
     if (j.status !== "draft" && key && j.badge === "sponsor_confirmed" && !p.statement) return no(409, "STATEMENT_REQUIRED");
