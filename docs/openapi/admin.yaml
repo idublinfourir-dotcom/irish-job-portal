@@ -523,6 +523,59 @@ paths:
           description: A disabled staff login signing in ("This account cannot sign in."), or an Origin Better Auth does not trust.
         '429':
           description: Over one of the per-address limits above.
+  /api/accounts:
+    post:
+      operationId: setLoginHold
+      summary: Suspend or block a login, or lift it
+      description: >-
+        `suspend_candidate`: a candidate login is suspended (suspended_at set). `block_portal`: an employer or agency login is blocked
+        (status blocked, blocked_at, blocked_reason_code). Either way every open session of the login ends in the same transaction, and the
+        next request of an old cookie is refused. `lift_candidate` and `lift_portal` lift it again. One audit row (account.suspend,
+        account.unsuspend, account.block, account.unblock) with the reason code; never free text. Appeal is through the contact form. The
+        Origin header must be the admin app's origin.
+      security: [{ staffSession: [] }]
+      x-roles: [administrator]
+      x-rate-limit: none
+      x-body-cap: 300
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, userId, reason]
+              properties:
+                action: { type: string, enum: [suspend_candidate, lift_candidate, block_portal, lift_portal] }
+                userId: { $ref: '#/components/schemas/LoginId' }
+                reason: { $ref: '#/components/schemas/ReasonCode' }
+            example: { action: suspend_candidate, userId: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', reason: fake_documents }
+      responses:
+        '200':
+          description: "The sessions ended (0 on a lift)."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, sessionsEnded]
+                properties:
+                  ok: { const: true }
+                  sessionsEnded: { type: integer }
+              example: { ok: true, sessionsEnded: 2 }
+        '400':
+          description: "`bad_body`: not one JSON object, an unknown or missing field, or over 300 characters. `bad_action`: unknown action. `bad_user_id`: not a login id. `bad_reason`: not a reason code."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_reason } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_administrator`: no administrator role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
+        '404':
+          description: "`not_found`: no such login in that pool."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`already_held`: the login is already suspended or blocked. `not_held`: a lift of a login that is not."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: already_held } } }
+        '500': { $ref: '#/components/responses/ServerError' }
   /api/account-review:
     get:
       operationId: listAccountReviews
