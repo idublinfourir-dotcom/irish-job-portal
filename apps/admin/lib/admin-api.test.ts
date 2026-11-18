@@ -62,6 +62,8 @@ describe("refuse", () => {
     expect(await status(new QueueRefused("last_administrator"))).toEqual([409, { error: "last_administrator" }]);
     expect(await status(new QueueRefused("already_held"))).toEqual([409, { error: "already_held" }]); // C3, /api/accounts
     expect(await status(new QueueRefused("not_held"))).toEqual([409, { error: "not_held" }]);
+    expect(await status(new QueueRefused("same_account"))).toEqual([400, { error: "same_account" }]); // C6, the candidate merge
+    for (const c of ["kept_account_deleted", "open_services_case", "open_report"]) expect(await status(new QueueRefused(c))).toEqual([409, { error: c }]);
     expect(await status(new QueueRefused("bad_user_id"))).toEqual([400, { error: "bad_user_id" }]);
     expect(await status(new QueueRefused("not_found"))).toEqual([404, { error: "not_found" }]);
     expect(await status(new StaffRefused("no_session"))).toEqual([401, { error: "no_session" }]);

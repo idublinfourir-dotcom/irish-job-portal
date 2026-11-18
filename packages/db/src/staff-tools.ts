@@ -6,6 +6,7 @@
 import type pg from "pg";
 import { QueueRefused } from "./admin-queue";
 import { parseSeed, seedRows, type SeedResult, type SeedRow } from "./company-seed";
+import { fileStore } from "./file-store";
 import { validId } from "./search";
 import { requireRole } from "./staff-admin";
 import { AUDIT } from "./trust-safety";
@@ -231,3 +232,55 @@ export async function confirmSetting(db: Db, staff: string, requestId: unknown):
 
 export const refuseSetting = (db: Db, staff: string, requestId: unknown) =>
   inTransaction(db, staff, ["administrator"], "not_administrator", (c) => endRequest(c, staff, "setting", requestId, "setting"));
+
+// ===== C6: merge two candidate accounts of one person =====
+// An administrator proposes {keep, drop}; a different administrator confirms and private.candidate_merge (0048) moves the dropped account's rows to the
+// kept one and erases the dropped account in the same transaction, using the request once. The stored files it returns are removed after the commit;
+// a failed removal is logged by key (a random id) for removal by hand, as the self delete does. The proposer withdraws, another administrator refuses.
+const LOGIN_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const CANDIDATE = "select deleted_at is not null as deleted from candidate_user where id = $1";
+const MERGE_REFUSED = /^merge refused: ([a-z_]+)/;
+export type MergeMoved = Record<"savedJobs" | "alerts" | "tracker" | "hiddenOrganisations" | "profile" | "cv" | "applications" | "contactRequests", number>;
+
+/** The merges waiting for a second administrator (ids only). */
+export async function listCandidateMerges(db: Q, staff: string) {
+  await requireRole(db, staff, ["administrator"], "not_administrator");
+  const p = await db.query(PENDING_OF, ["candidate_merge"]);
+  return { pending: p.rows.map((x) => ({ requestId: x.id, keep: x.change.keep, drop: x.change.drop, proposedBy: x.proposed_by, createdAt: x.created_at })) };
+}
+
+export async function proposeCandidateMerge(db: Db, staff: string, keep: unknown, drop: unknown): Promise<{ requestId: string }> {
+  if (typeof keep !== "string" || !LOGIN_ID.test(keep) || typeof drop !== "string" || !LOGIN_ID.test(drop)) throw new QueueRefused("bad_user_id");
+  if (keep === drop) throw new QueueRefused("same_account");
+  return inTransaction(db, staff, ["administrator"], "not_administrator", async (c) => {
+    const k = (await c.query<{ deleted: boolean }>(CANDIDATE, [keep])).rows[0];
+    if (!k || !(await c.query(CANDIDATE, [drop])).rowCount) throw new QueueRefused("not_found");
+    if (k.deleted) throw new QueueRefused("kept_account_deleted");
+    const requestId = await propose(c, ["candidate_merge", "candidate_user", drop, JSON.stringify({ keep, drop }), "candidate merge"]);
+    await audit(c, staff, "candidate_merge.propose", "candidate_user", keep, { request_id: requestId, dropped: drop });
+    return { requestId };
+  });
+}
+
+/** A different administrator confirms: the merge runs at once. Refused (and the request left pending) on an open case or report of either account. */
+export async function confirmCandidateMerge(db: Db, staff: string, requestId: unknown): Promise<{ keep: string; drop: string; moved: MergeMoved; filesRemoved: number }> {
+  const out = await inTransaction(db, staff, ["administrator"], "not_administrator", async (c) => {
+    const r = await lockRequest(c, "candidate_merge", requestId);
+    if (r.proposed_by === staff) throw new QueueRefused("same_person");
+    await c.query(SET_STATUS, [r.id, "confirmed"]);
+    try {
+      return (await c.query<{ r: { keep: string; drop: string; moved: MergeMoved; storage_keys: string[] } }>("select private.candidate_merge($1::bigint) r", [r.id])).rows[0]!.r;
+    } catch (e) {
+      const m = (e as { code?: string }).code === "P0001" ? MERGE_REFUSED.exec((e as Error).message) : null;
+      throw m ? new QueueRefused(m[1]!) : e;
+    }
+  });
+  let filesRemoved = 0;
+  for (const k of out.storage_keys) {
+    try { await fileStore().remove(k); filesRemoved++; } catch { console.error("candidate merge: stored file not removed, delete by hand:", JSON.stringify(k)); }
+  }
+  return { keep: out.keep, drop: out.drop, moved: out.moved, filesRemoved };
+}
+
+export const refuseCandidateMerge = (db: Db, staff: string, requestId: unknown) =>
+  inTransaction(db, staff, ["administrator"], "not_administrator", (c) => endRequest(c, staff, "candidate_merge", requestId, "candidate_user"));

@@ -316,6 +316,13 @@
       "when": 1794300041000,
       "tag": "0047_staff_tool_gaps",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1794300042000,
+      "tag": "0048_candidate_merge",
+      "breakpoints": true
     }
   ]
 }

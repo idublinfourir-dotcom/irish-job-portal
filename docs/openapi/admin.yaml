@@ -531,15 +531,60 @@ paths:
         '429':
           description: Over one of the per-address limits above.
   /api/accounts:
+    get:
+      operationId: listCandidateMerges
+      summary: List the candidate account merges waiting for a second administrator
+      description: >-
+        The pending `candidate_merge` requests (step 15 C6), ids only, oldest first, at most 200. No query key is allowed.
+      security: [{ staffSession: [] }]
+      x-roles: [administrator]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The pending merges.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pending]
+                properties:
+                  pending:
+                    type: array
+                    items:
+                      type: object
+                      required: [requestId, keep, drop, proposedBy, createdAt]
+                      properties:
+                        requestId: { $ref: '#/components/schemas/Id' }
+                        keep: { $ref: '#/components/schemas/LoginId' }
+                        drop: { $ref: '#/components/schemas/LoginId' }
+                        proposedBy: { $ref: '#/components/schemas/LoginId' }
+                        createdAt: { $ref: '#/components/schemas/DbTime' }
+              example:
+                pending: [{ requestId: '131', keep: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', drop: 'Z1y2X3w4V5u6T7s8R9q0P1o2N3m4L5k6', proposedBy: 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6', createdAt: '2026-11-18 09:30:00.123456+00' }]
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_administrator`: no administrator role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
+        '500': { $ref: '#/components/responses/ServerError' }
     post:
-      operationId: setLoginHold
-      summary: Suspend or block a login, or lift it
+      operationId: actOnAccount
+      summary: Suspend or block a login, lift it, or merge two candidate accounts
       description: >-
         `suspend_candidate`: a candidate login is suspended (suspended_at set). `block_portal`: an employer or agency login is blocked
         (status blocked, blocked_at, blocked_reason_code). Either way every open session of the login ends in the same transaction, and the
         next request of an old cookie is refused. `lift_candidate` and `lift_portal` lift it again. One audit row (account.suspend,
-        account.unsuspend, account.block, account.unblock) with the reason code; never free text. Appeal is through the contact form. The
-        Origin header must be the admin app's origin.
+        account.unsuspend, account.block, account.unblock) with the reason code; never free text. Appeal is through the contact form.
+        `merge_propose` (step 15 C6): an administrator proposes merging candidate account `drop` into `keep`; one pending merge per dropped
+        account. `merge_confirm`: a different administrator confirms and the merge runs at once: refused, and the request left pending, while
+        either account has an open services case or an open report. The dropped account's saved jobs, alerts, tracker rows, hidden companies,
+        applications and contact requests (with their consent records, CV files and messages) move to the kept account, the kept account's
+        own rows winning every clash (and the caps of 200 saved jobs and 10 alerts kept); its profile and CV move only when the kept account has
+        none. Then the dropped account is erased as a data request erases it, and its stored files are removed. The kept account gets one
+        notice and one email; one audit row names both accounts and both administrators. `merge_refuse`: a different administrator refuses,
+        or the proposer withdraws. The Origin header must be the admin app's origin.
       security: [{ staffSession: [] }]
       x-roles: [administrator]
       x-rate-limit: none
@@ -549,38 +594,86 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [action, userId, reason]
-              properties:
-                action: { type: string, enum: [suspend_candidate, lift_candidate, block_portal, lift_portal] }
-                userId: { $ref: '#/components/schemas/LoginId' }
-                reason: { $ref: '#/components/schemas/ReasonCode' }
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, userId, reason]
+                  properties:
+                    action: { type: string, enum: [suspend_candidate, lift_candidate, block_portal, lift_portal] }
+                    userId: { $ref: '#/components/schemas/LoginId' }
+                    reason: { $ref: '#/components/schemas/ReasonCode' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, keep, drop]
+                  properties:
+                    action: { const: merge_propose }
+                    keep: { $ref: '#/components/schemas/LoginId' }
+                    drop: { $ref: '#/components/schemas/LoginId' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, requestId]
+                  properties:
+                    action: { type: string, enum: [merge_confirm, merge_refuse] }
+                    requestId: { $ref: '#/components/schemas/Id' }
             example: { action: suspend_candidate, userId: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', reason: fake_documents }
       responses:
         '200':
-          description: "The sessions ended (0 on a lift)."
+          description: "A hold or lift: the sessions ended (0 on a lift). `merge_propose`: the request id. `merge_confirm`: both accounts, the rows moved and the stored files removed. `merge_refuse`: `{ ok: true }`."
           content:
             application/json:
               schema:
-                type: object
-                required: [ok, sessionsEnded]
-                properties:
-                  ok: { const: true }
-                  sessionsEnded: { type: integer }
+                oneOf:
+                  - type: object
+                    additionalProperties: false
+                    required: [ok, sessionsEnded]
+                    properties:
+                      ok: { const: true }
+                      sessionsEnded: { type: integer }
+                  - type: object
+                    additionalProperties: false
+                    required: [ok, requestId]
+                    properties:
+                      ok: { const: true }
+                      requestId: { $ref: '#/components/schemas/Id' }
+                  - type: object
+                    additionalProperties: false
+                    required: [ok, keep, drop, moved, filesRemoved]
+                    properties:
+                      ok: { const: true }
+                      keep: { $ref: '#/components/schemas/LoginId' }
+                      drop: { $ref: '#/components/schemas/LoginId' }
+                      filesRemoved: { type: integer }
+                      moved:
+                        type: object
+                        additionalProperties: false
+                        required: [savedJobs, alerts, tracker, hiddenOrganisations, profile, cv, applications, contactRequests]
+                        properties:
+                          savedJobs: { type: integer }
+                          alerts: { type: integer }
+                          tracker: { type: integer }
+                          hiddenOrganisations: { type: integer }
+                          profile: { type: integer }
+                          cv: { type: integer }
+                          applications: { type: integer }
+                          contactRequests: { type: integer }
+                  - type: object
+                    additionalProperties: false
+                    required: [ok]
+                    properties:
+                      ok: { const: true }
               example: { ok: true, sessionsEnded: 2 }
         '400':
-          description: "`bad_body`: not one JSON object, an unknown or missing field, or over 300 characters. `bad_action`: unknown action. `bad_user_id`: not a login id. `bad_reason`: not a reason code."
+          description: "`bad_body`: not one JSON object, an unknown or missing field, or over 300 characters. `bad_action`: unknown action. `bad_user_id`: not a login id. `bad_reason`: not a reason code. `bad_request_id`: not an id. `same_account`: keep and drop are the same."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_reason } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
           description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_administrator`: no administrator role."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
         '404':
-          description: "`not_found`: no such login in that pool."
+          description: "`not_found`: no such login in that pool, no such candidate account (either one, also when gone since the proposal), or no such merge request."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
         '409':
-          description: "`already_held`: the login is already suspended or blocked. `not_held`: a lift of a login that is not."
+          description: "`already_held`: the login is already suspended or blocked. `not_held`: a lift of a login that is not. `decision_pending`: a merge of that dropped account waits already. `request_not_pending`: the request is not pending. `same_person`: the proposer confirming. `kept_account_deleted`: the account to keep is deleted. `open_services_case`, `open_report`: either account has one open."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: already_held } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/account-review:

@@ -55,6 +55,7 @@ const STATUS = new Map<string, number>(Object.entries({
   not_claimed: 409, not_claimer: 409, claimed_by_other: 409, already_decided: 409, job_not_in_review: 409, no_advert_text: 409, rules_failed: 409, company_not_active: 409,
   free_email_domain: 409, domain_owned_by_other: 409, already_added: 409, open_ban_case: 409, company_merged: 409,
   decision_pending: 409, no_change: 409,
+  same_account: 400, kept_account_deleted: 409, open_services_case: 409, open_report: 409,
 }));
 
 /** A refusal as a short code and status; anything unknown is a plain 500 with the reason kept in the server log only. A failed rules check also names its stage. */
