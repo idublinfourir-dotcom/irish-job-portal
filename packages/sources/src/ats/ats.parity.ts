@@ -7,7 +7,9 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { Fetch, RawAdvert } from "../types";
 import { fetchAmazon, fetchAshby, fetchGreenhouse, fetchSmartRecruiters, fetchWorkday } from "./index";
+import { isIrish } from "./shared";
 
+const noSleep = { sleep: async () => {} };
 const dir = process.env.PORTAL_PRIVATE_DATA;
 if (!dir) throw new Error("PORTAL_PRIVATE_DATA is not set. Set it to the step5/parity folder (the one that holds L3/) to run the private parity test.");
 const raw = (n: string) => JSON.parse(readFileSync(`${dir}/L3/raw/${n}`, "utf8")) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -55,12 +57,12 @@ const mk = (k: string, f: (fe: Fetch) => ReturnType<typeof fetchAmazon>) => {
     return f(server(calls[k]!));
   };
 };
-mk("greenhouse", (f) => fetchGreenhouse({ slug: "krollbondratingagency", employer: "Kroll" }, known("greenhouse"), f));
-mk("greenhouse-known", (f) => fetchGreenhouse({ slug: "krollbondratingagency", employer: "Kroll" }, known("greenhouse-known"), f));
-mk("ashby", (f) => fetchAshby({ slug: "sitecore", employer: "Sitecore" }, known("ashby"), f));
-mk("smartrecruiters", (f) => fetchSmartRecruiters({ slug: "kingandmoffatt", employer: "King" }, known("smartrecruiters"), f));
-mk("workday", (f) => fetchWorkday({ employer: "Pfizer", tenant: "pfizer", wd: "wd1", site: "PfizerCareers" }, known("workday"), f));
-mk("amazon", (f) => fetchAmazon(undefined, known("amazon"), f));
+mk("greenhouse", (f) => fetchGreenhouse({ slug: "krollbondratingagency", employer: "Kroll" }, known("greenhouse"), f, noSleep));
+mk("greenhouse-known", (f) => fetchGreenhouse({ slug: "krollbondratingagency", employer: "Kroll" }, known("greenhouse-known"), f, noSleep));
+mk("ashby", (f) => fetchAshby({ slug: "sitecore", employer: "Sitecore" }, known("ashby"), f, noSleep));
+mk("smartrecruiters", (f) => fetchSmartRecruiters({ slug: "kingandmoffatt", employer: "King" }, known("smartrecruiters"), f, noSleep));
+mk("workday", (f) => fetchWorkday({ employer: "Pfizer", tenant: "pfizer", wd: "wd1", site: "PfizerCareers" }, known("workday"), f, noSleep));
+mk("amazon", (f) => fetchAmazon(undefined, known("amazon"), f, noSleep));
 
 describe.each(Object.keys(runs))("%s: same as the Python on the saved real bodies", (name) => {
   it("seen ids, new records (every field) and requests are identical", async () => {
@@ -73,7 +75,10 @@ describe.each(Object.keys(runs))("%s: same as the Python on the saved real bodie
       for (const [k, v] of Object.entries(camel)) if (a[v] !== want.new[i]![k]) fieldDiffs++;
     });
     expect(fieldDiffs).toBe(0);
-    expect(calls[name]).toEqual(want.calls);
+    // Not in Python (W1): a Workday posting whose one list location is not Irish gets no detail call. Its detail was dropped anyway.
+    const dropped = name === "workday" ? (raw("workday-pfizer-list0.json").jobPostings as { externalPath: string; locationsText: string }[]).filter((p) => !/^\d+ Locations$/i.test(p.locationsText) && !isIrish(p.locationsText)).map((p) => p.externalPath) : [];
+    expect(dropped.length).toBe(name === "workday" ? 2 : 0);
+    expect(calls[name]).toEqual(want.calls.filter(([m, u]) => !(m === "GET" && dropped.some((d) => u.endsWith(d)))));
     console.log(`${name}: ${r.seen.length} seen, ${r.adverts.length} new, ${r.adverts.length * Object.keys(camel).length} fields compared, 0 differences, ${calls[name]!.length} requests`);
   });
   it("every record has a non-empty id, title and url", async () => {

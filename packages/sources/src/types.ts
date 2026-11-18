@@ -1,4 +1,5 @@
 // Shared types for source adapters. Python: prototype/step0/run_day.py.
+import type { CallerOptions } from "./ats/shared";
 
 // The fetch function an adapter receives. Tests pass a fake, so no adapter touches the network itself.
 export type Fetch = typeof globalThis.fetch;
@@ -46,5 +47,5 @@ export type BoardFetch = { seen: string[]; adverts: RawAdvert[] };
 
 // One function per source kind (run_day.py:147-282). `Board` is that source's own way to name a board: a slug and
 // employer name for most, employer, tenant, wd and site for Workday. An id in `known` skips its detail request.
-// Resolves with empty lists for an empty board; rejects with FetchFailedError on failure.
-export type SourceAdapter<Board> = (board: Board, known: ReadonlySet<string>, fetch: Fetch) => Promise<BoardFetch>;
+// Resolves with empty lists for an empty board; rejects with FetchFailedError on failure. `opts`: the sleep and the run's wait budget (shared.ts PACE).
+export type SourceAdapter<Board> = (board: Board, known: ReadonlySet<string>, fetch: Fetch, opts?: Omit<CallerOptions, "gapMs">) => Promise<BoardFetch>;

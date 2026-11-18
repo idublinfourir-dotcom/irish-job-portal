@@ -151,8 +151,32 @@ export function job(source: string, board: string, extId: unknown, employer: str
 const TIMEOUT_MS = 45_000; // run_day.py:140 timeout=45
 const MAX_BYTES = 32 * 1024 * 1024; // ponytail: whole body read into memory; the 45 s timeout bounds a slow sender. Stream with a cap if bodies near this size appear.
 const MAX_HOPS = 3;
-const HEADERS = { "User-Agent": "Mozilla/5.0", Accept: "application/json", "Content-Type": "application/json" }; // run_day.py:42
+// An honest name, not a browser's (W1, 18 Nov 2026: Workday's Cloudflare limit answered 429 to a bare "Mozilla/5.0").
+const HEADERS = {
+  "User-Agent": "IrishWorkPermitJobs/1.0 (job listing fetcher; +https://irishworkpermit.ie)",
+  Accept: "application/json",
+  "Accept-Language": "en-IE,en;q=0.9",
+  "Content-Type": "application/json",
+};
 const SAFE_NAME = /^[A-Za-z0-9._-]+$/;
+
+/** How gently the fetch talks to the boards (W1). Every wait and pause of the fetch is set here. */
+export const PACE = {
+  tries: 3, // per call, on HTTP 429 or 503
+  backoffMs: [5_000, 15_000], // the wait before try 2 and try 3 when Retry-After gives no usable wait
+  maxWaitMs: 60_000, // any one wait, whatever Retry-After says
+  boardWaitMs: 90_000, // all waits of one board
+  runWaitMs: 180_000, // all waits of one run, every board together
+  workdayCallGapMs: 300, // between two calls of one Workday board
+  serialBoardGapMs: 1_500, // between two boards that run one at a time (Workday)
+  giveUpAfter: 2, // this many serial boards in a row giving up on 429/503 skip the rest of them for the run
+};
+export type Sleep = (ms: number) => Promise<void>;
+export const realSleep: Sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** The wait budget of a whole run, shared by every board's caller. */
+export const runBudget = () => ({ leftMs: PACE.runWaitMs });
+/** A failure that came from HTTP 429 or 503 after the retries: the serial lane counts these. */
+export const RATE_LIMITED = /^HTTP (429|503)\b/;
 
 /** Board names go into a host name or a path: refuse anything that could change the host. */
 export function safeName(board: string, ...names: string[]): void {
@@ -160,6 +184,7 @@ export function safeName(board: string, ...names: string[]): void {
 }
 
 export type Caller = (url: string, body?: unknown) => Promise<unknown>;
+export type CallerOptions = { sleep?: Sleep; gapMs?: number; budget?: { leftMs: number } };
 
 /** Where a refused redirect pointed, for the log: no query, fragment or credentials (they can carry a token), at most 120 characters. */
 function target(loc: string, base: string): string {
@@ -172,16 +197,49 @@ function target(loc: string, base: string): string {
   }
 }
 
+const HTTP_DATE = /^[A-Za-z]{3}, \d\d [A-Za-z]{3} \d{4} \d\d:\d\d:\d\d GMT$/;
+/** Retry-After in ms (seconds, or a date counted from the response's own Date header); NaN when missing or unreadable. May be 0 or negative. */
+export function retryAfterMs(res: Response): number {
+  const h = (res.headers.get("retry-after") ?? "").trim();
+  if (/^\d{1,9}$/.test(h)) return Number(h) * 1000;
+  if (HTTP_DATE.test(h)) return Date.parse(h) - Date.parse(res.headers.get("date") ?? "");
+  return NaN;
+}
+
+/** Untrusted text for a log line: control, format and line-separator characters become a space, at most `n` code points. */
+export const clip = (s: string, n: number) => [...s.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ")].slice(0, n).join("");
+
+/** What a refusing server said, for the failure text: a few headers and the start of the body. Reads one chunk of the body at most. */
+async function said(res: Response): Promise<string> {
+  const h = ["retry-after", "cf-ray", "cf-mitigated", "server"].flatMap((k) => (res.headers.has(k) ? [`${k} ${clip(res.headers.get(k)!, 60)}`] : []));
+  let body = "";
+  try {
+    const reader = res.body?.getReader();
+    if (reader) {
+      const { value } = await reader.read();
+      void reader.cancel().catch(() => {});
+      body = clip(new TextDecoder().decode(value?.subarray(0, 1024)), 200).trim();
+    }
+  } catch {
+    // the body is only for the log
+  }
+  return `${h.length ? ` (${h.join("; ")})` : ""}${body ? `: ${body}` : ""}`;
+}
+
 /**
  * A JSON caller that only talks to `origin`. Python requests follows redirects anywhere; here a redirect is followed only
  * to the same origin (and for POST only when the status keeps the method), at most 3 hops. Anything else is a failure.
- * Python: get_json (run_day.py:139-143) and the POST in f_workday.
+ * HTTP 429 or 503 is tried again (PACE.tries in all) after Retry-After or the backoff, within the board's and the run's wait budget.
+ * `gapMs` is a pause before every call but the first. Python: get_json (run_day.py:139-143) and the POST in f_workday.
  */
-export function makeCaller(board: string, fetch: Fetch, origin: string): Caller {
+export function makeCaller(board: string, fetch: Fetch, origin: string, { sleep = realSleep, gapMs = 0, budget = runBudget() }: CallerOptions = {}): Caller {
+  let calls = 0;
+  let boardLeft = PACE.boardWaitMs;
   return async (url, body) => {
     const fail = (why: string, cause?: unknown) => new FetchFailedError(board, why, { cause });
     const method = body === undefined ? "GET" : "POST";
-    for (let hop = 0; ; hop++) {
+    if (calls++ && gapMs) await sleep(gapMs);
+    for (let hop = 0, tries = 1; ; hop++) {
       if (new URL(url).origin !== origin) throw fail("refused: request to another host");
       let res: Response;
       try {
@@ -202,7 +260,21 @@ export function makeCaller(board: string, fetch: Fetch, origin: string): Caller 
         url = new URL(loc, url).href; // the origin check at the top of the loop refuses another host
         continue;
       }
-      if (!res.ok) throw fail(`HTTP ${res.status}`);
+      if (res.status === 429 || res.status === 503) {
+        const asked = retryAfterMs(res);
+        const wait = Math.min(asked > 0 ? asked : PACE.backoffMs[tries - 1]!, PACE.maxWaitMs);
+        // the same request again (a redirect hop is not a try); give up when the tries or either budget run out
+        if (tries < PACE.tries && wait <= boardLeft && wait <= budget.leftMs) {
+          void res.body?.cancel().catch(() => {});
+          boardLeft -= wait;
+          budget.leftMs -= wait;
+          await sleep(wait);
+          tries++;
+          hop--;
+          continue;
+        }
+      }
+      if (!res.ok) throw fail(`HTTP ${res.status}${tries > 1 ? ` after ${tries} tries` : ""}${await said(res)}`);
       try {
         if (Number(res.headers.get("content-length")) > MAX_BYTES) throw new Error("too large");
         const raw = await res.text();

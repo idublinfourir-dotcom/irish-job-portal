@@ -18,6 +18,7 @@ export type BoardTask = {
   fetch: (known: ReadonlySet<string>) => Promise<BoardFetch>; // the network `fetch` is already bound in by the caller
   close?: "missing" | { unseenDays: number }; // next cut. Default "missing"
   rereadDays?: number; // an id is handed back with its text one day in this many, so a changed advert is noticed. 1 = every day. Unset = never
+  serial?: boolean; // runs one at a time with the other serial boards, outside the pool, a pause apart (W1: Workday's shared rate limit)
 };
 export type Deps = {
   db: Db;
@@ -29,7 +30,8 @@ export type Deps = {
   batchSize?: number; // badge adverts a model request, default 10
   maxModelRequests: number; // for the whole run, all boards. Badge adverts past it are not decided now: they stay in `unsaved` for the next run
   boards: readonly BoardTask[];
-  concurrency?: number; // boards at once, default 8
+  concurrency?: number; // boards at once, default 8 (serial boards run in one lane beside them)
+  sleep?: (ms: number) => Promise<void>; // the pause between serial boards; a fake in tests
   deadline?: Date; // after it, no new advert is assessed
   log?: (line: string) => void;
 };

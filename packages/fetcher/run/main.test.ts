@@ -33,7 +33,7 @@ function setUp(rows: Rows) {
     }),
     end: vi.fn(async () => {}),
   };
-  const deps = { fetch: vi.fn(async () => { throw new Error("no request expected"); }), pool: vi.fn(() => db) };
+  const deps = { fetch: vi.fn(async () => { throw new Error("no request expected"); }), pool: vi.fn(() => db), sleep: async () => {} };
   return { deps, db, sql };
 }
 

@@ -2,7 +2,7 @@
 // Budgets are 1 second, about four to five times the slowest measurement on the build machine (the first test of a run is the slowest: cold code).
 import { describe, expect, it } from "vitest";
 import { fetchAmazon, fetchAshby, fetchGreenhouse, fetchSmartRecruiters, fetchWorkday } from "./index";
-import { fake, fixtures as fx, none, reply } from "./testkit";
+import { fake, fixtures as fx, none, reply, noSleep } from "./testkit";
 
 const N = 600;
 const GH = { slug: "acme", employer: "Acme" };
@@ -23,13 +23,13 @@ const BUDGET = { one: 1000, many: 1000 }; // ms
 describe("600 postings", () => {
   it("greenhouse: 1 request (measured 225 to 235 ms, cold)", async () => {
     const { fetch, calls } = fake(() => reply({ jobs: Array.from({ length: N }, (_, i) => ghJob(i)) }));
-    const { value, ms } = await timed(() => fetchGreenhouse(GH, none, fetch));
+    const { value, ms } = await timed(() => fetchGreenhouse(GH, none, fetch, noSleep));
     expect([calls.length, value.seen.length, value.adverts.length]).toEqual([1, N, N]);
     expect(ms).toBeLessThan(BUDGET.one);
   });
   it("ashby: 1 request (measured 55 ms)", async () => {
     const { fetch, calls } = fake(() => reply({ jobs: Array.from({ length: N }, (_, i) => ashbyJob(i)) }));
-    const { value, ms } = await timed(() => fetchAshby(GH, none, fetch));
+    const { value, ms } = await timed(() => fetchAshby(GH, none, fetch, noSleep));
     expect([calls.length, value.seen.length, value.adverts.length]).toEqual([1, N, N]);
     expect(ms).toBeLessThan(BUDGET.one);
   });
@@ -38,7 +38,7 @@ describe("600 postings", () => {
       const off = Number(new URL(c.url).searchParams.get("offset"));
       return reply({ hits: N, jobs: Array.from({ length: 100 }, (_, i) => amazonJob(off + i)) });
     });
-    const { value, ms } = await timed(() => fetchAmazon(undefined, none, fetch));
+    const { value, ms } = await timed(() => fetchAmazon(undefined, none, fetch, noSleep));
     expect([calls.length, value.seen.length, value.adverts.length]).toEqual([6, N, N]);
     expect(ms).toBeLessThan(BUDGET.many);
   });
@@ -50,7 +50,7 @@ describe("600 postings", () => {
       }
       return reply(srDetail);
     });
-    const { value, ms } = await timed(() => fetchSmartRecruiters(GH, none, fetch));
+    const { value, ms } = await timed(() => fetchSmartRecruiters(GH, none, fetch, noSleep));
     expect([calls.length, value.seen.length, value.adverts.length]).toEqual([606, N, N]);
     expect(ms).toBeLessThan(BUDGET.many);
   });
@@ -60,7 +60,7 @@ describe("600 postings", () => {
       const off = Number(new URL(c.url).searchParams.get("offset"));
       return reply({ totalFound: N, content: Array.from({ length: 100 }, (_, i) => ({ id: String(off + i) })) });
     });
-    const { value } = await timed(() => fetchSmartRecruiters(GH, known("smartrecruiters:acme:", ids), fetch));
+    const { value } = await timed(() => fetchSmartRecruiters(GH, known("smartrecruiters:acme:", ids), fetch, noSleep));
     expect([calls.length, value.seen.length, value.adverts.length]).toEqual([6, N, 0]);
   });
   it("workday: 30 list requests + 600 detail requests (measured 175 to 195 ms)", async () => {
@@ -71,7 +71,7 @@ describe("600 postings", () => {
       }
       return reply(wdDetail);
     });
-    const { value, ms } = await timed(() => fetchWorkday(WD, none, fetch));
+    const { value, ms } = await timed(() => fetchWorkday(WD, none, fetch, noSleep));
     expect([calls.length, value.seen.length, value.adverts.length]).toEqual([630, N, N]);
     expect(ms).toBeLessThan(BUDGET.many);
   });
@@ -80,7 +80,7 @@ describe("600 postings", () => {
       const off = (c.body as { offset: number }).offset;
       return reply({ total: N, jobPostings: Array.from({ length: 20 }, (_, i) => ({ externalPath: `/job/p${off + i}` })) });
     });
-    const { value } = await timed(() => fetchWorkday(WD, known("workday:acme:/job/p", Array.from({ length: N }, (_, i) => i)), fetch));
+    const { value } = await timed(() => fetchWorkday(WD, known("workday:acme:/job/p", Array.from({ length: N }, (_, i) => i)), fetch, noSleep));
     expect([calls.length, value.seen.length, value.adverts.length]).toEqual([30, N, 0]);
   });
 });

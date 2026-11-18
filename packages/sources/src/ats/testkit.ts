@@ -34,3 +34,5 @@ export function fake(handler: Handler): { fetch: Fetch; calls: Call[] } {
 export const none: ReadonlySet<string> = new Set();
 export const clone = <T>(v: T): T => structuredClone(v);
 export const fixtures = { amazon, ashby, greenhouse, srDetails: srDetails as Record<string, unknown>, srList, wdDetails: wdDetails as Record<string, unknown>, wdList };
+/** The adapters' options for a test: no real waiting (429 retries and Workday's pauses). */
+export const noSleep = { sleep: async () => {} };
