@@ -139,5 +139,67 @@
    "sitecore",
    "Sitecore"
   ]
+ ],
+ "phenom": [
+  [
+   "Mastercard",
+   "mastercard",
+   "https://careers.mastercard.com",
+   "en_us",
+   "us",
+   "page11",
+   "/us/en"
+  ],
+  [
+   "Thermo Fisher (PPD)",
+   "thermofisher",
+   "https://jobs.thermofisher.com",
+   "en_global",
+   "global",
+   "page13",
+   "/global/en"
+  ],
+  [
+   "State Street",
+   "statestreet",
+   "https://careers.statestreet.com",
+   "en_global",
+   "global",
+   "page13",
+   "/global/en"
+  ],
+  [
+   "Abbott",
+   "abbott",
+   "https://www.jobs.abbott",
+   "en_us",
+   "us",
+   "page17",
+   "/us/en"
+  ]
+ ],
+ "sitemap": [
+  [
+   "Citi",
+   "citi",
+   "https://jobs.citi.com",
+   "/sitemap.xml",
+   "^https://jobs\\.citi\\.com/job/dublin/[^/]+/287/\\d+$",
+   "page"
+  ],
+  [
+   "Fidelity",
+   "fmr",
+   "https://jobs.fidelity.com",
+   "/sitemap.xml",
+   "^https://jobs\\.fidelity\\.com/ie/jobs/(\\d+)/[^/]+/$",
+   "url"
+  ]
+ ],
+ "salesforce": [
+  [
+   "salesforce",
+   "Salesforce (SFDC)"
+  ]
  ]
 }

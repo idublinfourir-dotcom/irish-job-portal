@@ -1,0 +1,55 @@
+{
+ "refineSearch": {
+  "status": 200,
+  "hits": 3,
+  "totalHits": 3,
+  "data": {
+   "jobs": [
+    {
+     "reqId": "R-01367934",
+     "jobId": "R-01367934",
+     "title": "CMBL - Scientist I",
+     "country": "Ireland",
+     "location": "Athlone, Ireland",
+     "multi_location": [
+      "Athlone, Ireland"
+     ],
+     "applyUrl": "https://thermofisher.wd5.myworkdayjobs.com/ThermoFisherCareers/job/Athlone-Ireland/CMBL---Scientist-I_R-01367934-1/apply",
+     "postedDate": "2026-11-17T00:00:00.000+0000",
+     "descriptionTeaser": "Seeking a Scientist I to join our laboratory team at Thermo Fisher Scientific. Perform clinical lab testing, ensure quality and compliance, and contribute to impactful research. Ideal for candidates with a bachelor's degree and up to 1 year of relevant experience. Grow your career in a collaborative, mission-driven environment.",
+     "type": "Full time"
+    },
+    {
+     "reqId": "R-01369062",
+     "jobId": "R-01369062",
+     "title": "Account Manager",
+     "country": "Ireland",
+     "location": "Remote, Ireland",
+     "multi_location": [
+      "Remote, Ireland"
+     ],
+     "applyUrl": "https://thermofisher.wd5.myworkdayjobs.com/ThermoFisherCareers/job/Remote-Ireland/Account-Manager_R-01369062/apply",
+     "postedDate": "2026-11-11T00:00:00.000+0000",
+     "descriptionTeaser": "Seeking an Account Manager to join our collaborative sales team, driving revenue growth and building strong customer relationships. Represent a comprehensive portfolio of scientific products and services, develop strategic sales plans, and manage key accounts. Enjoy a dynamic territory with diverse industries and real earning potential. Fluency in English and travel within Ireland/Scotland required.",
+     "type": "Full time"
+    },
+    {
+     "reqId": "R-01369515",
+     "jobId": "R-01369515",
+     "title": "Field Service Engineer II (LSG) - Northern Ireland",
+     "country": "United Kingdom",
+     "location": "Paisley, Renfrewshire, United Kingdom",
+     "multi_location": [
+      "Paisley, Renfrewshire, United Kingdom",
+      "Belfast, Ireland",
+      "Remote, Ireland"
+     ],
+     "applyUrl": "https://thermofisher.wd5.myworkdayjobs.com/ThermoFisherCareers/job/Paisley-United-Kingdom/Field-Service-Engineer-II--LSG----Northern-Ireland_R-01369515/apply",
+     "postedDate": "2026-11-17T00:00:00.000+0000",
+     "descriptionTeaser": "Exciting opportunity for a Field Service Engineer II to install, maintain, and troubleshoot advanced analytical instruments across Northern Ireland. Join Thermo Fisher Scientific to provide exceptional technical support, travel within the region, and contribute to scientific advancement in a dynamic, customer-focused environment.",
+     "type": "Full time"
+    }
+   ]
+  }
+ }
+}

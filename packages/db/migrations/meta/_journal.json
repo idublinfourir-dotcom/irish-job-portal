@@ -239,6 +239,13 @@
       "when": 1794300030000,
       "tag": "0034_portal_self_service",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794300031000,
+      "tag": "0035_fetcher_job_source",
+      "breakpoints": true
     }
   ]
 }
