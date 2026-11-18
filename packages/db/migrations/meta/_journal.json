@@ -232,6 +232,13 @@
       "when": 1794300029000,
       "tag": "0033_dormant_alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794300030000,
+      "tag": "0034_portal_self_service",
+      "breakpoints": true
     }
   ]
 }

@@ -2219,3 +2219,58 @@ paths:
             `window_closed`: the appeal's state. `not_agency_ban`, `already_marked`: mark_wrc on a case it does not apply to, or twice.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: reply_window_open } } }
         '500': { $ref: '#/components/responses/ServerError' }
+  /api/staff/me/export:
+    get:
+      operationId: exportMyStaffData
+      summary: Download my staff data
+      description: >-
+        One JSON file (`Content-Disposition: attachment; filename="my-data-YYYY-MM-DD.json"`, `Cache-Control: no-store`) with the signed-in
+        staff member's own data: account, roles, own audit rows (kind, action, object type, reason code, time), and the review items,
+        approval requests, reports, strikes, contact messages, cases and case notes they claimed, decided, proposed, confirmed, were
+        given or wrote, as ids and codes only. Never case evidence, note or message bodies, reasons, before or after values, or another
+        staff member's id. Writes one audit row (it shows in the next export). Any active staff login, whatever its roles. No query key
+        is allowed (`bad_query`). Staff do not delete their own login: an administrator disables it (`POST /api/staff`, action `disable`).
+      security: [{ staffSession: [] }]
+      x-roles: [any active staff login]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The file.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              example: attachment; filename="my-data-2026-11-18.json"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [exportedAt, account, roles, yourActions, reviewItems, approvalRequests, reportsDecided, strikesDecided, contactMessagesClaimed, casesAssigned, caseNotesWritten]
+                additionalProperties: false
+                properties:
+                  exportedAt: { type: string, format: date-time }
+                  account: { type: object }
+                  roles: { type: array, items: { type: object, required: [role, seededByOwner], properties: { role: { $ref: '#/components/schemas/StaffRole' }, seededByOwner: { type: boolean } } } }
+                  yourActions: { type: array }
+                  reviewItems: { type: array }
+                  approvalRequests: { type: array }
+                  reportsDecided: { type: array }
+                  strikesDecided: { type: array }
+                  contactMessagesClaimed: { type: array }
+                  casesAssigned: { type: array }
+                  caseNotesWritten: { type: array }
+              example:
+                exportedAt: '2026-11-18T09:30:00.000Z'
+                account: { name: Sam Example, email: sam@example.com, emailConfirmed: true, status: active, createdAt: '2026-10-01T09:00:00+00:00', signInMethods: [credential] }
+                roles: [{ role: account_reviewer, seededByOwner: true }]
+                yourActions: [{ kind: admin_action, action: review.approve, objectType: organisation, reasonCode: null, source: panel, at: '2026-11-17T10:00:00+00:00' }]
+                reviewItems: [{ id: '31', queue: account_review, status: done, outcome: approved, claimedAt: '2026-11-17T09:58:00+00:00', decidedAt: '2026-11-17T10:00:00+00:00' }]
+                approvalRequests: []
+                reportsDecided: []
+                strikesDecided: []
+                contactMessagesClaimed: []
+                casesAssigned: []
+                caseNotesWritten: []
+        '400': { description: "`bad_query`: any query key.", content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403': { description: "`not_active_staff`: the login was disabled between the session check and the read.", content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_active_staff } } } }
+        '500': { $ref: '#/components/responses/ServerError' }

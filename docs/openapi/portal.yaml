@@ -1305,3 +1305,99 @@ paths:
         '413': { $ref: '#/components/responses/BodyTooLarge' }
         '429': { $ref: '#/components/responses/TooMany' }
         '502': { description: "`EMAIL_FAILED`: the invite email could not be sent; the invite was undone.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: EMAIL_FAILED } } } }
+  /api/portal/account:
+    delete:
+      operationId: portalAccountDelete
+      summary: Delete my login
+      description: |
+        Final at once. The signed-in login is erased as `private.erase_portal_user` decides (migration 0034): memberships end, consents
+        become bare proof, its case document copies are removed from the file store, every session ends. The company's own records
+        (jobs, cases, audit) stay. Refused for an open services case, for the account owner of a company with other active members
+        (transfer ownership first), and for the sole member and owner of an open company (close it first, `POST /api/portal/company/close`).
+        Any active portal login, with or without a company. Origin checked first.
+      security: [{ portalSession: [] }]
+      x-roles: [any active portal login]
+      x-body-cap: 2048 characters
+      x-rate-limit: 10 delete attempts per login per 10 minutes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [confirm]
+              properties:
+                confirm: { const: true }
+            example: { confirm: true }
+      responses:
+        '200':
+          description: Deleted. `filesRemoved` counts the stored files removed; a file that could not be removed is logged for removal by hand.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, filesRemoved]
+                properties:
+                  ok: { const: true }
+                  filesRemoved: { type: integer, minimum: 0 }
+              example: { ok: true, filesRemoved: 1 }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: wrong or missing Origin. `REFUSED`: blocked or deleted login.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_ORIGIN } } } }
+        '409': { description: "`OPEN_SERVICES_CASE`: a services case of this login is still open. `OWNER_MUST_TRANSFER`: the account owner of a company with other active members. `CLOSE_COMPANY_FIRST`: the sole member and owner of an open company.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: OWNER_MUST_TRANSFER } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/account/export:
+    get:
+      operationId: portalAccountExport
+      summary: Download my data
+      description: |
+        One JSON file (`Content-Disposition: attachment; filename="my-data-YYYY-MM-DD.json"`, `Cache-Control: no-store`) with the
+        signed-in login's own data: account, memberships and roles, notices, notification settings, consents, emails sent, own
+        actions, reports made, contact messages, services requests (status and dates) and uploaded documents (names and sizes).
+        Never another member's personal data, staff notes, other companies' data, tokens, password hashes or storage keys. Writes one
+        audit row. Query parameters are ignored. Any active portal login.
+      security: [{ portalSession: [] }]
+      x-roles: [any active portal login]
+      responses:
+        '200':
+          description: The file.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              example: attachment; filename="my-data-2026-11-18.json"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [exportedAt, account, memberships, notices, notificationSettings, consents, emailsWeSent, yourActions, reportsYouMade, messagesYouSent, servicesRequests, documentsYouUploaded]
+                properties:
+                  exportedAt: { $ref: '#/components/schemas/Timestamp' }
+                  account: { type: object }
+                  memberships: { type: array, items: { type: object, properties: { organisationId: { $ref: '#/components/schemas/NumId' }, organisation: { type: string }, role: { type: string, enum: [viewer, poster, recruiter, account_owner] }, isSigner: { type: boolean }, status: { type: string }, joinedAt: { type: [string, 'null'] }, removedAt: { type: [string, 'null'] } } } }
+                  notices: { type: array }
+                  notificationSettings: { type: array }
+                  consents: { type: array }
+                  emailsWeSent: { type: array }
+                  yourActions: { type: array }
+                  reportsYouMade: { type: array }
+                  messagesYouSent: { type: array }
+                  servicesRequests: { type: array }
+                  documentsYouUploaded: { type: array }
+                additionalProperties: false
+              example:
+                exportedAt: '2026-11-18T09:30:00.000Z'
+                account: { name: Alex Example, email: alex@example.com, emailConfirmed: true, createdAt: '2026-10-01T09:00:00+00:00', lastActiveAt: '2026-11-18T09:00:00+00:00', signInMethods: [credential] }
+                memberships: [{ organisationId: 1042, organisation: Example Software Ltd, role: recruiter, isSigner: false, status: active, joinedAt: null, removedAt: null }]
+                notices: []
+                notificationSettings: []
+                consents: []
+                emailsWeSent: []
+                yourActions: [{ kind: data_access, action: portal_user.export, objectType: portal_user, at: '2026-11-18T09:30:00+00:00' }]
+                reportsYouMade: []
+                messagesYouSent: []
+                servicesRequests: []
+                documentsYouUploaded: []
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }

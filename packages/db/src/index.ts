@@ -86,3 +86,4 @@ export * from "./audit-read";
 export * from "./content-admin";
 
 export * from "./alerts";
+export * from "./self-service";
