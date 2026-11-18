@@ -430,22 +430,24 @@ paths:
         Handed to Better Auth after the bot check. The POST endpoints the site uses: `sign-up/email`, `sign-in/email`,
         `sign-in/social` (Google), `sign-out`, `send-verification-email`, `request-password-reset` and `reset-password`.
 
-        - Bot check first (only when BOT_CHECK=on) on `sign-up/email`, `sign-in/email`, `request-password-reset` and
-          `send-verification-email`: 403 `{ "code": "BOT_SUSPECTED" }` before Better Auth reads the body.
+        - Bot check first (only when BOT_CHECK=on) on `sign-up/email`, `sign-in/email`, `request-password-reset`,
+          `send-verification-email` and `sign-in/social` (the Google start): 403 `{ "code": "BOT_SUSPECTED" }` before Better Auth reads the body.
         - Better Auth's origin check is on (trusted origin: CANDIDATE_AUTH_URL).
-        - Rate limits per client address (`x-vercel-forwarded-for`), stored in the database: `sign-in/email` and `sign-up/email`
-          5 a minute; `request-password-reset` and `send-verification-email` 3 in 5 minutes. On top, those two are limited to 3 an
+        - Rate limits per client address (`x-vercel-forwarded-for`), stored in the database: `sign-in/email`, `sign-up/email` and
+          `sign-in/social` 5 a minute; `request-password-reset` and `send-verification-email` 3 in 5 minutes. On top, those two are limited to 3 an
           hour per email address (keyed hash, counted before the address is looked up; an address over 254 characters is 400
           `INVALID_EMAIL`).
         - `sign-up/email` takes Better Auth's `name`, `email`, `password` plus the three answers `needsPermit`, `over18` and
           `acceptsTerms`, each the JSON value `true`; otherwise 400 `SIGNUP_ANSWERS_REFUSED`. A name must be 1 to 100 characters
           (`SIGNUP_NAME_REFUSED`). Email must be confirmed before sign-in works. A `needsPermit` of `false` (the "no" answer, #8) adds one
           to that UTC day's count (C5, #253) after the rate limit and the bot check, and keeps nothing else about the visitor.
+          A Google sign-up's "no" (`additionalData` on `sign-in/social`) counts once too, when the callback proves a new Google
+          account, and is refused there as before (`error=SIGNUP_ANSWERS_REFUSED`); a returning Google user's answers are not read.
         - A suspended or deleted candidate cannot start a session (403).
         - A password reset ends every other session.
       security: [{}, { candidateSession: [] }]
       x-roles: [anyone]
-      x-rate-limit: sign-in and sign-up 5 a minute per address; reset and resend 3 in 5 minutes per address and 3 an hour per email
+      x-rate-limit: sign-in, sign-up and the Google start 5 a minute per address; reset and resend 3 in 5 minutes per address and 3 an hour per email
       x-body-cap: none set by this repo (Better Auth's own handling)
       responses:
         '200':
@@ -821,7 +823,8 @@ paths:
       description: |
         Files one message for staff. Open to visitors, who must give `name` and `email`; a signed-in candidate may leave them out
         (the account's are used) and the sender id comes from the session. A suspended or deleted candidate is treated as a
-        visitor. The reply is only `{ ok: true }`: it never says whether an email has an account. Order: bot check, Origin, body
+        visitor, so may send topic `appeal` (C3), which a signed-in active candidate may not choose. The reply is only `{ ok: true }`:
+        it never says whether an email has an account. Order: bot check, Origin, body
         cap, JSON, session, field checks, rate limits. `body` may hold line breaks and tabs, no other control characters.
       security: [{}, { candidateSession: [] }]
       x-roles: [anyone]
@@ -836,7 +839,7 @@ paths:
               additionalProperties: false
               required: [topic, body]
               properties:
-                topic: { enum: [general, account, data_request, other] }
+                topic: { enum: [general, account, data_request, other, appeal] }
                 name: { type: string, minLength: 1, maxLength: 120, description: 'Required for a visitor. Not blank, no control characters.' }
                 email: { type: string, maxLength: 254, pattern: '^[^\s@]+@[^\s@]+\.[^\s@]+$', description: Required for a visitor. }
                 body: { type: string, minLength: 1, maxLength: 5000, description: Not blank. Counted in characters (code points). }

@@ -450,3 +450,54 @@ describe("a Google session is a candidate session only", () => {
     }
   });
 });
+
+// Gap C5: a "no" sent through Google counts once, on the pool, after Google proves a new account; the refusal still rolls the sign-up back.
+// Measured 18 November 2026: the refused "no" callback sends 12 statements (the count is one of them); budget 13.
+describe("C5: a Google 'no' to the permit question is counted once", () => {
+  const NO_BUDGET = 13;
+  const today = async () => Number((await su.query("select coalesce(sum(count), 0) n from signup_no_count where day = (now() at time zone 'UTC')::date")).rows[0].n);
+  it("a new person's 'no' adds one and is refused as before: no account, nothing about the visitor kept", async () => {
+    const p = person("c5-no"), before = await today(), rows = await everything();
+    const r = await viaGoogle(p, { additionalData: { ...answers, needsPermit: false } });
+    expect([r.ok, r.error]).toEqual([false, "SIGNUP_ANSWERS_REFUSED"]);
+    console.log(`google no callback: ${r.statements} statements`);
+    expect(r.statements, `the callback sent ${r.statements} statements`).toBeLessThanOrEqual(NO_BUDGET);
+    expect(await today()).toBe(before + 1);
+    expect(await everything()).toEqual(rows);
+    expect(JSON.stringify((await su.query("select * from signup_no_count")).rows)).not.toMatch(/fake\.g|google-sub|203\.0/);
+    // the same state again does nothing more
+    const again = await call(`callback/google?code=${r.code}&state=${encodeURIComponent(r.state)}`, undefined, { cookie: r.start.cookie });
+    expect(again.location).toMatch(/error=/);
+    expect(await today()).toBe(before + 1);
+  });
+  it("a 'no' whatever the other answers counts once; hostile values and a yes count nothing", async () => {
+    const before = await today();
+    await viaGoogle(person("c5-no2"), { additionalData: { needsPermit: false } });
+    for (const [i, v] of (["false", 0, null, [false], { value: false }, "x".repeat(10_000)] as unknown[]).entries())
+      expect((await viaGoogle(person(`c5-h${i}`), { additionalData: { ...answers, needsPermit: v } })).ok).toBe(false);
+    expect((await viaGoogle(person("c5-yes"))).ok).toBe(true);
+    expect(await today()).toBe(before + 1);
+  });
+  it("not counted: a returning Google user (answers not read), and an email Google has not verified", async () => {
+    expect((await viaGoogle(person("c5-back"))).ok).toBe(true);
+    const before = await today();
+    expect((await viaGoogle(person("c5-back"), { additionalData: { needsPermit: false } })).ok).toBe(true);
+    expect((await viaGoogle(person("c5-unv", { email_verified: false }), { additionalData: { needsPermit: false } })).error).toBe("EMAIL_NOT_VERIFIED_BY_PROVIDER");
+    expect(await today()).toBe(before);
+  });
+  it("an id-token sign-in's 'no' counts once and is refused", async () => {
+    const auth = createAuth("candidate", { database: db.pool("app_candidate"), baseURL: BASE, secret, sendEmail: async () => {}, google: { clientId: "fake-client-id", clientSecret: "x", verifyIdToken: async () => true } as never });
+    const token = `${b64({ alg: "RS256" })}.${b64({ iss: "https://accounts.google.com", aud: "fake-client-id", ...person("c5-idt") })}.x`;
+    const before = await today();
+    const r = await call("sign-in/social", { provider: "google", idToken: { token }, additionalData: { ...answers, needsPermit: false } }, { auth });
+    expect([r.status, r.json?.code]).toEqual([400, "SIGNUP_ANSWERS_REFUSED"]);
+    expect(await today()).toBe(before + 1);
+  });
+  it("the start is limited per address: the 6th in a minute is 429 and gets no state to count with", async () => {
+    const start = () => POST(new Request(`${BASE}/api/auth/candidate/sign-in/social`, { method: "POST", body: JSON.stringify({ provider: "google", callbackURL: "/welcome", additionalData: { needsPermit: false } }),
+      headers: { "content-type": "application/json", origin: BASE, "x-vercel-forwarded-for": "198.51.100.250" } }));
+    const codes = [];
+    for (let i = 0; i < 6; i++) codes.push((await start()).status);
+    expect(codes).toEqual([200, 200, 200, 200, 200, 429]);
+  });
+});

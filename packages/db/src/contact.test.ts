@@ -34,6 +34,11 @@ describe("checkContact", () => {
     expect(ok(without("name"), true)).toMatchObject({ name: null });
     expect(ok({ ...visitor, name: "" }, true)).toBeNull(); // given, so it must be good
   });
+  it("appeal (C3) only from a sender who is not an active signed-in login", () => {
+    expect(ok({ ...visitor, topic: "appeal" })).toEqual({ ...visitor, topic: "appeal" });
+    expect(ok({ ...visitor, topic: "appeal" }, true)).toBeNull();
+    for (const topic of ["Appeal", "appeal ", ["appeal"], { appeal: 1 }]) expect(ok({ ...visitor, topic }), JSON.stringify(topic)).toBeNull();
+  });
   it("refuses unknown fields, including ids and statuses", () => {
     for (const extra of [{ candidateUserId: "x" }, { portalUserId: "x" }, { status: "answered" }, { surface: "portal" }, { id: 1 }, { claimed_by_staff_user_id: "x" }, { extra: 1 }])
       expect(ok({ ...visitor, ...extra }), JSON.stringify(extra)).toBeNull();

@@ -7,6 +7,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { answers, seedSignupTerms } from "./better-auth-helper";
+import { getContact } from "../src/contact-inbox";
 
 const BUDGET = { visitor: 3, signedIn: 4, medianMs: 16 };
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
@@ -127,6 +128,36 @@ describe("a signed-in candidate", () => {
       expect((await contact(f, { cookie: p.cookie })).status).toBe(200);
       expect((await rowsFor(f.email))[0].candidate_user_id).toBeNull();
     }
+  });
+});
+
+describe("C3: a suspended candidate's appeal", () => {
+  let staff: string;
+  beforeAll(async () => {
+    staff = uid("staff-ce-");
+    await su.query("insert into staff_user(id, name, email, email_verified) values ($1, 'Fake CE', $1 || '@example.test', true)", [staff]);
+    await su.query("insert into staff_role(staff_user_id, role, seeded_by_owner) values ($1, 'content_editor', true)", [staff]);
+  });
+  const read = async (email: string) => getContact(db.pool("app_admin"), staff, (await rowsFor(email))[0].id) as Promise<Record<string, unknown>>;
+  it("signed out or with the old cookie, it is filed as from a visitor and staff see the email is a suspended candidate's", async () => {
+    const s = await login({ suspended: true }), t = await login({ suspended: true });
+    await su.query("delete from candidate_session where user_id=$1", [s.id]); // as setLoginHold does
+    expect([(await contact(form({ topic: "appeal", email: s.email }))).text, (await contact(form({ topic: "appeal", email: t.email }), { cookie: t.cookie })).text]).toEqual([OK[1], OK[1]]);
+    for (const p of [s, t]) {
+      expect((await rowsFor(p.email))[0]).toMatchObject({ surface: "candidate_site", topic: "appeal", candidate_user_id: null });
+      expect(await read(p.email)).toMatchObject({ topic: "appeal", fromHeldLogin: true });
+    }
+  });
+  it("an active or deleted candidate's email, or nobody's, is not marked; an active signed-in candidate may not choose appeal", async () => {
+    const a = await login(), d = await login({ deleted: true }), e = `${uid("v.")}@example.test`;
+    await su.query("update candidate_user set suspended_at=now() where id=$1", [d.id]); // deleted and suspended: no longer a login to restore
+    for (const email of [a.email, d.email, e]) {
+      expect((await contact(form({ topic: "appeal", email }))).status).toBe(200);
+      expect(await read(email), email).toMatchObject({ fromHeldLogin: false });
+    }
+    const f = form({ topic: "appeal" });
+    expect(await contact(f, { cookie: a.cookie })).toMatchObject({ status: 400, code: "BAD_REQUEST" });
+    expect(await rowsFor(f.email)).toEqual([]);
   });
 });
 

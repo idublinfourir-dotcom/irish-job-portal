@@ -11,10 +11,11 @@ export async function botRefused(env: NodeJS.ProcessEnv): Promise<boolean> {
 /** The refusal every route sends: the code and nothing about why. */
 export const botResponse = () => Response.json({ code: "BOT_SUSPECTED" }, { status: 403 });
 
-// The Better Auth routes that are checked. Google sign-in (a redirect flow), sign-out, get-session and the rest are not.
-const CHECKED = ["/sign-up/email", "/sign-in/email", "/request-password-reset", "/send-verification-email"];
+// The Better Auth routes that are checked. The Google start (POST /sign-in/social, a fetch from the page) is checked since C5, because a "no"
+// sent through it is counted; the Google callback (a redirect), sign-out, get-session and the rest are not.
+const CHECKED = ["/sign-up/email", "/sign-in/email", "/request-password-reset", "/send-verification-email", "/sign-in/social"];
 
-/** Runs a Better Auth handler, after the bot check for the four routes above (before Better Auth reads the body or touches the database). */
+/** Runs a Better Auth handler, after the bot check for the five routes above (before Better Auth reads the body or touches the database). */
 export async function withBotCheck(request: Request, handler: (r: Request) => Promise<Response>): Promise<Response> {
   let path = new URL(request.url).pathname;
   try { path = decodeURIComponent(path); } catch { path = "/sign-up/email"; } // a path that cannot be decoded is checked (fail closed)

@@ -3,7 +3,7 @@ import { APIError, getOAuthState } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { generateRandomString } from "better-auth/crypto";
 import type { Pool } from "pg";
-import { checkPortalSignup, checkSignup, signupPlugin, writeConsent, type Answers } from "./signup";
+import { COUNT_NO, checkPortalSignup, checkSignup, signupPlugin, writeConsent, type Answers } from "./signup";
 import { emailLimitPlugin } from "./email-limit";
 
 export { readAnswers, readPortalAnswers, checkSignup, checkPortalSignup, currentTermsId, writeConsent, type Answers, type PortalAnswers } from "./signup";
@@ -118,7 +118,7 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
       modelName: `${name}_rate_limit`,
       fields: { lastRequest: "last_request" },
       customRules: {
-        "/sign-in/email": { window: 60, max: 5 }, "/sign-up/email": { window: 60, max: 5 },
+        "/sign-in/email": { window: 60, max: 5 }, "/sign-up/email": { window: 60, max: 5 }, "/sign-in/social": { window: 60, max: 5 },
         "/request-password-reset": { window: 300, max: 3 }, "/send-verification-email": { window: 300, max: 3 },
       },
     },
@@ -146,7 +146,14 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
         user: { create: { before: async (u: { emailVerified?: unknown }, ctx: Ctx | null) => {
           if (ctx?.path === "/sign-up/email") return;
           if (u.emailVerified !== true) throw new APIError("FORBIDDEN", { message: "Google has not confirmed this email address.", code: "EMAIL_NOT_VERIFIED_BY_PROVIDER" });
-          fromGoogle.set(ctx as object, checkSignup(await getOAuthState(), false));
+          const state = await getOAuthState();
+          // C5 (#253): a new person's "no" counts here, once Google has proved the account. On the pool, not the sign-up transaction, so the
+          // refusal's rollback keeps it. Once per attempt: this step runs once per callback and a state is used once. The start, POST
+          // /sign-in/social, is bot-checked and limited per IP (5 a minute), so each count costs a checked start and a Google round trip.
+          // The id-token sign-in reads no state, so its answers come from the body; it is refused below either way.
+          const said = state ?? (ctx?.body as { additionalData?: unknown } | undefined)?.additionalData;
+          if ((said as { needsPermit?: unknown } | null | undefined)?.needsPermit === false) await database.query(COUNT_NO);
+          fromGoogle.set(ctx as object, checkSignup(state, false));
         } } },
         account: { create: { before: async (a: { userId: string }, ctx: Ctx | null) => {
           if (ctx?.path === "/sign-up/email") return void (await writeConsent(ctx.context.adapter, a.userId, checkSignup(ctx.body, false)));

@@ -243,6 +243,7 @@ components:
             candidateUserId: { type: [string, 'null'] }
             portalUserId: { type: [string, 'null'] }
             closedText: { type: [string, 'null'] }
+            fromHeldLogin: { type: [boolean, 'null'], description: "Topic appeal only (null otherwise): whether `fromEmail` belongs, now, to a blocked portal login (surface portal) or a suspended candidate (candidate site). The sender proved nothing; a reply to that email reaches only its owner." }
     ContentSummary:
       type: object
       required: [id, kind, slug, title, status, updatedAt]

@@ -108,7 +108,8 @@ export function signupPlugin(database: Pool, pool: SignupPool): BetterAuthPlugin
         matcher: (ctx) => ctx.path === "/sign-up/email",
         handler: createAuthMiddleware(async (ctx) => {
           // C5 (#253): a "no" to the permit question adds one to today's count and nothing else is kept. Better Auth's per-IP limit
-          // (5 a minute) and the bot check run before this hook, so a script cannot inflate the count cheaply.
+          // (5 a minute) and the bot check run before this hook, so a script cannot inflate the count cheaply. A Google "no" is counted
+          // in the user-create step instead (index.ts), so each attempt counts once whichever way it comes.
           if (pool === "candidate" && (ctx.body as { needsPermit?: unknown } | undefined)?.needsPermit === false) await database.query(COUNT_NO);
           if (pool === "candidate") checkSignup(ctx.body, true);
           else checkPortalSignup(ctx.body, true);

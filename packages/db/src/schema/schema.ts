@@ -1478,7 +1478,7 @@ export const contactMessage = pgTable("contact_message", {
 	check("contact_message_check2", sql`((body IS NOT NULL) AND ((char_length(body) >= 1) AND (char_length(body) <= 5000))) OR ((body IS NULL) AND (from_name IS NULL) AND (from_email IS NULL) AND (candidate_user_id IS NULL) AND (portal_user_id IS NULL))`),
 	check("contact_message_check", sql`num_nonnulls(candidate_user_id, portal_user_id) <= 1`),
 	check("contact_message_surface_check", sql`surface = ANY (ARRAY['candidate_site'::text, 'portal'::text])`),
-	check("contact_message_topic_check", sql`topic = ANY (ARRAY['general'::text, 'account'::text, 'data_request'::text, 'other'::text])`),
+	check("contact_message_topic_check", sql`topic = ANY (ARRAY['general'::text, 'account'::text, 'data_request'::text, 'other'::text, 'appeal'::text])`),
 	check("contact_message_status_check", sql`status = ANY (ARRAY['new'::text, 'claimed'::text, 'answered'::text, 'closed'::text, 'spam'::text])`),
 ]);
 

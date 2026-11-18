@@ -676,9 +676,12 @@ paths:
         Any active portal login, with or without a company. The sender comes from the session; `name` and `email` may be left out
         (the login's own are used). The reply never says more than `{ ok: true }`. Order: bot check (when `BOT_CHECK=on`; 403
         `BOT_SUSPECTED`), Origin (403 `BAD_ORIGIN`), body cap, JSON, session, body check, rate limit.
-      security: [{ portalSession: [] }]
-      x-roles: [any active portal login]
-      x-rate-limit: 5 messages per login per hour
+        Topic `appeal` (C3) is the one thing open without an active login, so a blocked login (which holds no session) can appeal:
+        it is taken as from a visitor, with `name` and `email` required and the visitor limits; an active login may not choose it.
+        Without an active login any other topic is refused as before (401 `NO_SESSION`, 403 `REFUSED`).
+      security: [{ portalSession: [] }, {}]
+      x-roles: [any active portal login; anyone for topic appeal]
+      x-rate-limit: 5 messages per login per hour; an appeal 5 an hour per address and 5 an hour per email
       x-body-cap: 24000 characters
       requestBody:
         required: true
@@ -689,7 +692,7 @@ paths:
               additionalProperties: false
               required: [topic, body]
               properties:
-                topic: { type: string, enum: [general, account, data_request, other] }
+                topic: { type: string, enum: [general, account, data_request, other, appeal] }
                 name: { type: string, minLength: 1, maxLength: 120, description: "Not blank; no control characters. Counted in code points." }
                 email: { type: string, maxLength: 254, description: "An address shaped like `a@b.c`; no control characters." }
                 body: { type: string, minLength: 1, maxLength: 5000, description: "Not blank; line breaks and tabs allowed, no other control or format characters. Counted in code points." }

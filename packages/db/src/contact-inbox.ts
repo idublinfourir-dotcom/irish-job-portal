@@ -79,7 +79,13 @@ export async function listContact(db: Pick<pg.Pool, "query">, staff: string, opt
 // ===== one message =====
 export const CONTACT_ITEM =
   "select m.id, m.status, m.topic, m.surface, m.from_name, m.from_email, m.body, m.candidate_user_id, m.portal_user_id, m.claimed_by_staff_user_id, " +
-  "m.created_at::text as created_text, m.claimed_at::text as claimed_text, m.closed_at::text as closed_text from contact_message m where m.id = $1::bigint";
+  "m.created_at::text as created_text, m.claimed_at::text as claimed_text, m.closed_at::text as closed_text, " +
+  // C3: an appeal is from a visitor, so this says whether its email belongs to a login held now (a blocked portal login, a suspended candidate)
+  // on the side it came from. The sender proved nothing, but the reply goes to that email, so only its owner reads it. Null for other topics.
+  "case when m.topic = 'appeal' then case m.surface " +
+  "when 'portal' then exists (select 1 from portal_user u where u.email = lower(m.from_email) and u.status = 'blocked' and u.deleted_at is null) " +
+  "else exists (select 1 from candidate_user u where u.email = lower(m.from_email) and u.suspended_at is not null and u.deleted_at is null) end end as from_held_login " +
+  "from contact_message m where m.id = $1::bigint";
 
 /** One message in full, whatever its status; null when there is none. The read is logged (kind data_access). */
 export async function getContact(db: Db, staff: string, id: string | number) {

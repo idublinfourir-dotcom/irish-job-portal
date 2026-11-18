@@ -76,9 +76,10 @@ describe("candidate settings and sessions (#177)", () => {
     expect(portal.options.plugins?.map((p) => p.id)).toEqual(["portal-email-limit", "portal-signup"]);
     expect((await make("staff").$context).options.plugins?.map((p) => p.id)).not.toContain("staff-signup");
   });
-  it("sign-in, sign-up, reset and resend each have their own rate limit", async () => {
+  it("sign-in, sign-up, the Google start, reset and resend each have their own rate limit", async () => {
     const rules = (await make("candidate").$context).options.rateLimit?.customRules ?? {};
-    expect(Object.keys(rules).sort()).toEqual(["/request-password-reset", "/send-verification-email", "/sign-in/email", "/sign-up/email"]);
+    expect(Object.keys(rules).sort()).toEqual(["/request-password-reset", "/send-verification-email", "/sign-in/email", "/sign-in/social", "/sign-up/email"]);
+    expect(rules["/sign-in/social"]).toEqual({ window: 60, max: 5 }); // C5: each Google "no" costs a limited start
     expect(rules["/send-verification-email"]).toEqual({ window: 300, max: 3 });
   });
 });

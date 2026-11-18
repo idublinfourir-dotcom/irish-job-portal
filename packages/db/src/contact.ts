@@ -7,7 +7,9 @@ import { clientAddress, hasControl, isObject, only, withinRate } from "./candida
 import { getPool } from "./index";
 import type { ReportLogin } from "./report";
 
-export const CONTACT_TOPICS = ["general", "account", "data_request", "other"] as const;
+// appeal (C3): only from a sender who is not signed in as an active login, so a blocked portal login or a suspended candidate (who can hold no
+// session) can still write to us. Staff see whether its email belongs to a held login (contact-inbox.ts, CONTACT_ITEM).
+export const CONTACT_TOPICS = ["general", "account", "data_request", "other", "appeal"] as const;
 export const MAX_MESSAGE = 5000, MAX_NAME = 120, MAX_EMAIL = 254; // characters (code points, as the database counts them)
 // The largest good request: 5,000 characters of 4 bytes, plus the name, email and JSON around them. Checked before the body is read.
 export const MAX_CONTACT_BODY = 24_000;
@@ -24,10 +26,12 @@ const address = (v: unknown): v is string => text(v, MAX_EMAIL, false) && /^[^\s
 
 // Null means refuse. Unknown fields are refused. A visitor must give a name and an email; a signed-in sender may leave them out (the account's are used).
 // The message may hold newline and tab but no other control or format character; name and email hold none.
+// An active signed-in sender may not choose appeal.
 export function checkContact(b: unknown, signedIn: boolean): ContactBody | null {
   if (!isObject(b) || !only(b, ["topic", "name", "email", "body"])) return null;
   const { topic, name, email, body } = b;
   if (typeof topic !== "string" || !(CONTACT_TOPICS as readonly string[]).includes(topic) || !text(body, MAX_MESSAGE, true)) return null;
+  if (signedIn && topic === "appeal") return null;
   if (name === undefined ? !signedIn : !text(name, MAX_NAME, false)) return null;
   if (email === undefined ? !signedIn : !address(email)) return null;
   return { topic: topic as ContactBody["topic"], name: (name as string | undefined) ?? null, email: (email as string | undefined) ?? null, body };
@@ -54,7 +58,8 @@ const emailKey = (secret: string, email: string) => `contact:email:${createHmac(
 
 /**
  * `login` says who is signed in. On the candidate side any refusal (no session, suspended, deleted) is treated as a visitor, because a suspended
- * candidate may need to write to us; on the portal side a login is required. `secret` is the side's auth secret, used only to hash email keys.
+ * candidate may need to write to us. On the portal side a login is required, except for an appeal (C3): a blocked login holds no session, so an
+ * appeal is taken as from a visitor (name and email given, counted by address and email). `secret` is the side's auth secret, used only to hash email keys.
  */
 export async function handleContact(request: Request, o: { origin: string; side: ContactSide; secret: string; login: (headers: Headers) => Promise<ReportLogin> }): Promise<Response> {
   if (await botRefused(process.env)) return botResponse(); // first, as in handleReport: a bot is neither read nor counted
@@ -65,7 +70,8 @@ export async function handleContact(request: Request, o: { origin: string; side:
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { return no(400, "BAD_REQUEST"); }
   const who = await o.login(request.headers);
-  if ("refused" in who && o.side === "portal") return who.refused === "no_session" ? no(401, "NO_SESSION") : no(403, "REFUSED");
+  if ("refused" in who && o.side === "portal" && !(isObject(parsed) && parsed.topic === "appeal"))
+    return who.refused === "no_session" ? no(401, "NO_SESSION") : no(403, "REFUSED");
   const userId = "userId" in who ? who.userId : null;
   const body = checkContact(parsed, userId !== null);
   if (!body) return no(400, "BAD_REQUEST");
