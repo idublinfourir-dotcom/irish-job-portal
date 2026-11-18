@@ -77,7 +77,7 @@ export function fakeModel(reply: (n: number, adverts: { title: string; descripti
 /** The model reports a fault for every advert of the request, as `createBatchChecker` does. */
 export const fault = (n: number): BatchResult[] => Array.from({ length: n }, () => ({ ...says(false), modelId: MODEL, failure: { kind: "model error" as const, why: "model host answered HTTP 429" } }));
 
-// W1c: five of the seven career-site boards, answered from the saved bodies (packages/sources/src/careers/fixtures).
+// W1c and W1e: six of the eight career-site boards, answered from the saved bodies (packages/sources/src/careers/fixtures).
 export const CAREER_BOARDS: BoardsFile = {
   phenom: [
     ["Mastercard", "mastercard", "https://careers.mastercard.com", "en_us", "us", "page11", "/us/en"],
@@ -88,9 +88,10 @@ export const CAREER_BOARDS: BoardsFile = {
     ["Fidelity", "fmr", "https://jobs.fidelity.com", "/sitemap.xml", "^https://jobs\\.fidelity\\.com/ie/jobs/(\\d+)/[^/]+/$", "url"],
   ],
   salesforce: [["salesforce", "Salesforce (SFDC)"]],
+  eightfold: [["Applied Materials", "amat", "https://careers.appliedmaterials.com", "appliedmaterials.com"]],
 };
 let day = 0;
-/** One run of the five boards. `over` answers a call first; every call is recorded. No re-read day, so `known` is every saved id. */
+/** One run of the six boards. `over` answers a call first; every call is recorded. No re-read day, so `known` is every saved id. */
 export async function careerRun(d: TestDb, over: (url: string, method: string) => Response | undefined = () => undefined, pool: Db = d.pool("app_fetcher")) {
   const calls: string[] = [];
   const answer = sites(over);

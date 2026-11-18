@@ -201,7 +201,23 @@ async function lock(c: pg.PoolClient, id: string, forActivation: boolean): Promi
 const audit = (c: pg.PoolClient, staff: string, action: string, id: string, after: object, reason: string | null = null, second: string | null = null) =>
   c.query(AUDIT, [staff, `pay_floor.${action}`, "pay_floor", id, JSON.stringify(after), reason, second, null]);
 const PROPOSE = "insert into approval_request(kind, target_table, target_id, change, reason) values ('pay_floor', 'pay_floor', $1, $2::jsonb, 'floor check') returning id::text as id";
-const ITEM_DONE = "update review_item set status = 'done', decided_by_staff_user_id = $2, decided_at = now(), outcome = $3 where queue = 'pay_floor_check' and pay_floor_id = $1::bigint and status in ('open','claimed')";
+// The queue item closes and (N5), in the same statement, the company's active owner and the member who signed the floor (one notice when they are the
+// same person; none for a member who has left) get one portal notice and one queued email: $4 the template, $5 the params (floorNotice: ids and the reason code).
+const ITEM_DONE =
+  "with i as (update review_item set status = 'done', decided_by_staff_user_id = $2, decided_at = now(), outcome = $3 where queue = 'pay_floor_check' and pay_floor_id = $1::bigint and status in ('open','claimed')), " +
+  "u as (select distinct m.portal_user_id as p, f.organisation_id as org from pay_floor f join membership m on m.organisation_id = f.organisation_id and m.status = 'active' " +
+  "and (m.role = 'account_owner' or m.id = f.signer_membership_id) where f.id = $1::bigint), " +
+  "n as (insert into notification(portal_user_id, organisation_id, category, template_key, params) select p, org, 'account', $4::text, $5::jsonb from u) " +
+  "insert into email_outbox(template, portal_user_id, params) select $4::text, p, $5::jsonb from u";
+
+/** N5: the template and params of the floor decision notice. Ids, and the reason code on a reject; nothing else from staff. */
+export function floorNotice(outcome: "approved" | "rejected", floorId: string, organisationId: string, reason?: string): { template: string; params: Record<string, string> } {
+  const params: Record<string, string> = { organisationId, floorId };
+  if (outcome === "rejected" && reason !== undefined) params.reason = reason;
+  return { template: `pay_floor_${outcome}`, params };
+}
+const itemDone = (c: pg.PoolClient, id: string, staff: string, outcome: string, n: ReturnType<typeof floorNotice>) =>
+  c.query(ITEM_DONE, [id, staff, outcome, n.template, JSON.stringify(n.params)]);
 
 /** A rules data editor checks the floor against the advert evidence and proposes the pay_floor approval. The floor stays pending_check until an administrator confirms. */
 export async function proposeFloor(db: Db, staff: string, floorId: string | number): Promise<{ requestId: string }> {
@@ -232,7 +248,7 @@ export async function confirmFloor(db: Db, staff: string, floorId: string | numb
     await c.query(CONFIRM, [req.id]);
     const old = (await c.query<{ id: string }>(REPLACE, [f.organisation_id, f.role_family])).rows[0]?.id ?? null;
     if ((await c.query(ACTIVATE, [id, req.id, staff, old])).rowCount !== 1) throw new Error("the floor was not activated"); // rolls back; the lock above makes this unreachable
-    await c.query(ITEM_DONE, [id, staff, "accepted"]);
+    await itemDone(c, id, staff, "accepted", floorNotice("approved", id, f.organisation_id));
     await audit(c, staff, "confirm", id, { status: "active", request_id: req.id, replaced: old }, null, req.proposed_by);
     return { floorId: id, replacedId: old };
   });
@@ -245,11 +261,11 @@ const REJECT = "update pay_floor set status = 'rejected', checked_by_staff_id = 
 export async function rejectFloor(db: Db, staff: string, floorId: string | number, reason: string): Promise<void> {
   if (typeof reason !== "string" || !REASON.test(reason)) throw new QueueRefused("bad_reason");
   await acting(db, staff, floorId, "either", async (c, id) => {
-    await lock(c, id, false);
+    const f = await lock(c, id, false);
     const req = (await c.query<{ id: string }>(PENDING, [id])).rows[0];
     if (req) await c.query(REFUSE_REQ, [req.id, staff]);
     if ((await c.query(REJECT, [id, staff])).rowCount !== 1) throw new Error("the floor was not rejected");
-    await c.query(ITEM_DONE, [id, staff, "rejected"]);
+    await itemDone(c, id, staff, "rejected", floorNotice("rejected", id, f.organisation_id, reason));
     await audit(c, staff, "reject", id, { status: "rejected", request_id: req?.id ?? null }, reason);
   });
 }

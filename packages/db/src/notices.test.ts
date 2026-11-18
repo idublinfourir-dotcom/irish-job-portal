@@ -1,8 +1,10 @@
-// Unit tests, no database: the notice page token round trip, the template and params of each account decision (N4), and the question check.
+// Unit tests, no database: the notice page token round trip, the template and params of each account decision (N4) and of the N5 notices, and the question check.
 import { describe, expect, it } from "vitest";
 import { QueueRefused } from "./admin-queue";
 import { checkQuestion, decisionNotice, decodeReviewCursor, QUESTION_MAX } from "./account-review";
 import { encodeNoticeCursor } from "./notices";
+import { floorNotice } from "./pay-floors";
+import { hiddenNotice, reportOutcomeNotice } from "./trust-safety";
 
 const why = (f: () => unknown) => { try { f(); return "accepted"; } catch (e) { return e instanceof QueueRefused ? e.why : "other"; } };
 
@@ -42,5 +44,16 @@ describe("checkQuestion", () => {
   it("refuses empty, over-long, control or format characters and non-strings", () => {
     for (const q of ["", "   ", "x".repeat(QUESTION_MAX + 1), "a\nb", "a\u0000b", "a‮b", "a​b", "a b", 5, null, ["a"], { a: 1 }])
       expect(why(() => checkQuestion(q)), JSON.stringify(q)?.slice(0, 20)).toBe("bad_question");
+  });
+});
+
+describe("N5 notice params", () => {
+  it("a pay floor decision names the floor and company; a reject adds the reason code; an approve never carries one", () => {
+    expect(floorNotice("approved", "5", "7", "a staff note")).toEqual({ template: "pay_floor_approved", params: { organisationId: "7", floorId: "5" } });
+    expect(floorNotice("rejected", "5", "7", "no_evidence")).toEqual({ template: "pay_floor_rejected", params: { organisationId: "7", floorId: "5", reason: "no_evidence" } });
+  });
+  it("the hidden-job notice holds the job and company only, the outcome notice the report and outcome only", () => {
+    expect(hiddenNotice("9", "7")).toEqual({ organisationId: "7", jobId: "9" });
+    expect(reportOutcomeNotice("3", "upheld")).toEqual({ reportId: "3", outcome: "upheld" });
   });
 });

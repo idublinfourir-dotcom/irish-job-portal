@@ -2,8 +2,9 @@
 // Everything goes through the fake fetch; a call to any other host is recorded and must never happen.
 import { describe, expect, it } from "vitest";
 import { fake, none, noSleep, redirect } from "../ats/testkit";
-import { fetchPhenom, fetchSalesforce, fetchSitemap, jobPosting, MAX_SITEMAPS, MAX_URLS, readPosting } from "./careers";
-import { page, PH, read, SF, sites, SM } from "./testkit";
+import { fetchEightfold, fetchPhenom, fetchSalesforce, fetchSitemap, jobPosting, MAX_SITEMAPS, MAX_URLS, readPosting } from "./careers";
+import { EF, page, PH, read, SF, sites, SM } from "./testkit";
+import { MAX_PAGES } from "../ats/shared";
 
 const hosts = (calls: { url: string }[]) => [...new Set(calls.map((c) => new URL(c.url).host))];
 // As the sites write it: "<" escaped inside the JSON, so a "</script>" in a field cannot end the block
@@ -123,5 +124,54 @@ describe("sitemap bombs", () => {
     const sm = `<urlset><url><loc>https://jobs.citi.com/job/dublin/x/287/1</loc></url></urlset>`;
     const bad = ld({ "@type": "JobPosting", identifier: { value: "1 or 1=1; --" }, jobLocation: { address: { addressCountry: "IE" } } });
     expect(await fetchSitemap(SM.citi, none, fake((c) => page(c.url.endsWith(".xml") ? sm : bad)).fetch, noSleep)).toEqual({ seen: [], adverts: [] });
+  });
+});
+
+describe("eightfold against a hostile site (W1e)", () => {
+  const listing = (positions: unknown[], count = positions.length) => page(JSON.stringify({ data: { positions, count } }));
+  const pos = (over: Record<string, unknown> = {}) => ({ id: 790314592423, displayJobId: "R2614187", name: "Job", locations: ["Leixlip,IRL"], ...over });
+  it("a publicUrl or positionUrl on another host is never fetched nor saved: the URL is built from the origin and the numeric id", async () => {
+    const evil = { publicUrl: "https://evil.example/x", positionUrl: "//evil.example/y" };
+    const { fetch, calls } = fake((c) => (c.url.includes("/search?") ? listing([pos(evil)]) : page(JSON.stringify({ data: { ...evil, jobDescription: "<p>x</p>" } }))));
+    const r = await fetchEightfold(EF, none, fetch, noSleep);
+    expect(hosts(calls)).toEqual(["careers.appliedmaterials.com"]);
+    expect(r.adverts[0]!.url).toBe("https://careers.appliedmaterials.com/careers/job/790314592423");
+  });
+  it("a listing that redirects to another host fails the board; a detail call that does is skipped, nothing saved, that host never called", async () => {
+    await expect(fetchEightfold(EF, none, fake(() => redirect("https://evil.example/api")).fetch, noSleep)).rejects.toThrow(/refused: request to another host/);
+    const { fetch, calls } = fake(sites((url) => (url.includes("position_details") ? redirect("https://evil.example/d") : undefined)));
+    expect(await fetchEightfold(EF, none, fetch, noSleep)).toMatchObject({ adverts: [] });
+    expect(hosts(calls)).toEqual(["careers.appliedmaterials.com"]);
+  });
+  it("hostile ids (path or query tricks, a non-numeric position id) fail the board before any detail call", async () => {
+    for (const over of [{ displayJobId: "../x" }, { displayJobId: "R1&domain=evil" }, { displayJobId: "" }, { id: "1&hl=xx" }, { id: "abc" }, { id: 1.5 }, { id: "9".repeat(21) }]) {
+      const { fetch, calls } = fake(() => listing([pos(over)]));
+      await expect(fetchEightfold(EF, none, fetch, noSleep), JSON.stringify(over)).rejects.toThrow(/unsafe job id/);
+      expect(calls).toHaveLength(1);
+    }
+  });
+  it("bad board values fail before any call", async () => {
+    for (const b of [{ ...EF, origin: "http://careers.appliedmaterials.com" }, { ...EF, origin: "https://careers.appliedmaterials.com/api" }, { ...EF, domain: "a.com&x=1" }, { ...EF, board: "../x" }]) {
+      const { fetch, calls } = fake(sites());
+      await expect(fetchEightfold(b, none, fetch, noSleep)).rejects.toThrow(/bad board site or path|unsafe board name/);
+      expect(calls).toEqual([]);
+    }
+  });
+  it(`a huge count with pages that never end stops after ${MAX_PAGES} pages and fails the board`, async () => {
+    let n = 0;
+    const { fetch, calls } = fake(() => listing([pos({ displayJobId: `R${n++}` })], 1e12));
+    await expect(fetchEightfold(EF, none, fetch, noSleep)).rejects.toThrow(/more than 50 pages/);
+    expect(calls).toHaveLength(MAX_PAGES);
+  });
+  it("a body over 32 MB is refused, by length or by Content-Length", async () => {
+    await expect(fetchEightfold(EF, none, fake(() => page("x".repeat(32 * 1024 * 1024 + 1))).fetch, noSleep)).rejects.toThrow(/body too large/);
+    await expect(fetchEightfold(EF, none, fake(() => page("{}", 200, { "content-length": String(33 * 1024 * 1024) })).fetch, noSleep)).rejects.toThrow(/body too large/);
+  });
+  it("script and markup in the name, the place and the description come out as text with no tags", async () => {
+    const bad = pos({ name: "<script>alert(1)</script>Engineer<img src=x onerror=alert(2)>", locations: ["<b>Cork</b>,IRL"] });
+    const { fetch } = fake((c) => (c.url.includes("/search?") ? listing([bad]) : page(JSON.stringify({ data: { jobDescription: "<p>Job</p><script>steal()</script><iframe src=//evil.example>" } }))));
+    const a = (await fetchEightfold(EF, none, fetch, noSleep)).adverts[0]!;
+    for (const f of [a.title, a.location, a.description]) expect(f).not.toMatch(/<|>/);
+    expect([a.title.includes("Engineer"), a.location]).toEqual([true, "Cork, Ireland"]);
   });
 });

@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { seedStaff } from "../src/staff-seed-cli";
 import { IN_FORCE, loadRules, type Minimums } from "../src/rules-data";
 import { NOTICES, PENDING } from "../src/rules-admin";
-import { LIVE_STATED, runRules, UNDER_REVIEW } from "../src/rules-run-cli";
+import { END_FLOORS, LIVE_STATED, runRules, UNDER_REVIEW } from "../src/rules-run-cli";
 import { seedData, seedRules } from "../src/rules-seed-cli";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { fixtures, in30 } from "./fixtures";
@@ -375,6 +375,10 @@ describe("the daily run and the notices (#234 D9)", () => {
     });
     expect(await status(fetched)).toBe("live");
     expect(await one("select status, ended_at is not null ended from pay_floor where id = $1", [floor])).toEqual({ status: "expired", ended: true });
+    // N5: the floor's company owner hears it ended, once (ids only); not the recruiter, not another company
+    const fp = { organisationId: a.org, floorId: Number(floor), versionId: Number(c.versionId) };
+    expect(await notes("pay_floor_expired")).toEqual([{ u: a.owner, category: "rules", params: fp, read_at: null }]);
+    expect((await su.query("select portal_user_id u, params, dedupe_key k from email_outbox where template = 'pay_floor_expired'")).rows).toEqual([{ u: a.owner, params: fp, k: `app_admin:pay_floor_expired:${floor}` }]);
     // the employer reads why: the company's own job list gives under_review the reason pay_check (0019)
     const list = (await su.query("select private.portal_jobs($1) j", [a.owner])).rows[0].j as { id: number; reason: string }[];
     expect(list.find((x) => String(x.id) === jobs.below)?.reason).toBe("pay_check");
@@ -408,6 +412,12 @@ describe("the daily run and the notices (#234 D9)", () => {
 
     expect(await run()).toEqual({ versionId: c.versionId, applied: false, underReview: 0, floorsEnded: 0 });
     expect((await su.query("select count(*)::int n from audit_event where action = 'rules.minimums_in_force'")).rows[0].n).toBe(1);
+    // the floor step run twice on the same floor still writes one notice and one email (dedupe key per floor)
+    const k = await su.connect();
+    try { await k.query("set session_replication_role = replica"); await k.query("update pay_floor set status = 'active', ended_at = null where id = $1", [floor]); } finally { await k.query("reset session_replication_role"); k.release(); }
+    expect((await db.pool("app_admin").query(END_FLOORS, [c.versionId])).rows[0].n).toBe(1);
+    expect((await notes("pay_floor_expired")).length).toBe(1);
+    expect((await su.query("select count(*)::int n from email_outbox where template = 'pay_floor_expired'")).rows[0].n).toBe(1);
   });
 });
 

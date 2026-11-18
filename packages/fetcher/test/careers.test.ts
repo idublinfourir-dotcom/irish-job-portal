@@ -1,7 +1,7 @@
-// Integration (W1c): the real fetcher (atsTasks, the three career-site adapters, makeCaller, runBoards) against the real test database as
+// Integration (W1c, W1e): the real fetcher (atsTasks, the four career-site adapters, makeCaller, runBoards) against the real test database as
 // app_fetcher. The sites are the saved bodies of packages/sources/src/careers/fixtures through a fake fetch; no network, no real waiting.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { page } from "../../sources/src/careers/testkit";
+import { page, read } from "../../sources/src/careers/testkit";
 import { createTestDb, type TestDb } from "../../db/test/db";
 import { careerRun, counting } from "./helpers";
 
@@ -20,13 +20,18 @@ describe("the career-site kinds on the real database (W1c)", () => {
   it("day 1: every Irish job is saved, under its requisition id, inside the first cut's budget (4 statements a board, at most 9 a new job)", async () => {
     const c = counting(db.pool("app_fetcher"));
     const { reports } = await careerRun(db, undefined, c.db);
-    expect(c.sql.length).toBeLessThanOrEqual(5 * 4 + 9 * 9);
+    expect(c.sql.length).toBeLessThanOrEqual(6 * 4 + 9 * 22);
     expect(reports.map((r) => [r.kind, r.board, r.ok, r.seen, r.passed])).toEqual([
-      ["salesforce", "salesforce", true, 2, 2], ["phenom", "mastercard", true, 1, 1], ["phenom", "thermofisher", true, 2, 2], ["sitemap", "citi", true, 2, 2], ["sitemap", "fmr", true, 2, 2],
+      ["salesforce", "salesforce", true, 2, 2], ["phenom", "mastercard", true, 1, 1], ["phenom", "thermofisher", true, 2, 2], ["sitemap", "citi", true, 2, 2], ["sitemap", "fmr", true, 2, 2], ["eightfold", "amat", true, 13, 13],
     ]);
     expect(await saved("phenom", "thermofisher")).toEqual(["phenom:thermofisher:R-01367934 live", "phenom:thermofisher:R-01369062 live"]);
     expect(await saved("sitemap", "citi")).toEqual(["sitemap:citi:261007029 live", "sitemap:citi:261007676 live"]);
     expect(await saved("salesforce", "salesforce")).toEqual(["salesforce:salesforce:JR317362 live", "salesforce:salesforce:JR327834 live"]);
+    const amat = await saved("eightfold", "amat");
+    expect(amat).toHaveLength(13);
+    expect(amat).toContain("eightfold:amat:R2614187 live");
+    const [row] = await su("select title, url, employer_name from fetched_advert where external_id = 'eightfold:amat:R2632370'");
+    expect(row).toEqual({ title: "Data Scientist - EMEA", url: "https://careers.appliedmaterials.com/careers/job/790319296162", employer_name: "Applied Materials" });
   });
 
   it("day 2: known ids cost no page call (Citi still reads its two pages: its URL has no Workday id); 4 statements a board", async () => {
@@ -36,7 +41,9 @@ describe("the career-site kinds on the real database (W1c)", () => {
     for (const host of ["careers.mastercard.com", "jobs.thermofisher.com", "jobs.fidelity.com"]) expect(pageCalls(calls, host), host).toEqual([]);
     expect(pageCalls(calls, "jobs.citi.com")).toHaveLength(2);
     expect(calls.filter((x) => x.includes("sfdcstatic"))).toHaveLength(1);
-    expect(c.sql).toHaveLength(5 * 4); // the first cut's budget: nothing changed costs 4 statements a board
+    expect(calls.filter((x) => x.includes("/api/pcsx/position_details"))).toEqual([]);
+    expect(calls.filter((x) => x.includes("/api/pcsx/search"))).toHaveLength(2);
+    expect(c.sql).toHaveLength(6 * 4); // the first cut's budget: nothing changed costs 4 statements a board
   });
 
   it("a job gone from a listing that worked is closed", async () => {
@@ -44,6 +51,19 @@ describe("the career-site kinds on the real database (W1c)", () => {
     const { by } = await careerRun(db, (url) => (url === "https://jobs.fidelity.com/sitemap.xml" ? page(without) : undefined));
     expect(by.fmr).toMatchObject({ ok: true, seen: 1, closed: 1 });
     expect(await saved("sitemap", "fmr")).toEqual(["sitemap:fmr:2136258 closed", "sitemap:fmr:2136526 live"]);
+  });
+
+  it("eightfold: a job gone from a listing that worked is closed; a listing that failed closes nothing", async () => {
+    const body = JSON.parse(read("eightfold-amat-search-10.json"));
+    body.data.positions = body.data.positions.filter((p: { displayJobId: string }) => p.displayJobId !== "R2632370");
+    body.data.count = 12;
+    const without = JSON.stringify(body);
+    const { by } = await careerRun(db, (url) => (url.includes("/api/pcsx/search") && url.includes("start=10") ? page(without) : undefined));
+    expect(by.amat).toMatchObject({ ok: true, seen: 12, closed: 1 });
+    expect(await saved("eightfold", "amat")).toContain("eightfold:amat:R2632370 closed");
+    const failed = await careerRun(db, (url) => (url.includes("/api/pcsx/search") ? page("<html>maintenance</html>", 503) : undefined));
+    expect(failed.by.amat).toMatchObject({ ok: false, closed: 0 });
+    expect((await saved("eightfold", "amat")).filter((x) => x.endsWith(" live"))).toHaveLength(12);
   });
 
   it("a listing that failed closes nothing and records the error", async () => {

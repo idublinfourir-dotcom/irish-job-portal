@@ -20,6 +20,7 @@ const WORKDAY: [tenant: string, path: string][] = [
   ["fmr", "/job/Galway-Ireland/Data-Engineer_2136526"],
   ["salesforce", "/job/Ireland---Dublin/Senior-Success-Architect-Industry_JR317362"],
   ["abbott", "/job/Kilkenny/Warehouse-Operator_31165733"],
+  ["amat", "/job/Leixlip/Customer-Support-Technician_R2614187"], // W1e: Applied Materials, now eightfold
   ["statestreet", "/job/Dublin/no-requisition-here"], // no id: stays
   ["pfizer", "/job/Cork/Engineer_4900001"], // not one of the seven: never touched
 ];
@@ -49,7 +50,8 @@ afterAll(() => db.drop());
 
 describe("requisition", () => {
   it("reads the id at the end of a Workday path, without the -1 of a second posting", () => {
-    expect(WORKDAY.map(([, p]) => requisition(`workday:x:${p}`))).toEqual(["R-291229", "R-01367934", "R-01367934", "261007676", "2136526", "JR317362", "31165733", null, "4900001"]);
+    expect(WORKDAY.map(([, p]) => requisition(`workday:x:${p}`))).toEqual(["R-291229", "R-01367934", "R-01367934", "261007676", "2136526", "JR317362", "31165733", "R2614187", null, "4900001"]);
+    expect(requisition("workday:amat:/job/Dublin/Electronics-Engineer_R2626678-1")).toBe("R2626678");
     expect(requisition("workday:citi:/job/Dublin--Ireland/Senior-Full-Stack---AI-Engineering-Manager---Java---Angular_261009111-1")).toBe("261009111");
   });
 });
@@ -59,9 +61,10 @@ describe("the Workday move (W1c)", () => {
     const before = await snapshot();
     const { code, out } = await move();
     expect(code).toBe(0);
-    expect(out[0]).toBe("dry run, nothing written: 6 Workday adverts would move (add --apply to write)");
+    expect(out[0]).toBe("dry run, nothing written: 7 Workday adverts would move (add --apply to write)");
     expect(out).toContain("  thermofisher: 1 would move, 1 already under the new source, 0 with no requisition id (stay)");
     expect(out).toContain("  statestreet: 0 would move, 0 already under the new source, 1 with no requisition id (stay)");
+    expect(out).toContain("  would move: workday:amat:/job/Leixlip/Customer-Support-Technician_R2614187 -> eightfold:amat:R2614187");
     expect(out).toContain("  would move: workday:citi:/job/Dublin--Ireland/Data-Engineer--Officer-_261007676 -> sitemap:citi:261007676");
     expect(await snapshot()).toEqual(before);
   });
@@ -69,9 +72,9 @@ describe("the Workday move (W1c)", () => {
   it("--apply moves each matched advert and its job once, keeping the job's id; a second run moves nothing", async () => {
     const job = (await rowOf(`workday:mastercard:${WORKDAY[0]![1]}`))[0].job;
     const { code, out } = await move("--apply");
-    expect([code, out[0]]).toEqual([0, "6 Workday adverts moved, 6 jobs with them"]);
+    expect([code, out[0]]).toEqual([0, "7 Workday adverts moved, 7 jobs with them"]);
     expect(await rowOf("phenom:mastercard:R-291229")).toEqual([{ advert: expect.any(Number), kind: "phenom", board: "mastercard", job, status: "live", job_kind: "phenom" }]);
-    for (const id of ["phenom:thermofisher:R-01367934", "phenom:abbott:31165733", "sitemap:citi:261007676", "sitemap:fmr:2136526", "salesforce:salesforce:JR317362"]) expect(await rowOf(id), id).toHaveLength(1);
+    for (const id of ["phenom:thermofisher:R-01367934", "phenom:abbott:31165733", "sitemap:citi:261007676", "sitemap:fmr:2136526", "salesforce:salesforce:JR317362", "eightfold:amat:R2614187"]) expect(await rowOf(id), id).toHaveLength(1);
     // left as they were: the second posting, the row with no id, the other employer
     expect(Number((await su("select count(*) from fetched_advert f join job_source s on s.id = f.job_source_id where s.kind = 'workday'"))[0].count)).toBe(3);
     const before = await snapshot();
@@ -81,7 +84,7 @@ describe("the Workday move (W1c)", () => {
 
   it("the new boards take over the Workday boards' last good fetch, so the stale close does not fire on the moved jobs at once", async () => {
     const pairs = await su("select n.kind, n.board, n.last_ok_at = w.last_ok_at as same from job_source n join job_source w on w.board = n.board and w.kind = 'workday' where n.kind <> 'workday' order by n.board");
-    expect(pairs.length).toBe(7);
+    expect(pairs.length).toBe(8);
     for (const p of pairs) expect(p.same, `${p.kind}:${p.board}`).toBe(true);
   });
 
@@ -89,14 +92,14 @@ describe("the Workday move (W1c)", () => {
     const jobs = Number((await su("select count(*) from job"))[0].count);
     const { reports, calls } = await careerRun(db);
     expect(reports.every((r) => r.ok)).toBe(true);
-    for (const id of ["phenom:mastercard:R-291229", "phenom:thermofisher:R-01367934", "sitemap:citi:261007676", "sitemap:fmr:2136526", "salesforce:salesforce:JR317362"]) {
+    for (const id of ["phenom:mastercard:R-291229", "phenom:thermofisher:R-01367934", "sitemap:citi:261007676", "sitemap:fmr:2136526", "salesforce:salesforce:JR317362", "eightfold:amat:R2614187"]) {
       const rows = await rowOf(id);
       expect(rows, id).toHaveLength(1);
       expect(rows[0].status, id).toBe("live");
     }
-    expect(calls.filter((c) => c.includes("/job/R-291229/") || c.includes("/job/R-01367934/") || c.includes("/ie/jobs/2136526/"))).toEqual([]);
-    // only the jobs that were never on Workday are new: Thermo R-01369062, Citi 261007029, Fidelity 2136258, Salesforce JR327834
-    expect(Number((await su("select count(*) from job"))[0].count)).toBe(jobs + 4);
+    expect(calls.filter((c) => c.includes("/job/R-291229/") || c.includes("/job/R-01367934/") || c.includes("/ie/jobs/2136526/") || c.includes("position_id=790314592423"))).toEqual([]);
+    // only the jobs that were never on Workday are new: Thermo R-01369062, Citi 261007029, Fidelity 2136258, Salesforce JR327834, 12 of Applied Materials' 13
+    expect(Number((await su("select count(*) from job"))[0].count)).toBe(jobs + 4 + 12);
   });
 
   it("only the fetcher's login can run it; any other role is refused and nothing is written", async () => {

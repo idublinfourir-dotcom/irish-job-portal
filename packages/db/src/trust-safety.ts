@@ -129,22 +129,42 @@ async function lockReport(c: pg.PoolClient, id: string): Promise<ReportLock> {
   if (r.status === "cleared" || r.status === "upheld") throw new QueueRefused("already_decided");
   return r;
 }
-const HIDE_JOB = "update job set status = 'hidden', hidden_reason = 'report', hidden_report_id = $1::bigint where id = $2::bigint and status = 'live'";
+// N5: hiding the job and, in the same statement, one portal notice and one queued email to the company's active owner and the member who posted the job
+// (one when they are the same person). Params are the job and company ids only (hiddenNotice): never the report, the reporter or the evidence. Returns the jobs hidden.
+const HIDE_JOB =
+  "with h as (update job set status = 'hidden', hidden_reason = 'report', hidden_report_id = $1::bigint where id = $2::bigint and status = 'live' " +
+  "returning id, organisation_id, posted_by_membership_id), " +
+  "u as (select distinct m.portal_user_id as p, h.organisation_id as org from h join membership m on m.organisation_id = h.organisation_id and m.status = 'active' " +
+  "and (m.role = 'account_owner' or m.id = h.posted_by_membership_id)), " +
+  "n as (insert into notification(portal_user_id, organisation_id, category, template_key, params) select p, org, 'account', 'job_hidden', $3::jsonb from u), " +
+  "e as (insert into email_outbox(template, portal_user_id, params) select 'job_hidden', p, $3::jsonb from u) " +
+  "select count(*)::int as n from h";
+/** N5: the params of the job hidden notice: the job and its company, nothing about the report. */
+export const hiddenNotice = (jobId: string, organisationId: string) => ({ organisationId, jobId });
 // The job comes back when its company may show jobs; otherwise it stays hidden under the company's suspension.
 const UNHIDE_JOB =
   "update job set status = case when o.status in ('suspended','banned','closed') then 'hidden' else 'live' end, " +
   "hidden_reason = case when o.status in ('suspended','banned','closed') then 'organisation_suspended' end, hidden_report_id = null " +
   "from organisation o where o.id = job.organisation_id and job.hidden_report_id = $1::bigint and job.status = 'hidden'";
 // The database requires the reporter to be gone once a report is cleared or upheld (report_check3), so the decision drops it.
+// N5: in the same statement the reporter hears the outcome (reportOutcomeNotice, $4), read from the row before the reporter is dropped. A portal reporter
+// gets a portal notice and an email; a candidate reporter an email only (there is no candidate notice reader yet, N8). An erased reporter gets nothing.
 const DECIDE_REPORT =
+  "with old as (select reporter_candidate_user_id as c, reporter_portal_user_id as p from report where id = $1::bigint), " +
+  "n as (insert into notification(portal_user_id, category, template_key, params) select p, 'account', 'report_outcome', $4::jsonb from old where p is not null), " +
+  "e as (insert into email_outbox(template, candidate_user_id, portal_user_id, params) select 'report_outcome', c, p, $4::jsonb from old where num_nonnulls(c, p) = 1) " +
   "update report set status = $2, reporter_candidate_user_id = null, reporter_portal_user_id = null, decided_by_staff_user_id = $3, decided_at = now() where id = $1::bigint";
+/** N5: the params of the reporter's outcome notice: the report id and the outcome code. Never the company's reply, the case or a staff note. */
+export const reportOutcomeNotice = (reportId: string, outcome: "cleared" | "upheld") => ({ reportId, outcome });
+const decideReport = (c: pg.PoolClient, id: string, outcome: "cleared" | "upheld", staff: string) =>
+  c.query(DECIDE_REPORT, [id, outcome, staff, JSON.stringify(reportOutcomeNotice(id, outcome))]);
 
 /** A trust and safety officer judges the evidence plausible (#214 c): the live job is hidden at once. Hiding is not a strike (#91). */
 export async function hideReportedJob(db: Db, staff: string, reportId: string | number): Promise<void> {
   await acting(db, staff, reportId, async (c, id) => {
     const r = await lockReport(c, id);
     if (r.status === "job_hidden") throw new QueueRefused("already_hidden");
-    if ((await c.query(HIDE_JOB, [id, r.target_job_id])).rowCount !== 1) throw new QueueRefused("job_not_live");
+    if ((await c.query<{ n: number }>(HIDE_JOB, [id, r.target_job_id, JSON.stringify(hiddenNotice(r.target_job_id, r.organisation_id))])).rows[0]!.n !== 1) throw new QueueRefused("job_not_live");
     await c.query("update report set status = 'job_hidden' where id = $1::bigint", [id]);
     await audit(c, staff, "report_hide", "report", id, { status: "job_hidden" });
   });
@@ -155,7 +175,7 @@ export async function clearReport(db: Db, staff: string, reportId: string | numb
   await acting(db, staff, reportId, async (c, id) => {
     await lockReport(c, id);
     await c.query(UNHIDE_JOB, [id]);
-    await c.query(DECIDE_REPORT, [id, "cleared", staff]);
+    await decideReport(c, id, "cleared", staff);
     await audit(c, staff, "report_clear", "report", id, { status: "cleared" });
   });
 }
@@ -166,7 +186,7 @@ export async function upholdReport(db: Db, staff: string, reportId: string | num
   checkCase(input);
   return acting(db, staff, reportId, async (c, id) => {
     const r = await lockReport(c, id);
-    await c.query(DECIDE_REPORT, [id, "upheld", staff]);
+    await decideReport(c, id, "upheld", staff);
     await audit(c, staff, "report_uphold", "report", id, { status: "upheld" });
     await c.query("select id from organisation where id = $1::bigint for update", [r.organisation_id]);
     return { caseId: await openIn(c, staff, r.organisation_id, r.target_job_id, id, input) };

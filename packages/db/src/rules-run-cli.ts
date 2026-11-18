@@ -1,6 +1,6 @@
 // The daily rules run (#93, #234 D9): on the first run on or after the day a confirmed minimums version comes into force, every live employer or
 // agency job whose stated pay is now below the minimum goes "under review" (the employer's own job list shows the reason 'pay_check', 0019), and
-// every active pay floor ends as 'expired' (#82). One transaction; the version's run_at records that it was applied, so a second run does nothing.
+// every active pay floor ends as 'expired' (#82), its company's owner told (N5). One transaction; the version's run_at records that it was applied, so a second run does nothing.
 // Run from the repo root with the app_admin login, daily from .github/workflows/daily-fetch.yml after the job expiry step:
 //   RULES_ADMIN_DATABASE_URL=... node packages/db/src/rules-run-cli.ts
 import pg from "pg";
@@ -48,6 +48,17 @@ export const UNDER_REVIEW =
   "on conflict (dedupe_key) do nothing returning 1) " +
   "select (select count(*) from u)::int as jobs";
 
+// N5: every active pay floor ends as 'expired' and, in the same statement, the company's active owner gets one portal notice and one queued email per floor
+// (ids only). The dedupe key (floor id) keeps it to one even if a later run ever met the same floor again. Returns the floors ended.
+export const END_FLOORS =
+  "with f as (update pay_floor set status = 'expired' where status = 'active' returning id, organisation_id), " +
+  "t as (select m.portal_user_id as p, f.organisation_id as org, f.id as floor, jsonb_build_object('organisationId', f.organisation_id, 'floorId', f.id, 'versionId', $1::bigint) as params " +
+  "from f join membership m on m.organisation_id = f.organisation_id and m.role = 'account_owner' and m.status = 'active'), " +
+  "n as (insert into notification(portal_user_id, organisation_id, category, template_key, params, dedupe_key) " +
+  "select p, org, 'rules', 'pay_floor_expired', params, 'pay_floor_expired:' || floor from t on conflict (dedupe_key) do nothing), " +
+  "e as (insert into email_outbox(template, portal_user_id, params, dedupe_key) select 'pay_floor_expired', p, params, 'pay_floor_expired:' || floor from t on conflict (dedupe_key) do nothing) " +
+  "select count(*)::int as n from f";
+
 export type RunResult = { versionId: string | null; applied: boolean; underReview: number; floorsEnded: number };
 
 export async function runRules(c: pg.ClientBase): Promise<RunResult> {
@@ -62,7 +73,7 @@ export async function runRules(c: pg.ClientBase): Promise<RunResult> {
     const cs = new Set(rules.occupationLists.filter((o) => o.list === "critical-skills").map((o) => o.code));
     const ids = (await c.query<Job>(LIVE_STATED)).rows.filter((j) => belowMinimum(j, rules.minimums, cs)).map((j) => j.id);
     const underReview = (await c.query<{ jobs: number }>(UNDER_REVIEW, [ids, v.id])).rows[0]!.jobs;
-    const floorsEnded = (await c.query("update pay_floor set status = 'expired' where status = 'active'")).rowCount ?? 0;
+    const floorsEnded = (await c.query<{ n: number }>(END_FLOORS, [v.id])).rows[0]!.n;
     await c.query("update rules_version set run_at = now() where id = $1::bigint", [v.id]);
     await c.query(
       "insert into audit_event(kind, actor_system, action, object_type, object_id, after, source) values ('admin_action', 'rules-run-cli', 'rules.minimums_in_force', 'rules_version', $1, $2, 'scheduled_job')",
