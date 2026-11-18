@@ -56,6 +56,14 @@ export function parseOwner(text: string): OwnerBody {
   throw new BadRequest("bad_action");
 }
 
+/** P13: `{ organisationId, memberLimit, reason }`; the bounds and the reason code are checked again in @portal/db and in the database. */
+export function parseLimit(text: string): { organisationId: string; memberLimit: number; reason: string } {
+  const b = parseObject(text, MAX_SMALL_BODY);
+  if (!only(b, ["organisationId", "memberLimit", "reason"]) || typeof b.reason !== "string" || typeof b.memberLimit !== "number") throw new BadRequest("bad_body");
+  if (!isId(b.organisationId)) throw new BadRequest("bad_input");
+  return { organisationId: b.organisationId, memberLimit: b.memberLimit, reason: b.reason };
+}
+
 export type ManualBody = { action: "create"; post: Record<string, unknown> } | { action: "close"; jobId: string };
 /** `create` carries the post's own fields beside `action` (checked field by field by checkManualPost); `close` carries a job id. */
 export function parseManual(text: string): ManualBody {
@@ -71,10 +79,10 @@ export function parseManual(text: string): ManualBody {
 
 const STATUS = new Map<string, number>(Object.entries({
   same_company: 400, not_checked: 400,
-  bad_origin: 403, not_active_staff: 403, not_company_staff: 403, not_company_viewer: 403, not_account_reviewer: 403, not_manual_viewer: 403, not_poster: 403,
+  bad_origin: 403, not_active_staff: 403, not_limit_staff: 403, not_company_staff: 403, not_company_viewer: 403, not_account_reviewer: 403, not_manual_viewer: 403, not_poster: 403,
   not_found: 404, company_not_found: 404, member_not_found: 404,
   already_merged: 409, target_merged: 409, not_mergeable: 409, kind_mismatch: 409, active_members: 409, has_applications: 409, company_not_postable: 409, bad_state: 409,
-  already_owner: 409, company_not_open: 409, no_owner: 409, user_not_active: 409, request_open: 409, not_open: 409, too_early: 409, owner_changed: 409, member_gone: 409,
+  below_active: 409, already_owner: 409, company_not_open: 409, no_owner: 409, user_not_active: 409, request_open: 409, not_open: 409, too_early: 409, owner_changed: 409, member_gone: 409,
   no_session: 401, not_active: 401,
 }));
 /** The HTTP status for a refusal code: any `bad_` code is 400 except bad_origin; null for a code the routes do not know, which the caller turns into a plain 500. */

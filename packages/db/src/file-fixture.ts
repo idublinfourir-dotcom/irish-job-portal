@@ -20,4 +20,6 @@ export function zip(names: string[], deflate = false): Uint8Array {
 export const PDF = b("%PDF-1.7\n%fake\n");
 export const PNG = b([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], "fake");
 export const JPEG = b([0xff, 0xd8, 0xff, 0xe0], "fake");
+export const WEBP = b("RIFF", [0x10, 0, 0, 0], "WEBPVP8 fake");
+export const EXE = b("MZ", [0x90, 0], "fake program"); // a Windows program, whatever its name says
 export const DOCX = zip(["[Content_Types].xml", "_rels/.rels", "word/document.xml"], true);

@@ -77,6 +77,7 @@ export * from "./rules-admin";
 export * from "./merges";
 export * from "./manual-posting";
 export * from "./owner-reassign";
+export * from "./member-limit";
 
 export * from "./staff-admin";
 export * from "./audit-read";

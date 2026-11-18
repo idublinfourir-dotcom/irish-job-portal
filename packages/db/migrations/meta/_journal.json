@@ -218,6 +218,13 @@
       "when": 1794300026000,
       "tag": "0030_search_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1794300027000,
+      "tag": "0031_company_profile",
+      "breakpoints": true
     }
   ]
 }

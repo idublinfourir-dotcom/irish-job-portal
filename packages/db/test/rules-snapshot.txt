@@ -95,6 +95,8 @@ check organisation_check1 on organisation: CHECK ((merged_into_id <> id))
 check organisation_domain_domain_check on organisation_domain: CHECK ((domain = lower(domain)))
 check organisation_domain_source_check on organisation_domain: CHECK ((source = ANY (ARRAY['seed'::text, 'admin'::text])))
 check organisation_kind_check on organisation: CHECK ((kind = ANY (ARRAY['employer'::text, 'agency'::text, 'public_body'::text])))
+check organisation_logo_key_check on organisation: CHECK ((logo_key ~ '^logo/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp)$'::text))
+check organisation_member_limit_check on organisation: CHECK (((member_limit >= 1) AND (member_limit <= 50)))
 check organisation_name_kind_check on organisation_name: CHECK ((kind = ANY (ARRAY['legal'::text, 'alias'::text])))
 check organisation_name_source_check on organisation_name: CHECK ((source = ANY (ARRAY['dete'::text, 'cro'::text, 'job_site'::text, 'admin'::text, 'public_body_list'::text])))
 check organisation_permit_history_check on organisation: CHECK ((permit_history = ANY (ARRAY['has_history'::text, 'first_time'::text, 'not_linked'::text])))
@@ -421,7 +423,7 @@ rights app_portal on membership: table[select] columns[]
 rights app_portal on message: table[] columns[]
 rights app_portal on notification: table[] columns[]
 rights app_portal on notification_preference: table[] columns[]
-rights app_portal on organisation: table[select] columns[update(county,display_name,logo_url,short_description,website)]
+rights app_portal on organisation: table[select] columns[]
 rights app_portal on organisation_domain: table[] columns[]
 rights app_portal on organisation_name: table[select] columns[]
 rights app_portal on owner_reassign: table[] columns[]

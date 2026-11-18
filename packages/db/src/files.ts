@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { getPool } from "./index";
 import { CANDIDATE_RATE, Refuse, withinRate, type CandidateEnv } from "./candidate-route";
-import { checkUpload, cleanName, MAX_BODY, MIME, readUpload, type Kind } from "./file-check";
+import { checkUpload, cleanName, EXT, MAX_BODY, MIME, readUpload, type Kind } from "./file-check";
 import { fileStore, FilesUnavailable } from "./file-store";
 import { validId } from "./search";
 
@@ -150,4 +150,36 @@ export const caseDocGet = (r: Request, env: FilesEnv, caseId: string, docId: str
   const d = (await db.query(docSql(env.side).one, [docId, caseId, userId])).rows[0] as { storage_key: string; file_name: string; content_type: string } | undefined;
   if (!d) throw new Refuse(404, "DOCUMENT_NOT_FOUND");
   return download(await fileStore().link(d.storage_key, { fileName: d.file_name, contentType: mime(d.content_type), seconds: LINK_SECONDS }));
+});
+
+// ===== the company logo (P3: the account owner; PNG, JPEG or WebP, at most 1 MB) =====
+// The bucket is private like the rest; a public read path for the company page (a short link per view) comes with the page (step 16).
+export const MAX_LOGO = 1024 * 1024;
+const OWNER = "select 1 from membership where portal_user_id = $1 and status = 'active' and role = 'account_owner'";
+const companyRefused = (e: unknown) => {
+  const { code, message = "" } = (e ?? {}) as { code?: string; message?: string };
+  const c = code === "P0001" ? /^(?:team|company) refused: ([A-Z_]+)/.exec(message)?.[1] : undefined;
+  if (c === "ORGANISATION_NOT_AVAILABLE") return new Refuse(409, c);
+  return c ? new Refuse(403, c === "NOT_OWNER" ? c : "REFUSED") : e;
+};
+
+export const logoPut = (r: Request, env: FilesEnv) => fileRoute(r, env, "upload", async (db, userId) => {
+  // the owner check before the body is read, so no one else fills the bucket; company_logo checks again under the company's lock
+  if (!(await db.query(OWNER, [userId])).rowCount) throw new Refuse(403, "NOT_OWNER");
+  if (Number(r.headers.get("content-length") ?? 0) > MAX_LOGO + 16 * 1024) throw new Refuse(413, "FILE_TOO_LARGE");
+  const up = await readUpload(r);
+  if ("code" in up) throw new Refuse(up.status, up.code);
+  const c = checkUpload(up.bytes, ["png", "jpeg", "webp"], MAX_LOGO);
+  if ("refused" in c) throw new Refuse(REFUSED_STATUS[c.refused]!, c.refused);
+  const key = `logo/${randomUUID()}.${EXT[c.contentType]}`;
+  const store = fileStore();
+  await store.put(key, up.bytes, MIME[c.contentType]);
+  let old: string | null;
+  try { old = (await db.query("select private.company_logo($1, $2) r", [userId, key])).rows[0].r.oldKey; } catch (e) {
+    await store.remove(key).catch(() => {});
+    throw companyRefused(e);
+  }
+  // ponytail: a failed removal leaves the old file in the bucket unreferenced; a sweep of logo/ keys not in organisation.logo_key would clear it
+  if (old) await store.remove(old).catch(() => {});
+  return { logo: { contentType: MIME[c.contentType], sizeBytes: up.bytes.length } };
 });

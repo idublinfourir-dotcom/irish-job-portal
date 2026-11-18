@@ -1,9 +1,23 @@
 // No database: what an upload is (the bytes decide), the name label, and reading a multipart body with its cap. Hostile input included.
 import { describe, expect, it } from "vitest";
 import { checkUpload, cleanName, MAX_BODY, MAX_FILE, readUpload } from "./file-check";
-import { b, DOCX, JPEG, PDF, PNG, zip } from "./file-fixture";
+import { b, DOCX, EXE, JPEG, PDF, PNG, WEBP, zip } from "./file-fixture";
 
 const ALL = ["pdf", "docx", "jpeg", "png"] as const;
+
+describe("checkUpload: the logo (P3)", () => {
+  const LOGO = ["png", "jpeg", "webp"] as const;
+  it("knows PNG, JPEG and WebP, with the 1 MB cap given", () => {
+    expect(checkUpload(WEBP, LOGO, 1024 * 1024)).toEqual({ contentType: "webp" });
+    expect(checkUpload(PNG, LOGO, 1024 * 1024)).toEqual({ contentType: "png" });
+    const big = new Uint8Array(1024 * 1024 + 1); big.set(PNG);
+    expect(checkUpload(big, LOGO, 1024 * 1024)).toEqual({ refused: "FILE_TOO_LARGE" });
+    expect(checkUpload(big.subarray(0, 1024 * 1024), LOGO, 1024 * 1024)).toEqual({ contentType: "png" });
+  });
+  it("refuses a program, a PDF, a RIFF that is not WebP and a short RIFF", () => {
+    for (const x of [EXE, PDF, DOCX, b("RIFF", [0, 0, 0, 0], "AVI LIST"), b("RIFF")]) expect(checkUpload(x, LOGO)).toEqual({ refused: "WRONG_FILE_TYPE" });
+  });
+});
 
 describe("checkUpload: the bytes decide", () => {
   it("knows each type by its signature", () => {
