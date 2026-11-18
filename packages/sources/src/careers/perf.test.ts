@@ -2,8 +2,8 @@
 // 13,209 character description), and the Salesforce filter on an 11 MB file (time and memory). Budgets leave ten times the measured time, for a loaded build machine.
 import { describe, expect, it } from "vitest";
 import { fake, none, noSleep } from "../ats/testkit";
-import { fetchPhenom, fetchSalesforce, jobPosting, readPosting } from "./careers";
-import { page, PH, read, SF } from "./testkit";
+import { fetchEightfold, fetchPhenom, fetchSalesforce, jobPosting, readPosting } from "./careers";
+import { EF, page, PH, read, SF } from "./testkit";
 
 const timed = <T>(run: () => T) => {
   const t = performance.now();
@@ -51,5 +51,22 @@ describe("career-site budgets", () => {
     calls.length = 0;
     const again = await fetchPhenom(PH.mastercard, new Set(first.seen), fetch, noSleep);
     expect([calls.length, again.seen.length, again.adverts.length]).toEqual([2, 85, 0]);
+  });
+  it("Eightfold with 85 Irish jobs: 9 listing calls and 85 detail calls the first day, 9 calls once all are known, under 250 ms (measured 21 ms)", async () => {
+    const detail = read("eightfold-amat-790319296162.json");
+    const { fetch, calls } = fake((c) => {
+      const start = Number(new URL(c.url).searchParams.get("start"));
+      if (c.url.includes("position_details")) return page(detail);
+      return page(JSON.stringify({ data: { count: 85, positions: Array.from({ length: Math.min(10, 85 - start) }, (_, i) => ({ id: 1000 + start + i, displayJobId: `R${start + i}`, name: "T", locations: ["Leixlip,IRL"] })) } }));
+    });
+    const t = performance.now();
+    const first = await fetchEightfold(EF, none, fetch, noSleep);
+    const ms = performance.now() - t;
+    console.log(`perf careers: Eightfold 85 jobs ${ms.toFixed(1)} ms, ${calls.length} calls`);
+    expect([calls.length, first.adverts.length]).toEqual([9 + 85, 85]);
+    expect(ms).toBeLessThan(250);
+    calls.length = 0;
+    const again = await fetchEightfold(EF, new Set(first.seen), fetch, noSleep);
+    expect([calls.length, again.seen.length, again.adverts.length]).toEqual([9, 85, 0]);
   });
 });

@@ -1,6 +1,7 @@
-// W1c: seven Workday employers read from their own career sites, because Workday's Cloudflare challenges every data-centre address.
-// Research: step15/w1c-careersites.md. Three kinds: `phenom` (the site's own search call, then each new job's page), `sitemap` (the
-// sitemap, then each new job's page) and `salesforce` (one file with every job and its text). Pages are read for their JSON-LD JobPosting.
+// W1c, W1e: eight Workday employers read from their own career sites, because Workday's Cloudflare challenges every data-centre address.
+// Research: step15/w1c-careersites.md. Four kinds: `phenom` (the site's own search call, then each new job's page), `sitemap` (the
+// sitemap, then each new job's page), `salesforce` (one file with every job and its text) and `eightfold` (W1e: the search call, then
+// each new job's details). Pages are read for their JSON-LD JobPosting.
 // Every id is the employer's requisition id, the same one Workday shows, so the Workday rows can be moved over (db/src/workday-move.ts).
 import { FetchFailedError, type BoardFetch, type SourceAdapter } from "../types";
 import type { SlugBoard } from "../ats/adapters";
@@ -222,6 +223,61 @@ export const fetchSalesforce: SourceAdapter<SlugBoard> = ({ slug: board, employe
       seen.push(id);
       if (known.has(id)) continue;
       adverts.push(job("salesforce", board, ref, employer, get(r, "Job_Posting_Title"), get(r, "Job_Requisition_Primary_Location"), text(get(r, "Job_Description")), get(r, "External_Job_Posting_Site"), get(r, "Time_Type")));
+    }
+    return { seen, adverts };
+  });
+
+// ---- Eightfold -------------------------------------------------------------------------------------------------------
+// W1e: Applied Materials. The site's own search call (robots.txt allows /api/pcsx), then each new job's details for its text.
+export type EightfoldBoard = { employer: string; board: string; origin: string; domain: string };
+const IRL_PLACE = /^(.+),\s*IRL$/;
+
+/** The Irish places of a listed job ("Leixlip,IRL" is "Leixlip, Ireland"), joined; empty when it lists none. Pure. */
+export const eightfoldIrish = (j: Obj) =>
+  [...new Set([get(j, "locations")].flat().slice(0, 50).flatMap((l) => {
+    const m = IRL_PLACE.exec(str(l));
+    return m ? [`${text(m[1]!)}, Ireland`] : [];
+  }))].join(" / ");
+
+/**
+ * GET /api/pcsx/search with the Ireland filter, paging `start` until `count` (at most MAX_PAGES pages), then one /api/pcsx/position_details
+ * per job not in `known` for its description. The filter also lists jobs of many places: a job with no `,IRL` place is dropped before any
+ * detail call. The advert URL is built from the board's origin and the numeric id, never taken from the reply. A detail call that fails
+ * keeps the job seen (nothing closes on it) but saves nothing; a refusal for the rate limit fails the board.
+ */
+export const fetchEightfold: SourceAdapter<EightfoldBoard> = (b, known, fetch, opts) =>
+  guard(b.board, async () => {
+    safeName(b.board, b.board, b.domain);
+    checkSite(b.board, b.origin);
+    const call = makeCaller(b.board, fetch, b.origin, { ...opts, gapMs: PACE.siteCallGapMs });
+    const api = (path: string, q: Record<string, string>) => `${b.origin}/api/pcsx/${path}?${new URLSearchParams(q)}`; // the parameters in the site's own order
+    const listed = new Map<string, Obj>(); // by displayJobId: a job that moves between pages is counted once
+    for (let n = 0, start = 0; ; n++) {
+      if (n >= MAX_PAGES) throw new FetchFailedError(b.board, `more than ${MAX_PAGES} pages`);
+      const data = asObj(at(asObj(await call(api("search", { domain: b.domain, query: "", location: "Ireland", start: String(start), sort_by: "relevance" }))), "data"));
+      const jobs = objs(at(data, "positions"));
+      for (const j of jobs) listed.set(str(at(j, "displayJobId")), j);
+      start += jobs.length;
+      if (jobs.length === 0 || start >= asNum(at(data, "count"))) break;
+    }
+    const seen: string[] = [];
+    const adverts: BoardFetch["adverts"] = [];
+    for (const [reqId, j] of listed) {
+      const pid = str(at(j, "id"));
+      if (!SAFE_ID.test(reqId) || !/^\d{1,20}$/.test(pid)) throw new FetchFailedError(b.board, "unsafe job id in the listing"); // they go into the id and a query
+      const location = eightfoldIrish(j);
+      if (!location) continue;
+      const id = `eightfold:${b.board}:${reqId}`;
+      seen.push(id);
+      if (known.has(id)) continue;
+      let description: string;
+      try {
+        description = text(asStr(at(asObj(at(asObj(await call(api("position_details", { position_id: pid, domain: b.domain, hl: "en" }))), "data")), "jobDescription")));
+      } catch (e) {
+        if (e instanceof FetchFailedError && RATE_LIMITED.test(e.message)) throw e;
+        continue;
+      }
+      adverts.push(job("eightfold", b.board, reqId, b.employer, text(str(get(j, "name"))), location, description, `${b.origin}/careers/job/${pid}`));
     }
     return { seen, adverts };
   });

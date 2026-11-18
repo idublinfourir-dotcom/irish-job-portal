@@ -14,8 +14,11 @@ export const SM = {
   fmr: { employer: "Fidelity", board: "fmr", origin: "https://jobs.fidelity.com", sitemap: "/sitemap.xml", pattern: "^https://jobs\\.fidelity\\.com/ie/jobs/(\\d+)/[^/]+/$", idFrom: "url" as const },
 };
 export const SF = { slug: "salesforce", employer: "Salesforce (SFDC)" };
+export const EF = { employer: "Applied Materials", board: "amat", origin: "https://careers.appliedmaterials.com", domain: "appliedmaterials.com" };
+// Eightfold: two saved details; any other listed job gets the first one's text (the adapter reads only jobDescription from it).
+const EF_DETAILS = ["790314592423", "790319296162"];
 
-/** Answers every call of the seven sites from the fixtures; `over(url, method)` answers first when it returns a Response. 404 otherwise. */
+/** Answers every call of the eight sites from the fixtures; `over(url, method)` answers first when it returns a Response. 404 otherwise. */
 export function sites(over: (url: string, method: string) => Response | undefined = () => undefined) {
   return (c: { url: string; method: string }): Response => {
     const o = over(c.url, c.method);
@@ -31,6 +34,9 @@ export function sites(over: (url: string, method: string) => Response | undefine
     const fid = /^\/ie\/jobs\/(\d+)\//.exec(u.pathname)?.[1];
     if (u.host === "jobs.fidelity.com" && has(`fidelity-${fid}.html`)) return page(read(`fidelity-${fid}.html`));
     if (u.host === "a.sfdcstatic.com") return page(read("salesforce-jobs_2.json"));
+    if (u.host === "careers.appliedmaterials.com" && u.pathname === "/api/pcsx/search") return page(read(`eightfold-amat-search-${u.searchParams.get("start")}.json`));
+    const pid = u.searchParams.get("position_id") ?? "";
+    if (u.host === "careers.appliedmaterials.com" && u.pathname === "/api/pcsx/position_details") return page(read(`eightfold-amat-${EF_DETAILS.includes(pid) ? pid : EF_DETAILS[0]}.json`));
     return page("not found", 404);
   };
 }

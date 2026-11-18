@@ -1,4 +1,4 @@
-// W1c: the one-off move of the saved Workday adverts of the seven employers now read from their own career sites. Each advert whose
+// W1c, W1e: the one-off move of the saved Workday adverts of the eight employers now read from their own career sites. Each advert whose
 // requisition id the new source uses is re-pointed to that source with the new source's id, and its job with it, so the next fetch finds it
 // known: no twin, same job id, same saved jobs. Only plain-node imports (with .ts), so workday-move-cli.ts runs it directly. Constant SQL.
 import type pg from "pg";
@@ -7,7 +7,7 @@ import { inOneTransaction } from "./dete.ts";
 type Db = Pick<pg.Pool, "query" | "connect">;
 
 /** Workday tenant to the kind that reads it now. The board name stays the tenant (packages/fetcher/data/boards.json). */
-export const MOVES: Readonly<Record<string, string>> = { mastercard: "phenom", thermofisher: "phenom", statestreet: "phenom", abbott: "phenom", citi: "sitemap", fmr: "sitemap", salesforce: "salesforce" };
+export const MOVES: Readonly<Record<string, string>> = { mastercard: "phenom", thermofisher: "phenom", statestreet: "phenom", abbott: "phenom", citi: "sitemap", fmr: "sitemap", salesforce: "salesforce", amat: "eightfold" };
 // The Workday id is `workday:<tenant>:<path>`; the path ends in _<requisition id>, with -1, -2 when the requisition was posted again.
 const REQ = /_([A-Za-z0-9.]+(?:-[A-Za-z0-9]{3,})*)(?:-\d{1,2})?$/;
 export const requisition = (externalId: string): string | null => REQ.exec(externalId.split("/").pop() ?? "")?.[1] ?? null;

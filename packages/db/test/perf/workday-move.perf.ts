@@ -1,5 +1,5 @@
-// Performance: the Workday move's statements (W1c) on 100,000 fetched adverts of 40 other boards (20,000 with a job) plus the seven
-// employers' 280 Workday adverts with their jobs, within a page budget. Fake data only.
+// Performance: the Workday move's statements (W1c) on 100,000 fetched adverts of 40 other boards (20,000 with a job) plus the eight
+// employers' 320 Workday adverts with their jobs, within a page budget. Fake data only.
 // MOVE writes, so the measured pass runs in a transaction that is rolled back.
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createTestDb, type TestDb } from "../db";
@@ -9,7 +9,8 @@ import { assertPageBudget, measurePages } from "./pages";
 vi.setConfig({ testTimeout: 300_000, hookTimeout: 300_000 });
 // Measured on 18 Nov 2026: 12,389 pages for 280 moved rows (the reads 144, the move 12,245: about 44 pages a row, almost all of it writing the
 // advert and the job with their indexes, foreign-key checks and job_guard). The budget is 60 pages a moved row.
-export const MOVE_PAGES = 280 * 60;
+// W1e (Applied Materials added): 14,018 pages for 320 rows (the reads 185), about 44 a row.
+export const MOVE_PAGES = 320 * 60; // W1e: eight employers, 320 rows; the same 60 a row
 let db: TestDb;
 const TENANTS = Object.keys(MOVES);
 beforeAll(async () => {
@@ -35,7 +36,7 @@ it("the move's statements stay within the page budget and use the indexes", asyn
     await c.query("begin");
     const targets = (await c.query<{ id: string; board: string }>(ADD_TARGETS, [TENANTS.map((t) => MOVES[t]), TENANTS])).rows;
     const rows = (await c.query<{ id: string; board: string; external_id: string }>(ROWS, [TENANTS])).rows;
-    expect(rows).toHaveLength(280);
+    expect(rows).toHaveLength(320);
     const src = new Map(targets.map((t) => [t.board, t.id]));
     const move = [rows.map((r) => r.id), rows.map((r) => src.get(r.board)), rows.map((r) => `${MOVES[r.board]}:${r.board}:x${r.id}`)];
     const costs = await measurePages(c, [

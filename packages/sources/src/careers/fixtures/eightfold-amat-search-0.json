@@ -1,0 +1,206 @@
+{
+ "status": 200,
+ "error": {
+  "message": "",
+  "body": ""
+ },
+ "data": {
+  "positions": [
+   {
+    "id": 790314592423,
+    "displayJobId": "R2614187",
+    "name": "Customer Support Technician",
+    "locations": [
+     "Leixlip,IRL"
+    ],
+    "standardizedLocations": [
+     "Leixlip, County Kildare, IE"
+    ],
+    "postedTs": 1780099200,
+    "department": "Customer Service & Support",
+    "creationTs": 1772409600,
+    "workLocationOption": "onsite",
+    "atsJobId": "R2614187",
+    "positionUrl": "/careers/job/790314592423"
+   },
+   {
+    "id": 790318327349,
+    "displayJobId": "R2627839",
+    "name": "Central Operations Director - Field Service Organisation",
+    "locations": [
+     "Bernin,FRA",
+     "Treviso,ITA",
+     "Leixlip,IRL",
+     "Dresden,DEU",
+     "Agrate MB,ITA"
+    ],
+    "standardizedLocations": [
+     "Bernin, Auvergne-Rhône-Alpes, FR",
+     "Treviso, Veneto, IT",
+     "Leixlip, County Kildare, IE",
+     "Dresden, SN, DE",
+     "Lombardy,IT"
+    ],
+    "postedTs": 1788825600,
+    "department": "Project/Program Management",
+    "creationTs": 1788307200,
+    "workLocationOption": "onsite",
+    "atsJobId": "R2627839",
+    "positionUrl": "/careers/job/790318327349"
+   },
+   {
+    "id": 790318518742,
+    "displayJobId": "R2628690",
+    "name": "Technical Product Support Engineer III - Implant",
+    "locations": [
+     "Dresden,DEU",
+     "Nijmegen,NLD",
+     "Leixlip,IRL",
+     "Villach,AUT",
+     "Grenoble,FRA"
+    ],
+    "standardizedLocations": [
+     "Dresden, SN, DE",
+     "Nijmegen, GE, NL",
+     "Leixlip, County Kildare, IE",
+     "Villach, Carinthia, AT",
+     "Grenoble, Auvergne-Rhône-Alpes, FR"
+    ],
+    "postedTs": 1789948800,
+    "department": "Engineering",
+    "creationTs": 1789430400,
+    "workLocationOption": "onsite",
+    "atsJobId": "R2628690",
+    "positionUrl": "/careers/job/790318518742"
+   },
+   {
+    "id": 790315416306,
+    "displayJobId": "R2617457",
+    "name": "Field Service - Early Career Engineers",
+    "locations": [
+     "Leixlip,IRL"
+    ],
+    "standardizedLocations": [
+     "Leixlip, County Kildare, IE"
+    ],
+    "postedTs": 1780099200,
+    "department": "Customer Service & Support",
+    "creationTs": 1776038400,
+    "workLocationOption": "onsite",
+    "atsJobId": "R2617457",
+    "positionUrl": "/careers/job/790315416306"
+   },
+   {
+    "id": 790318605719,
+    "displayJobId": "R2629210",
+    "name": "Abatement Lead",
+    "locations": [
+     "Leixlip,IRL"
+    ],
+    "standardizedLocations": [
+     "Leixlip, County Kildare, IE"
+    ],
+    "postedTs": 1790121600,
+    "department": "Customer Service & Support",
+    "creationTs": 1790121600,
+    "workLocationOption": "onsite",
+    "atsJobId": "R2629210",
+    "positionUrl": "/careers/job/790318605719"
+   },
+   {
+    "id": 790312697078,
+    "displayJobId": "R2518309",
+    "name": "Field Service Engineer",
+    "locations": [
+     "Leixlip,IRL"
+    ],
+    "standardizedLocations": [
+     "Leixlip, County Kildare, IE"
+    ],
+    "postedTs": 1780099200,
+    "department": "Customer Service & Support",
+    "creationTs": 1762128000,
+    "workLocationOption": "onsite",
+    "atsJobId": "R2518309",
+    "positionUrl": "/careers/job/790312697078"
+   },
+   {
+    "id": 790317957181,
+    "displayJobId": "R2626678",
+    "name": "Electronics Engineer",
+    "locations": [
+     "Dublin,IRL"
+    ],
+    "standardizedLocations": [
+     "Dublin, D, IE"
+    ],
+    "postedTs": 1789689600,
+    "department": "Engineering",
+    "creationTs": 1787184000,
+    "workLocationOption": "onsite",
+    "atsJobId": "R2626678",
+    "positionUrl": "/careers/job/790317957181"
+   },
+   {
+    "id": 790318395407,
+    "displayJobId": "R2627853",
+    "name": "Productivity & Gross Margin Regional Program Owner",
+    "locations": [
+     "Bernin,FRA",
+     "Treviso,ITA",
+     "Leixlip,IRL",
+     "Dresden,DEU",
+     "Agrate MB,ITA"
+    ],
+    "standardizedLocations": [
+     "Bernin, Auvergne-Rhône-Alpes, FR",
+     "Treviso, Veneto, IT",
+     "Leixlip, County Kildare, IE",
+     "Dresden, SN, DE",
+     "Lombardy,IT"
+    ],
+    "postedTs": 1788912000,
+    "department": "Project/Program Management",
+    "creationTs": 1788307200,
+    "workLocationOption": "onsite",
+    "atsJobId": "R2627853",
+    "positionUrl": "/careers/job/790318395407"
+   },
+   {
+    "id": 790318706379,
+    "displayJobId": "R2629690",
+    "name": "Installation Engineer",
+    "locations": [
+     "Leixlip,IRL"
+    ],
+    "standardizedLocations": [
+     "Leixlip, County Kildare, IE"
+    ],
+    "postedTs": 1790640000,
+    "department": "Customer Service & Support",
+    "creationTs": 1790640000,
+    "workLocationOption": "onsite",
+    "atsJobId": "R2629690",
+    "positionUrl": "/careers/job/790318706379"
+   },
+   {
+    "id": 790318444300,
+    "displayJobId": "R2628534",
+    "name": "Customer Engineer - Shift Manager",
+    "locations": [
+     "Leixlip,IRL"
+    ],
+    "standardizedLocations": [
+     "Leixlip, County Kildare, IE"
+    ],
+    "postedTs": 1791936000,
+    "department": "Customer Service & Support",
+    "creationTs": 1789084800,
+    "workLocationOption": "onsite",
+    "atsJobId": "R2628534",
+    "positionUrl": "/careers/job/790318444300"
+   }
+  ],
+  "count": 13
+ }
+}

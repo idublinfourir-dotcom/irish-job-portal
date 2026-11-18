@@ -1,0 +1,91 @@
+{
+ "status": 200,
+ "error": {
+  "message": "",
+  "body": ""
+ },
+ "data": {
+  "positions": [
+   {
+    "id": 790318444572,
+    "displayJobId": "R2628536",
+    "name": "Site Director - Field Service Operations",
+    "locations": [
+     "Leixlip,IRL"
+    ],
+    "standardizedLocations": [
+     "Leixlip, County Kildare, IE"
+    ],
+    "postedTs": 1789344000,
+    "department": "Customer Service & Support",
+    "creationTs": 1789084800,
+    "workLocationOption": "onsite",
+    "atsJobId": "R2628536",
+    "positionUrl": "/careers/job/790318444572"
+   },
+   {
+    "id": 790319043432,
+    "displayJobId": "R2630371",
+    "name": "EMEA Regional Physical Security Solutions Manager",
+    "locations": [
+     "England-Berkshire,GBR",
+     "Dublin,IRL",
+     "Hoofddorp,NLD",
+     "Leixlip,IRL",
+     "Munich,DEU",
+     "Milan,ITA",
+     "Dresden,DEU",
+     "Grenoble,FRA",
+     "Bernin,FRA"
+    ],
+    "standardizedLocations": [
+     "England,GB",
+     "Dublin, D, IE",
+     "Hoofddorp, NH, NL",
+     "Leixlip, County Kildare, IE",
+     "Munich, BY, DE",
+     "Milan, Lombardy, IT",
+     "Dresden, SN, DE",
+     "Grenoble, Auvergne-Rhône-Alpes, FR",
+     "Bernin, Auvergne-Rhône-Alpes, FR"
+    ],
+    "postedTs": 1793059200,
+    "department": "Facilities and Real Estate",
+    "creationTs": 1791331200,
+    "workLocationOption": "onsite",
+    "atsJobId": "R2630371",
+    "positionUrl": "/careers/job/790319043432"
+   },
+   {
+    "id": 790319296162,
+    "displayJobId": "R2632370",
+    "name": "Data Scientist - EMEA",
+    "locations": [
+     "Eindhoven,NLD",
+     "Dublin,IRL",
+     "Milan,ITA",
+     "England-Berkshire,GBR",
+     "Bernin,FRA",
+     "Grenoble,FRA",
+     "Munich,DEU"
+    ],
+    "standardizedLocations": [
+     "Eindhoven, NB, NL",
+     "Dublin, D, IE",
+     "Milan, Lombardy, IT",
+     "England,GB",
+     "Bernin, Auvergne-Rhône-Alpes, FR",
+     "Grenoble, Auvergne-Rhône-Alpes, FR",
+     "Munich, BY, DE"
+    ],
+    "postedTs": 1793664000,
+    "department": "Engineering",
+    "creationTs": 1793145600,
+    "workLocationOption": "onsite",
+    "atsJobId": "R2632370",
+    "positionUrl": "/careers/job/790319296162"
+   }
+  ],
+  "count": 13
+ }
+}

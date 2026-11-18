@@ -1,9 +1,9 @@
-// Unit: the JSON-LD reader, the Irish filters, the sitemap reader and the three career-site adapters, on saved bodies through the fake fetch.
+// Unit: the JSON-LD reader, the Irish filters, the sitemap reader and the four career-site adapters, on saved bodies through the fake fetch.
 import { describe, expect, it } from "vitest";
 import { FetchFailedError } from "../types";
 import { fake, none, noSleep } from "../ats/testkit";
-import { fetchPhenom, fetchSalesforce, fetchSitemap, jobPosting, readPosting, SALESFORCE_JOBS } from "./careers";
-import { page, PH, read, SF, sites, SM } from "./testkit";
+import { eightfoldIrish, fetchEightfold, fetchPhenom, fetchSalesforce, fetchSitemap, jobPosting, readPosting, SALESFORCE_JOBS } from "./careers";
+import { EF, page, PH, read, SF, sites, SM } from "./testkit";
 
 const posting = (name: string) => readPosting(jobPosting(read(name))!);
 const ld = (...blocks: string[]) => `<html><head>${blocks.map((b) => `<script type="application/ld+json">${b}</script>`).join("")}</head></html>`;
@@ -162,5 +162,69 @@ describe("sitemap", () => {
   it("a sitemap that fails fails the board; an empty one is an empty board", async () => {
     await expect(fetchSitemap(SM.fmr, none, fake(() => page("err", 503)).fetch, noSleep)).rejects.toBeInstanceOf(FetchFailedError);
     expect(await fetchSitemap(SM.fmr, none, fake(() => page("<urlset></urlset>")).fetch, noSleep)).toEqual({ seen: [], adverts: [] });
+  });
+});
+
+describe("eightfold", () => {
+  const SEARCH = "https://careers.appliedmaterials.com/api/pcsx/search?domain=appliedmaterials.com&query=&location=Ireland&start=";
+  const detail = (pid: string) => `https://careers.appliedmaterials.com/api/pcsx/position_details?position_id=${pid}&domain=appliedmaterials.com&hl=en`;
+  it("Irish filter: a Leixlip job is kept, a 7-city job without IRL is dropped, only the Irish places are the location", () => {
+    expect(eightfoldIrish({ locations: ["Leixlip,IRL"] })).toBe("Leixlip, Ireland");
+    expect(eightfoldIrish({ locations: ["Eindhoven,NLD", "Milan,ITA", "England-Berkshire,GBR", "Bernin,FRA", "Grenoble,FRA", "Munich,DEU", "Dresden,DEU"] })).toBe("");
+    expect(eightfoldIrish({ locations: ["England-Berkshire,GBR", "Dublin,IRL", "Leixlip,IRL", "Dublin,IRL"] })).toBe("Dublin, Ireland / Leixlip, Ireland");
+    for (const locations of [undefined, [], ["IRL"], ["Belfast,GBR"], ["Ireland"], [7, null]]) expect(eightfoldIrish({ locations }), JSON.stringify(locations)).toBe("");
+  });
+  it("pages start=0 and start=10 until count 13, then one detail call per new job; ids are eightfold:amat:<R-number>", async () => {
+    const { fetch, calls } = fake(sites());
+    const r = await fetchEightfold(EF, none, fetch, noSleep);
+    expect(calls.slice(0, 2).map((c) => c.url)).toEqual([`${SEARCH}0&sort_by=relevance`, `${SEARCH}10&sort_by=relevance`]);
+    expect(calls).toHaveLength(2 + 13);
+    expect(calls[2]!.url).toBe(detail("790314592423"));
+    expect(r.seen).toHaveLength(13);
+    expect(r.seen.every((id) => /^eightfold:amat:R\d{7}$/.test(id))).toBe(true);
+    expect(r.adverts[0]).toMatchObject({ id: "eightfold:amat:R2614187", source: "eightfold", board: "amat", employer: "Applied Materials", title: "Customer Support Technician", location: "Leixlip, Ireland", url: "https://careers.appliedmaterials.com/careers/job/790314592423" });
+    expect(r.adverts.find((a) => a.id === "eightfold:amat:R2632370")).toMatchObject({ title: "Data Scientist - EMEA", location: "Dublin, Ireland" });
+  });
+  it("the description HTML comes out as text", async () => {
+    const r = await fetchEightfold(EF, none, fake(sites()).fetch, noSleep);
+    const d = r.adverts.find((a) => a.id === "eightfold:amat:R2632370")!.description;
+    expect(d.startsWith("Who We Are")).toBe(true);
+    expect(d).toContain("Applied Materials is the global leader");
+    expect(d).not.toMatch(/<\/?[a-z]|&nbsp;|&amp;/);
+  });
+  it("a known id costs no detail call; a job listed with no Irish place is dropped before its detail call", async () => {
+    const { fetch, calls } = fake(sites());
+    const all = await fetchEightfold(EF, none, fetch, noSleep);
+    calls.length = 0;
+    expect(await fetchEightfold(EF, new Set(all.seen), fetch, noSleep)).toEqual({ seen: all.seen, adverts: [] });
+    expect(calls).toHaveLength(2);
+    const noIrl = read("eightfold-amat-search-10.json").replace(/"Dublin,IRL",\s*/g, "").replace(/,\s*"Leixlip,IRL"/g, "");
+    const two = fake(sites((url) => (url.includes("start=10") ? page(noIrl) : undefined)));
+    const r = await fetchEightfold(EF, none, two.fetch, noSleep);
+    expect(r.seen).toHaveLength(11);
+    expect(r.seen).not.toContain("eightfold:amat:R2632370");
+    expect(two.calls.some((c) => c.url.includes("790319296162"))).toBe(false);
+  });
+  it("a detail call that fails keeps its job seen but saves nothing; one refused for the rate limit fails the board", async () => {
+    const down = fake(sites((url) => (url.includes("position_details") ? page("boom", 500) : undefined)));
+    const r = await fetchEightfold(EF, none, down.fetch, noSleep);
+    expect([r.seen.length, r.adverts.length]).toEqual([13, 0]);
+    const odd = fake(sites((url) => (url.includes("position_details") ? page('{"data":{"jobDescription":7}}') : undefined)));
+    expect((await fetchEightfold(EF, none, odd.fetch, noSleep)).adverts).toEqual([]);
+    const limited = fake(sites((url) => (url.includes("position_details") ? page("slow down", 429) : undefined)));
+    await expect(fetchEightfold(EF, none, limited.fetch, noSleep)).rejects.toThrow(/HTTP 429/);
+  });
+  it("a listing that fails or has the wrong shape fails the board; an empty page stops the paging", async () => {
+    await expect(fetchEightfold(EF, none, fake(() => page("err", 500)).fetch, noSleep)).rejects.toBeInstanceOf(FetchFailedError);
+    await expect(fetchEightfold(EF, none, fake(() => page('{"data":{"count":3}}')).fetch, noSleep)).rejects.toThrow(/unexpected response shape/);
+    await expect(fetchEightfold(EF, none, fake(() => page("<html>challenge</html>")).fetch, noSleep)).rejects.toThrow(/body is not JSON/);
+    const empty = fake(() => page('{"data":{"positions":[],"count":99}}'));
+    expect(await fetchEightfold(EF, none, empty.fetch, noSleep)).toEqual({ seen: [], adverts: [] });
+    expect(empty.calls).toHaveLength(1);
+  });
+  it("pauses PACE.siteCallGapMs between calls", async () => {
+    const waits: number[] = [];
+    await fetchEightfold(EF, none, fake(sites()).fetch, { sleep: async (ms) => void waits.push(ms) });
+    expect(waits).toEqual(Array(14).fill(2000));
   });
 });
