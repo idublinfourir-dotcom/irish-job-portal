@@ -281,6 +281,13 @@
       "when": 1794300036000,
       "tag": "0042_candidate_signals",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794300037000,
+      "tag": "0043_portal_notice_settings",
+      "breakpoints": true
     }
   ]
 }

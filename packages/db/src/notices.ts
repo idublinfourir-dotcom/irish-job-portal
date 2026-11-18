@@ -3,6 +3,7 @@
 // the writers put the company id in params), so every statement filters on the session's user id: another user's notice id matches no row.
 import type pg from "pg";
 import { decodeReviewCursor } from "./account-review";
+import { isObject, only } from "./candidate-route";
 import { validId } from "./search";
 
 export const NOTICE_PAGE = 50;
@@ -44,4 +45,28 @@ export async function markNoticeRead(db: Pick<pg.Pool, "query">, userId: string,
 /** Marks every unread notice of this user read; returns how many. */
 export async function markAllNoticesRead(db: Pick<pg.Pool, "query">, userId: string): Promise<number> {
   return (await db.query(MARK_ALL, [userId])).rowCount ?? 0;
+}
+
+// ===== notice settings (N7) =====
+// One email switch per category, for this login only (every member, any role; no company-wide setting exists). job_expiry_reminder covers the
+// reminders for the jobs this login posted (or, as the owner, the jobs whose poster has gone). account (owner transfer, removal and the other
+// security notices) is always on: no sender reads it, and it may be sent only as true.
+export const PORTAL_CATEGORIES = ["job_expiry_reminder", "account"] as const;
+export const checkPortalSettings = (b: unknown): Record<string, boolean> | null => {
+  if (!isObject(b) || !only(b, PORTAL_CATEGORIES) || !Object.keys(b).length) return null;
+  if (!Object.values(b).every((v) => typeof v === "boolean") || b.account === false) return null;
+  return b as Record<string, boolean>;
+};
+
+export async function getPortalSettings(db: Pick<pg.Pool, "query">, userId: string) {
+  const r = await db.query("select category, enabled from portal_notification_preference where portal_user_id = $1 and channel = 'email'", [userId]);
+  const set = new Map(r.rows.map((x) => [x.category as string, x.enabled as boolean]));
+  return { settings: Object.fromEntries(PORTAL_CATEGORIES.map((k) => [k, k === "account" ? true : (set.get(k) ?? true)])) };
+}
+export async function putPortalSettings(db: Pick<pg.Pool, "query">, userId: string, s: Record<string, boolean>) {
+  const keys = Object.keys(s);
+  await db.query(
+    `insert into portal_notification_preference(portal_user_id, category, channel, enabled) select $1, k, 'email', v from unnest($2::text[], $3::boolean[]) as t(k, v)
+     on conflict (portal_user_id, category, channel) where portal_user_id is not null do update set enabled = excluded.enabled`, [userId, keys, keys.map((k) => s[k])]);
+  return getPortalSettings(db, userId);
 }

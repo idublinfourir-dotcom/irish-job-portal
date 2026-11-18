@@ -1201,6 +1201,64 @@ paths:
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_ORIGIN } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
         '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/notices/settings:
+    get:
+      operationId: portalNoticeSettingsGet
+      summary: My notice settings
+      description: One email switch per category, for this login only. A category never set is on. `job_expiry_reminder` is the reminder 3 days before a job the login posted ends (or, as the account owner, a job whose poster has gone); `account` (owner transfer, removal and other security notices) is always on. Any active portal login.
+      security: [{ portalSession: [] }]
+      x-roles: [any active portal login]
+      responses:
+        '200':
+          description: The settings.
+          content:
+            application/json:
+              schema: &portalNoticeSettings
+                type: object
+                required: [settings]
+                properties:
+                  settings:
+                    type: object
+                    additionalProperties: false
+                    required: [job_expiry_reminder, account]
+                    properties:
+                      job_expiry_reminder: { type: boolean }
+                      account: { const: true }
+              example: { settings: { job_expiry_reminder: true, account: true } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+    put:
+      operationId: portalNoticeSettingsPut
+      summary: Change my notice settings
+      description: At least one key; a key left out keeps its value. `account` may be sent only as true. Origin checked first.
+      security: [{ portalSession: [] }]
+      x-roles: [any active portal login]
+      x-rate-limit: 30 changes per login per 10 minutes
+      x-body-cap: 2048 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                job_expiry_reminder: { type: boolean }
+                account: { const: true }
+            example: { job_expiry_reminder: false }
+      responses:
+        '200':
+          description: The settings after the change.
+          content:
+            application/json:
+              schema: *portalNoticeSettings
+              example: { settings: { job_expiry_reminder: false, account: true } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_ORIGIN } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/TooMany' }
   /api/portal/pay-floors:
     get:
       operationId: portalPayFloorsList
