@@ -55,13 +55,12 @@ describe.each(FLOWS)("$file", ({ file, group, secrets }) => {
 
 describe("backup.yml", () => {
   const yml = read("backup.yml");
-  it("runs once a day at a time clear of the fetch, its watch and the other schedules", () => {
+  it("runs every 6 hours at times clear of the fetch, its watch and the other schedules", () => {
     const cron = [...yml.matchAll(/^\s*- cron: "([^"]+)"/gm)].map((m) => m[1]);
-    expect(cron).toEqual(["47 2 * * *"]);
+    expect(cron).toEqual(["47 */6 * * *"]);
     const taken = readdirSync(dir).filter((f) => f !== "backup.yml").flatMap((f) => [...read(f).matchAll(/^\s*- cron: "([^"]+)"/gm)].map((m) => m[1]!));
     expect(taken.length).toBeGreaterThan(4);
-    for (const t of taken) expect(t.split(" ").slice(0, 2).join(" ")).not.toBe("47 2");
-    expect(yml).toContain('"47 */6 * * *"'); // the every-6-hours line is written in the comment
+    for (const t of taken) for (const h of ["0", "6", "12", "18"]) expect(t.split(" ").slice(0, 2).join(" "), t).not.toBe(`47 ${h}`);
   });
   it("uses Postgres 17 tools, checks them before the backup, and uploads the dump before its manifest", () => {
     expect(named(yml, "Install the Postgres 17 client")).toMatch(/postgresql-client-17[\s\S]*\/usr\/lib\/postgresql\/17\/bin >> "\$GITHUB_PATH"/);

@@ -1,5 +1,5 @@
 // Staff review of employer and agency accounts (#186, #187). GET lists the open items or shows one (?id=); POST claims, releases, approves,
-// asks for more or rejects. Every call needs a signed-in staff member; the account_reviewer role check is inside each database call.
+// asks for more (with an optional question for the employer) or rejects. Every call needs a signed-in staff member; the account_reviewer role check is inside each database call.
 import { StaffRefused, staffSettings } from "@portal/auth";
 import { approveAccount, askForMoreInfo, claimReview, getAccountReview, getPool, listAccountReviews, QueueRefused, rejectAccount, releaseReview } from "@portal/db";
 import { BadRequest, checkLength, checkOrigin, parseBody, statusFor } from "../../../lib/account-review";
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     else {
       const d =
         b.action === "approve" ? await approveAccount(db, staff, b.itemId, { addDomain: b.addDomain })
-        : b.action === "ask_more" ? await askForMoreInfo(db, staff, b.itemId, b.reason)
+        : b.action === "ask_more" ? await askForMoreInfo(db, staff, b.itemId, b.reason, b.question)
         : await rejectAccount(db, staff, b.itemId, b.reason!);
       return Response.json({ ok: true, ...d });
     }

@@ -150,7 +150,7 @@ export async function releaseReview(db: Db, staffUserId: string, itemId: string 
 
 // The item and its organisation, locked, so two reviewers cannot decide one item at once. The claimant is the active account owner.
 export const REVIEW_LOCK =
-  "select r.status, r.claimed_by_staff_user_id, o.id as organisation_id, o.status as organisation_status, o.signup_path, u.email as claimant_email, " +
+  "select r.status, r.claimed_by_staff_user_id, o.id as organisation_id, o.status as organisation_status, o.signup_path, u.id as claimant_id, u.email as claimant_email, " +
   "u.status as claimant_status, u.deleted_at is not null as claimant_deleted, " +
   // a ban added after the claim: the owner's email domain, or one of the company's CRO numbers (the same two checks claim_organisation makes)
   "exists (select 1 from ban b where b.email_domain = lower(split_part(u.email, '@', 2)) or b.email_address = lower(u.email) or b.cro_number in " +
@@ -159,12 +159,14 @@ export const REVIEW_LOCK =
   "left join membership m on m.organisation_id = o.id and m.role = 'account_owner' and m.status = 'active' left join portal_user u on u.id = m.portal_user_id " +
   "where r.id = $1::bigint and r.queue = 'account_review' for update of r, o";
 type Locked = {
-  status: string; claimed_by_staff_user_id: string | null; organisation_id: string; organisation_status: string; signup_path: string | null; claimant_email: string | null;
+  status: string; claimed_by_staff_user_id: string | null; organisation_id: string; organisation_status: string; signup_path: string | null; claimant_id: string | null; claimant_email: string | null;
   claimant_status: string | null; claimant_deleted: boolean | null; claimant_banned: boolean;
 };
 
-// One statement for the organisation, the item and the audit row. $1 item, $2 organisation, $3 staff, $4 new organisation status, $5 outcome,
-// $6 action, $7 reason code, $8 audit "after", $9 the organisation's status as locked (the audit "before"). Reason codes only, never free text (#182).
+// One statement for the organisation, the item, the audit row and (N4) the owner's portal notice and queued email. $1 item, $2 organisation, $3 staff,
+// $4 new organisation status, $5 outcome, $6 action, $7 reason code, $8 audit "after", $9 the organisation's status as locked (the audit "before"),
+// $10 the owner's portal user id (null: no owner, so no notice), $11 the template, $12 the notice params (decisionNotice). Reason codes only in the audit
+// row, never free text (#182). One statement, so the notice and the email are written with the decision or not at all.
 // The organisation must still be pending_review or needs_info. Ask for more ($5 = needs_info) leaves the item open and unclaimed: it stays the one
 // open item, so a reviewer can claim it again and approve or reject; every other outcome closes it.
 export const REVIEW_DECIDE =
@@ -175,7 +177,10 @@ export const REVIEW_DECIDE =
   "claimed_at = case when $5::text = 'needs_info' then null else claimed_at end, " +
   // a new question clears the owner's earlier answer (#197), so staff never read an answer to a question that was since replaced
   "detail = case when $5::text = 'needs_info' then detail - 'answer' - 'answered_at' else detail end, decided_by_staff_user_id = $3, decided_at = now(), outcome = $5 " +
-  "where id = $1::bigint and status = 'claimed' and claimed_by_staff_user_id = $3 and exists (select 1 from o) returning id) " +
+  "where id = $1::bigint and status = 'claimed' and claimed_by_staff_user_id = $3 and exists (select 1 from o) returning id), " +
+  // #93's writers notify the account owner only; these do the same. No dedupe key: the locks make each decision happen once, and ask for more may repeat.
+  "n as (insert into notification(portal_user_id, category, template_key, params) select $10::text, 'account', $11::text, $12::jsonb from r where $10::text is not null), " +
+  "e as (insert into email_outbox(template, portal_user_id, params) select $11::text, $10::text, $12::jsonb from r where $10::text is not null) " +
   "insert into audit_event(kind, actor_staff_user_id, action, object_type, object_id, changed_columns, before, after, reason_code, source) " +
   "select 'admin_action', $3, $6, 'organisation', $2::text, '{status}', jsonb_build_object('status', $9::text), $8::jsonb, $7, 'panel' from r returning id";
 
@@ -189,11 +194,25 @@ async function lockForDecision(c: pg.PoolClient, id: string, staffUserId: string
 }
 
 export type Decided = { organisationId: string; organisationStatus: string; domainAdded: string | null };
+// N4: the template and params of the notice and email for each decision. Approve names the company; ask for more adds the reason code and the
+// reviewer's question (written for the employer); reject adds the reason code only. Nothing else from staff goes in (no notes).
+export const DECISION_TEMPLATE = { approved: "account_approved", needs_info: "account_needs_info", rejected: "account_rejected" } as const;
+export type Outcome = keyof typeof DECISION_TEMPLATE;
+export function decisionNotice(outcome: Outcome, organisationId: string, reason: string, question?: string): { template: string; params: Record<string, string> } {
+  const params: Record<string, string> = { organisationId };
+  if (outcome !== "approved") params.reason = reason;
+  if (outcome === "needs_info" && question !== undefined) params.question = question;
+  return { template: DECISION_TEMPLATE[outcome], params };
+}
+
 async function decide(
-  c: pg.PoolClient, id: string, staffUserId: string, r: Locked, status: string, outcome: string, reason: string, extraAfter: object = {},
+  c: pg.PoolClient, id: string, staffUserId: string, r: Locked, status: string, outcome: Outcome, reason: string, extraAfter: object = {}, question?: string,
 ): Promise<void> {
   const after = JSON.stringify({ status, ...extraAfter });
-  const w = await c.query(REVIEW_DECIDE, [id, r.organisation_id, staffUserId, status, outcome, `account_review.${outcome}`, reason, after, r.organisation_status]);
+  const n = decisionNotice(outcome, r.organisation_id, reason, question);
+  const w = await c.query(REVIEW_DECIDE, [
+    id, r.organisation_id, staffUserId, status, outcome, `account_review.${outcome}`, reason, after, r.organisation_status, r.claimant_id, n.template, JSON.stringify(n.params),
+  ]);
   if (w.rowCount !== 1) throw new Error("the decision did not write exactly one audit row"); // rolls back; the locks above make this unreachable
 }
 
@@ -256,17 +275,27 @@ const checkReason = (reason: unknown): string => {
   if (typeof reason !== "string" || !REASON.test(reason)) throw new QueueRefused("bad_reason");
   return reason;
 };
+export const QUESTION_MAX = 1000; // characters, the same cap and rule as the employer's answer (#219)
+/** The reviewer's question for "ask for more": trimmed, 1 to QUESTION_MAX characters, no control or format character. Missing is allowed (undefined). */
+export function checkQuestion(q: unknown): string | undefined {
+  if (q === undefined) return undefined;
+  const t = typeof q === "string" ? q.trim() : "";
+  if (t.length < 1 || [...t].length > QUESTION_MAX || /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(t)) throw new QueueRefused("bad_question");
+  return t;
+}
 
 /**
  * Ask for more information: the organisation becomes needs_info and the item goes back to open (unclaimed). It stays the company's one open item, so
  * a reviewer can claim it again and approve or reject at any time, and the answer path (not built yet) reuses it. A needs_info company that never
  * answers is dealt with by the 30 day claim_needs_info retention rule (migration 0011), which also drops the item. The reason is a code; the default is "needs_info".
+ * The question (plain text for the employer, checkQuestion) goes in the owner's notice and queued email only, never the audit row.
  */
-export async function askForMoreInfo(db: Db, staffUserId: string, itemId: string | number, reason: string = "needs_info"): Promise<Decided> {
+export async function askForMoreInfo(db: Db, staffUserId: string, itemId: string | number, reason: string = "needs_info", question?: string): Promise<Decided> {
   const code = checkReason(reason);
+  const text = checkQuestion(question);
   return acting(db, staffUserId, itemId, async (c, id) => {
     const r = await lockForDecision(c, id, staffUserId);
-    await decide(c, id, staffUserId, r, "needs_info", "needs_info", code);
+    await decide(c, id, staffUserId, r, "needs_info", "needs_info", code, {}, text);
     return { organisationId: r.organisation_id, organisationStatus: "needs_info", domainAdded: null };
   });
 }

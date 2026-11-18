@@ -2,14 +2,14 @@
 // unit tests cover them alone.
 
 export type Action = "claim" | "release" | "approve" | "ask_more" | "reject";
-export type Body = { action: Action; itemId: string; addDomain?: boolean; reason?: string };
+export type Body = { action: Action; itemId: string; addDomain?: boolean; reason?: string; question?: string };
 
 /** A body or Origin problem, as a short code the route turns into 400 or 403. */
 export class BadRequest extends Error {}
 
 const ACTIONS: readonly string[] = ["claim", "release", "approve", "ask_more", "reject"];
-const FIELDS = new Set(["action", "itemId", "addDomain", "reason"]);
-export const MAX_BODY = 1000; // characters; the biggest real body is about 100
+const FIELDS = new Set(["action", "itemId", "addDomain", "reason", "question"]);
+export const MAX_BODY = 4500; // bytes by header, characters by text; the biggest real body is ask for more with a 1,000 character question (up to 4 bytes each)
 
 /** The content-length header, when there is one, must not be over the limit: checked before the body is read (a missing or odd header passes; parseBody still checks the text). */
 export function checkLength(header: string | null): void {
@@ -32,6 +32,7 @@ export function parseBody(text: string): Body {
   if (typeof b.itemId !== "string" || !/^[0-9]{1,19}$/.test(b.itemId)) throw new BadRequest("bad_item_id");
   if (b.addDomain !== undefined && (typeof b.addDomain !== "boolean" || b.action !== "approve")) throw new BadRequest("bad_body");
   if (b.reason !== undefined && (typeof b.reason !== "string" || (b.action !== "ask_more" && b.action !== "reject"))) throw new BadRequest("bad_body");
+  if (b.question !== undefined && (typeof b.question !== "string" || b.action !== "ask_more")) throw new BadRequest("bad_body"); // its text is checked by checkQuestion
   if (b.action === "reject" && b.reason === undefined) throw new BadRequest("bad_reason");
   return b as Body;
 }
@@ -42,7 +43,7 @@ export function checkOrigin(origin: string | null, own: string): void {
 }
 
 const STATUS = new Map<string, number>(Object.entries({
-  bad_body: 400, bad_action: 400, bad_item_id: 400, bad_reason: 400, bad_cursor: 400, bad_input: 400,
+  bad_body: 400, bad_action: 400, bad_item_id: 400, bad_reason: 400, bad_question: 400, bad_cursor: 400, bad_input: 400,
   bad_origin: 403, not_reviewer: 403, not_active_staff: 403,
   not_found: 404,
   already_decided: 409, not_claimed: 409, not_claimer: 409, claimed_by_other: 409, organisation_not_pending: 409, has_permit_history: 409,
