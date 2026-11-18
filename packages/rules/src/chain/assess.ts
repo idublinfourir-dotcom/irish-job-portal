@@ -16,6 +16,7 @@ import {
 import { cpHead, py } from "../readers/pyre";
 import type { Minimums } from "../snapshot";
 import type { Assessment, Bucket, Sector, Stage } from "../types";
+import { CARE_CODES, HOSPITALITY_CODES } from "./sectors";
 
 /** The shape of `RawAdvert` (packages/sources/src/types.ts) that the chain reads. Copied: this package does not depend on `@portal/sources`. */
 export type AdvertInput = {
@@ -88,12 +89,14 @@ const IT_CONTEXT = py(
   String.raw`\b(software|cloud|aws|azure|gcp|saas|oracle|sap|salesforce|microsoft|dynamics|servicenow|workday|data platform|api|devops|agile|it systems?|erp|crm|python|java|sql)\b`,
   "i",
 );
-// run_day.py:58-64, in this order.
+// run_day.py:58-64, in this order, then care and hospitality (#257, not in the Python; the code sets do not overlap, so the order among them is free).
 const SECTORS: readonly (readonly [Exclude<Sector, "other" | "pharma and science">, ReadonlySet<string>])[] = [
   ["health", new Set(["2211", "2212", "2213", "2214", "2217", "2218", "2219", "2221", "2222", "2223", "2229", "2231", "2232", "2442", "3213", "3218"])],
   ["IT", new Set(["1136", "2133", "2134", "2135", "2136", "2139", "2425"])],
   ["construction and engineering", new Set(["2121", "2122", "2123", "2124", "2126", "2127", "2129", "2431", "2432", "2433", "2434", "2435", "2436", "1122", "3122", "3531", "2463"])],
   ["finance", new Set(["2421", "2424", "2419"])],
+  ["care", new Set(CARE_CODES)],
+  ["hospitality", new Set(HOSPITALITY_CODES)],
 ];
 const PHARMA_CODES = new Set(["2111", "2112", "2461", "2462"]);
 

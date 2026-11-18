@@ -9,6 +9,10 @@ import { rulesMatcher } from "../../../matcher/src/rules";
 import { cleanEmployerName } from "../employers";
 import { CHAIN_RULES_V1 } from "../snapshot";
 import { assess, type AdvertInput } from "./assess";
+import { CARE_CODES, HOSPITALITY_CODES } from "./sectors";
+
+// #257: the sector the chain now gives where the Python said "other"; null for every other code, whose expectation is unchanged.
+const newSector = (code: string | null) => (code && CARE_CODES.includes(code) ? "care" : code && HOSPITALITY_CODES.includes(code) ? "hospitality" : null);
 
 type Saved = { id: string; source: string; board?: string; employer?: string | null; title?: string | null; location?: string | null; description?: string | null; url?: string; employment_type?: string | null; salary_box?: string | null };
 type Ref = Record<string, unknown> & { id: string; stage: string; bucket: string };
@@ -54,7 +58,8 @@ test("the TypeScript chain matches the Python on every saved advert", async () =
       ["salary_hi", a.salaryHigh, ref.salary_hi],
       ["agency", a.agency, ref.agency === 1],
       ["reads_advert", a.readsAdvert, ref.reads_advert === 1],
-      ["sector", a.sector, ref.sector],
+      // NEW BEHAVIOUR (#257, 18 November 2026): the Python has no care or hospitality sector; for those codes it said "other".
+      ["sector", a.sector, ref.sector === "other" ? newSector(a.occupationCode) ?? ref.sector : ref.sector],
       ["reason", a.reason, ref.reason],
       ["sponsor_yes", a.sponsorYes, ref.sponsor_yes],
       // NEW BEHAVIOUR (10 November 2026): the scam rule drops warnings against scams, so it may clear a flag the Python set, never add one.

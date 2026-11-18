@@ -461,7 +461,7 @@ describe("General Employment Permit posts", () => {
     const c = await company({ name: "Fake Care Home Limited" });
     const r = await post(c.owner.cookie, care);
     expect([r.status, r.json]).toMatchObject([200, { status: "live", badge: "sponsor_confirmed", passRoute: "stated_pay" }]);
-    expect(await job(r.json!.jobId)).toMatchObject({ permit_type: "general", badge: "sponsor_confirmed", pass_route: "stated_pay", sector: "other", status: "live" });
+    expect(await job(r.json!.jobId)).toMatchObject({ permit_type: "general", badge: "sponsor_confirmed", pass_route: "stated_pay", sector: "care", status: "live" }); // #257: 6145 is care
     const before = await jobCount(c.org);
     const nostate = await post(c.owner.cookie, { ...care, statement: undefined });
     expect([nostate.status, nostate.json]).toEqual([422, { code: "STATEMENT_REQUIRED" }]);

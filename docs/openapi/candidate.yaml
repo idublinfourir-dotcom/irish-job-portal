@@ -96,7 +96,7 @@ components:
       example: '2136'
     Sector:
       type: string
-      enum: [health, IT, construction and engineering, finance, pharma and science, other]
+      enum: [health, IT, construction and engineering, finance, care, hospitality, pharma and science, other]
     County:
       type: string
       description: One of the 26 counties of the Republic of Ireland.

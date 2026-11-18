@@ -25,8 +25,8 @@ export type Stage =
 // run_day.py:107-123
 export type Bucket = "stated_pay" | "public_hse" | "public_s38" | "big_company" | "no_salary" | "queue" | "rejected";
 
-// run_day.py:56-76 (SECTORS keys, "pharma and science", "other")
-export type Sector = "health" | "IT" | "construction and engineering" | "finance" | "pharma and science" | "other";
+// run_day.py:56-76 (SECTORS keys, "pharma and science", "other"), plus care and hospitality (#257, chain/sectors.ts)
+export type Sector = "health" | "IT" | "construction and engineering" | "finance" | "care" | "hospitality" | "pharma and science" | "other";
 
 export type SalaryCheck = "pass" | "range crosses" | "below" | "not stated"; // classify.py:173-177
 export type ContractResult = "ok" | "short" | "unclear"; // classify.py:125-139

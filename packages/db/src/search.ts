@@ -20,8 +20,8 @@ export const RULES_CHECKED_ON = RULES_DATE;
 export class BadSearchInput extends Error {}
 
 // ===== filters (S1, S2, #247): the alert filters with the alert run's meaning (0024), plus keyword, posted within and pay stated =====
-// The six sectors the rules give a job (types.ts, Sector); a job is stored with one of them.
-export const ALERT_SECTORS: readonly Sector[] = ["health", "IT", "construction and engineering", "finance", "pharma and science", "other"];
+// The eight sectors the rules give a job (types.ts, Sector; care and hospitality since #257); a job is stored with one of them.
+export const ALERT_SECTORS: readonly Sector[] = ["health", "IT", "construction and engineering", "finance", "care", "hospitality", "pharma and science", "other"];
 // The 26 counties of the Republic (the same list as apps/portal/lib/jobs.ts and packages/fetcher/src/county.ts).
 export const COUNTIES = [
   "Carlow", "Cavan", "Clare", "Cork", "Donegal", "Dublin", "Galway", "Kerry", "Kildare", "Kilkenny", "Laois", "Leitrim", "Limerick",

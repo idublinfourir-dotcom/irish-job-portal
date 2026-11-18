@@ -30,7 +30,7 @@ Rules, matcher and sources touch neither the database nor the network: every out
 8. A test posting overrides all of the above (stage `0 test posting`).
 9. The Irish employer check by evidence, skipped when the stage already starts with `3` or `4`. "Unsure" goes to the admin queue only for a pass or a stage `8`.
 10. Doctor grades with no 2 years stated, and "permanent / specified purpose" (#95), for a pass or a stage `8`.
-11. The public pay tier, the bucket, whether an AI step would read the advert, and the sector.
+11. The public pay tier, the bucket, whether an AI step would read the advert, and the sector. The sector follows the Python (`run_day.py`: health, IT, construction and engineering, finance, pharma and science, other) plus two it does not have (#257): `care` (SOC 6145, 6146, 6147, 1242) and `hospitality` (5434, 5435, 5436, 1221, 1223, 1224, 9272, 9273, 9274), in `packages/rules/src/chain/sectors.ts`. A pharma employer still gives `pharma and science` first. On those codes the chain no longer matches the Python, on purpose (the parity run expects the new sector there).
 
 ## The AI matcher and the 98% gate (`packages/matcher/src/ai`, `src/gate`)
 

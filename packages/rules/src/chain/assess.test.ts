@@ -284,6 +284,17 @@ describe("sector", () => {
     expect(await sector("2231", { employer: "Pfizer Ireland" })).toBe("pharma and science");
   });
 
+  // #257 (P6): care and hospitality are not in the Python; the codes next to them keep their old sector.
+  it("is care or hospitality for those codes, and unchanged for the codes beside them", async () => {
+    for (const c of ["6145", "6146", "6147", "1242"]) expect(await sector(c), c).toBe("care");
+    for (const c of ["5434", "5435", "5436", "1221", "1223", "1224", "9272", "9273", "9274"]) expect(await sector(c), c).toBe("hospitality");
+    for (const c of ["6141", "6143", "6144", "6148", "1241", "1225", "5433", "9271", "9275"]) expect(await sector(c), c).toBe("other");
+    expect(await sector("2231")).toBe("health");
+    expect(await sector("3218")).toBe("health");
+    expect(await sector("6145", { employer: "Pfizer Ireland" })).toBe("pharma and science"); // the employer rule still wins
+    expect(await sector("5434", { employer: "Abbott" })).toBe("pharma and science");
+  });
+
   it("settles 212x/213x by IT words in the title and the first 2,000 characters", async () => {
     expect(await sector("212x/213x", { description: "We use Python daily. Salary €60,000." })).toBe("IT");
     expect(await sector("212x/213x", { description: "Pumps. Salary €60,000." })).toBe("construction and engineering");
