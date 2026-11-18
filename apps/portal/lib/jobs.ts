@@ -97,14 +97,20 @@ export function checkEdit(b: unknown): (Post & { jobId: string }) | null {
   return jobId && post ? { ...post, jobId } : null;
 }
 export type Hire = "yes" | "no";
-export function checkRenew(b: unknown): { jobId: string; hireAnswer: Hire | null } | null {
-  if (!isObject(b) || !only(b, ["jobId", "hireAnswer"])) return null;
+function checkHire(b: unknown, keys: string[]): { jobId: string; hireAnswer: Hire | null } | null {
+  if (!isObject(b) || !only(b, keys)) return null;
   const jobId = id(b.jobId), h = b.hireAnswer;
   if (!jobId || (h !== undefined && h !== "yes" && h !== "no")) return null;
   return { jobId, hireAnswer: h ?? null };
 }
+/** The renewal body: the job, the optional hire answer (#49) and the optional exception tick, asked again when the role is an Ineligible entry with an exception. */
+export function checkRenew(b: unknown): { jobId: string; hireAnswer: Hire | null; exceptionConfirmed: boolean } | null {
+  const r = checkHire(b, ["jobId", "hireAnswer", "exceptionConfirmed"]);
+  const e = (b as { exceptionConfirmed?: unknown } | null)?.exceptionConfirmed;
+  return r && (e === undefined || typeof e === "boolean") ? { ...r, exceptionConfirmed: e === true } : null;
+}
 export function checkClose(b: unknown): { jobId: string; hireAnswer: Hire } | null {
-  const r = checkRenew(b);
+  const r = checkHire(b, ["jobId", "hireAnswer"]);
   return r && r.hireAnswer ? { jobId: r.jobId, hireAnswer: r.hireAnswer } : null; // #49: closing always asks "Did you hire someone through us?"
 }
 
@@ -318,18 +324,41 @@ export async function jobEdit(request: Request): Promise<Response> {
   });
 }
 
+// The live job as the rules read it, locked: its stored fields, its advert text, the company's name and whether a statement is signed.
+const RENEW_LOCK =
+  "select j.title, j.county, j.occupation_code, j.contract_type, j.contract_months, j.salary_low, j.salary_high, j.pay_grade, j.health_insurance_eur, j.weekly_hours, " +
+  "j.own_page_url, j.permit_type, j.permit_employer_kind, j.permit_employer_name, t.advert_text, o.display_name, " +
+  "exists (select 1 from sponsorship_statement s where s.job_id = j.id and s.superseded_at is null) as signed " +
+  "from job j join organisation o on o.id = j.organisation_id left join job_text t on t.job_id = j.id " +
+  "where j.id = $1 and j.organisation_id = $2 and j.source in ('employer','agency') and j.status = 'live' for update of j";
+// $5 'live' renews for 30 days from now; 'under_review' keeps the end date and moves the job to Under review. The hire answer is kept either way.
 const RENEW =
-  "update job set closes_at = now() + interval '30 days', posted_by_membership_id = $3, hire_answer = coalesce($4, hire_answer), " +
-  "hire_answered_at = case when $4::text is null then hire_answered_at else now() end, hire_answered_by_membership_id = case when $4::text is null then hire_answered_by_membership_id else $3 end " +
-  "where id = $1 and organisation_id = $2 and source in ('employer','agency') and status = 'live' returning id, closes_at";
-/** POST /api/portal/jobs/renew: a live job gets a new 30 days from now (#48), with the optional "Did you hire someone through us?" answer (#49). */
+  "update job set status = $5::text, closes_at = case when $5::text = 'live' then now() + interval '30 days' else closes_at end, posted_by_membership_id = $3, " +
+  "hire_answer = coalesce($4, hire_answer), hire_answered_at = case when $4::text is null then hire_answered_at else now() end, " +
+  "hire_answered_by_membership_id = case when $4::text is null then hire_answered_by_membership_id else $3 end where id = $1 and organisation_id = $2 returning id, status, closes_at";
+/**
+ * POST /api/portal/jobs/renew: a live job gets a new 30 days from now (#48), with the optional "Did you hire someone through us?" answer (#49).
+ * The rules in force run first (#254): a job that no longer passes, or would now need a staff check, goes to Under review instead (its end date stays),
+ * and the reply says why. An Ineligible entry with an exception is asked again (422 with the wording), not moved, until the tick comes back.
+ */
 export async function jobRenew(request: Request): Promise<Response> {
   const w = await writer(request, checkRenew);
   if (w instanceof Response) return w;
   const { who, body } = w;
   return inTx(async (c) => {
-    const r = (await c.query(RENEW, [body.jobId, who.organisationId, who.membershipId, body.hireAnswer])).rows[0];
-    return r ? ok({ jobId: r.id, closesAt: r.closes_at }) : no(404, "JOB_NOT_FOUND");
+    const j = (await c.query(RENEW_LOCK, [body.jobId, who.organisationId])).rows[0];
+    if (!j) return no(404, "JOB_NOT_FOUND");
+    const p: Post = { status: "live", title: j.title, description: j.advert_text ?? "", county: j.county, occupationCode: j.occupation_code, contractType: j.contract_type,
+      contractMonths: j.contract_months, salaryLow: j.salary_low, salaryHigh: j.salary_high, payGrade: j.pay_grade, healthInsuranceEur: j.health_insurance_eur,
+      weeklyHours: j.weekly_hours ?? 39, ownPageUrl: j.own_page_url, clientName: j.permit_employer_kind === "client" ? j.permit_employer_name : null,
+      statement: j.signed ? { signerName: "", signerTitle: "", writtenAuthority: false } : null, // rulesFor asks only whether one is signed
+      permitType: j.permit_type, exceptionConfirmed: body.exceptionConfirmed };
+    const v = await rulesFor(p, p.clientName ?? j.display_name, await getRules(c));
+    if (!v.ok && v.exception && !body.exceptionConfirmed) return verdictReply(v);
+    const status = v.ok && v.status === "live" ? "live" : "under_review";
+    const r = (await c.query(RENEW, [body.jobId, who.organisationId, who.membershipId, body.hireAnswer, status])).rows[0];
+    if (status === "live") return ok({ jobId: r.id, status, closesAt: r.closes_at });
+    return ok({ jobId: r.id, status, closesAt: r.closes_at, code: v.ok ? "NEEDS_REVIEW" : v.code, ...(!v.ok && v.stage ? { stage: v.stage } : {}) });
   });
 }
 

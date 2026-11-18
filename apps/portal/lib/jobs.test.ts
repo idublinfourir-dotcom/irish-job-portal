@@ -72,8 +72,11 @@ describe("checkEdit, checkRenew, checkClose", () => {
     expect(checkEdit({ ...good, jobId: "5", extra: 1 })).toBeNull();
   });
   it("renew takes an optional hire answer, close needs one (#49)", () => {
-    expect(checkRenew({ jobId: "3" })).toEqual({ jobId: "3", hireAnswer: null });
-    expect(checkRenew({ jobId: "3", hireAnswer: "yes" })).toEqual({ jobId: "3", hireAnswer: "yes" });
+    expect(checkRenew({ jobId: "3" })).toEqual({ jobId: "3", hireAnswer: null, exceptionConfirmed: false });
+    expect(checkRenew({ jobId: "3", hireAnswer: "yes" })).toEqual({ jobId: "3", hireAnswer: "yes", exceptionConfirmed: false });
+    expect(checkRenew({ jobId: "3", exceptionConfirmed: true })).toEqual({ jobId: "3", hireAnswer: null, exceptionConfirmed: true });
+    for (const b of [{ jobId: "3", exceptionConfirmed: "true" }, { jobId: "3", exceptionConfirmed: 1 }, { jobId: "3", x: 1 }, null]) expect(checkRenew(b)).toBeNull();
+    expect(checkClose({ jobId: "3", hireAnswer: "no", exceptionConfirmed: true })).toBeNull(); // the tick is a renewal field only
     expect(checkClose({ jobId: "3", hireAnswer: "no" })).toEqual({ jobId: "3", hireAnswer: "no" });
     for (const b of [{ jobId: "3" }, { jobId: 3, hireAnswer: "no" }, { jobId: "03", hireAnswer: "no" }, { jobId: "3", hireAnswer: "maybe" }, { jobId: "3", hireAnswer: "no", x: 1 }, { hireAnswer: "no" }, null]) expect(checkClose(b)).toBeNull();
   });

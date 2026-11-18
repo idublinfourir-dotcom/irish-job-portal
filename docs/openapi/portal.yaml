@@ -895,7 +895,11 @@ paths:
     post:
       operationId: portalJobRenew
       summary: Renew a live job for 30 more days
-      description: A live job of the company gets a new end 30 days from now, with the optional answer to "Did you hire someone through us?". Origin checked first.
+      description: >-
+        A live job of the company gets a new end 30 days from now, with the optional answer to "Did you hire someone through us?". Origin checked first.
+        The rules in force run first (#254): a job that no longer passes them, or whose advert would now need a staff check, is not renewed but goes to
+        Under review (its end date stays), and the 200 reply says so with `status` and `code`. A pay edit that passes brings it back live (#93).
+        A role on the Ineligible list with an exception is asked again: 422 with the wording, nothing changed, until `exceptionConfirmed` is true.
       security: [{ portalSession: [] }]
       x-roles: [account_owner, recruiter, poster]
       x-rate-limit: posts, edits, renewals and closes together, 30 per login per 10 minutes
@@ -911,19 +915,32 @@ paths:
               properties:
                 jobId: { $ref: '#/components/schemas/Id' }
                 hireAnswer: { type: string, enum: [yes, no] }
+                exceptionConfirmed: { type: boolean, description: The employer meets the exception named by an Ineligible entry; asked again on each renewal. }
             example: { jobId: '5501', hireAnswer: no }
       responses:
         '200':
-          description: Renewed.
+          description: "Renewed (`status` live), or moved to Under review instead (`status` under_review, `code` the rule that failed, as for a new post, or `NEEDS_REVIEW` when the advert now needs a staff check; `stage` when the rules chain stopped it). `closesAt` is the job's end date either way."
           content:
             application/json:
-              schema: { type: object, required: [jobId, closesAt], properties: { jobId: { $ref: '#/components/schemas/Id' }, closesAt: { $ref: '#/components/schemas/Timestamp' } } }
-              example: { jobId: '5501', closesAt: '2026-12-18T09:30:00.000Z' }
+              schema:
+                type: object
+                additionalProperties: false
+                required: [jobId, status, closesAt]
+                properties:
+                  jobId: { $ref: '#/components/schemas/Id' }
+                  status: { type: string, enum: [live, under_review] }
+                  closesAt: { $ref: '#/components/schemas/Timestamp' }
+                  code: { type: string, enum: [GENERAL_RULES_NOT_SET, OCCUPATION_INELIGIBLE, QUOTA_FULL, OCCUPATION_NOT_ON_LIST, CONTRACT_TOO_SHORT, RULES_FAILED, PAY_REQUIRED, PAY_BELOW_MINIMUM, STATEMENT_REQUIRED, NEEDS_REVIEW] }
+                  stage: { type: string }
+              examples:
+                renewed: { value: { jobId: '5501', status: live, closesAt: '2026-12-18T09:30:00.000Z' } }
+                underReview: { value: { jobId: '5501', status: under_review, closesAt: '2026-11-20T09:30:00.000Z', code: PAY_BELOW_MINIMUM } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or a database refusal. `NOT_A_MEMBER`: no company. `NOT_A_POSTER`: a viewer. `COMPANY_NOT_ACTIVE`: the company cannot post.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_A_POSTER } } } }
         '404': { description: "`JOB_NOT_FOUND`: no live employer or agency job of this company with that id.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: JOB_NOT_FOUND } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '422': { description: "`OCCUPATION_INELIGIBLE` with the `exception` wording: the role is an Ineligible entry with an exception and `exceptionConfirmed` was not true. Nothing changed.", content: { application/json: { schema: { $ref: '#/components/schemas/RulesVerdict' } } } }
         '429': { $ref: '#/components/responses/TooMany' }
   /api/portal/jobs/close:
     post:

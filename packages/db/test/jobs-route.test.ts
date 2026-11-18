@@ -10,8 +10,9 @@ import { fixtures } from "./fixtures";
 
 // Statements counted on every pg.Client.query call, measured on 12 November 2026: a live post 9 (requirePortal 3, rate count 1, begin, the
 // company, the job, its text, commit), with a statement 12 (the text, supersede, the statement); the list 4 (requirePortal 3, the function).
+// A renewal 8 (18 November 2026, P14: requirePortal 3, rate count 1, begin, the locked job with its text, the update, commit; the rules are cached), median 3 ms.
 // Times, median of 9 calls, measured warm: post 5 to 8 ms, list of 60 jobs 3 to 5 ms. Budgets are about 4 times that, with a floor for a busy laptop.
-const BUDGET = { post: 9, signed: 12, list: 4, postMs: 40, listMs: 25 };
+const BUDGET = { post: 9, signed: 12, list: 4, renew: 8, postMs: 40, listMs: 25, renewMs: 40 };
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
@@ -303,6 +304,53 @@ describe("edit, renew, close", () => {
   });
 });
 
+describe("renewal re-runs the rules (P14, #254)", () => {
+  it("a job that no longer passes goes to Under review instead of being renewed, and the reply says why; a pay edit brings it back", async () => {
+    await seedTexts();
+    const c = await company();
+    const id = (await post(c.owner.cookie, { ...good, statement: signed })).json!.jobId;
+    // what a rise in the minimums does to a stored job: its pay is now below the line
+    await su.query("update job set salary_low = 30000, salary_high = null, closes_at = now() + interval '2 days' where id = $1", [id]);
+    const before = await job(id);
+    const r = await renew(c.poster.cookie, { jobId: id, hireAnswer: "no" });
+    expect([r.status, r.json]).toEqual([200, { jobId: id, status: "under_review", closesAt: new Date(before.closes_at).toISOString(), code: "PAY_BELOW_MINIMUM" }]);
+    expect(await job(id)).toMatchObject({ status: "under_review", closes_at: before.closes_at, hire_answer: "no", posted_by_membership_id: String(c.poster.mem) });
+    expect((await job(id)).under_review_since).not.toBeNull();
+    expect((await list(c.owner.cookie)).json!.jobs.find((j: { id: string }) => j.id === id)).toMatchObject({ status: "under_review" });
+    expect((await renew(c.owner.cookie, { jobId: id })).json).toEqual({ code: "JOB_NOT_FOUND" }); // only a live job renews
+    const raised = await edit(c.owner.cookie, { ...good, jobId: id, statement: signed });
+    expect([raised.status, raised.json?.status]).toEqual([200, "live"]);
+    const again = await renew(c.owner.cookie, { jobId: id });
+    expect([again.status, again.json?.status]).toEqual([200, "live"]);
+  });
+  it("advert text that now needs a staff check goes to Under review too; a passing job keeps its badge and its statement", async () => {
+    await seedTexts();
+    const c = await company();
+    const id = (await post(c.owner.cookie, { ...good, statement: signed })).json!.jobId;
+    const ok = await renew(c.owner.cookie, { jobId: id });
+    expect([ok.status, ok.json?.status]).toEqual([200, "live"]);
+    expect(await job(id)).toMatchObject({ status: "live", badge: "sponsor_confirmed" });
+    expect(await statements(id)).toHaveLength(1);
+    await su.query("update job_text set advert_text = advert_text || ' Candidates must pay a registration fee before the interview.' where job_id = $1", [id]);
+    const r = await renew(c.owner.cookie, { jobId: id });
+    expect([r.status, r.json?.status, r.json?.code]).toEqual([200, "under_review", "NEEDS_REVIEW"]);
+  });
+  it("security: another company, a viewer and a signed-out call move nothing; app_portal may not move a job back from under review without a pay change", async () => {
+    const c = await company(), other = await company();
+    const id = (await post(c.owner.cookie, good)).json!.jobId;
+    await su.query("update job set salary_low = 30000, salary_high = null where id = $1", [id]);
+    expect((await renew(other.owner.cookie, { jobId: id })).json).toEqual({ code: "JOB_NOT_FOUND" });
+    expect((await renew(c.viewer.cookie, { jobId: id })).json).toEqual({ code: "NOT_A_POSTER" });
+    expect((await renew(undefined, { jobId: id })).status).toBe(401);
+    for (const b of [{ jobId: id, exceptionConfirmed: "yes" }, { jobId: id, status: "live" }, { jobId: id, closesAt: "2030-01-01" }])
+      expect((await renew(c.owner.cookie, b)).status, JSON.stringify(b)).toBe(400);
+    expect((await job(id)).status).toBe("live");
+    expect((await renew(c.owner.cookie, { jobId: id })).json?.status).toBe("under_review");
+    const portal = db.pool("app_portal");
+    await expect(portal.query("update job set status = 'live', posted_by_membership_id = $2 where id = $1", [id, c.owner.mem])).rejects.toThrow(/may not move a job from under_review to live/);
+  });
+});
+
 describe("GET /api/portal/jobs", () => {
   it("is 401 without a session, 404 NO_COMPANY with no company, and shows only the company's own jobs to every member", async () => {
     expect((await list()).status).toBe(401);
@@ -363,6 +411,15 @@ describe("budgets: median of 9 calls", () => {
     await su.query(`insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, status, closes_at, own_page_url, salary_low, search_vector)
       select $1, 'employer', (select id from job_source where kind = 'portal' and board = 'employer'), 'Fake', 'Fake', 'IT', 'critical_skills', 'live', now() + interval '20 days', 'https://example.test', 50000, 'x'
         from generate_series(1, 50)`, [c.org]);
+    // P14: a renewal reads the rules (cached per process, as here after the posts) and the locked job before it writes
+    const rid = (await post(c.owner.cookie, good)).json!.jobId;
+    const [rn, sr] = await counted(() => renew(c.owner.cookie, { jobId: rid }));
+    expect(rn.json?.status).toBe("live");
+    expect(sr, `${sr} renew statements`).toBeLessThanOrEqual(BUDGET.renew);
+    await su.query("delete from portal_rate_limit where key like 'jobs:%'");
+    const renewMs = await median(async () => { expect((await renew(c.owner.cookie, { jobId: rid })).json?.status).toBe("live"); });
+    expect(renewMs).toBeLessThan(BUDGET.renewMs);
+    console.log(`renew budget: ${sr} statements, median ${renewMs.toFixed(1)} ms`);
     const [l, sl] = await counted(() => list(c.viewer.cookie));
     expect(l.json!.jobs.length).toBeGreaterThan(50);
     expect(sl, `${sl} list statements`).toBeLessThanOrEqual(BUDGET.list);
@@ -463,6 +520,17 @@ describe("General Employment Permit posts", () => {
     expect([plain.status, plain.json]).toEqual([422, { code: "OCCUPATION_INELIGIBLE" }]); // no exception wording on this entry, so no tick helps
   });
 
+  it("renewing a chef asks for the exception tick again (422, nothing moved) and renews with it (#254)", async () => {
+    await setMinimums(GENERAL);
+    const c = await company({ name: "Fake Restaurant Limited" });
+    const id = (await post(c.owner.cookie, { ...chef, exceptionConfirmed: true })).json!.jobId;
+    const ask = await renew(c.owner.cookie, { jobId: id });
+    expect([ask.status, ask.json?.code, ask.json?.exception]).toEqual([422, "OCCUPATION_INELIGIBLE", expect.stringContaining("Executive Chef")]);
+    expect((await job(id)).status).toBe("live");
+    const r = await renew(c.owner.cookie, { jobId: id, exceptionConfirmed: true });
+    expect([r.status, r.json?.status]).toEqual([200, "live"]);
+  });
+
   it("security: every role and company state is tried with permitType general", async () => {
     await setMinimums(GENERAL);
     const c = await company({ name: "Fake Care Home Limited" });
@@ -537,6 +605,9 @@ describe("the replies match docs/openapi/portal.yaml (decision #248)", () => {
     const live = (await post(c.owner.cookie, good)).json!.jobId;
     const rn = await renew(c.owner.cookie, { jobId: live });
     expect([rn.status, replyProblems(spec, "POST", "/api/portal/jobs/renew", rn.status, rn.json)]).toEqual([200, []]);
+    await su.query("update job set salary_low = 30000, salary_high = null where id = $1", [live]); // P14: the under-review reply matches the spec too
+    const ur = await renew(c.owner.cookie, { jobId: live });
+    expect([ur.json?.status, replyProblems(spec, "POST", "/api/portal/jobs/renew", ur.status, ur.json)]).toEqual(["under_review", []]);
     const none = await list((await login()).cookie);
     expect([none.status, replyProblems(spec, "GET", "/api/portal/jobs", none.status, none.json)]).toEqual([404, []]);
     // a number id or a +00:00 time would fail the schema

@@ -750,6 +750,42 @@ paths:
           description: "`not_active_staff`: the login is not active. `not_administrator`: a non-administrator filtered by another member's id."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
         '500': { $ref: '#/components/responses/ServerError' }
+  /api/signup-no-counts:
+    get:
+      operationId: listSignupNoCounts
+      summary: Read the daily count of "no" answers at candidate sign-up
+      description: >-
+        C5 (#253): how many visitors answered "no" to "Do you need a work permit?" at candidate sign-up, one number per UTC day, newest first,
+        the last 366 counted days. A day with no such answer has no row. Nothing about any visitor is kept. No query keys (any is `bad_query`). Nothing here writes.
+      security: [{ staffSession: [] }]
+      x-roles: [any active staff member]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The counted days.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [days]
+                properties:
+                  days:
+                    type: array
+                    maxItems: 366
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [day, count]
+                      properties:
+                        day: { $ref: '#/components/schemas/Date' }
+                        count: { type: integer, minimum: 1 }
+              example: { days: [{ day: '2026-11-18', count: 12 }, { day: '2026-11-17', count: 9 }] }
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /api/companies/domains:
     get:
       operationId: listCompanyDomains
