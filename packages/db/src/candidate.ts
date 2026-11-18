@@ -53,9 +53,22 @@ export const checkProfile = (occupations: ReadonlySet<string>) => (b: unknown): 
 const COLUMNS = PROFILE(new Set()).map((f) => [f[0], f[1]] as const);
 export const SELECT_PROFILE = COLUMNS.map(([k, c]) => (c === "degree_awarded_month" ? `to_char(${c}, 'YYYY-MM-DD') as "${k}"` : `${c} as "${k}"`)).join(", ");
 
+// #69, #108: the degree box's three choices, derived from the stored award month. "last_12_months" until the same month a year on starts in
+// Irish time (the award month is stored as its first day, so a degree from May 2025 counts as recent up to 30 April 2026). A degree with no
+// date is "relevant". The box is only a pre-fill: the candidate can still pick another choice.
+export type DegreeBox = "relevant" | "last_12_months" | "none";
+const IRISH_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin", year: "numeric", month: "2-digit", day: "2-digit" });
+export function degreeBox(hasDegree: boolean | null, awardedMonth: string | null, now = new Date()): DegreeBox {
+  if (hasDegree !== true) return "none";
+  if (!awardedMonth) return "relevant";
+  const year = Number(awardedMonth.slice(0, 4)) + 1;
+  return IRISH_DAY.format(now) < `${year}${awardedMonth.slice(4)}` ? "last_12_months" : "relevant";
+}
+
 export async function getProfile(db: pg.Pool, userId: string) {
   const r = await db.query(`select ${SELECT_PROFILE} from candidate_profile where candidate_user_id = $1`, [userId]);
-  return { profile: r.rows[0] ?? null };
+  const p = r.rows[0];
+  return { profile: p ? { ...p, degreeBox: degreeBox(p.hasRelevantDegree, p.degreeAwardedMonth) } : null };
 }
 
 /** Replaces the profile. A Stamp 4 pauses every active alert in the same transaction and says deletion is offered (#105). */
@@ -77,14 +90,19 @@ export const checkJobId = (b: unknown): { jobId: string } | null => (isObject(b)
 
 const CARD = "j.id::text as \"jobId\", j.title, j.employer_name as \"employerName\", j.county, j.salary_low as \"salaryLow\", j.salary_high as \"salaryHigh\", j.pay_grade as \"payGrade\", j.badge";
 const LIVE = "(j.status = 'live' and j.closes_at > now())";
-// A job that is no longer live shows only what the candidate saw when saving: its title and employer.
-const stripIfClosed = <T extends { live: boolean; jobId: string; title: string; employerName: string }>(r: T) =>
-  r.live ? r : ({ jobId: r.jobId, title: r.title, employerName: r.employerName, live: false } as T);
+// S20: why a job is not shown, as a code the page words (placeholder wording later): null when live. Only the hidden reason's code is read,
+// never the report, the reporter or staff notes. Anything else that is not live (closed, expired, hidden by staff or a suspension) is no_longer_available.
+const REASON =
+  `case when ${LIVE} then null when j.status = 'under_review' then 'under_review' when j.status = 'hidden' and j.hidden_reason = 'report' then 'hidden_after_report' ` +
+  "else 'no_longer_available' end as reason";
+// A job that is no longer live shows only what the candidate saw when saving: its title and employer, and the reason.
+const stripIfClosed = <T extends { live: boolean; jobId: string; title: string; employerName: string; reason: string | null }>(r: T) =>
+  r.live ? r : ({ jobId: r.jobId, title: r.title, employerName: r.employerName, live: false, reason: r.reason } as T);
 
 /** Newest first, closed jobs included and marked live: false. At most 200 rows (the cap), so no paging. */
 export async function listSaved(db: pg.Pool, userId: string) {
   const r = await db.query(
-    `select ${CARD}, ${LIVE} as live, s.created_at as "savedAt" from saved_job s join job j on j.id = s.job_id
+    `select ${CARD}, ${LIVE} as live, ${REASON}, s.created_at as "savedAt" from saved_job s join job j on j.id = s.job_id
      where s.candidate_user_id = $1 order by s.created_at desc, s.id desc limit 200`, [userId]);
   return { saved: r.rows.map((x) => ({ ...stripIfClosed(x), savedAt: x.savedAt })) };
 }
@@ -186,7 +204,7 @@ export async function savedJob(db: pg.Pool, userId: string, url: URL) {
   const id = url.searchParams.get("id");
   if (!validId(id)) throw new Refuse(400, "BAD_REQUEST");
   const r = await db.query(
-    `select ${CARD}, j.sector, j.occupation_code as "occupationCode", j.own_page_url as "ownPageUrl", ${LIVE} as live, j.closed_at as "closedAt",
+    `select ${CARD}, j.sector, j.occupation_code as "occupationCode", j.own_page_url as "ownPageUrl", ${LIVE} as live, ${REASON}, j.closed_at as "closedAt",
        (s.id is not null) as saved, t.stage
      from job j left join saved_job s on s.candidate_user_id = $1 and s.job_id = j.id left join tracker_entry t on t.candidate_user_id = $1 and t.job_id = j.id
      where j.id = $2::bigint and (s.id is not null or t.id is not null)`, [userId, id]);

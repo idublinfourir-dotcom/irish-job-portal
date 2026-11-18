@@ -49,7 +49,7 @@ for (const v of views.filter((v) => v.startsWith("portal_"))) denied("app_candid
 denied("app_candidate", "write an occupation text block (0018)", "insert into content_page(kind,slug,title,body) values('occupation','9002','t','b')");
 denied("app_portal", "write an occupation text block (0018)", "insert into content_page(kind,slug,title,body) values('occupation','9002','t','b')");
 for (const c of ["is_big_company","cro_number","member_limit","restricted_until","signup_path","verified_at"]) denied("app_candidate", `read organisation.${c}`, `select ${c} from organisation limit 1`);
-for (const c of ["hire_answer","close_reason","posted_by_membership_id","posted_by_staff_id","hidden_reason","hidden_report_id","fetched_advert_id","pay_floor_id","permit_employer_name_id","screening_questions"]) denied("app_candidate", `read job.${c}`, `select ${c} from job limit 1`);
+for (const c of ["hire_answer","close_reason","posted_by_membership_id","posted_by_staff_id","hidden_report_id","fetched_advert_id","pay_floor_id","permit_employer_name_id","screening_questions"]) denied("app_candidate", `read job.${c}`, `select ${c} from job limit 1`);
 for (const c of ["fetched_advert_id","quota_full","permit_history","posted_by_staff_id","hidden_reason","hidden_report_id"]) denied("app_portal", `read or write job.${c}`, `update job set ${c}=${c} where false`);
 // 0031 (P3): the portal no longer updates organisation directly; the profile functions are its only way
 for (const c of ["display_name","website","logo_url","short_description","county","member_limit","status"]) denied("app_portal", `update organisation.${c}`, `update organisation set ${c}=${c} where false`);
@@ -120,6 +120,7 @@ const must = [
   ["app_candidate", "read advert text", "select advert_text from job_text limit 1"],
   ["app_candidate", "read job sources", "select id,last_ok_at from job_source limit 1"],
   ["app_candidate", "read public organisation columns", "select id,slug,display_name,website,logo_url,short_description,county,nace_code,kind,status,permit_history,claimed_at,claims_removed_at,wrc_licence_number,merged_into_id from organisation limit 1"],
+  ["app_candidate", "read job.hidden_reason (the code only, S20, migration 0042)", "select hidden_reason from job limit 1"],
   ["app_candidate", "read organisation names and DETE counts", "select n.name, d.permits from organisation_name n left join dete_permit_count d on d.organisation_name_id=n.id limit 1"],
   ["app_candidate", "read consent texts", "select body from consent_text limit 1"],
   ["app_candidate", "read published content", "select title from published_content_page limit 1"],

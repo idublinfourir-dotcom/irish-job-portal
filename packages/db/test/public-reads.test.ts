@@ -16,7 +16,7 @@ const secret = "trial-only-secret-trial-only-secret-32";
 const BASE = "http://localhost:3000";
 type Handler = (r: Request) => Promise<Response>;
 let db: TestDb, su: pg.Pool;
-let AUTH: Handler, JOBS: Handler, JOB: Handler, COMPANY: Handler, OCCUPATION: Handler;
+let AUTH: Handler, JOBS: Handler, JOB: Handler, COMPANY: Handler, OCCUPATION: Handler, HELP: Handler;
 let slug: string, jobIds: string[];
 const TOTAL = 27; // more than a candidate's page (20), so both page
 
@@ -30,6 +30,10 @@ beforeAll(async () => {
   ({ GET: JOB } = await import("../../../apps/candidate/app/api/job/route"));
   ({ GET: COMPANY } = await import("../../../apps/candidate/app/api/company/route"));
   ({ GET: OCCUPATION } = await import("../../../apps/candidate/app/api/occupation/route"));
+  ({ GET: HELP } = await import("../../../apps/candidate/app/api/help/route"));
+  await su.query(`insert into content_page(kind, slug, title, body, status, published_at, source_url, checked_on) values
+    ('help', 'not-sure', 'Placeholder help', 'PLACEHOLDER: who needs a permit', 'published', now(), null, null), ('help', 'draft-help', 'Draft', 'Draft body', 'draft', null, null, null),
+    ('guide', 'a-guide', 'A guide', 'Guide body', 'published', now(), 'https://enterprise.gov.ie/', '2026-11-01')`);
   const org = (await su.query("insert into organisation(slug, display_name, kind, status) values ('fake-visitor-org', 'Fake Org', 'employer', 'verified') returning id, slug")).rows[0];
   slug = org.slug;
   const src = (await su.query("insert into job_source(kind, board) values ('portal', 'fake-board') returning id")).rows[0].id;
@@ -140,6 +144,33 @@ describe("a visitor (S3)", () => {
   });
 });
 
+describe('S17: the "Not sure?" help page', () => {
+  it("serves a published help page by slug to a visitor and a candidate", async () => {
+    const { cookie } = await login();
+    for (const o of [{}, { cookie }]) {
+      const g = await get(HELP, "/api/help?slug=not-sure", o);
+      expect([g.status, g.body.title, g.body.kind, g.body.body]).toEqual([200, "Placeholder help", "help", "PLACEHOLDER: who needs a permit"]);
+    }
+  });
+  it("is a clear 404 when no help page of that slug is published: a draft, a guide's slug, unknown, missing or hostile slugs", async () => {
+    for (const slug of ["draft-help", "a-guide", "no-such-page", "", "Not-Sure", "x'; drop table content_page; --", "../etc", "a".repeat(101), "a%00b"]) {
+      const g = await get(HELP, `/api/help?slug=${encodeURIComponent(slug)}`);
+      expect([g.status, g.body], slug).toEqual([404, { code: "NOT_FOUND" }]);
+    }
+    expect([(await get(HELP, "/api/help")).status, (await get(HELP, "/api/help?slug=a&slug=not-sure")).status]).toEqual([404, 404]);
+  });
+  it("is rate limited like the other public reads", async () => {
+    const ip = "192.0.2.40";
+    await get(HELP, "/api/help?slug=not-sure", { ip });
+    await su.query("update candidate_rate_limit set count = 60 where key = $1", [`read:ip:${ip}:60000`]);
+    expect((await get(HELP, "/api/help?slug=not-sure", { ip })).status).toBe(429);
+  });
+  it("costs a visitor 3 statements (2 rate counts, the page)", async () => {
+    const [g, statements] = await counted(() => get(HELP, "/api/help?slug=not-sure"));
+    expect([g.status, statements]).toEqual([200, BUDGET.visitor]);
+  });
+});
+
 describe("the replies match docs/openapi/candidate.yaml (decision #248)", () => {
   it("the four public reads, a visitor's and a candidate's, and their error bodies", async () => {
     const spec = loadSpec("candidate");
@@ -151,6 +182,7 @@ describe("the replies match docs/openapi/candidate.yaml (decision #248)", () => 
       [OCCUPATION, "/api/occupation", "/api/occupation?code=1122", { cookie }],
       [JOBS, "/api/jobs", `/api/jobs?after=${cursor}`, {}], // a visitor's cursor: 401 SIGN_IN_FOR_MORE
       [JOBS, "/api/jobs", "/api/jobs?sort=best", {}], [JOB, "/api/job", "/api/job?id=999999999", {}],
+      [HELP, "/api/help", "/api/help?slug=not-sure", {}], [HELP, "/api/help", "/api/help?slug=draft-help", {}],
     ];
     for (const [route, doc, path, o] of cases) {
       const g = await get(route, path, o);

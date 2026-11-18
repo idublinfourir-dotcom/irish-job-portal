@@ -4,7 +4,7 @@
 // so the year totals what the newest file says. Every file is downloaded and checked before anything is written. In January a 404 for
 // the new year means "not published yet" (exit 0); any other failure exits 1. Linking new DETE names to companies stays by hand (dete-cli.ts link).
 import pg from "pg";
-import { importPermits, parsePermits, type PermitRow } from "./dete.ts";
+import { importPermits, latestPermitRises, parsePermits, type PermitRow } from "./dete.ts";
 import { downloadDete, sourceFileName, xlsxToTsv } from "./dete-monthly.ts";
 import { sslOptions } from "./ssl.ts";
 
@@ -31,8 +31,10 @@ export async function main(env: NodeJS.ProcessEnv, log: (line: string) => void, 
     try {
       for (const f of files) {
         const r = await importPermits(db, f.rows, { replaceYears: true });
-        log(`${f.year} (${sourceFileName(f.year)}): ${f.rows.length} employers, ${r.inserted} new, ${r.updated} changed, ${r.unchanged} unchanged, ${r.zeroed} dropped by DETE and set to 0, ${r.labelsChanged} permit history labels changed`);
+        log(`${f.year} (${sourceFileName(f.year)}): ${f.rows.length} employers, ${r.inserted} new, ${r.updated} changed, ${r.unchanged} unchanged, ${r.zeroed} dropped by DETE and set to 0, ${r.rose} went up, ${r.labelsChanged} permit history labels changed`);
       }
+      // D6 (#49): whose permits went up since the month before, for staff (the run log is not public). DETE's own names and counts only.
+      for (const x of await latestPermitRises(db)) log(`  went up: ${x.deteName} (${x.year}) ${x.before} to ${x.after}${x.organisation ? `, company ${x.organisationId} ${x.organisation}` : ""}`);
     } finally {
       await db.end();
     }

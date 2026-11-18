@@ -351,6 +351,7 @@ export const fetchedAdvert = pgTable("fetched_advert", {
 	quotedEvidence: text("quoted_evidence"),
 	matcherModel: text("matcher_model"),
 	contentHash: text("content_hash"),
+	wrcAgency: boolean("wrc_agency").default(false).notNull(),
 }, (table) => [
 	index("fetched_advert_rejected_idx").using("btree", table.lastSeenAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(result = 'rejected'::text)`),
 	foreignKey({
@@ -886,6 +887,19 @@ export const detePermitCount = pgTable("dete_permit_count", {
 		}),
 	unique("dete_permit_count_dete_name_year_month_key").on(table.deteName, table.year, table.month),
 	check("dete_permit_count_month_check", sql`(month >= 1) AND (month <= 12)`),
+]);
+
+export const detePermitRise = pgTable("dete_permit_rise", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "dete_permit_rise_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	foundAt: timestamp("found_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	deteName: text("dete_name").notNull(),
+	year: smallint().notNull(),
+	permitsBefore: integer("permits_before").notNull(),
+	permitsAfter: integer("permits_after").notNull(),
+}, (table) => [
+	index("dete_permit_rise_found_idx").using("btree", table.foundAt.asc().nullsLast().op("timestamptz_ops")),
+	check("dete_permit_rise_check", sql`permits_after > permits_before`),
 ]);
 
 export const wrcLicence = pgTable("wrc_licence", {

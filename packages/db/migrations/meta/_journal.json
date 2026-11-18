@@ -274,6 +274,13 @@
       "when": 1794300035000,
       "tag": "0041_audit_retention_hold_notice",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1794300036000,
+      "tag": "0042_candidate_signals",
+      "breakpoints": true
     }
   ]
 }

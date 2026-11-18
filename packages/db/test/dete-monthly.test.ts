@@ -2,11 +2,12 @@
 // Each test uses its own year (2041 and up), so the year totals never mix. See src/dete-monthly-cli.ts and importPermits' replaceYears.
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { importPermits, type PermitRow } from "../src/dete";
+import { importPermits, LATEST_RISES, latestPermitRises, type PermitRow } from "../src/dete";
 import { main } from "../src/dete-monthly-cli";
 import { companiesXlsx, makeXlsx } from "../src/xlsx-fixture";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { fixtures } from "./fixtures";
+import { assertPageBudget, measurePages } from "./perf/pages";
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 
@@ -51,13 +52,13 @@ describe("importPermits with replaceYears: the newest file wins", () => {
     const p = id("rep"), y = 2041;
     const march = [row(`${p} A`, y, 3), row(`${p} B`, y, 2), row(`${p} C`, y, 1)];
     const april = [row(`${p} A`, y, 5), row(`${p} B`, y, 2), row(`${p} D`, y, 4)]; // A grew, B same, C dropped by DETE, D is new
-    expect(await importPermits(admin(), march, { replaceYears: true })).toEqual({ inserted: 3, updated: 0, unchanged: 0, labelsChanged: 0, zeroed: 0 });
+    expect(await importPermits(admin(), march, { replaceYears: true })).toEqual({ inserted: 3, updated: 0, unchanged: 0, labelsChanged: 0, zeroed: 0, rose: 3 });
     expect(await total(y)).toBe(6);
-    expect(await importPermits(admin(), april, { replaceYears: true })).toEqual({ inserted: 1, updated: 1, unchanged: 1, labelsChanged: 0, zeroed: 1 });
+    expect(await importPermits(admin(), april, { replaceYears: true })).toEqual({ inserted: 1, updated: 1, unchanged: 1, labelsChanged: 0, zeroed: 1, rose: 2 }); // A 3 to 5, D 0 to 4
     expect(await total(y)).toBe(11); // 5 + 2 + 0 + 4, the newer file's total
     expect((await stored(y)).map((r) => [r.dete_name.slice(-1), r.permits, r.source_file])).toEqual([["A", 5, `companies-${y}.xlsx`], ["B", 2, `companies-${y}.xlsx`], ["C", 0, `companies-${y}.xlsx`], ["D", 4, `companies-${y}.xlsx`]]);
     const before = (await su("select id, xmin::text from dete_permit_count where year = $1 order by id", [y])).rows;
-    expect(await importPermits(admin(), april, { replaceYears: true })).toEqual({ inserted: 0, updated: 0, unchanged: 3, labelsChanged: 0, zeroed: 0 });
+    expect(await importPermits(admin(), april, { replaceYears: true })).toEqual({ inserted: 0, updated: 0, unchanged: 3, labelsChanged: 0, zeroed: 0, rose: 0 });
     expect((await su("select id, xmin::text from dete_permit_count where year = $1 order by id", [y])).rows).toEqual(before); // no row was rewritten
   });
 
@@ -106,10 +107,15 @@ describe("the monthly command", () => {
     const p = id("cli"), y = 2046;
     const may = site({ [y]: file([[`${p} A Limited`, 3], [`${p} B Limited`, 2]]) });
     const r1 = await run(ENV(), may.get, at(`${y}-05-15`));
-    expect(r1).toEqual({ code: 0, out: `${y} (companies-${y}.xlsx): 2 employers, 2 new, 0 changed, 0 unchanged, 0 dropped by DETE and set to 0, 0 permit history labels changed` });
+    expect(r1.code).toBe(0);
+    expect(r1.out.split("\n")[0]).toBe(`${y} (companies-${y}.xlsx): 2 employers, 2 new, 0 changed, 0 unchanged, 0 dropped by DETE and set to 0, 2 went up, 0 permit history labels changed`);
+    expect(r1.out).toContain(`  went up: ${p} A Limited (${y}) 0 to 3`);
     expect(may.asked).toHaveLength(1);
     const june = site({ [y]: file([[`${p} A Limited`, 4], [`${p} C Limited`, 1]]) });
-    expect((await run(ENV(), june.get, at(`${y}-06-15`))).out).toContain("2 employers, 1 new, 1 changed, 0 unchanged, 1 dropped by DETE and set to 0");
+    const r2 = (await run(ENV(), june.get, at(`${y}-06-15`))).out;
+    expect(r2).toContain("2 employers, 1 new, 1 changed, 0 unchanged, 1 dropped by DETE and set to 0, 2 went up");
+    expect(r2).toContain(`  went up: ${p} A Limited (${y}) 3 to 4`);
+    expect(r2).toContain(`  went up: ${p} C Limited (${y}) 0 to 1`);
     expect(await total(y)).toBe(5);
     expect((await run(ENV(), june.get, at(`${y}-06-16`))).out).toContain("2 employers, 0 new, 0 changed, 2 unchanged, 0 dropped");
     expect(await total(y)).toBe(5);
@@ -120,7 +126,7 @@ describe("the monthly command", () => {
     const s = site({ [y - 1]: file([[`${p} A Limited`, 9]]) }); // the new year's file is not there: 404
     const r = await run(ENV(), s.get, at(`${y}-01-15`));
     expect(r.code).toBe(0);
-    expect(r.out.split("\n")).toEqual([`DETE has not published the ${y} file yet: nothing to do`, expect.stringContaining(`${y - 1} (companies-${y - 1}.xlsx): 1 employers, 1 new`)]);
+    expect(r.out.split("\n").slice(0, 2)).toEqual([`DETE has not published the ${y} file yet: nothing to do`, expect.stringContaining(`${y - 1} (companies-${y - 1}.xlsx): 1 employers, 1 new`)]);
     expect(s.asked.map((u) => /(\d{4})\.xlsx$/.exec(u)![1])).toEqual([String(y - 1), String(y)]);
     expect(await total(y - 1)).toBe(9);
     expect(await total(y)).toBe(0);
@@ -186,8 +192,62 @@ describe("the monthly command", () => {
   });
 });
 
+describe("D6: whose DETE count went up since the month before (#49, staff only)", () => {
+  it("keeps each rise with the count before and after, shows the linked company, and the same file again adds none", async () => {
+    const p = id("rise"), y = 2061;
+    const org = await F.org();
+    const nameId = (await su("insert into organisation_name(organisation_id, name, normalised_name, kind, source) values ($1, $2, $2, 'legal', 'dete') returning id::text", [org, id("n")])).rows[0].id;
+    await importPermits(admin(), [row(`${p} A`, y, 3), row(`${p} B`, y, 5)], { replaceYears: true });
+    await su("update dete_permit_count set organisation_name_id = $1 where dete_name = $2", [nameId, `${p} A`]);
+    await su("update dete_permit_rise set found_at = found_at - interval '31 days' where dete_name like $1", [`${p}%`]); // last month's run
+    const name = (await su("select display_name from organisation where id = $1", [org])).rows[0].display_name;
+    // A goes up, B goes down (DETE corrects itself sometimes): only A is a rise
+    expect((await importPermits(admin(), [row(`${p} A`, y, 7), row(`${p} B`, y, 4)], { replaceYears: true })).rose).toBe(1);
+    const latest = (await latestPermitRises(admin())).filter((r) => r.deteName.startsWith(p));
+    expect(latest).toEqual([{ deteName: `${p} A`, year: y, before: 3, after: 7, organisationId: String(org), organisation: name, foundAt: expect.any(Date) }]);
+    expect((await importPermits(admin(), [row(`${p} A`, y, 7), row(`${p} B`, y, 4)], { replaceYears: true })).rose).toBe(0);
+    expect((await su("select count(*)::int n from dete_permit_rise where dete_name like $1", [`${p}%`])).rows[0].n).toBe(3); // A and B new, then A up
+  });
+
+  it("only the newest run is shown: rises older than a day before it are left out", async () => {
+    const p = id("old"), y = 2062;
+    await importPermits(admin(), [row(`${p} A`, y, 2)], { replaceYears: true });
+    await su("update dete_permit_rise set found_at = found_at - interval '40 days' where dete_name = $1", [`${p} A`]);
+    expect((await latestPermitRises(admin())).some((r) => r.deteName === `${p} A`)).toBe(false);
+  });
+
+  it("an import without replaceYears (by hand) records no rise", async () => {
+    const p = id("hand"), y = 2063;
+    expect(await importPermits(admin(), [row(`${p} A`, y, 2)])).not.toHaveProperty("rose");
+    expect((await su("select count(*)::int n from dete_permit_rise where dete_name = $1", [`${p} A`])).rows[0].n).toBe(0);
+  });
+
+  it.each(["app_candidate", "app_portal", "app_fetcher", "anon", "authenticated"] as const)("%s can neither read nor write the rises", async (role) => {
+    await expect(db.query(role, "select * from dete_permit_rise limit 1")).rejects.toMatchObject({ code: "42501" });
+    await expect(db.query(role, "insert into dete_permit_rise(dete_name, year, permits_before, permits_after) values ('x', 2064, 0, 1)")).rejects.toMatchObject({ code: "42501" });
+  });
+
+  it("app_admin cannot change or delete a rise, and the table refuses a row that did not go up", async () => {
+    await expect(admin().query("update dete_permit_rise set permits_after = 1")).rejects.toMatchObject({ code: "42501" });
+    await expect(admin().query("delete from dete_permit_rise")).rejects.toMatchObject({ code: "42501" });
+    await expect(admin().query("insert into dete_permit_rise(dete_name, year, permits_before, permits_after) values ('x', 2064, 5, 5)")).rejects.toMatchObject({ code: "23514" });
+  });
+
+  it("the staff read stays within 1,000 pages with 20,000 rise rows (measured 422 on 18 Nov 2026)", async () => {
+    await su("insert into dete_permit_rise(dete_name, year, permits_before, permits_after, found_at) select 'Fake Rise ' || i, 2065, 0, 1 + i % 9, now() - (i % 12) * interval '31 days' from generate_series(1, 20000) i");
+    const client = await admin().connect();
+    try {
+      const costs = await measurePages(client, [LATEST_RISES]);
+      console.log(`dete rises read: ${costs[0]!.pages} pages, ${costs[0]!.ms} ms, ${costs[0]!.scans}`);
+      assertPageBudget("dete rises", costs, 1_000);
+    } finally {
+      client.release();
+    }
+  });
+});
+
 describe("budgets", () => {
-  it("a replace import of 38,183 rows takes 9 statements and under 5 seconds, then again", async () => {
+  it("a replace import of 38,183 rows takes 13 statements and under 5 seconds, then again", async () => {
     const y = 2060;
     const rows = Array.from({ length: 38_183 }, (_, i) => row(`Fake Replace Company ${i} Limited`, y + (i % 4), 1 + (i % 40)));
     let statements = 0;
@@ -201,7 +261,7 @@ describe("budgets", () => {
     let t = performance.now();
     expect((await importPermits(counted, rows, { replaceYears: true })).inserted).toBe(38_183);
     const first = performance.now() - t;
-    expect(statements).toBe(9); // begin, the year totals, 4 chunks of 10,000, the dropped names, the label refresh, commit
+    expect(statements).toBe(13); // begin, the year totals, 4 chunks of 10,000 (rises, then upsert), the dropped names, the label refresh, commit
     t = performance.now();
     expect(await importPermits(counted, rows, { replaceYears: true })).toMatchObject({ unchanged: 38_183, zeroed: 0 });
     const second = performance.now() - t;

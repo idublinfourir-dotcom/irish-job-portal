@@ -100,6 +100,22 @@ export const LAST_5_YEARS =
 // Sets each employer's permit history label and sponsor key from the DETE rows (migrations 0007, 0008) and returns how many employers changed.
 const REFRESH = "select private.refresh_permit_history() as changed";
 
+// D6 (#49): with replaceYears, before the upsert, each name and year whose count in the file is above the stored one (0 when not stored yet) is
+// written to dete_permit_rise, so staff see whose permits went up since the month before. Staff only (app_admin), never public.
+const RISES =
+  "insert into dete_permit_rise(dete_name, year, permits_before, permits_after) " +
+  "select t.name, t.year, coalesce(d.permits, 0), t.permits from unnest($1::text[], $2::int[], $3::int[]) as t(name, year, permits) " +
+  "left join dete_permit_count d on d.dete_name = t.name and d.year = t.year and d.month is null where t.permits > coalesce(d.permits, 0)";
+// The rises of the newest monthly run: the January run imports two years in two transactions, so everything found within a day of the newest row.
+export const LATEST_RISES =
+  "select r.dete_name as \"deteName\", r.year::int, r.permits_before as \"before\", r.permits_after as \"after\", o.id::text as \"organisationId\", " +
+  "o.display_name as \"organisation\", r.found_at as \"foundAt\" " +
+  "from (select * from dete_permit_rise where found_at > (select max(found_at) from dete_permit_rise) - interval '1 day' " +
+  "order by permits_after - permits_before desc, id limit 200) r " +
+  "left join dete_permit_count d on d.dete_name = r.dete_name and d.year = r.year and d.month is null " +
+  "left join organisation_name n on n.id = d.organisation_name_id left join organisation o on o.id = n.organisation_id " +
+  "order by r.permits_after - r.permits_before desc, r.id";
+
 const CHUNK = 10_000;
 // For the company seed (company-seed.ts). index.ts exports this module, where other modules use the names MAX_NAME and inTransaction.
 export { inTransaction as inOneTransaction, MAX_NAME as MAX_COMPANY_NAME };
@@ -135,13 +151,14 @@ const ZERO_MISSING =
 /**
  * Upserts the rows in one transaction, 10,000 per statement, then refreshes the labels in that transaction. Run as app_admin. Never touches organisation_name_id.
  * `replaceYears` is for a newer cumulative file of a year (the monthly import): afterwards each year in the file totals exactly what the file says, so a
- * name the file dropped is set to 0 (never deleted, its link stays). It refuses a file whose total for a year is under half of what is stored (a cut-off file).
+ * name the file dropped is set to 0 (never deleted, its link stays), and each count that went up is kept in dete_permit_rise (`rose`). It refuses a file whose total for a year is under half of what is stored (a cut-off file).
  */
-export async function importPermits(db: Db, rows: PermitRow[], opts: { replaceYears?: boolean } = {}): Promise<{ inserted: number; updated: number; unchanged: number; labelsChanged: number; zeroed?: number }> {
+export async function importPermits(db: Db, rows: PermitRow[], opts: { replaceYears?: boolean } = {}): Promise<{ inserted: number; updated: number; unchanged: number; labelsChanged: number; zeroed?: number; rose?: number }> {
   let inserted = 0;
   let updated = 0;
   let labelsChanged = 0;
   let zeroed: number | undefined;
+  let rose = 0;
   await inTransaction(db, async (c) => {
     if (opts.replaceYears) {
       const years = [...new Set(rows.map((r) => r.year))];
@@ -153,13 +170,14 @@ export async function importPermits(db: Db, rows: PermitRow[], opts: { replaceYe
     }
     for (let i = 0; i < rows.length; i += CHUNK) {
       const part = rows.slice(i, i + CHUNK);
+      if (opts.replaceYears) rose += (await c.query(RISES, [part.map((x) => x.deteName), part.map((x) => x.year), part.map((x) => x.permits)])).rowCount ?? 0;
       const r = await c.query<{ inserted: boolean }>(UPSERT, [part.map((x) => x.deteName), part.map((x) => x.year), part.map((x) => x.permits), part.map((x) => x.sourceFile)]);
       for (const row of r.rows) if (row.inserted) inserted++; else updated++;
     }
     if (opts.replaceYears) zeroed = (await c.query(ZERO_MISSING, [[...new Set(rows.map((r) => r.year))], rows.map((r) => r.deteName), rows.map((r) => r.year)])).rowCount ?? 0;
     labelsChanged = await refresh(c);
   });
-  return { inserted, updated, unchanged: rows.length - inserted - updated, labelsChanged, ...(zeroed === undefined ? {} : { zeroed }) };
+  return { inserted, updated, unchanged: rows.length - inserted - updated, labelsChanged, ...(zeroed === undefined ? {} : { zeroed, rose }) };
 }
 
 /** Sets organisation_name_id on the DETE rows of each name, then refreshes the labels in the same transaction. A name or id that is not in the database is reported and skipped. */
@@ -188,4 +206,10 @@ export async function permitsLast5Years(db: Pick<pg.Pool, "query">, organisation
   const { rows } = await db.query<{ linked: number; permits: number; first_year: number | null }>(LAST_5_YEARS, [String(organisationId), year - 4, year]);
   const r = rows[0]!;
   return r.linked === 0 ? null : { permits: r.permits, firstYear: r.first_year };
+}
+
+export type PermitRise = { deteName: string; year: number; before: number; after: number; organisationId: string | null; organisation: string | null; foundAt: Date };
+/** D6: the names whose DETE count went up in the newest monthly run, biggest rise first, with the linked company when there is one. app_admin only. */
+export async function latestPermitRises(db: Pick<pg.Pool, "query">): Promise<PermitRise[]> {
+  return (await db.query<PermitRise>(LATEST_RISES)).rows;
 }
