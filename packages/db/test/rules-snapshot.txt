@@ -141,6 +141,7 @@ check services_case_payer_check on services_case: CHECK ((payer = ANY (ARRAY['em
 check services_case_status_check on services_case: CHECK ((status = ANY (ARRAY['received'::text, 'documents_needed'::text, 'waiting_for_employer'::text, 'submitted'::text, 'decision'::text, 'closed'::text])))
 check setting_unit_check on setting: CHECK ((unit = ANY (ARRAY['days'::text, 'months'::text, 'count'::text])))
 check setting_value_check on setting: CHECK (((value IS NULL) OR (value >= 0)))
+check signup_no_count_count_check on signup_no_count: CHECK ((count > 0))
 check sponsorship_statement_check on sponsorship_statement: CHECK (((kind <> 'on_behalf_of_client'::text) OR ((on_behalf_of_name IS NOT NULL) AND written_authority_on_file)))
 check sponsorship_statement_check1 on sponsorship_statement: CHECK ((((kind = 'admin_on_behalf'::text) AND (confirmation_file_key IS NOT NULL) AND (approval_request_id IS NOT NULL) AND (signer_membership_id IS NULL)) OR ((kind <> 'admin_on_behalf'::text) AND (signer_membership_id IS NOT NULL))))
 check sponsorship_statement_kind_check on sponsorship_statement: CHECK ((kind = ANY (ARRAY['own_company'::text, 'on_behalf_of_client'::text, 'admin_on_behalf'::text])))
@@ -229,6 +230,7 @@ rights app_admin on rules_version: table[select] columns[insert(approval_request
 rights app_admin on saved_job: table[select] columns[]
 rights app_admin on services_case: table[insert,select,update] columns[]
 rights app_admin on setting: table[insert,select] columns[update(is_guess,solicitor_confirmed_at,solicitor_note,value)]
+rights app_admin on signup_no_count: table[select] columns[]
 rights app_admin on sponsorship_statement: table[insert,select] columns[update(superseded_at)]
 rights app_admin on staff_account: table[delete,insert,select,update] columns[]
 rights app_admin on staff_rate_limit: table[delete,insert,select,update] columns[]
@@ -305,6 +307,7 @@ rights app_candidate on rules_version: table[select] columns[]
 rights app_candidate on saved_job: table[delete,insert,select] columns[]
 rights app_candidate on services_case: table[] columns[]
 rights app_candidate on setting: table[] columns[]
+rights app_candidate on signup_no_count: table[insert,select] columns[update(count)]
 rights app_candidate on sponsorship_statement: table[] columns[]
 rights app_candidate on staff_account: table[] columns[]
 rights app_candidate on staff_rate_limit: table[] columns[]
@@ -381,6 +384,7 @@ rights app_fetcher on rules_version: table[select] columns[]
 rights app_fetcher on saved_job: table[] columns[]
 rights app_fetcher on services_case: table[] columns[]
 rights app_fetcher on setting: table[] columns[]
+rights app_fetcher on signup_no_count: table[] columns[]
 rights app_fetcher on sponsorship_statement: table[] columns[]
 rights app_fetcher on staff_account: table[] columns[]
 rights app_fetcher on staff_rate_limit: table[] columns[]
@@ -457,6 +461,7 @@ rights app_portal on rules_version: table[select] columns[]
 rights app_portal on saved_job: table[] columns[]
 rights app_portal on services_case: table[] columns[]
 rights app_portal on setting: table[] columns[]
+rights app_portal on signup_no_count: table[] columns[]
 rights app_portal on sponsorship_statement: table[insert,select] columns[update(superseded_at)]
 rights app_portal on staff_account: table[] columns[]
 rights app_portal on staff_rate_limit: table[] columns[]
