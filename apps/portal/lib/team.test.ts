@@ -10,29 +10,29 @@ describe("checkTeam", () => {
   it("takes each action with exactly its own fields", () => {
     expect(checkTeam({ action: "invite", email: "  Fake.One@Example.TEST ", role: "poster", isSigner: true })).toEqual({ action: "invite", email: "fake.one@example.test", role: "poster", isSigner: true });
     expect(checkTeam({ action: "accept", token })).toEqual({ action: "accept", token });
-    expect(checkTeam({ action: "request", organisationId: 7 })).toEqual({ action: "request", organisationId: 7 });
-    for (const action of ["refuse", "remove", "transfer"]) expect(checkTeam({ action, membershipId: 3 })).toEqual({ action, membershipId: 3 });
-    expect(checkTeam({ action: "approve", membershipId: 3, role: "poster", isSigner: true })).toEqual({ action: "approve", membershipId: 3, role: "poster", isSigner: true });
+    expect(checkTeam({ action: "request", organisationId: "7" })).toEqual({ action: "request", organisationId: "7" });
+    for (const action of ["refuse", "remove", "transfer"]) expect(checkTeam({ action, membershipId: "3" })).toEqual({ action, membershipId: "3" });
+    expect(checkTeam({ action: "approve", membershipId: "3", role: "poster", isSigner: true })).toEqual({ action: "approve", membershipId: "3", role: "poster", isSigner: true });
     expect(checkTeam({ action: "leave" })).toEqual({ action: "leave" });
-    expect(checkTeam({ action: "role", membershipId: 3, role: "viewer", isSigner: false })).toEqual({ action: "role", membershipId: 3, role: "viewer", isSigner: false });
+    expect(checkTeam({ action: "role", membershipId: "3", role: "viewer", isSigner: false })).toEqual({ action: "role", membershipId: "3", role: "viewer", isSigner: false });
   });
   it("refuses an unknown action, a missing field and any extra field, a user or company id above all", () => {
     for (const bad of [null, [], "leave", 1, {}, { action: "LEAVE" }, { action: "delete" }, { action: ["leave"] },
-      { action: "leave", portalUserId: "x" }, { action: "remove", membershipId: 3, organisationId: 9 }, { action: "transfer", membershipId: 3, userId: "x" },
-      { action: "accept", token, email: "x@example.test" }, { action: "request", organisationId: 7, role: "account_owner" },
+      { action: "leave", portalUserId: "x" }, { action: "remove", membershipId: "3", organisationId: 9 }, { action: "transfer", membershipId: "3", userId: "x" },
+      { action: "accept", token, email: "x@example.test" }, { action: "request", organisationId: "7", role: "account_owner" },
       { action: "invite", email: "a@example.test", role: "poster" }, { action: "invite", email: "a@example.test", role: "poster", isSigner: true, organisationId: 2 },
-      { action: "role", membershipId: 3, role: "poster" }, { action: "approve" }, { action: "approve", membershipId: 3 },
-      { action: "approve", membershipId: 3, role: "account_owner", isSigner: false }, { action: "approve", membershipId: 3, role: "poster", isSigner: "yes" }, { action: "remove", membershipId: 3, ...JSON.parse('{"__proto__": {"x": 1}}') }])
+      { action: "role", membershipId: "3", role: "poster" }, { action: "approve" }, { action: "approve", membershipId: "3" },
+      { action: "approve", membershipId: "3", role: "account_owner", isSigner: false }, { action: "approve", membershipId: "3", role: "poster", isSigner: "yes" }, { action: "remove", membershipId: "3", ...JSON.parse('{"__proto__": {"x": 1}}') }])
       expect(checkTeam(bad), JSON.stringify(bad)).toBeNull();
   });
   it("never takes the owner role, and only the three others", () => {
     for (const role of ["account_owner", "owner", "admin", "Viewer", "", null, 1, ["poster"]]) {
       expect(checkTeam({ action: "invite", email: "a@example.test", role, isSigner: false }), String(role)).toBeNull();
-      expect(checkTeam({ action: "role", membershipId: 3, role, isSigner: false }), String(role)).toBeNull();
+      expect(checkTeam({ action: "role", membershipId: "3", role, isSigner: false }), String(role)).toBeNull();
     }
   });
   it("refuses odd ids, odd switches and odd emails", () => {
-    for (const membershipId of [0, -1, 1.5, "3", 2 ** 53, Infinity, null, [3], { id: 3 }, "3 or 1=1"]) expect(checkTeam({ action: "remove", membershipId }), String(membershipId)).toBeNull();
+    for (const membershipId of [0, -1, 1.5, 3, "0", "03", "9".repeat(19), 2 ** 53, Infinity, null, [3], { id: 3 }, "3 or 1=1"]) expect(checkTeam({ action: "remove", membershipId }), String(membershipId)).toBeNull();
     for (const isSigner of ["true", 1, null]) expect(checkTeam({ action: "invite", email: "a@example.test", role: "poster", isSigner })).toBeNull();
     for (const email of ["", "a", "a@b", "@example.test", "a@@example.test", "a b@example.test", `${"x".repeat(250)}@example.test`, "a@example.test\u0000",
       "a​@example.test", "a\n@example.test", 42, null, ["a@example.test"], "x'; drop table membership;--@example.test x"])
@@ -62,7 +62,7 @@ describe("the invite token", () => {
 describe("teamRefusal", () => {
   const p = (message: string) => ({ code: "P0001", message });
   it("maps each function refusal to its code and status", () => {
-    const want: [string, number][] = [["NOT_OWNER", 403], ["NOT_A_MEMBER", 409], ["MEMBER_NOT_FOUND", 404], ["TEAM_FULL", 409], ["ALREADY_IN_TEAM", 409],
+    const want: [string, number][] = [["NOT_OWNER", 403], ["NOT_A_MEMBER", 403], ["MEMBER_NOT_FOUND", 404], ["TEAM_FULL", 409], ["ALREADY_IN_TEAM", 409],
       ["INVITE_NOT_VALID", 404], ["ALREADY_IN_A_COMPANY", 409], ["NOT_ALLOWED_DOMAIN", 403], ["OWNER_MUST_TRANSFER", 409], ["VIEWER_NOT_SIGNER", 400],
       ["ORGANISATION_NOT_AVAILABLE", 409], ["EMAIL_NOT_VERIFIED", 403], ["BAD_REQUEST", 400]];
     for (const [code, status] of want) expect(teamRefusal(p(`team refused: ${code} some detail`)), code).toEqual({ status, code });

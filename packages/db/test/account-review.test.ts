@@ -652,6 +652,17 @@ describe("route: the whole path to a Verified company", () => {
     const g = await claimed({ domain: "gmail.com" });
     await post("reviewer", { action: "claim", itemId: g.item });
     expect(await post("reviewer", { action: "approve", itemId: g.item, addDomain: true })).toEqual({ status: 409, json: { error: "free_email_domain" } });
+    // a malformed claimant domain is bad_domain with the same 400 as on /api/companies/domains
+    const p = await claimed({ domain: "xn--fake.example.test" });
+    await post("reviewer", { action: "claim", itemId: p.item });
+    expect(await post("reviewer", { action: "approve", itemId: p.item, addDomain: true })).toEqual({ status: 400, json: { error: "bad_domain" } });
+  });
+  it("hostile ids and query strings: 0, leading zeros and too long are bad_item_id; unknown or repeated keys are bad_query", async () => {
+    const a = await claimed();
+    for (const itemId of ["0", `0${a.item}`, "00", "9223372036854775808", "1".repeat(20), Number(a.item)])
+      expect(await post("reviewer", { action: "claim", itemId }), String(itemId)).toEqual({ status: 400, json: { error: "bad_item_id" } });
+    for (const q of ["?x=1", "?id=1&id=2", "?after=a&after=b", "?before=x", `?id=${a.item}&staff=me`]) expect(await get("reviewer", q), q).toEqual({ status: 400, json: { error: "bad_query" } });
+    expect((await itemRow(a.item)).status).toBe("open");
   });
   it("an item of the fetched_job queue is not found by any action", async () => {
     const org = await F.org({ status: "unclaimed" });

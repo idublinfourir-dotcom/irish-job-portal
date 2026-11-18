@@ -1,7 +1,7 @@
 // The pure parts of the company routes (step 13 part 13c): name merges, an owner who cannot be reached, and manual posting. The body checks and the
 // refusal-to-status map. No database, so unit tests cover them alone. The Origin check and BadRequest come from the account review route's file.
 import { StaffRefused } from "@portal/auth";
-import { QueueRefused } from "@portal/db";
+import { QueueRefused, validId } from "@portal/db";
 import { BadRequest } from "./account-review";
 
 export const MAX_BODY = 30_000; // characters: the biggest real body is a manual post, an advert of 10,000 characters with its JSON escaping and the other fields
@@ -12,8 +12,7 @@ export function checkLength(header: string | null, max = MAX_BODY): void {
   if (Number(header ?? 0) > max) throw new BadRequest("bad_body");
 }
 
-const ID = /^[1-9][0-9]{0,18}$/;
-const isId = (v: unknown): v is string => typeof v === "string" && ID.test(v);
+const isId = validId;
 
 /** A plain JSON object no longer than `max` characters. */
 export function parseObject(text: string, max: number): Record<string, unknown> {

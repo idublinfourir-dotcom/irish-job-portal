@@ -232,6 +232,20 @@
       "when": 1794300029000,
       "tag": "0033_dormant_alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794300030000,
+      "tag": "0034_portal_self_service",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794300031000,
+      "tag": "0035_fetcher_job_source",
+      "breakpoints": true
     }
   ]
 }

@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { QueueRefused } from "../src/admin-queue";
 import { seedStaff } from "../src/staff-seed-cli";
 import { decideCase, listReports, openCase } from "../src/trust-safety";
+import { encodeIdCursor } from "../src/wire";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { fixtures } from "./fixtures";
 
@@ -437,6 +438,23 @@ describe("security", () => {
     expect((await call("ts1", "reports", undefined, { query: "?after=not-a-token" })).json.error).toBe("bad_cursor");
     expect((await call("ts1", "cases", undefined, { query: "?id=1;drop" })).status).toBe(404);
     expect((await one("select status from report where id = $1", [r])).status).toBe("open");
+    // unknown and repeated query keys are bad_query on both lists
+    for (const path of ["reports", "cases"] as const)
+      for (const q of ["?x=1", "?after=a&after=b", "?id=1&id=2", "?before=x"]) expect((await call("ts1", path, undefined, { query: q })).json.error, path + q).toBe("bad_query");
+  });
+
+  it("the case list pages with the opaque `after` token; a plain id, another list's token or a changed token is bad_cursor", async () => {
+    for (let i = 0; i < 21; i++) { const co = await company(); await ok("ts1", "cases", { action: "open", organisationId: co.org, caseKind: "false_claim", reasonCode: "false_sponsorship" }); }
+    const first = await call("ts1", "cases");
+    expect(first.json.items).toHaveLength(20);
+    const last = first.json.items[19].id as string;
+    expect(first.json.next).toBe(encodeIdCursor("cases", last));
+    const second = await call("ts1", "cases", undefined, { query: `?after=${first.json.next}` });
+    expect(second.status).toBe(200);
+    expect(second.json.items.length).toBeGreaterThan(0);
+    for (const x of second.json.items) expect(BigInt(x.id) > BigInt(last)).toBe(true);
+    for (const t of [last, encodeIdCursor("manual_jobs", last), encodeIdCursor("cases", "0"), encodeIdCursor("cases", `0${last}`), Buffer.from(JSON.stringify({ t: "2026-11-18 09:30:00+00", i: last })).toString("base64url")])
+      expect((await call("ts1", "cases", undefined, { query: `?after=${t}` })).json.error, t).toBe("bad_cursor");
   });
 
   it("the employer can change only its own reply and appeal text; a reporter sees nothing of a report or a case", async () => {

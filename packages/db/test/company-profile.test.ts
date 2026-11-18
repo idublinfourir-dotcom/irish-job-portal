@@ -20,7 +20,7 @@ type Route = Partial<Record<"GET" | "POST" | "PUT", Handler>>;
 let db: TestDb, su: pg.Pool;
 let AUTH: Handler;
 const R = {} as Record<"profile" | "logo" | "close" | "team" | "claim", Route>;
-let F: { org(o?: object): Promise<number>; member(org: number, user: string | null, o?: object): Promise<number> };
+let F: { org(o?: object): Promise<number>; member(org: string, user: string | null, o?: object): Promise<number> };
 let store: MemoryStore;
 let src: number, fetchedSrc: number;
 let candidateCookie: string;
@@ -77,7 +77,7 @@ type Who = { cookie?: string };
 // A company with an owner and one member of each other role, all signed in.
 async function company(status = "verified") {
   const name = `Fake Widgets ${uid("")} Limited`;
-  const org = Number(await F.org({ name, status }));
+  const org = String(await F.org({ name, status }));
   const [owner, recruiter, poster, viewer] = [await login(), await login(), await login(), await login()];
   const m = {
     owner: await F.member(org, owner.id, { role: "account_owner", signer: true }), recruiter: await F.member(org, recruiter.id, { role: "recruiter" }),
@@ -99,9 +99,9 @@ async function call(route: Route, method: keyof Route, who: Who, json?: unknown,
 }
 const file = (bytes: Uint8Array, name = "logo.png") => { const f = new FormData(); f.append("file", new Blob([bytes as Uint8Array<ArrayBuffer>]), name); return f; };
 const one = async (sql: string, args: unknown[] = []) => (await su.query(sql, args)).rows[0];
-const orgRow = (org: number) => one("select display_name, status, cro_number, slug, verified_at, short_description, website, county, logo_key, member_limit from organisation where id = $1", [org]);
+const orgRow = (org: string) => one("select display_name, status, cro_number, slug, verified_at, short_description, website, county, logo_key, member_limit from organisation where id = $1", [org]);
 const profile = { description: "We make fake widgets in Cork.\nSince 2020.", website: "https://fake-widgets.example.test", county: "Cork" };
-async function job(org: number, status: string, o: { source?: string } = {}) {
+async function job(org: string, status: string, o: { source?: string } = {}) {
   const fetched = o.source === "fetched";
   return (await one(`insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, status, closes_at, own_page_url, salary_low, search_vector, badge, application_route)
     values ($1, $2, $3, 'Fake role', 'Fake', 'IT', 'critical_skills', $4, now() + interval '20 days', 'https://example.test', 40000, 'x', $5, 'own_page') returning id`,
@@ -212,6 +212,11 @@ describe("P3: the logo", () => {
     const big = new Uint8Array(1024 * 1024 + 1); big.set(PNG);
     expect((await call(R.logo, "PUT", c.owner, undefined, { body: file(big) })).code).toBe("FILE_TOO_LARGE");
     expect((await call(R.logo, "PUT", c.owner, undefined, { body: file(PNG), length: String(2 * 1024 * 1024) })).code).toBe("FILE_TOO_LARGE");
+    // the 1 MiB cap by header comes before the session: no session, a non-owner and a stranger all get 413 and no statement runs
+    for (const who of [{}, c.viewer]) {
+      const [r, n] = await counted(() => call(R.logo, "PUT", who, undefined, { body: file(PNG), length: String(1024 * 1024 + 16 * 1024 + 1) }));
+      expect([r.status, r.code, n]).toEqual([413, "FILE_TOO_LARGE", 0]);
+    }
     expect((await call(R.logo, "PUT", c.owner, undefined, { body: "x" })).code).toBe("BAD_REQUEST");
     expect(store.objects.size).toBe(keys);
     expect((await orgRow(c.org)).logo_key).toBeNull();
@@ -241,7 +246,7 @@ describe("P12: the owner closes the company", () => {
     await F.member(c.org, requester.id, { role: "viewer", status: "join_requested" });
     return { ...c, jobs, invitee, requester };
   }
-  const state = async (org: number) => ({
+  const state = async (org: string) => ({
     org: (await orgRow(org)).status,
     jobs: (await su.query("select id::text, status, close_reason from job where organisation_id = $1 order by id", [org])).rows,
     items: (await su.query("select status, outcome from review_item where organisation_id = $1 or job_id in (select id from job where organisation_id = $1) order by id", [org])).rows,
@@ -267,7 +272,7 @@ describe("P12: the owner closes the company", () => {
     expect([s.jobs.length, s.members.length]).toEqual([jobCount, memberCount]); // nothing deleted
     expect([s.notices, s.emails]).toEqual([4, 4]);
     const mine = await one("select category, template_key, params from notification where portal_user_id = $1 and organisation_id = $2", [c.viewer.id, c.org]);
-    expect(mine).toEqual({ category: "account", template_key: "organisation_closed", params: { organisationId: c.org } });
+    expect(mine).toEqual({ category: "account", template_key: "organisation_closed", params: { organisationId: Number(c.org) } }); // the stored row; the reply sends it as text
     const a = await one("select actor_portal_user_id, before, after from audit_event where action = 'organisation.close' and object_id = $1", [String(c.org)]);
     expect(a).toEqual({ actor_portal_user_id: c.owner.id, before: { status: "verified" }, after: { status: "closed", jobs_closed: 4, items_dropped: 1, memberships_ended: 4, invites_cancelled: 2 } });
   });

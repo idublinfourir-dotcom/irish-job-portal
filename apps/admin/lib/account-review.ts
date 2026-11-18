@@ -1,5 +1,6 @@
 // The pure parts of the account review route (#186, #187): the body check, the refusal-to-status map and the Origin test. No database, so
 // unit tests cover them alone.
+import { validId } from "@portal/db";
 
 export type Action = "claim" | "release" | "approve" | "ask_more" | "reject";
 export type Body = { action: Action; itemId: string; addDomain?: boolean; reason?: string; question?: string };
@@ -29,7 +30,7 @@ export function parseBody(text: string): Body {
   const b = o as Record<string, unknown>;
   if (Object.keys(b).some((k) => !FIELDS.has(k))) throw new BadRequest("bad_body");
   if (typeof b.action !== "string" || !ACTIONS.includes(b.action)) throw new BadRequest("bad_action");
-  if (typeof b.itemId !== "string" || !/^[0-9]{1,19}$/.test(b.itemId)) throw new BadRequest("bad_item_id");
+  if (!validId(b.itemId)) throw new BadRequest("bad_item_id");
   if (b.addDomain !== undefined && (typeof b.addDomain !== "boolean" || b.action !== "approve")) throw new BadRequest("bad_body");
   if (b.reason !== undefined && (typeof b.reason !== "string" || (b.action !== "ask_more" && b.action !== "reject"))) throw new BadRequest("bad_body");
   if (b.question !== undefined && (typeof b.question !== "string" || b.action !== "ask_more")) throw new BadRequest("bad_body"); // its text is checked by checkQuestion
@@ -43,11 +44,11 @@ export function checkOrigin(origin: string | null, own: string): void {
 }
 
 const STATUS = new Map<string, number>(Object.entries({
-  bad_body: 400, bad_action: 400, bad_item_id: 400, bad_reason: 400, bad_question: 400, bad_cursor: 400, bad_input: 400,
+  bad_body: 400, bad_action: 400, bad_item_id: 400, bad_reason: 400, bad_question: 400, bad_cursor: 400, bad_input: 400, bad_query: 400, bad_domain: 400,
   bad_origin: 403, not_reviewer: 403, not_active_staff: 403,
   not_found: 404,
   already_decided: 409, not_claimed: 409, not_claimer: 409, claimed_by_other: 409, organisation_not_pending: 409, has_permit_history: 409,
-  free_email_domain: 409, domain_owned_by_other: 409, no_claimant: 409, claimant_not_active: 409, bad_domain: 409,
+  free_email_domain: 409, domain_owned_by_other: 409, no_claimant: 409, claimant_not_active: 409,
   no_session: 401, not_active: 401,
 }));
 /** The HTTP status for a refusal code; null for a code this route does not know, which the caller turns into a plain 500. */

@@ -7,6 +7,7 @@ import type pg from "pg";
 import { FREE_EMAIL_DOMAINS, decodeReviewCursor } from "./account-review";
 import { QueueRefused } from "./admin-queue";
 import { PAGE_SIZE, validId } from "./search";
+import { decodeIdCursor, encodeIdCursor } from "./wire";
 
 type Db = Pick<pg.Pool, "query" | "connect">;
 type Q = Pick<pg.Pool, "query">;
@@ -226,13 +227,13 @@ export const CASE_ITEM =
   "exists (select 1 from audit_event e where e.object_id = s.id::text and e.object_type = 'strike' and e.action = 'trust_safety.wrc_reported') as wrc_reported " +
   "from strike s join organisation o on o.id = s.organisation_id where s.id = $1::bigint";
 
-/** Cases that need a step: undecided, an appeal waiting, or a ban lift waiting for its second person. Oldest first; `after` is the last case id seen. */
+/** Cases that need a step: undecided, an appeal waiting, or a ban lift waiting for its second person. Oldest first; `after` is the `next` of the page before. */
 export async function listCases(db: Q, staff: string, opts: { after?: string } = {}) {
-  if (opts.after !== undefined && !validId(opts.after)) throw new QueueRefused("bad_cursor");
+  const after = opts.after === undefined ? "0" : decodeIdCursor("cases", opts.after);
   await checkTs(db, staff);
-  const all = (await db.query<Record<string, unknown> & { id: string }>(CASES, [opts.after ?? "0"])).rows;
+  const all = (await db.query<Record<string, unknown> & { id: string }>(CASES, [after])).rows;
   const rows = all.slice(0, PAGE_SIZE);
-  return { items: rows.map(camel), next: all.length > PAGE_SIZE ? rows.at(-1)!.id : null };
+  return { items: rows.map(camel), next: all.length > PAGE_SIZE ? encodeIdCursor("cases", rows.at(-1)!.id) : null };
 }
 
 /** One case with its company, pending two-person requests, ban rows and whether the WRC report is ticked off. */

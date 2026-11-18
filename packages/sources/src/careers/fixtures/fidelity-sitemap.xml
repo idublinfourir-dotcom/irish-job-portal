@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<?xml-stylesheet type="text/xsl" href="sitemap.xsl"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9         http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
+  <url>
+    <loc>https://jobs.fidelity.com/en/</loc>
+    <lastmod>2026-10-30T10:33:57.147Z</lastmod>
+  </url>
+<url>
+    <loc>https://jobs.fidelity.com/in/</loc>
+    <lastmod>2026-10-30T10:33:57.147Z</lastmod>
+  </url>
+<url>
+    <loc>https://jobs.fidelity.com/ie/</loc>
+    <lastmod>2026-10-30T10:33:57.147Z</lastmod>
+  </url>
+<url>
+    <loc>https://jobs.fidelity.com/in/jobs/</loc>
+    <lastmod>2026-11-03T08:42:09.473Z</lastmod>
+  </url>
+<url>
+    <loc>https://jobs.fidelity.com/ie/jobs/</loc>
+    <lastmod>2026-11-03T08:42:09.473Z</lastmod>
+  </url>
+<url>
+    <loc>https://jobs.fidelity.com/ie/jobs/2136258/cost-basis-support-representative-ii/</loc>
+    <lastmod>2026-11-17T00:00:00Z</lastmod>
+  </url>
+<url>
+    <loc>https://jobs.fidelity.com/ie/jobs/2136526/data-engineer/</loc>
+    <lastmod>2026-10-27T00:00:00Z</lastmod>
+  </url>
+</urlset>

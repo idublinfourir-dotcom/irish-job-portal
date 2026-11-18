@@ -67,15 +67,15 @@ describe("checkPost", () => {
 
 describe("checkEdit, checkRenew, checkClose", () => {
   it("edit takes the whole post and a job id", () => {
-    expect(checkEdit({ ...good, jobId: 5 })?.jobId).toBe(5);
-    for (const jobId of [0, -1, "5", 1.5, 1e30, undefined]) expect(checkEdit({ ...good, jobId })).toBeNull();
-    expect(checkEdit({ ...good, jobId: 5, extra: 1 })).toBeNull();
+    expect(checkEdit({ ...good, jobId: "5" })?.jobId).toBe("5");
+    for (const jobId of [0, -1, 1.5, 7, 2 ** 53, Infinity, null, "0", "07", "-1", "1.5", " 7", "9".repeat(19), "9223372036854775808", 5, 1e30, undefined]) expect(checkEdit({ ...good, jobId }), String(jobId)).toBeNull();
+    expect(checkEdit({ ...good, jobId: "5", extra: 1 })).toBeNull();
   });
   it("renew takes an optional hire answer, close needs one (#49)", () => {
-    expect(checkRenew({ jobId: 3 })).toEqual({ jobId: 3, hireAnswer: null });
-    expect(checkRenew({ jobId: 3, hireAnswer: "yes" })).toEqual({ jobId: 3, hireAnswer: "yes" });
-    expect(checkClose({ jobId: 3, hireAnswer: "no" })).toEqual({ jobId: 3, hireAnswer: "no" });
-    for (const b of [{ jobId: 3 }, { jobId: 3, hireAnswer: "maybe" }, { jobId: 3, hireAnswer: "no", x: 1 }, { hireAnswer: "no" }, null]) expect(checkClose(b)).toBeNull();
+    expect(checkRenew({ jobId: "3" })).toEqual({ jobId: "3", hireAnswer: null });
+    expect(checkRenew({ jobId: "3", hireAnswer: "yes" })).toEqual({ jobId: "3", hireAnswer: "yes" });
+    expect(checkClose({ jobId: "3", hireAnswer: "no" })).toEqual({ jobId: "3", hireAnswer: "no" });
+    for (const b of [{ jobId: "3" }, { jobId: 3, hireAnswer: "no" }, { jobId: "03", hireAnswer: "no" }, { jobId: "3", hireAnswer: "maybe" }, { jobId: "3", hireAnswer: "no", x: 1 }, { hireAnswer: "no" }, null]) expect(checkClose(b)).toBeNull();
   });
 });
 

@@ -1,5 +1,6 @@
 // The pure parts of the trust and safety routes (reports and cases): the body checks and the refusal-to-status map. No database, so unit tests
 // cover them alone. The Origin check and BadRequest come from the account review route's file.
+import { validId } from "@portal/db";
 import { BadRequest } from "./account-review";
 
 export const MAX_BODY = 12_000; // characters; the biggest real body is a 5,000-character reply or appeal plus the other fields
@@ -12,14 +13,13 @@ export function checkLength(header: string | null): void {
 }
 
 type Field = "id" | "kind" | "reason" | "summary" | "text" | "time" | "outcome" | "flag" | "result";
-const ID = /^[1-9][0-9]{0,18}$/;
 const CODE = /^[a-z][a-z0-9_]{0,40}$/;
 // ISO date and time with a zone, as a browser's date input plus time sends it
 const TIME = /^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d{1,3})?)?(Z|[+-]\d\d:\d\d)$/;
 // Free text written by staff: printable, with new lines and tabs, no other control or format characters
 const plain = (s: string, max: number) => s.trim().length > 0 && s.length <= max && !/[\p{Cc}\p{Cf}]/u.test(s.replace(/[\n\r\t]/g, ""));
 const valid: Record<Field, (v: unknown) => boolean> = {
-  id: (v) => typeof v === "string" && ID.test(v),
+  id: validId,
   kind: (v) => typeof v === "string" && CODE.test(v),
   reason: (v) => typeof v === "string" && CODE.test(v),
   summary: (v) => typeof v === "string" && plain(v, MAX_SUMMARY),
@@ -79,7 +79,7 @@ export function parseBody(text: string, actions: Record<string, Spec>): Body {
 
 const STATUS = new Map<string, number>(Object.entries({
   bad_body: 400, bad_action: 400, bad_id: 400, bad_kind: 400, bad_reason: 400, bad_summary: 400, bad_text: 400, bad_time: 400, bad_outcome: 400,
-  bad_flag: 400, bad_result: 400, bad_cursor: 400, bad_input: 400,
+  bad_flag: 400, bad_result: 400, bad_cursor: 400, bad_input: 400, bad_query: 400,
   no_session: 401, not_active: 401,
   bad_origin: 403, not_active_staff: 403, not_trust_and_safety: 403,
   not_found: 404,

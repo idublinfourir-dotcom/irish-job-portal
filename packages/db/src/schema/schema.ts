@@ -285,7 +285,7 @@ export const job = pgTable("job", {
 	check("job_pass_route_check", sql`pass_route = ANY (ARRAY['stated_pay'::text, 'big_company'::text, 'pay_floor'::text, 'public_pay'::text])`),
 	check("job_hire_answer_check", sql`hire_answer = ANY (ARRAY['yes'::text, 'no'::text])`),
 	check("job_status_check", sql`status = ANY (ARRAY['draft'::text, 'in_review'::text, 'live'::text, 'under_review'::text, 'hidden'::text, 'closed'::text])`),
-	check("job_close_reason_check", sql`close_reason = ANY (ARRAY['expired'::text, 'closed'::text, 'removed'::text, 'under_review_expired'::text, 'abandoned'::text, 'recheck_failed'::text])`),
+	check("job_close_reason_check", sql`close_reason = ANY (ARRAY['expired'::text, 'closed'::text, 'removed'::text, 'under_review_expired'::text, 'abandoned'::text, 'recheck_failed'::text, 'source_stale'::text])`),
 	check("job_hidden_reason_check", sql`hidden_reason = ANY (ARRAY['report'::text, 'organisation_suspended'::text, 'admin'::text])`),
 	check("job_permit_history_check", sql`permit_history = ANY (ARRAY['has_history'::text, 'first_time'::text, 'not_linked'::text])`),
 	check("job_application_route_check", sql`application_route = ANY (ARRAY['own_page'::text, 'on_site'::text])`),
@@ -306,6 +306,7 @@ export const job = pgTable("job", {
 	check("job_screening_questions_check", sql`(jsonb_typeof(screening_questions) = 'array'::text) AND (jsonb_array_length(screening_questions) <= 5)`),
 	check("job_sponsor_sort_check", sql`sponsor_sort >= '-1'::integer`),
 	check("job_recheck_failed_fetched", sql`(close_reason IS DISTINCT FROM 'recheck_failed'::text) OR (source = 'fetched'::text)`),
+	check("job_source_stale_fetched", sql`(close_reason IS DISTINCT FROM 'source_stale'::text) OR (source = 'fetched'::text)`),
 	check("job_weekly_hours_check", sql`(weekly_hours >= 1) AND (weekly_hours <= 60)`),
 ]);
 

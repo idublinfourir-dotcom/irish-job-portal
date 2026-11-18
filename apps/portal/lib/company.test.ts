@@ -3,15 +3,16 @@ import { describe, expect, it } from "vitest";
 import { checkClaim, checkRegister, refusalFor } from "./company";
 
 describe("checkClaim", () => {
-  it("takes only a positive whole-number organisationId", () => {
-    expect(checkClaim({ organisationId: 7 })).toEqual({ organisationId: 7 });
-    for (const bad of [null, [], "7", 7, {}, { organisationId: "7" }, { organisationId: 0 }, { organisationId: -1 }, { organisationId: 1.5 }, { organisationId: 2 ** 53 },
+  it("takes only an organisationId as a string of digits (no 0, no leading zeros, at most the bigint top)", () => {
+    expect(checkClaim({ organisationId: "7" })).toEqual({ organisationId: "7" });
+    expect(checkClaim({ organisationId: "9223372036854775807" })).toEqual({ organisationId: "9223372036854775807" });
+    for (const bad of [null, [], "7", 7, {}, { organisationId: 7 }, { organisationId: "0" }, { organisationId: "07" }, { organisationId: "9223372036854775808" }, { organisationId: 0 }, { organisationId: -1 }, { organisationId: 1.5 }, { organisationId: 2 ** 53 },
       { organisationId: Infinity }, { organisationId: null }, { organisationId: [7] }, { organisationId: { id: 7 } }, { organisationId: "7; drop table organisation" }])
       expect(checkClaim(bad), JSON.stringify(bad)).toBeNull();
   });
   it("refuses any extra field, a portal user id above all", () => {
     for (const extra of [{ portalUserId: "someone" }, { portal_user_id: "x" }, { userId: "x" }, { status: "verified" }, JSON.parse('{"__proto__": {"x": 1}}')])
-      expect(checkClaim({ organisationId: 7, ...extra }), JSON.stringify(extra)).toBeNull();
+      expect(checkClaim({ organisationId: "7", ...extra }), JSON.stringify(extra)).toBeNull();
   });
 });
 

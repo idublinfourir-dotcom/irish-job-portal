@@ -16,6 +16,7 @@ export * from "./bot-check";
 export * from "./report";
 export * from "./contact";
 export * from "./contact-inbox";
+export * from "./wire";
 
 type Db = NodePgDatabase<typeof schema>;
 
@@ -86,3 +87,4 @@ export * from "./audit-read";
 export * from "./content-admin";
 
 export * from "./alerts";
+export * from "./self-service";

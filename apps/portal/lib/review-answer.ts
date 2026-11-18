@@ -1,7 +1,7 @@
 // The employer's answer to "ask for more" (#197): POST /api/portal/review-answer { note }. Same checks as the claim route, in the same order:
 // Origin, body size, JSON, body, session, then the rate limit. The portal user id comes from the session; the database function does the real checks.
 import { getPool } from "@portal/db";
-import { isObject, no, only, readPost, withinLimit } from "./company";
+import { isObject, no, ok, only, readPost, withinLimit } from "./company";
 
 export const NOTE_MAX = 1000; // characters; the database function holds the same cap
 
@@ -19,7 +19,7 @@ export async function answerPost(request: Request): Promise<Response> {
   if (!(await withinLimit(`answer:${login.userId}`))) return no(429, "TOO_MANY_REQUESTS");
   try {
     const r = (await getPool().query("select private.answer_review($1, $2) r", [login.userId, body.note])).rows[0].r as { organisation_id: number; status: string };
-    return Response.json({ organisationId: Number(r.organisation_id), status: r.status });
+    return ok({ organisationId: r.organisation_id, status: r.status });
   } catch (e) {
     const { code, message = "" } = (e ?? {}) as { code?: string; message?: string };
     if (code !== "P0001") throw e;

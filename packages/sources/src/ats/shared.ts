@@ -169,6 +169,7 @@ export const PACE = {
   runWaitMs: 180_000, // all waits of one run, every board together
   workdayCallGapMs: 300, // between two calls of one Workday board
   serialBoardGapMs: 1_500, // between two boards that run one at a time (Workday)
+  siteCallGapMs: 2_000, // between two calls of one employer's own career site (W1c: Phenom, sitemap)
   giveUpAfter: 2, // this many serial boards in a row giving up on 429/503 skip the rest of them for the run
 };
 export type Sleep = (ms: number) => Promise<void>;
@@ -184,7 +185,8 @@ export function safeName(board: string, ...names: string[]): void {
 }
 
 export type Caller = (url: string, body?: unknown) => Promise<unknown>;
-export type CallerOptions = { sleep?: Sleep; gapMs?: number; budget?: { leftMs: number } };
+/** `text`: the caller returns the body as text (a page, a sitemap), not parsed JSON. */
+export type CallerOptions = { sleep?: Sleep; gapMs?: number; budget?: { leftMs: number }; text?: boolean };
 
 /** Where a refused redirect pointed, for the log: no query, fragment or credentials (they can carry a token), at most 120 characters. */
 function target(loc: string, base: string): string {
@@ -232,7 +234,8 @@ async function said(res: Response): Promise<string> {
  * HTTP 429 or 503 is tried again (PACE.tries in all) after Retry-After or the backoff, within the board's and the run's wait budget.
  * `gapMs` is a pause before every call but the first. Python: get_json (run_day.py:139-143) and the POST in f_workday.
  */
-export function makeCaller(board: string, fetch: Fetch, origin: string, { sleep = realSleep, gapMs = 0, budget = runBudget() }: CallerOptions = {}): Caller {
+export function makeCaller(board: string, fetch: Fetch, origin: string, { sleep = realSleep, gapMs = 0, budget = runBudget(), text: asText = false }: CallerOptions = {}): Caller {
+  const headers = asText ? { ...HEADERS, Accept: "text/html, application/xml;q=0.9, */*;q=0.8" } : HEADERS;
   let calls = 0;
   let boardLeft = PACE.boardWaitMs;
   return async (url, body) => {
@@ -245,7 +248,7 @@ export function makeCaller(board: string, fetch: Fetch, origin: string, { sleep 
       try {
         res = await fetch(url, {
           method,
-          headers: HEADERS,
+          headers,
           body: method === "POST" ? JSON.stringify(body) : undefined,
           redirect: "manual",
           signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -279,7 +282,7 @@ export function makeCaller(board: string, fetch: Fetch, origin: string, { sleep 
         if (Number(res.headers.get("content-length")) > MAX_BYTES) throw new Error("too large");
         const raw = await res.text();
         if (raw.length > MAX_BYTES) throw new Error("too large");
-        return JSON.parse(raw) as unknown;
+        return asText ? raw : (JSON.parse(raw) as unknown);
       } catch (e) {
         throw fail(e instanceof Error && e.message === "too large" ? "body too large" : "body is not JSON", e);
       }

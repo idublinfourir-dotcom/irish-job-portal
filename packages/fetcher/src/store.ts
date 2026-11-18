@@ -22,6 +22,20 @@ const FINISH =
   "texts as (delete from job_text where job_id in (select id from closed) returning 1), " +
   "run as (update fetch_run set finished_at = $3, seen = $5, new = $6, closed = (select count(*) from closed) + $7 where id = $2 returning 1) " +
   "update job_source set last_ok_at = $3, last_error = null where id = $1 returning (select count(*) from closed)::int as gone_closed";
+// A board with no good fetch for STALE_BOARD_DAYS (W1b: Workday, skipped since 18 Nov 2026; a board dropped from boards.json): its live jobs
+// close as 'source_stale' with their text deleted, and their adverts are marked gone, so a later good fetch that lists one hands it back with
+// its text and the usual reopen brings it back. A board that never had a good fetch counts from the advert's first sighting. Only live fetched
+// jobs: in_review, hidden and staff-closed jobs are never touched. One statement.
+export const STALE_BOARD_DAYS = 7;
+export const CLOSE_STALE =
+  "with c as (update job j set status = 'closed', close_reason = 'source_stale', closed_at = $1, search_vector = null from fetched_advert f join job_source s on s.id = f.job_source_id " +
+  "where j.fetched_advert_id = f.id and j.source = 'fetched' and j.status = 'live' and coalesce(s.last_ok_at, f.first_seen_at) < $1::timestamptz - make_interval(days => $2::int) " +
+  // the same test on the board alone, as a list read once, so the plan starts from the few stale boards and reads their adverts by index
+  "and f.job_source_id = any(array(select id from job_source where last_ok_at is null or last_ok_at < $1::timestamptz - make_interval(days => $2::int))) " +
+  "returning j.id, j.fetched_advert_id), " +
+  "t as (delete from job_text where job_id in (select id from c) returning 1), " +
+  "g as (update fetched_advert set gone_at = $1 where id in (select fetched_advert_id from c) and gone_at is null returning 1) " +
+  "select count(*)::int as n from c";
 const FAIL =
   "with run as (update fetch_run set finished_at = $2, error = $3 where id = $1 returning 1) update job_source set last_error = $3 where id = $4";
 const INSERT_ADVERT =
@@ -88,6 +102,11 @@ export async function startBoard(db: Db, kind: string, board: string): Promise<B
 export async function finishBoard(db: Db, run: BoardRun, now: Date, seen: readonly string[], added: number, rechecked = 0): Promise<number> {
   const r = await db.query<{ gone_closed: number }>(FINISH, [run.sourceId, run.runId, now, seen.map(clean), seen.length, added, rechecked]);
   return Number(r.rows[0]?.gone_closed ?? 0) + rechecked;
+}
+
+/** Closes the live jobs of every board with no good fetch for `days` (default STALE_BOARD_DAYS) before `now`. Returns how many closed. */
+export async function closeStale(db: Db, now: Date, days = STALE_BOARD_DAYS): Promise<number> {
+  return Number((await db.query<{ n: number }>(CLOSE_STALE, [now, days])).rows[0]?.n ?? 0);
 }
 
 /** A fetch that failed: the run row and the source row say why. `last_ok_at` stays. Message cut to 300 code points. */

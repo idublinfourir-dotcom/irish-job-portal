@@ -4,7 +4,7 @@
 import { candidateSettings } from "@portal/auth";
 import {
   candidateRead, candidateWrite, checkAlert, checkAlertEdit, checkAlertId, createAlert, deleteAlert, editAlert, getPool, listAlerts, pauseAlert, resumeAlert,
-  unsubscribe, unsubscribeInfo, unsubscribeParams,
+  unsubscribe, unsubscribeInfo, unsubscribeParams, withinUnsubscribeRate,
 } from "@portal/db";
 import { signedInCandidate } from "./candidate";
 import { OCCUPATION_CODES } from "./occupations";
@@ -23,11 +23,14 @@ const no = (status: number, code: string) => Response.json({ code }, { status })
 
 export async function unsubscribeGet(request: Request) {
   const p = unsubscribeParams(new URL(request.url));
-  return p ? Response.json(await unsubscribeInfo(getPool(), p)) : no(400, "BAD_REQUEST");
+  if (!p) return no(400, "BAD_REQUEST");
+  if (!(await withinUnsubscribeRate(request.headers))) return no(429, "TOO_MANY_REQUESTS");
+  return Response.json(await unsubscribeInfo(getPool(), p));
 }
 export async function unsubscribePost(request: Request) {
   const p = unsubscribeParams(new URL(request.url));
   if (!p) return no(400, "BAD_REQUEST");
   if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY || (await request.text()).length > MAX_BODY) return no(413, "BODY_TOO_LARGE");
+  if (!(await withinUnsubscribeRate(request.headers))) return no(429, "TOO_MANY_REQUESTS");
   return Response.json(await unsubscribe(getPool(), p));
 }

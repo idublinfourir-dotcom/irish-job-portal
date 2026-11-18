@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { answers, seedSignupTerms } from "./better-auth-helper";
 import * as alerts from "../src/alerts";
+import { UNSUBSCRIBE_RATE } from "../src/alerts";
 
 const BUDGET = {
   create: { statements: 9, medianMs: 60 }, // measured 7: 2 session + rate limit + begin, gate, insert, commit
@@ -343,6 +344,28 @@ describe("unsubscribe by token (no sign-in)", () => {
     expect((await unsub("POST", `?token=${t}&scope=one`, "x".repeat(500))).status).toBe(413);
     expect((await unsub("POST", `?token=${t}&scope=one`, "List-Unsubscribe=One-Click", { "content-length": "999999" })).status).toBe(413);
     expect((await status(id)).status).toBe("active");
+  });
+});
+
+describe("unsubscribe rate limit (per client address)", () => {
+  it("60 calls a minute per address, GET and POST together, then 429; untrusted address headers do not reset it; a bad link costs no count", async () => {
+    const p = await login();
+    const t = await tokenOf(await create(p));
+    const ip = { "x-vercel-forwarded-for": "198.51.100.77" };
+    // malformed links are refused before the limit, so they do not use it up
+    for (let i = 0; i < 70; i++) expect((await unsub("GET", "?token=short&scope=one", undefined, ip)).status).toBe(400);
+    const seq: number[] = [];
+    for (let i = 0; i < UNSUBSCRIBE_RATE.max; i++) seq.push((await unsub(i % 2 ? "GET" : "POST", `?token=${t}&scope=one`, i % 2 ? undefined : "List-Unsubscribe=One-Click", ip)).status);
+    expect(seq.every((x) => x === 200)).toBe(true);
+    expect(await unsub("GET", `?token=${t}&scope=one`, undefined, ip)).toEqual({ status: 429, json: { code: "TOO_MANY_REQUESTS" } });
+    expect((await unsub("POST", `?token=${t}&scope=one`, "List-Unsubscribe=One-Click", ip)).status).toBe(429);
+    // only x-vercel-forwarded-for is trusted (its first entry); headers a client can set itself change nothing
+    const untrusted: Record<string, string>[] = [{ "x-forwarded-for": "203.0.113.1" }, { "x-real-ip": "203.0.113.2" }, { forwarded: "for=203.0.113.3" }, { "cf-connecting-ip": "203.0.113.4" },
+      { "x-vercel-forwarded-for": "198.51.100.77, 203.0.113.5" }];
+    for (const extra of untrusted)
+      expect((await unsub("GET", `?token=${t}&scope=one`, undefined, { ...ip, ...extra })).status, JSON.stringify(extra)).toBe(429);
+    // another address is not held back
+    expect((await unsub("GET", `?token=${t}&scope=one`, undefined, { "x-vercel-forwarded-for": "198.51.100.78" })).status).toBe(200);
   });
 });
 

@@ -4,6 +4,7 @@
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { seedStaff } from "../src/staff-seed-cli";
+import { encodeIdCursor } from "../src/wire";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { fixtures } from "./fixtures";
 
@@ -125,6 +126,8 @@ describe("merge route", () => {
     is(await call(merge, M, "administrator", undefined, { query: "?id=1&id=2&id=3" }), 400, "bad_input");
     is(await call(merge, M, "administrator", undefined, { query: "?id=abc" }), 400, "bad_input");
     is(await call(merge, M, "administrator"), 400, "bad_input");
+    // `id` is the one key that may repeat; anything else is bad_query
+    for (const bad of [`${q}&x=1`, "?ids=1", `?id=${a}&after=x`]) is(await call(merge, M, "administrator", undefined, { query: bad }), 400, "bad_query");
   });
   it("is refused for no session, a disabled login, a bad Origin, a big or unknown or odd body", async () => {
     const [a, s] = [await org(), await org()];
@@ -200,6 +203,9 @@ describe("owner-reassign route", () => {
     is(await call(owner, O, null), 401, "no_session");
     is(await call(owner, O, "account_reviewer", undefined, { query: "?after=abc" }), 400, "bad_cursor");
     is(await call(owner, O, "account_reviewer", undefined, { query: "?after=1;select" }), 400, "bad_cursor");
+    // the old plain id, a token of another list, and a changed id are refused; unknown or repeated keys are bad_query
+    for (const t of ["5", encodeIdCursor("manual_jobs", "5"), encodeIdCursor("owner_reassign", "05")]) is(await call(owner, O, "account_reviewer", undefined, { query: `?after=${t}` }), 400, "bad_cursor");
+    for (const q of ["?x=1", "?after=a&after=b", "?before=x"]) is(await call(owner, O, "account_reviewer", undefined, { query: q }), 400, "bad_query");
   });
   it("hostile input: the ticks must be real booleans, ids plain digits, no unknown fields, Origin and size checked", async () => {
     const t = await team();
@@ -283,7 +289,22 @@ describe("manual-jobs route", () => {
     for (const who of ["fetched_job_reviewer", "rules_data_editor", "services_case_handler", "content_editor", "norole"]) is(await call(manual, J, who), 403, "not_manual_viewer");
     is(await call(manual, J, "disabled"), 401, "not_active");
     is(await call(manual, J, null), 401, "no_session");
-    is(await call(manual, J, "administrator", undefined, { query: "?before=x" }), 400, "bad_cursor");
+    is(await call(manual, J, "administrator", undefined, { query: "?after=x" }), 400, "bad_cursor");
+    for (const q of ["?before=x", "?x=1", "?after=a&after=b"]) is(await call(manual, J, "administrator", undefined, { query: q }), 400, "bad_query");
+  });
+  it("GET pages with the opaque `after` token: no row twice, and a token of another list or a plain id is refused", async () => {
+    const o = await org({ status: "verified" });
+    for (let i = 0; i < 21; i++) okay(await doManual("account_reviewer", post(o)));
+    const first = await call(manual, J, "administrator");
+    expect(first.json.items).toHaveLength(20);
+    expect(first.json.next).toBe(encodeIdCursor("manual_jobs", first.json.items[19].id));
+    const second = await call(manual, J, "administrator", undefined, { query: `?after=${first.json.next}` });
+    expect(second.status).toBe(200);
+    const ids = new Set(first.json.items.map((x: { id: string }) => x.id));
+    expect(second.json.items.length).toBeGreaterThan(0);
+    for (const x of second.json.items) { expect(ids.has(x.id)).toBe(false); expect(Number(x.id)).toBeLessThan(Number(first.json.items[19].id)); }
+    for (const t of [first.json.items[19].id, encodeIdCursor("cases", first.json.items[19].id), first.json.next.slice(0, -2)])
+      is(await call(manual, J, "administrator", undefined, { query: `?after=${t}` }), 400, "bad_cursor");
   });
   it("hostile input: unknown fields, a badge, control and format characters, bad ids, Origin, size, odd JSON", async () => {
     const o = await org({ status: "verified" });

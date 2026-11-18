@@ -4,7 +4,7 @@
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
-  cancelOwnerReassign, closeManualPost, completeOwnerReassign, createManualPost, listManualPosts, listOwnerReassigns, mergeCompanies, previewCompanies, QueueRefused,
+  cancelOwnerReassign, closeManualPost, encodeIdCursor, completeOwnerReassign, createManualPost, listManualPosts, listOwnerReassigns, mergeCompanies, previewCompanies, QueueRefused,
   requestOwnerReassign,
 } from "../src";
 import { getCompanyPage } from "../src/public-pages";
@@ -309,10 +309,13 @@ describe("manual posting (#232)", () => {
     const first = await listManualPosts(admin, staff.administrator!);
     expect(first.items).toHaveLength(20);
     expect(first.items[0]).toMatchObject({ status: "draft", reason: "pay_below_minimum", posted_by_staff_id: staff.account_reviewer });
-    expect(first.next).toBe(first.items[19]!.id);
-    const second = await listManualPosts(admin, staff.administrator!, { before: first.next! });
+    expect(first.next).toBe(encodeIdCursor("manual_jobs", first.items[19]!.id)); // the opaque { i } token, not the plain id
+    const second = await listManualPosts(admin, staff.administrator!, { after: first.next! });
     expect(Number(second.items[0]!.id)).toBeLessThan(Number(first.items[19]!.id));
-    await refused(listManualPosts(admin, staff.administrator!, { before: "abc" }), "bad_cursor");
+    expect(second.items.map((x) => x.id)).not.toContain(first.items[19]!.id);
+    // hostile tokens: the plain id the old form took, a forged junk token, a changed id, another list's { t, i } token
+    for (const bad of [first.items[19]!.id, "abc", encodeIdCursor("manual_jobs", "0"), encodeIdCursor("manual_jobs", "007"), encodeIdCursor("cases", first.items[19]!.id), Buffer.from(JSON.stringify({ t: "2026-11-18 09:30:00+00", i: "5" })).toString("base64url")])
+      await refused(listManualPosts(admin, staff.administrator!, { after: bad }), "bad_cursor");
   });
 });
 

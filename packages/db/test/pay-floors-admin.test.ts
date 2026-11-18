@@ -195,6 +195,7 @@ describe("the list", () => {
     const f = await floor(await company());
     expect((await ok(call("ad1", undefined, { query: `?id=${f}` }))).item).toMatchObject({ floorId: String(f) });
     for (const id of ["99999999", "0", "abc", "1;2", ""]) await no(call("ad1", undefined, { query: `?id=${id}` }), 404, "not_found");
+    for (const q of ["?x=1", `?id=${f}&id=${f}`, "?after=a&after=b", "?before=x", `?id=${f}&staff=me`]) await no(call("ad1", undefined, { query: q }), 400, "bad_query");
   });
 });
 

@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { decide, main, utcDayStart } from "./fetch-guard-cli.ts";
+import { GOOD_RUN_TODAY, decide, main, skipKinds, utcDayStart } from "./fetch-guard-cli.ts";
 
 describe("fetch guard decision", () => {
   it("skips only when at least one good run started today", () => {
@@ -16,6 +16,28 @@ describe("fetch guard decision", () => {
     expect(utcDayStart(new Date("2026-11-12T00:00:00.000Z")).toISOString()).toBe("2026-11-12T00:00:00.000Z");
     expect(utcDayStart(new Date("2026-11-11T23:59:59.999Z")).toISOString()).toBe("2026-11-11T00:00:00.000Z");
     expect(utcDayStart(new Date("2026-12-31T23:59:59.999Z")).toISOString()).toBe("2026-12-31T00:00:00.000Z");
+  });
+});
+
+// W1b: the boards fetched elsewhere (Workday, not fetched from GitHub) are left out of the guard's question.
+describe("FETCHER_SKIP_KINDS", () => {
+  it("blank is none; a comma list is trimmed, empty items dropped", () => {
+    expect(skipKinds()).toEqual([]);
+    expect(skipKinds(" ")).toEqual([]);
+    expect(skipKinds("workday")).toEqual(["workday"]);
+    expect(skipKinds(" workday, amazon ,")).toEqual(["workday", "amazon"]);
+  });
+  it("refuses anything but lower-case kinds, so hostile text never reaches the query", () => {
+    for (const bad of [",", "Workday", "work day", "workday'; drop table fetch_run;--", "w".repeat(41), "{workday}"]) expect(() => skipKinds(bad), bad).toThrow(/comma list of board kinds/);
+  });
+  it("the kinds go in as a parameter, never into the SQL text", () => {
+    expect(GOOD_RUN_TODAY).toMatch(/kind = any\(\$2::text\[\]\)/);
+    expect(GOOD_RUN_TODAY).not.toMatch(/workday/);
+  });
+  it("a bad value stops the guard with exit 2 before it connects", async () => {
+    const lines: string[] = [];
+    expect(await main({ FETCHER_DATABASE_URL: "postgres://x@127.0.0.1:1/x", FETCHER_SKIP_KINDS: "Work-day" }, (l) => lines.push(l))).toBe(2);
+    expect(lines).toEqual(["FETCHER_SKIP_KINDS must be a comma list of board kinds"]);
   });
 });
 

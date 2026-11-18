@@ -38,6 +38,17 @@ describe("checkLength and readQuery", () => {
     expect(readQuery("http://x.test/a?id=1&after=abc", ["id", "after"])).toEqual({ id: "1", after: "abc" });
     expect(readQuery("http://x.test/a", [])).toEqual({});
     for (const url of ["http://x.test/a?x=1", "http://x.test/a?id=1&id=2", "http://x.test/a?id=1&kind=x"]) expect(why(() => readQuery(url, ["id"])), url).toBe("bad_query");
+    // hostile spellings of a key are other keys; an empty key and a key with no value are keys too
+    for (const url of ["http://x.test/a?ID=1", "http://x.test/a?id%00=1", "http://x.test/a?=1", "http://x.test/a?after", "http://x.test/a?__proto__=1", "http://x.test/a?after=a&after=b"])
+      expect(why(() => readQuery(url, ["id"])), url).toBe("bad_query");
+  });
+  it("lets a name in `many` repeat (the merge preview's two ids) and still refuses unknown keys", () => {
+    expect(readQuery("http://x.test/a?id=1&id=2", ["id"], ["id"])).toEqual({ id: "1" });
+    expect(why(() => readQuery("http://x.test/a?id=1&id=2&x=3", ["id"], ["id"]))).toBe("bad_query");
+  });
+  it("id19 is the shared id check: no 0, no leading zeros, at most the bigint top", () => {
+    for (const v of ["1", "42", "9223372036854775807"]) expect(id19(v), v).toBe(true);
+    for (const v of ["0", "00", "07", "9223372036854775808", "9".repeat(19), "1".repeat(20), "", " 1", "1 ", "-1", "1.0", "1e3", 1, null]) expect(id19(v), String(v)).toBe(false);
   });
 });
 

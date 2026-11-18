@@ -1,0 +1,25 @@
+{
+ "refineSearch": {
+  "status": 200,
+  "hits": 1,
+  "totalHits": 1,
+  "data": {
+   "jobs": [
+    {
+     "reqId": "R-291229",
+     "jobId": "R-291229",
+     "title": "Senior Enterprise Operations Engineer",
+     "country": "Ireland",
+     "location": "Dublin 18, Ireland",
+     "multi_location": [
+      "Dublin 18, Ireland"
+     ],
+     "applyUrl": "https://mastercard.wd1.myworkdayjobs.com/CorporateCareers/job/Dublin-Ireland/Senior-Enterprise-Operations-Engineer_R-291229/apply",
+     "postedDate": "2026-11-16T00:00:00.000+0000",
+     "descriptionTeaser": "Become part of our team as a Senior Enterprise Operations Engineer, overseeing Network Operations and Engineering’s ITSM processes for Problem and Change Management. You will ensure network performance and availability, collaborating with subject matter experts and reporting to leadership. Ideal for candidates with strong ITIL and ITSM knowledge and experience in network operations or engineering.",
+     "type": "Full time"
+    }
+   ]
+  }
+ }
+}

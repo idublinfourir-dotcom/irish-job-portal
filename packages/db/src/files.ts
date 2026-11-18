@@ -26,9 +26,10 @@ const REFUSED_STATUS: Record<string, number> = { EMPTY_FILE: 400, FILE_TOO_LARGE
 type Mode = "read" | "write" | "upload";
 // Origin (writes), the size header (uploads, before any read), the session, the rate limits, then the work. A Refuse is a short code, a missing
 // storage setting a 503 (only these routes), a database rule (the same-person guard) a 403; anything else is thrown (a 500, nothing leaked).
-async function fileRoute(request: Request, env: FilesEnv, mode: Mode, work: (db: pg.Pool, userId: string) => Promise<unknown>): Promise<Response> {
+// `cap`: the upload's size limit by header (the logo's is smaller than the 4 MiB file cap).
+async function fileRoute(request: Request, env: FilesEnv, mode: Mode, work: (db: pg.Pool, userId: string) => Promise<unknown>, cap = MAX_BODY): Promise<Response> {
   if (mode !== "read" && request.headers.get("origin") !== env.origin) return no(403, "BAD_ORIGIN");
-  if (mode === "upload" && Number(request.headers.get("content-length") ?? 0) > MAX_BODY) return no(413, "FILE_TOO_LARGE");
+  if (mode === "upload" && Number(request.headers.get("content-length") ?? 0) > cap) return no(413, "FILE_TOO_LARGE");
   const who = await env.login(request.headers);
   if ("refused" in who) return who.refused === "no_session" ? no(401, "NO_SESSION") : no(403, "REFUSED");
   const table = `${env.side}_rate_limit` as const;
@@ -163,10 +164,10 @@ const companyRefused = (e: unknown) => {
   return c ? new Refuse(403, c === "NOT_OWNER" ? c : "REFUSED") : e;
 };
 
+// The 1 MiB cap (with the multipart wrapping) is checked by header before the session, like the file cap on the other uploads.
 export const logoPut = (r: Request, env: FilesEnv) => fileRoute(r, env, "upload", async (db, userId) => {
   // the owner check before the body is read, so no one else fills the bucket; company_logo checks again under the company's lock
   if (!(await db.query(OWNER, [userId])).rowCount) throw new Refuse(403, "NOT_OWNER");
-  if (Number(r.headers.get("content-length") ?? 0) > MAX_LOGO + 16 * 1024) throw new Refuse(413, "FILE_TOO_LARGE");
   const up = await readUpload(r);
   if ("code" in up) throw new Refuse(up.status, up.code);
   const c = checkUpload(up.bytes, ["png", "jpeg", "webp"], MAX_LOGO);
@@ -182,4 +183,4 @@ export const logoPut = (r: Request, env: FilesEnv) => fileRoute(r, env, "upload"
   // ponytail: a failed removal leaves the old file in the bucket unreferenced; a sweep of logo/ keys not in organisation.logo_key would clear it
   if (old) await store.remove(old).catch(() => {});
   return { logo: { contentType: MIME[c.contentType], sizeBytes: up.bytes.length } };
-});
+}, MAX_LOGO + 16 * 1024);

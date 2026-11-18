@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Fetch } from "@portal/sources";
 import { createTestDb, type TestDb } from "../../db/test/db";
-import { atsTasks, runBoards, runFailure } from "../src";
+import { atsTasks, kindFilter, runBoards, runFailure } from "../src";
 import { deps, plan } from "./helpers";
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
@@ -33,10 +33,13 @@ function server(refuse: (tenant: string, n: number) => boolean) {
   }) as Fetch;
   return fetch;
 }
-async function run(fetch: Fetch) {
+/** `only`: FETCHER_ONLY_KINDS, as main.ts applies it. */
+async function run(fetch: Fetch, only?: string) {
   const waits: number[] = [];
   const sleep = async (ms: number) => void waits.push(ms);
-  const reports = await runBoards(deps(db.pool("app_fetcher"), atsTasks(BOARDS, fetch, () => {}, sleep), { sleep }), (x) => plan(x, "passed"));
+  const keep = kindFilter(only);
+  const tasks = atsTasks(BOARDS, fetch, () => {}, sleep).filter((t) => keep(t.kind));
+  const reports = await runBoards(deps(db.pool("app_fetcher"), tasks, { sleep }), (x) => plan(x, "passed"));
   return { reports, waits };
 }
 const lastRun = async (board: string) => (await su("select f.error from fetch_run f join job_source s on s.id = f.job_source_id where s.board = $1 order by f.id desc limit 1", [board]))[0];
@@ -73,5 +76,27 @@ describe("Workday 429 on the real database (W1)", () => {
     expect(await openJobs("ghfine")).toBe(1);
     expect(await openJobs("wdown")).toBe(1);
     expect(Number((await su("select count(*) from fetch_run where error like 'HTTP 429 after 3 tries%'"))[0].count)).toBe(3);
+  });
+
+  // W1b: a run with FETCHER_ONLY_KINDS=workday (kept for a later source).
+  it("day 4: a Workday-only run touches only Workday sources and closes nothing on other boards", async () => {
+    const before = await su("select s.board, count(f.id)::int as runs from job_source s left join fetch_run f on f.job_source_id = s.id group by s.board order by s.board");
+    const empty = server(() => false);
+    const fetch = (async (input: string | URL | Request, init?: RequestInit) =>
+      String(input).startsWith("https://boards-api.greenhouse.io/") ? json({ jobs: [] }) : empty(input, init)) as Fetch;
+    const { reports } = await run(fetch, "workday");
+    expect(reports.map((r) => [r.kind, r.board, r.ok])).toEqual([["workday", "wflaky", true], ["workday", "wdown", true]]);
+    const after = await su("select s.board, count(f.id)::int as runs from job_source s left join fetch_run f on f.job_source_id = s.id group by s.board order by s.board");
+    const runs = (rows: { board: string; runs: number }[]) => Object.fromEntries(rows.map((r) => [r.board, r.runs]));
+    expect(runs(after).ghfine).toBe(runs(before).ghfine);
+    expect(runs(after).wflaky).toBe(runs(before).wflaky! + 1);
+    expect(await openJobs("ghfine")).toBe(1); // the Greenhouse board was not read at all: no run row, its job still live
+    expect(runFailure(reports)).toBeNull();
+  });
+
+  it("day 5: a Workday-only run where every Workday board is challenged ends red, so the engineer hears of it", async () => {
+    const { reports } = await run(server(() => true), "workday");
+    expect(reports.every((r) => r.kind === "workday" && !r.ok)).toBe(true);
+    expect(runFailure(reports)).toBe("every workday board failed (2 of 2 boards failed)");
   });
 });

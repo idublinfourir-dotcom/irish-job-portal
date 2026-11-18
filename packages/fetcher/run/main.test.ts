@@ -1,6 +1,7 @@
 // The fetch stops on bad rules (#229): the rules in force are read from the database and checked before any board or model request, and nothing is saved.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BIG_COMPANY_NAMES_V1, MINIMUMS_V1, rulesV1 } from "@portal/rules";
+import { CLOSE_STALE } from "../src";
 import { main } from "./main";
 
 const DATA = new URL("../data/", import.meta.url).pathname;
@@ -29,6 +30,7 @@ function setUp(rows: Rows) {
     query: vi.fn(async (text: string) => {
       sql.push(text);
       if (/rules_version/.test(text)) return { rows };
+      if (text === CLOSE_STALE) return { rows: [{ n: 0 }] };
       throw new Error("no other query expected");
     }),
     end: vi.fn(async () => {}),
@@ -60,6 +62,38 @@ describe("the fetch refuses to start on bad rules", () => {
     const reports = await main(deps as never);
     expect(reports.length).toBeGreaterThan(0);
     expect(sql.filter((q) => !/rules_version/.test(q)).length).toBeGreaterThan(0);
+    expect(deps.fetch).not.toHaveBeenCalled();
+    // W1c: after every board, the stale-board close runs once, as the last statement
+    expect(sql.filter((q) => q === CLOSE_STALE)).toHaveLength(1);
+    expect(sql.at(-1)).toBe(CLOSE_STALE);
+  });
+});
+
+// W1b: the kinds of one run. The fake database refuses every board, so each task's report shows which boards the run tried.
+describe("the run's kinds (FETCHER_ONLY_KINDS / FETCHER_SKIP_KINDS)", () => {
+  it("only workday: every board the run tries is a Workday board, and no request is made", async () => {
+    const { deps } = setUp(today());
+    vi.stubEnv("FETCHER_ONLY_KINDS", "workday");
+    const reports = await main(deps as never);
+    expect(reports.length).toBeGreaterThan(0);
+    expect(new Set(reports.map((r) => r.kind))).toEqual(new Set(["workday"]));
+    expect(deps.fetch).not.toHaveBeenCalled();
+  });
+  it("skip workday: the run tries every other kind and no Workday board", async () => {
+    const { deps } = setUp(today());
+    vi.stubEnv("FETCHER_SKIP_KINDS", "workday");
+    const kinds = new Set((await main(deps as never)).map((r) => r.kind));
+    expect(kinds.has("workday")).toBe(false);
+    expect(kinds.size).toBeGreaterThan(1);
+  });
+  it.each([
+    ["an unknown kind", { FETCHER_ONLY_KINDS: "workdy" }, /unknown board kind/],
+    ["both set", { FETCHER_ONLY_KINDS: "workday", FETCHER_SKIP_KINDS: "workday" }, /not both/],
+  ])("%s: refuses to start, before the database or any board", async (_n, env, why) => {
+    const { deps } = setUp(today());
+    for (const [k, v] of Object.entries(env)) vi.stubEnv(k, v);
+    await expect(main(deps as never)).rejects.toThrow(why);
+    expect(deps.pool).not.toHaveBeenCalled();
     expect(deps.fetch).not.toHaveBeenCalled();
   });
 });

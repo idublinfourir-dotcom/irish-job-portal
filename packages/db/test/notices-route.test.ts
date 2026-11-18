@@ -9,11 +9,14 @@ import { portalAnswers, seedSignupTerms } from "./better-auth-helper";
 import { fixtures } from "./fixtures";
 import { NOTICES } from "../src/rules-admin";
 import { NOTICE_PAGE, UNREAD_CAP } from "../src/notices";
+import { NOTICE_RATE } from "../../../apps/portal/lib/notices";
+import { loadSpec, replyProblems } from "./openapi";
 
 // Statements counted on every pg.Client.query call: GET = requirePortal 3 + page 1 + unread count 1; POST = requirePortal 3 + the update 1.
 // Times, median of 9 calls, warm, on 1,000 notices for the user, measured on 18 November 2026 (three runs): list 3.0 to 3.4 ms, mark all 1.8 to 1.9 ms. Budgets are about
 // 4 times the slowest median, with a floor for a busy laptop. Raise these only on purpose.
-const BUDGET = { get: 5, post: 4, getMs: 15, postMs: 15 };
+// post: 4 statements were measured before the notices POST had a rate limit; the limit adds exactly one (its insert is budgeted in perf/rate-limit.perf.ts).
+const BUDGET = { get: 5, post: 5, getMs: 15, postMs: 15 };
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
@@ -111,13 +114,14 @@ describe("the reader", () => {
     expect((await db.pool("app_admin").query(NOTICES, [1, "2026-12-01"])).rows[0].emails).toBe(2);
     const a = await list(owner.cookie);
     expect(a.status).toBe(200);
-    expect(a.json).toMatchObject({ unread: 1, next: null, items: [{ category: "rules", templateKey: "rules_minimums_changed", readAt: null, params: { organisationId: Number(orgA), versionId: 1, effectiveFrom: "2026-12-01" } }] });
+    expect(a.json).toMatchObject({ unread: 1, next: null, items: [{ category: "rules", templateKey: "rules_minimums_changed", readAt: null, params: { organisationId: String(orgA), versionId: "1", effectiveFrom: "2026-12-01" } }] });
+    expect(a.json!.items[0].createdAt).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/); // ISO 8601 in UTC with Z, ids inside params as text
     const id = a.json!.items[0].id as string;
     expect((await list(recruiter.cookie)).json).toEqual({ items: [], next: null, unread: 0 }); // the writer notifies the owner only
     expect((await list(lone.cookie)).json).toEqual({ items: [], next: null, unread: 0 });
     const b = (await list(other.cookie)).json!;
     expect(b.items).toHaveLength(1);
-    expect(b.items[0].params.organisationId).not.toBe(Number(orgA));
+    expect(b.items[0].params.organisationId).not.toBe(String(orgA));
 
     // another user's id changes nothing, from every other portal login
     for (const who of [recruiter, other, lone]) expect(await post(who.cookie, { action: "read", id })).toEqual({ status: 200, json: { marked: 0 } });
@@ -212,6 +216,36 @@ describe("security", () => {
     await expect(p.query("insert into notification(portal_user_id, category, template_key) values ($1, 'x', 'y')", [other.id])).rejects.toThrow(denied);
     await expect(p.query("select id from candidate_notification limit 1")).rejects.toThrow(denied);
     expect((await p.query("update portal_notification set read_at = read_at where id = $1", [id])).rowCount).toBe(1);
+  });
+});
+
+describe("rate limit and the documented shape", () => {
+  it("marks are limited per login (NOTICE_RATE), then 429; another login is not held back; an address header does not reset it", async () => {
+    const u = await login(), seq: number[] = [];
+    for (let i = 0; i < NOTICE_RATE.max; i++) seq.push((await post(u.cookie, { action: "read_all" })).status);
+    expect(seq.every((x) => x === 200)).toBe(true);
+    expect(await post(u.cookie, { action: "read_all" })).toEqual({ status: 429, json: { code: "TOO_MANY_REQUESTS" } });
+    // the limit is per login: new address headers change nothing
+    const spoofed = await POST(new Request(`${BASE}/api/portal/notices`, { method: "POST", body: JSON.stringify({ action: "read_all" }),
+      headers: { "content-type": "application/json", origin: BASE, cookie: u.cookie, "x-forwarded-for": "203.0.113.9", "x-real-ip": "203.0.113.9", "x-vercel-forwarded-for": "203.0.113.9" } }));
+    expect(spoofed.status).toBe(429);
+    expect((await post((await login()).cookie, { action: "read_all" })).status).toBe(200);
+    // a refusal before the session (bad Origin, bad body) does not count
+    const v = await login();
+    for (let i = 0; i < 5; i++) await post(v.cookie, { action: "read_all" }, { origin: "https://evil.example" });
+    expect((await post(v.cookie, { action: "read_all" })).status).toBe(200);
+  });
+  it("the list, a mark and the 429 match docs/openapi/portal.yaml: ids as text, times with Z", async () => {
+    const spec = loadSpec("portal");
+    const u = await login();
+    await seed(u.id, 3);
+    const l = await list(u.cookie);
+    expect([l.status, replyProblems(spec, "GET", "/api/portal/notices", l.status, l.json)]).toEqual([200, []]);
+    expect(l.json!.items[0].createdAt).toMatch(/Z$/);
+    const m = await post(u.cookie, { action: "read", id: l.json!.items[0].id });
+    expect([m.status, replyProblems(spec, "POST", "/api/portal/notices", m.status, m.json)]).toEqual([200, []]);
+    const bad = await post(u.cookie, { action: "read", id: 5 });
+    expect([bad.status, replyProblems(spec, "POST", "/api/portal/notices", bad.status, bad.json)]).toEqual([400, []]);
   });
 });
 

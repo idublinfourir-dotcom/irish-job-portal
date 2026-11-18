@@ -1,7 +1,7 @@
 // The pure parts of the pay floor check route (#82, #104): the body check and the refusal-to-status map. No database, so unit tests cover them alone.
 // The Origin check, the length check and BadRequest come from the account review route's file.
 import { StaffRefused } from "@portal/auth";
-import { QueueRefused } from "@portal/db";
+import { QueueRefused, validId } from "@portal/db";
 import { BadRequest } from "./account-review";
 
 export const MAX_BODY = 500; // characters; the biggest real body is about 80
@@ -23,13 +23,13 @@ export function parseBody(text: string): Body {
   const b = o as Record<string, unknown>;
   if (Object.keys(b).some((k) => k !== "action" && k !== "floorId" && k !== "reason")) throw new BadRequest("bad_body");
   if (typeof b.action !== "string" || !ACTIONS.includes(b.action)) throw new BadRequest("bad_action");
-  if (typeof b.floorId !== "string" || !/^[1-9][0-9]{0,18}$/.test(b.floorId)) throw new BadRequest("bad_floor_id");
+  if (!validId(b.floorId)) throw new BadRequest("bad_floor_id");
   if (b.action === "reject" ? typeof b.reason !== "string" || !REASON.test(b.reason) : b.reason !== undefined) throw new BadRequest("bad_reason");
   return b as Body;
 }
 
 const STATUS = new Map<string, number>(Object.entries({
-  bad_body: 400, bad_action: 400, bad_floor_id: 400, bad_reason: 400, bad_cursor: 400,
+  bad_body: 400, bad_action: 400, bad_floor_id: 400, bad_reason: 400, bad_cursor: 400, bad_query: 400,
   bad_origin: 403, not_rules_editor: 403, not_administrator: 403, not_floor_staff: 403, not_active_staff: 403,
   not_found: 404,
   floor_not_pending: 409, floor_expired: 409, not_big_company: 409, organisation_not_active: 409, decision_pending: 409, nothing_pending: 409, same_person: 409,
