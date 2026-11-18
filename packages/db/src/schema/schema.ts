@@ -902,6 +902,13 @@ export const detePermitRise = pgTable("dete_permit_rise", {
 	check("dete_permit_rise_check", sql`permits_after > permits_before`),
 ]);
 
+export const signupNoCount = pgTable("signup_no_count", {
+	day: date().primaryKey().notNull(),
+	count: integer().notNull(),
+}, () => [
+	check("signup_no_count_count_check", sql`count > 0`),
+]);
+
 export const wrcLicence = pgTable("wrc_licence", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "wrc_licence_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
