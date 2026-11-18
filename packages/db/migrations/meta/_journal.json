@@ -246,6 +246,13 @@
       "when": 1794300031000,
       "tag": "0035_fetcher_job_source",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1794300032000,
+      "tag": "0036_portal_notices",
+      "breakpoints": true
     }
   ]
 }
