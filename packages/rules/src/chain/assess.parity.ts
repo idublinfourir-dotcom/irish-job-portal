@@ -1,84 +1,52 @@
 // Parity run for the decision chain: the TypeScript `assess` against the Python's own `assess` (plus what classify.run sets on
 // the way) on every saved advert. Reference made by step5/parity/L2/make_reference.py. Not part of `npm run check`.
 // Reads private text on this machine only: it counts and compares, it never prints an advert.
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { expect, test } from "vitest";
 import { rulesMatcher } from "../../../matcher/src/rules";
-import { BIG_COMPANY_LIST_150, cleanEmployerName, isBigCompany } from "../employers";
-import { checkIrishEmployer, locationIsIrelandOnly, locationLooksIrish, postBasedElsewhere } from "../irish";
-import { checkSalary, noSponsorshipPhrase, readContract, readSalary, salaryStage } from "../readers";
+import { cleanEmployerName } from "../employers";
 import { CHAIN_RULES_V1 } from "../snapshot";
-import type { SalaryCheck, Stage } from "../types";
-import { assess, bucketOf, monthsText, type AdvertInput } from "./assess";
-import { CARE_CODES, HOSPITALITY_CODES } from "./sectors";
-
-// #257: the sector the chain now gives where the Python said "other"; null for every other code, whose expectation is unchanged.
-const newSector = (code: string | null) => (code && CARE_CODES.includes(code) ? "care" : code && HOSPITALITY_CODES.includes(code) ? "hospitality" : null);
+import { assess, type AdvertInput } from "./assess";
 
 type Saved = { id: string; source: string; board?: string; employer?: string | null; title?: string | null; location?: string | null; description?: string | null; url?: string; employment_type?: string | null; salary_box?: string | null };
-type Ref = Record<string, unknown> & { id: string; stage: string; run_stage: string; bucket: string; known: boolean; public_tier: 0 | 1 | 2 };
-
-const MIN = CHAIN_RULES_V1.minimums;
-const passOr8 = (stage: string) => stage.startsWith("PASS") || stage.startsWith("8 ");
-// The no-sponsorship wording added since the port: #156 (1), PR #25 and #159. The Python's own phrases never match this.
-const NEW_REFUSAL = /be\s+(an?\s+)?(national|citizen)s?\s+of|to\s+work\s+in\s+(ireland|the\s+eu|the\s+eea)|right\s+to\s+work\s+in\s+ireland|work\s+authori[sz]ation/i;
-// The short-contract wording added since the port: #156 (2) maternity cover, PR #25 placements, intern titles and "FTC".
-const NEW_SHORT = /maternity|placement|year\s+students?|intern/i;
+type Ref = Record<string, unknown> & { id: string; stage: string; run_stage: string; bucket: string; contract: string | null; salary_lo: number | null; big: boolean | null; sector: string };
+type Changes = Record<string, { cause: string; fields: Record<string, unknown> }>;
 
 /**
- * The Python's answer with each deliberate rule change since the port applied, in chain order. Only adverts where a changed rule
- * gives a different answer from the Python's rule are touched, and only the fields that step and the steps after it set.
- * On 18 November 2026 this touches 78 adverts by #149 (77 by PR #18, 1 by PR #25's office list), 34 by new no-sponsorship wording
- * (27 #156, 7 PR #25 and #159), 5 by new short contracts, 10 by "/yr" pay, 112 by the big-company list and 53 Irish check reasons.
+ * Where the chain now differs from the Python on purpose, frozen per advert in the private folder (L2/expected-changes.json: advert id,
+ * cause, and the chain's value for each changed field; no advert text). The parity compares the chain with the Python reference with
+ * these overrides only: any other difference fails, and so does an override the chain no longer gives. Every override names its
+ * deliberate change; a difference no change below explains cannot be frozen. Regenerate on purpose only, after a deliberate rule
+ * change: run with PARITY_WRITE_EXPECTED=1, then check the new overrides by hand.
+ *
+ * `causeOf` names the deliberate changes behind one advert's changed fields (the chain's values in `ts`), or null when none explains them.
  */
-function expected(ref: Ref, s: Saved): Ref {
-  const e: Ref = { ...ref };
-  const [title, desc, location, employer] = [s.title ?? "", s.description ?? "", s.location ?? "", s.employer ?? ""];
-  // A new stop at stage 3 or 4: the rules after it never run, the Irish check is skipped. With no occupation code the sector is
-  // "other", unless the employer is a pharma one (the Python's first sector test, which needs no code).
-  const stop = (stage: Stage, reason: string | null) =>
-    Object.assign(e, { stage, run_stage: stage, reason, soc: null, conf: null, contract: null, contract_why: null, salary_lo: null, salary_hi: null, salary: null, big: null, irish_verdict: null, irish_reason: null, sector: ref.sector === "pharma and science" ? ref.sector : "other" });
-  // The stage the salary step now gives, put through the Irish check's override the way the Python did.
-  const rerun = (run: Stage) => {
-    if (ref.stage === ref.run_stage || (ref.stage.startsWith("3 unsure Irish employer") && !passOr8(run))) e.stage = run;
-    e.run_stage = run;
-  };
-
-  if (!/^(0 |3 not in Ireland|4 )/.test(ref.run_stage) && locationLooksIrish(location)) {
-    const phrase = noSponsorshipPhrase(title, desc);
-    // NEW BEHAVIOUR (11 November 2026, #149): a job counts only when based in Ireland only.
-    if (!locationIsIrelandOnly(location) || postBasedElsewhere(desc)) stop("3 not in Ireland", null);
-    // NEW BEHAVIOUR (10 and 11 November 2026, #156, PR #25, #159): EU national wording and three right-to-work phrases are no sponsorship.
-    else if (phrase !== null && NEW_REFUSAL.test(phrase)) stop("4 says no sponsorship", phrase);
-  }
-  if (e.contract === "ok") {
-    const c = readContract(title, s.employment_type, desc, MIN.minContractMonths);
-    // NEW BEHAVIOUR (10 and 11 November 2026, #156, PR #25): maternity cover, placements, intern titles and "FTC" are short.
-    if (c.result === "short" && (NEW_SHORT.test(c.reason) || /\bftc\b/i.test(title + " " + desc))) {
-      Object.assign(e, { contract: "short", contract_why: c.reason, salary_lo: null, salary_hi: null, salary: null, big: null });
-      rerun(`7 contract under ${monthsText(MIN.minContractMonths)}`);
-    }
-  }
-  if (e.salary !== null) {
-    const pay = readSalary(desc, s.salary_box ?? "");
-    // NEW BEHAVIOUR (10 November 2026, #156): pay written as "/yr", "/year" or "/annum" is read as yearly pay.
-    if (e.salary_lo === null && pay.low !== null && /\/\s?(yr|year|annum|annual|pa)\b/i.test(s.salary_box + " " + desc)) {
-      Object.assign(e, { salary_lo: pay.low, salary_hi: pay.high, salary: checkSalary(pay.low, pay.high, MIN.criticalSkills) });
-    }
-    // NEW BEHAVIOUR (11 November 2026, #150, #151): the big-company list.
-    if (e.big === false && isBigCompany(employer, BIG_COMPANY_LIST_150)) e.big = true;
-    if (e.salary !== ref.salary || e.big !== ref.big) rerun(salaryStage(e.salary as SalaryCheck, e.big === true, ref.agency === 1, MIN.criticalSkills));
-  }
-  // #150, #151: a listed employer is known, which the Irish check reads for a LinkedIn advert.
-  if (e.irish_verdict !== null && !ref.known && s.source === "linkedin" && isBigCompany(employer, BIG_COMPANY_LIST_150)) {
-    const irish = checkIrishEmployer({ employer, title, description: desc, location }, true);
-    Object.assign(e, { known: true, irish_verdict: irish.verdict, irish_reason: irish.reason });
-  }
-  e.bucket = bucketOf(e.stage as Stage, ref.public_tier);
-  e.reads_advert = !/^(0 |3 not|4 )/.test(e.stage) && e.bucket !== "no_salary" ? 1 : 0;
-  return e;
+function causeOf(ts: Record<string, unknown>, py: Ref, source: string): string | null {
+  const stopped = (stage: string) => ts.stage === stage && py.run_stage !== stage;
+  const short = ts.contract === "short" && py.contract === "ok";
+  const causes: [string, boolean][] = [
+    // NEW BEHAVIOUR (11 November 2026, #149, PR #18; office lists PR #25): a job counts only when based in Ireland only.
+    ["#149", stopped("3 not in Ireland")],
+    // NEW BEHAVIOUR (10 November 2026, #156, PR #17): "must be a national of an EU member state" is no sponsorship.
+    ["#156", stopped("4 says no sponsorship") && /national|citizen/i.test(ts.reason as string)],
+    // NEW BEHAVIOUR (11 November 2026, PR #25 and #159, PR #26): three right-to-work phrases are no sponsorship.
+    ["PR #25, #159", stopped("4 says no sponsorship") && /work/i.test(ts.reason as string)],
+    // NEW BEHAVIOUR (10 November 2026, #156): maternity cover is a contract under two years.
+    ["#156", short && /maternity/i.test(ts.contract_why as string)],
+    // NEW BEHAVIOUR (11 November 2026, PR #25): FTC, student placements and intern titles are a contract under two years.
+    ["PR #25", short && !/maternity/i.test(ts.contract_why as string)],
+    // NEW BEHAVIOUR (10 November 2026, #156): pay written as "/yr" is read as yearly pay.
+    ["#156", typeof ts.salary_lo === "number" && py.salary_lo === null],
+    // NEW BEHAVIOUR (11 November 2026, #150, #151, PR #20): the big-company list; a listed employer is also known to the Irish check.
+    ["#150, #151", ts.big === true && py.big === false],
+    ["#150, #151", source === "linkedin" && ts.irish_reason === "employer known in Ireland"],
+    // NEW BEHAVIOUR (18 November 2026, #257): the Python has no care or hospitality sector; for those codes it said "other".
+    ["#257", py.sector === "other" && (ts.sector === "care" || ts.sector === "hospitality")],
+  ];
+  const named = [...new Set(causes.filter(([, hit]) => hit).map(([label]) => label))];
+  return named.length > 0 ? named.join("; ") : null;
 }
 
 test("the TypeScript chain matches the Python on every saved advert", async () => {
@@ -99,6 +67,10 @@ test("the TypeScript chain matches the Python on every saved advert", async () =
     Object.entries(JSON.parse(readFileSync(join(lane, "public_employers_candidates.json"), "utf8")) as Record<string, { tier: 1 | 2 }>).map(([k, v]) => [k, v.tier]),
   );
 
+  const changesFile = join(lane, "expected-changes.json");
+  const write = process.env.PARITY_WRITE_EXPECTED === "1";
+  const changes: Changes = write ? {} : JSON.parse(readFileSync(changesFile, "utf8"));
+  const unused = new Set(Object.keys(changes));
   const differences: string[] = [];
   const tally = { tsBuckets: new Map<string, number>(), pyBuckets: new Map<string, number>(), tsStages: new Map<string, number>(), pyStages: new Map<string, number>() };
   const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1);
@@ -106,7 +78,6 @@ test("the TypeScript chain matches the Python on every saved advert", async () =
   for (const [i, s] of saved.entries()) {
     const py = reference[i]!;
     expect(s.id).toBe(py.id);
-    const ref = expected(py, s);
     const advert: AdvertInput = { ...s, employmentType: s.employment_type, salaryBox: s.salary_box };
     const a = await assess(advert, { deteNames, publicPayCandidates: candidates, ...CHAIN_RULES_V1, matcher: rulesMatcher });
     const stageKey = (x: string) => x.split(":")[0]!;
@@ -115,35 +86,44 @@ test("the TypeScript chain matches the Python on every saved advert", async () =
     bump(tally.tsStages, stageKey(a.stage));
     bump(tally.pyStages, stageKey(py.stage));
     const pairs: [string, unknown, unknown][] = [
-      ["stage", a.stage, ref.stage],
-      ["bucket", a.bucket, ref.bucket],
-      ["soc", a.occupationCode, ref.soc ?? null],
-      ["conf", a.occupationConfidence, ref.conf ?? null],
-      ["salary_lo", a.salaryLow, ref.salary_lo],
-      ["salary_hi", a.salaryHigh, ref.salary_hi],
-      ["agency", a.agency, ref.agency === 1],
-      ["reads_advert", a.readsAdvert, ref.reads_advert === 1],
-      // NEW BEHAVIOUR (#257, 18 November 2026): the Python has no care or hospitality sector; for those codes it said "other".
-      ["sector", a.sector, ref.sector === "other" ? newSector(a.occupationCode) ?? ref.sector : ref.sector],
-      ["reason", a.reason, ref.reason],
-      ["sponsor_yes", a.sponsorYes, ref.sponsor_yes],
+      ["stage", a.stage, py.stage],
+      ["bucket", a.bucket, py.bucket],
+      ["soc", a.occupationCode, py.soc ?? null],
+      ["conf", a.occupationConfidence, py.conf ?? null],
+      ["salary_lo", a.salaryLow, py.salary_lo],
+      ["salary_hi", a.salaryHigh, py.salary_hi],
+      ["agency", a.agency, py.agency === 1],
+      ["reads_advert", a.readsAdvert, py.reads_advert === 1],
+      ["sector", a.sector, py.sector],
+      ["reason", a.reason, py.reason],
+      ["sponsor_yes", a.sponsorYes, py.sponsor_yes],
       // NEW BEHAVIOUR (10 November 2026): the scam rule drops warnings against scams, so it may clear a flag the Python set, never add one.
-      ["scam_flag set where the Python set none", a.scamFlag && !ref.scam_flag, false],
-      ["contract", a.contract, ref.contract],
-      ["contract_why", a.contractReason, ref.contract_why],
-      ["salary", a.salaryCheck, ref.salary],
-      ["big", a.bigCompany, ref.big],
-      ["irish_verdict", a.irishVerdict, ref.irish_verdict],
-      ["irish_reason", a.irishReason, ref.irish_reason],
-      ["public_tier", a.publicPayTier, ref.public_tier],
+      ["scam_flag set where the Python set none", a.scamFlag && !py.scam_flag, false],
+      ["contract", a.contract, py.contract],
+      ["contract_why", a.contractReason, py.contract_why],
+      ["salary", a.salaryCheck, py.salary],
+      ["big", a.bigCompany, py.big],
+      ["irish_verdict", a.irishVerdict, py.irish_verdict],
+      ["irish_reason", a.irishReason, py.irish_reason],
+      ["public_tier", a.publicPayTier, py.public_tier],
     ];
-    const bad = pairs.filter(([, ts, py]) => ts !== py);
-    if (a.stage === "0 advert too long (admin queue)") differences.push(`${ref.id} is over an input limit`);
+    const changed = Object.fromEntries(pairs.filter(([, ts, py]) => ts !== py).map(([field, ts]) => [field, ts]));
+    if (write && Object.keys(changed).length > 0) {
+      const cause = causeOf(changed, py, s.source);
+      if (cause) changes[py.id] = { cause, fields: changed };
+    }
+    const over = changes[py.id]?.fields ?? {};
+    unused.delete(py.id);
+    const bad = pairs.filter(([field, ts, pyv]) => (field in over ? ts !== over[field] || over[field] === pyv : ts !== pyv));
+    for (const field of Object.keys(over)) if (!pairs.some(([f]) => f === field)) bad.push([field, "(no such field)", over[field]]);
+    if (a.stage === "0 advert too long (admin queue)") differences.push(`${py.id} is over an input limit`);
     if (bad.length === 0) matching++;
-    for (const [field, ts, py] of bad) differences.push(`${ref.id} ${field}: ts=${JSON.stringify(ts)} py=${JSON.stringify(py)}`);
+    for (const [field, ts, pyv] of bad) differences.push(`${py.id} ${field}: ts=${JSON.stringify(ts)} expected=${JSON.stringify(field in over ? over[field] : pyv)}`);
   }
+  for (const id of unused) differences.push(`${id} has frozen changes but is not a saved advert`);
+  if (write) writeFileSync(changesFile, JSON.stringify(changes, null, 1) + "\n");
   const show = (m: Map<string, number>) => JSON.stringify(Object.fromEntries([...m].sort()));
-  console.log(`L2 parity: ${saved.length} adverts, ${matching} match on every field, ${differences.length} differences`);
+  console.log(`L2 parity: ${saved.length} adverts, ${matching} match on every field, ${Object.keys(changes).length} with frozen changes, ${differences.length} differences`);
   console.log(`buckets ts ${show(tally.tsBuckets)}\nbuckets py ${show(tally.pyBuckets)}\nstages ts ${show(tally.tsStages)}\nstages py ${show(tally.pyStages)}`);
   expect(differences).toEqual([]);
 });

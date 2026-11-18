@@ -110,8 +110,8 @@ function sectorOf(employer: string, title: string, description: string, code: st
   return "other";
 }
 
-/** run_day.py:107-123. D3: "8 range" is `stated_pay` although the stage is a drop. D4: the public tier changes only the bucket. Exported for the parity run. */
-export function bucketOf(stage: Stage, tier: 0 | 1 | 2): Bucket {
+/** run_day.py:107-123. D3: "8 range" is `stated_pay` although the stage is a drop. D4: the public tier changes only the bucket. */
+function bucketOf(stage: Stage, tier: 0 | 1 | 2): Bucket {
   if (stage === "PASS (salary stated)") return "stated_pay";
   if (stage.startsWith("8 range")) return "stated_pay"; // #66: the top of the range clears the minimum
   if (stage.startsWith("8 ") && tier === 1) return "public_hse";
