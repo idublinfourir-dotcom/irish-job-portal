@@ -618,6 +618,32 @@ paths:
         '404': { $ref: '#/components/responses/PublicNotFound' }
         '429': { $ref: '#/components/responses/PublicTooMany' }
 
+  /api/job/similar:
+    get:
+      operationId: getSimilarJobs
+      tags: [public]
+      summary: More jobs like one live job
+      description: Up to 6 live jobs of the same occupation, else of the same sector, newest first with full-quota jobs last; never the job itself. Public cards only. A job that is not live, or an unknown id, is 404. Open to visitors.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      parameters:
+        - { name: id, in: query, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: The similar jobs (an empty list when there are none).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobs]
+                additionalProperties: false
+                properties:
+                  jobs: { type: array, maxItems: 6, items: { $ref: '#/components/schemas/SmallJobCard' } }
+              example: { jobs: [{ jobId: '1043', title: Staff Nurse, employerName: Example Care Ltd, county: Cork, salaryLow: 38000, salaryHigh: 45000, payGrade: null, badge: critical_skills_eligible }] }
+        '404': { $ref: '#/components/responses/PublicNotFound' }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
   /api/company:
     get:
       operationId: getCompanyPage

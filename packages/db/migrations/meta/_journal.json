@@ -265,34 +265,41 @@
       "idx": 37,
       "version": "7",
       "when": 1794300034000,
-      "tag": "0040_staff_tools",
+      "tag": "0039_lookalike_domain",
       "breakpoints": true
     },
     {
       "idx": 38,
       "version": "7",
       "when": 1794300035000,
-      "tag": "0041_audit_retention_hold_notice",
+      "tag": "0040_staff_tools",
       "breakpoints": true
     },
     {
       "idx": 39,
       "version": "7",
       "when": 1794300036000,
-      "tag": "0042_candidate_signals",
+      "tag": "0041_audit_retention_hold_notice",
       "breakpoints": true
     },
     {
       "idx": 40,
       "version": "7",
       "when": 1794300037000,
-      "tag": "0043_portal_notice_settings",
+      "tag": "0042_candidate_signals",
       "breakpoints": true
     },
     {
       "idx": 41,
       "version": "7",
       "when": 1794300038000,
+      "tag": "0043_portal_notice_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1794300039000,
       "tag": "0044_signup_no_count",
       "breakpoints": true
     }

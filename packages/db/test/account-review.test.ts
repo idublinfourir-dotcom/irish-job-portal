@@ -3,12 +3,13 @@
 // Test data is made by the sign-up functions claim_organisation and register_organisation, as app_portal. Fake people only; no network.
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { approveAccount, askForMoreInfo, claimReview, getAccountReview, listAccountReviews, rejectAccount, releaseReview } from "../src/account-review";
+import { approveAccount, askForMoreInfo, claimReview, getAccountReview, listAccountReviews, rejectAccount, releaseReview, REVIEW_FIRST } from "../src/account-review";
 import { QueueRefused } from "../src/admin-queue";
 import { PAGE_SIZE } from "../src/search";
 import { seedStaff } from "../src/staff-seed-cli";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { fixtures } from "./fixtures";
+import { assertPageBudget, measurePages } from "./perf/pages";
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 
@@ -19,7 +20,7 @@ vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 // Function level: list = role check + page (2); one item = role check + read (2); claim = begin, role check, update, commit (4);
 // approve without domain = begin, role check, lock, decide, commit (5); a first-time registration adds the label call (6); with domain = + domain lock, other-owner check, add (8).
 // Route level adds requireStaff's 2 (session by token, user by id).
-const BUDGET = { list: 2, item: 2, claim: 4, approve: 5, approveFirstTime: 6, approveDomain: 8, routeExtra: 2, ms: 35, routeMs: 45 };
+const BUDGET = { list: 2, item: 2, claim: 4, approve: 5, approveFirstTime: 6, approveDomain: 8, routeExtra: 2, ms: 35, routeMs: 45, listPages: 2000, listFlagMs: 100 };
 
 const secret = "trial-only-secret-trial-only-secret-32";
 let db: TestDb;
@@ -890,5 +891,85 @@ describe("decision notices (N4)", () => {
     expect(sent.filter((s) => s.to === email)).toEqual([{ to: email, subject: "A notice about your account on the portal", text: expect.stringContaining("PLACEHOLDER WORDING") }]);
     expect(sent.find((s) => s.to === email)!.text).toContain("account_approved");
     expect(await emails(a.user)).toMatchObject([{ template: "account_approved", status: "sent" }]);
+  });
+});
+
+// ===== P10: lookalike domain and shared mailbox, extra review reasons only =====
+describe("review flags (P10)", () => {
+  // a stem no other test's domain is near (theirs are like co-12-xyz.example.test)
+  const stem = `zephyrquill${Date.now().toString(36).replace(/[01]/g, "x")}`;
+  let saved: number;
+  const flagsOf = async (item: string) => { const i = (await getAccountReview(admin(), staff.reviewer!, item))!; return { flags: i.flags, lookalikeOf: i.lookalikeOf }; };
+  beforeAll(async () => {
+    saved = await F.org({ name: "Real Zephyr Ltd" });
+    await su.query("insert into organisation_domain(organisation_id, domain, source) values ($1, $2, 'seed'), ($1, $3, 'seed')", [saved, `${stem}.ie`, "goodlogo-p10.ie"]);
+  });
+  it("one or two edits from a saved domain, or a 0/o 1/l swap, is lookalike_domain naming the saved domain; three edits, an unrelated or a saved domain is not", async () => {
+    const cases: [string, string | null][] = [
+      [`${stem.slice(0, -1)}.ie`, `${stem}.ie`], // one letter dropped
+      [`${stem}x.ie`, `${stem}.ie`], // one added
+      [`${stem.slice(0, 3)}yy${stem.slice(5)}.ie`, `${stem}.ie`], // two changed
+      ["g00d1ogo-p10.ie", "goodlogo-p10.ie"], // three digit swaps, zero edits after them
+      [`${stem}xyz.ie`, null], // three edits
+      ["completely-other-p10.ie", null],
+    ];
+    for (const [domain, near] of cases) {
+      const c = await claimed({ domain });
+      expect(c.status, domain).toBe("pending_review"); // a reason to look, never a refusal
+      expect(await flagsOf(c.item), domain).toEqual({ flags: near ? ["lookalike_domain"] : [], lookalikeOf: near });
+    }
+    // the saved domain itself, claimed for ANOTHER company: still review (the existing rule), but not a lookalike
+    const own = await claimed({ domain: `${stem}.ie` });
+    expect(await flagsOf(own.item)).toEqual({ flags: [], lookalikeOf: null });
+  });
+  it("a shared mailbox (hr@, jobs@, careers@, info@, admin@, recruitment@, office@) is shared_mailbox; both flags together; a new registration too", async () => {
+    for (const box of ["hr", "Jobs", "careers", "info", "admin", "recruitment", "office"]) {
+      const org = await F.org({ status: "unclaimed" });
+      const user = await F.portal({ email: `${box}@${id("box")}.example.test` });
+      await portal().query("select private.claim_organisation($1, $2)", [user, org]);
+      const item = (await su.query("select id::text from review_item where queue = 'account_review' and organisation_id = $1", [org])).rows[0].id;
+      expect((await flagsOf(item)).flags, box).toEqual(["shared_mailbox"]);
+    }
+    const user = await F.portal({ email: `hr@${stem.slice(0, -1)}.ie` });
+    const r = (await portal().query("select private.register_organisation($1, 'employer', 'Hr Lookalike Ltd', $2, null) r", [user, id("cro")])).rows[0].r;
+    const item = (await su.query("select id::text from review_item where queue = 'account_review' and organisation_id = $1", [r.organisation_id])).rows[0].id;
+    expect(await flagsOf(item)).toEqual({ flags: ["shared_mailbox", "lookalike_domain"], lookalikeOf: `${stem}.ie` });
+    expect((await flagsOf((await claimed()).item)).flags).toEqual([]); // a person's own mailbox on an unsaved domain
+  });
+  it("the list and the real route carry the flags; a flagged claim can still be approved", async () => {
+    const c = await claimed({ domain: `${stem}q.ie` });
+    const page = await listAccountReviews(admin(), staff.reviewer!);
+    const all = [...page.items];
+    for (let next = page.next; next; ) { const p = await listAccountReviews(admin(), staff.reviewer!, { after: next }); all.push(...p.items); next = p.next; }
+    expect(all.find((i) => i.id === c.item)).toMatchObject({ flags: ["lookalike_domain"], lookalikeOf: `${stem}.ie` });
+    expect((await get("reviewer", `?id=${c.item}`)).json.item).toMatchObject({ flags: ["lookalike_domain"], lookalikeOf: `${stem}.ie` });
+    for (const who of [null, "adminonly", "fetchedonly", "norole"]) expect((await get(who, `?id=${c.item}`)).status, String(who)).toBeGreaterThanOrEqual(401);
+    await claimedBy("reviewer", c.item);
+    expect((await approveAccount(admin(), staff.reviewer!, c.item)).organisationStatus).toBe("verified");
+  });
+  it("hostile emails: a domain over 255 bytes, odd characters and no @ do not break the list (no levenshtein error) and are not flagged", async () => {
+    const odd = [`jane@${"a".repeat(300)}.ie`, "jane@", "no-at-sign", "jane@xn--zphyr-9ra.ie", "jane@%'; drop table job;--.ie"];
+    const items: string[] = [];
+    for (const email of odd) {
+      const org = await F.org({ status: "unclaimed" });
+      const user = await F.portal({ email });
+      await portal().query("select private.claim_organisation($1, $2)", [user, org]);
+      items.push((await su.query("select id::text from review_item where queue = 'account_review' and organisation_id = $1", [org])).rows[0].id);
+    }
+    for (const [n, item] of items.entries()) expect(await flagsOf(item), odd[n]!.slice(0, 30)).toEqual({ flags: [], lookalikeOf: null });
+    expect((await get("reviewer")).status).toBe(200);
+  });
+  it("performance: the list stays 2 statements, and its page read stays in budget with 3,000 saved domains", async () => {
+    await su.query("insert into organisation_domain(organisation_id, domain, source) select $1, 'perf-' || substr(md5(g::text), 1, 2 + g % 25) || '.ie', 'seed' from generate_series(1, 3000) g on conflict do nothing", [saved]);
+    await su.query("analyze organisation_domain");
+    const [, n, ms] = await counted(() => listAccountReviews(admin(), staff.reviewer!));
+    const client = await admin().connect();
+    try {
+      const costs = await measurePages(client, [REVIEW_FIRST]);
+      console.log(`account review list with flags: ${n} statements, ${ms.toFixed(1)} ms, ${costs[0]!.pages} pages ${costs[0]!.ms} ms`);
+      expect(n).toBe(BUDGET.list);
+      assertPageBudget("account review list with the lookalike read", costs, BUDGET.listPages);
+      expect(costs[0]!.ms).toBeLessThanOrEqual(BUDGET.listFlagMs);
+    } finally { client.release(); }
   });
 });

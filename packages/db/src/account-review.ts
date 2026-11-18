@@ -15,7 +15,14 @@ type Db = Pick<pg.Pool, "query" | "connect">;
 const COLS =
   "r.id, r.status, r.claimed_by_staff_user_id, r.created_at::text as created_text, r.reason, r.detail, o.id as organisation_id, o.display_name, o.kind, " +
   "o.status as organisation_status, o.signup_path, o.cro_number, o.wrc_licence_number, u.email as claimant_email, " +
-  "r.detail->>'answer' as answer, r.detail->>'answered_at' as answered_at " +
+  "r.detail->>'answer' as answer, r.detail->>'answered_at' as answered_at, " +
+  // P10: a saved company domain (any company's) within 2 edits of the owner's email domain, after 0 and 1 are read as o and l. None when the owner's
+  // domain is itself saved for some company (a known real domain). ponytail: scans organisation_domain once per row (a few thousand rows at launch); a trigram prefilter if it grows.
+  "(select d.domain from organisation_domain d where not exists (select 1 from organisation_domain s where s.domain = lower(split_part(u.email, '@', 2))) and " +
+  // levenshtein refuses text over 255 bytes, so a longer email domain (it cannot be a real one) is never compared: the case keeps that order
+  "abs(length(d.domain) - length(split_part(u.email, '@', 2))) <= 2 and " + // a cheap cut first: more than 2 letters apart in length is more than 2 edits
+  "case when octet_length(lower(split_part(u.email, '@', 2))) <= 253 then extensions.levenshtein_less_equal(translate(d.domain, '01', 'ol'), " +
+  "translate(lower(split_part(u.email, '@', 2)), '01', 'ol'), 2) end <= 2 limit 1) as lookalike_of " +
   "from review_item r join organisation o on o.id = r.organisation_id " +
   "left join membership m on m.organisation_id = o.id and m.role = 'account_owner' and m.status = 'active' left join portal_user u on u.id = m.portal_user_id";
 // Oldest first on review_item_queue_idx (queue, created_at, id) where status in ('open','claimed').
@@ -27,7 +34,7 @@ export const REVIEW_ITEM = `select ${COLS} where r.id = $1::bigint and r.queue =
 type Row = {
   id: string; status: string; claimed_by_staff_user_id: string | null; created_text: string; reason: string | null; detail: unknown; organisation_id: string;
   display_name: string; kind: string; organisation_status: string; signup_path: string | null; cro_number: string | null; wrc_licence_number: string | null;
-  claimant_email: string | null; answer: string | null; answered_at: string | null;
+  claimant_email: string | null; answer: string | null; answered_at: string | null; lookalike_of: string | null;
 };
 export type ReviewItem = {
   id: string; status: string; claimedBy: string | null; createdAt: string;
@@ -40,16 +47,25 @@ export type ReviewItem = {
   claimantEmail: string | null; emailDomain: string | null;
   /** The owner's latest answer to "ask for more" (#197) and when it was sent (ISO text); null until they answer. Plain text: show it as text, never as HTML. */
   answer: string | null; answeredAt: string | null;
+  /** P10: extra reasons to look closely, never a refusal: `shared_mailbox` (hr@, jobs@ and the like) and `lookalike_domain` (near a saved company domain, named in `lookalikeOf`). */
+  flags: string[]; lookalikeOf: string | null;
 };
 
 /** The part of an email after the first "@", lower case: the same cut the sign-up functions make (split_part(email, '@', 2)). */
 export const domainOf = (email: string | null): string | null => (email === null ? null : (email.toLowerCase().split("@")[1] ?? "") || null);
 
+/** P10: a mailbox many people read, not one person's: the part before "@" is one of these. */
+export const SHARED_MAILBOXES: ReadonlySet<string> = new Set(["hr", "jobs", "careers", "info", "admin", "recruitment", "office"]);
+export function reviewFlags(email: string | null, lookalikeOf: string | null): string[] {
+  const local = email?.toLowerCase().split("@")[0];
+  return [...(local !== undefined && SHARED_MAILBOXES.has(local) ? ["shared_mailbox"] : []), ...(lookalikeOf !== null ? ["lookalike_domain"] : [])];
+}
+
 const item = (r: Row): ReviewItem => ({
   id: r.id, status: r.status, claimedBy: r.claimed_by_staff_user_id, createdAt: r.created_text, reason: r.reason, detail: r.detail,
   organisationId: r.organisation_id, displayName: r.display_name, kind: r.kind, organisationStatus: r.organisation_status, signupPath: r.signup_path,
   croNumber: r.cro_number, wrcLicenceNumber: r.wrc_licence_number, claimantEmail: r.claimant_email, emailDomain: domainOf(r.claimant_email),
-  answer: r.answer, answeredAt: r.answered_at,
+  answer: r.answer, answeredAt: r.answered_at, flags: reviewFlags(r.claimant_email, r.lookalike_of), lookalikeOf: r.lookalike_of,
 });
 
 const encode = (r: Row) => Buffer.from(JSON.stringify({ t: r.created_text, i: r.id })).toString("base64url");

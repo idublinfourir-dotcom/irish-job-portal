@@ -6,6 +6,7 @@ import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "../db";
 import { rateSql } from "../../src/candidate-route";
+import { LIVE_SIMILAR, similarLiveJobs, similarSql } from "../../src/candidate";
 import { VISITOR_JOBS, VISITOR_READ_RATES } from "../../src/public-read";
 import { listJobs, listQuery, SORTS, type SearchFilters } from "../../src/search";
 import { fill } from "./fill";
@@ -19,6 +20,10 @@ const LIST_PAGES = { plain: 200, keyword: 900 };
 const LIST_MEDIAN_MS = 15;
 const RATE_PAGES = 20; // one upsert on the primary key's unique index
 const RATE_MEDIAN_MS = 3;
+// S9 "more jobs like this": the job lookup and both the occupation and the sector query (the sector one runs when the occupation has no other live job), pages
+// summed. Measured 18 Nov 2026: 22 pages (7 + 3 + 12), median 0.65 ms; budget about 4 times.
+const SIMILAR_PAGES = 100;
+const SIMILAR_MEDIAN_MS = 15;
 
 let db: TestDb;
 let word: string;
@@ -79,5 +84,30 @@ it("the read limit is one upsert per window, two per visitor read, inside its pa
     console.log(`read limit: ${VISITOR_READ_RATES.length} statements a visitor read, worst ${worst} pages (existing key and new key), both windows median ${ms.toFixed(2)} ms, on the unique key`);
     expect(worst).toBeLessThanOrEqual(RATE_PAGES);
     expect(ms).toBeLessThan(RATE_MEDIAN_MS);
+  } finally { await c.end(); }
+});
+
+it("more jobs like this (S9): at most 3 statements, inside its page and median time budget, both queries counted (the sector fallback included)", async () => {
+  const c = new pg.Client({ connectionString: urlFor(db.name, "app_candidate") });
+  await c.connect();
+  const counted = { n: 0, query: (t: string, v?: unknown[]) => (counted.n++, c.query(t, v)) };
+  try {
+    // the live job in the biggest sector whose occupation has the fewest other live jobs in that sector
+    const j = (await c.query(
+      `with s as (select sector from job where status = 'live' and sector is not null group by sector order by count(*) desc limit 1)
+       select j.id::text as id, j.sector, j.occupation_code as occ from job j join s using (sector) where j.status = 'live' and j.closes_at > now()
+       order by (select count(*) from job k where k.status = 'live' and k.sector = j.sector and k.occupation_code is not distinct from j.occupation_code), j.id limit 1`)).rows[0];
+    const r = await similarLiveJobs(counted as never, j.id);
+    expect(r!.jobs.length).toBe(LIVE_SIMILAR);
+    expect(counted.n).toBeLessThanOrEqual(3);
+    const costs = await measurePages(c, [
+      { text: `select j.sector, j.occupation_code from job j where j.id = $1::bigint and (j.status = 'live' and j.closes_at > now())`, values: [j.id] },
+      { text: similarSql(true, LIVE_SIMILAR), values: [j.sector, j.id, j.occ] }, { text: similarSql(false, LIVE_SIMILAR), values: [j.sector, j.id] },
+    ]);
+    const pages = costs.reduce((a, x) => a + x.pages, 0);
+    const ms = await median(() => similarLiveJobs(c as never, j.id));
+    console.log(`similar: ${counted.n} statements, ${pages} pages (${costs.map((x) => `${x.pages} ${x.scans}`).join(" | ")}), median ${ms.toFixed(2)} ms`);
+    expect(pages).toBeLessThanOrEqual(SIMILAR_PAGES);
+    expect(ms).toBeLessThan(SIMILAR_MEDIAN_MS);
   } finally { await c.end(); }
 });

@@ -197,9 +197,23 @@ export async function setStage(db: pg.Pool, userId: string, b: { jobId: string; 
 
 // ===== one saved or tracked job, even when closed (#57, D4) =====
 const SIMILAR = 5;
-export const similarSql = (occ: boolean) =>
+export const LIVE_SIMILAR = 6; // S9: "more jobs like this" under a live job
+export const similarSql = (occ: boolean, limit = SIMILAR) =>
   `select ${CARD} from job j where j.status = 'live' and j.closes_at > now() and j.sector = $1 and j.id <> $2::bigint ${occ ? "and j.occupation_code = $3" : ""}
-   order by (not j.quota_full) desc, j.posted_at desc, j.id desc limit ${SIMILAR}`;
+   order by (not j.quota_full) desc, j.posted_at desc, j.id desc limit ${limit}`;
+// The live jobs of the same occupation, else of the same sector, newest first (full-quota last, as on the site; the sector index serves this order). Never the job itself.
+async function similarTo(db: pg.Pool, id: string, sector: string | null, occupationCode: string | null, limit = SIMILAR) {
+  const similar = (occ: boolean) => db.query(similarSql(occ, limit), occ ? [sector, id, occupationCode] : [sector, id]);
+  let s = occupationCode ? await similar(true) : null;
+  if (!s?.rowCount) s = await similar(false);
+  return s.rows;
+}
+/** S9: up to 6 live jobs like a live job, public cards only. null (404) when the id is bad or the job is not live. */
+export async function similarLiveJobs(db: pg.Pool, id: string) {
+  if (!validId(id)) return null;
+  const j = (await db.query(`select j.sector, j.occupation_code as "occupationCode" from job j where j.id = $1::bigint and ${LIVE}`, [id])).rows[0];
+  return j ? { jobs: await similarTo(db, id, j.sector, j.occupationCode, LIVE_SIMILAR) } : null;
+}
 export async function savedJob(db: pg.Pool, userId: string, url: URL) {
   const id = url.searchParams.get("id");
   if (!validId(id)) throw new Refuse(400, "BAD_REQUEST");
@@ -212,11 +226,7 @@ export async function savedJob(db: pg.Pool, userId: string, url: URL) {
   if (!j) throw new Refuse(404, "JOB_NOT_FOUND"); // not the candidate's own, whatever the job is
   const { sector, occupationCode, ownPageUrl, closedAt, ...card } = j;
   if (j.live) return { job: { ...card, ownPageUrl, saved: j.saved, stage: j.stage } };
-  // Closed: the live jobs of the same occupation, else of the same sector, newest first (full-quota last, as on the site; the sector index serves this order).
-  const similar = (occ: boolean) => db.query(similarSql(occ), occ ? [sector, id, occupationCode] : [sector, id]);
-  let s = occupationCode ? await similar(true) : null;
-  if (!s?.rowCount) s = await similar(false);
-  return { job: { ...stripIfClosed(card), closedAt, saved: j.saved, stage: j.stage }, similar: s.rows };
+  return { job: { ...stripIfClosed(card), closedAt, saved: j.saved, stage: j.stage }, similar: await similarTo(db, id, sector, occupationCode) };
 }
 
 // ===== notification settings (D3) =====

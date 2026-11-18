@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { seedStaff } from "../src/staff-seed-cli";
 import { IN_FORCE, loadRules, type Minimums } from "../src/rules-data";
 import { NOTICES, PENDING } from "../src/rules-admin";
-import { END_FLOORS, LIVE_STATED, runRules, UNDER_REVIEW } from "../src/rules-run-cli";
+import { END_FLOORS, LIVE_STATED, QUOTA_FULL, runRules, UNDER_REVIEW } from "../src/rules-run-cli";
 import { seedData, seedRules } from "../src/rules-seed-cli";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { fixtures, in30 } from "./fixtures";
@@ -21,7 +21,7 @@ vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 // notices, audit, commit (10); loadRules is one statement. Times are medians of 9 warm calls, limits about 4 times the measured one with a floor
 // for a busy laptop (list measured 2.9 ms). Pages: the loader, the pending list, the run's job read and the notices on a database with 300 jobs,
 // measured 7 + 7 + 321 + 41 = 376 (the run's read scans job: it runs once per new minimum, ponytail: an index on live portal jobs if that grows).
-const BUDGET = { list: 6, propose: 8, confirm: 10, load: 1, listMs: 15, proposeMs: 30, confirmMs: 40, loadMs: 15, pages: 600 };
+const BUDGET = { list: 6, propose: 8, confirm: 10, load: 1, listMs: 15, proposeMs: 30, confirmMs: 40, loadMs: 15, pages: 600, quotaPages: 1500 };
 
 const secret = "trial-only-secret-trial-only-secret-32";
 const BASE = "http://localhost:3002";
@@ -327,7 +327,7 @@ const run = async () => { const c = await db.pool("app_admin").connect(); try { 
 
 describe("the daily run and the notices (#234 D9)", () => {
   it("does nothing while the minimums in force were already applied (version 1 included)", async () => {
-    expect(await run()).toMatchObject({ applied: false, underReview: 0, floorsEnded: 0 });
+    expect(await run()).toMatchObject({ applied: false, underReview: 0, floorsEnded: 0, quotaChanged: 0 });
   });
   it("a minimums version confirmed for today: one notice per company with a live or draft job, then the run marks the jobs below it and ends every floor, once", async () => {
     src = Number((await one("select id from job_source where kind = 'portal' and board = 'employer'")).id);
@@ -345,7 +345,7 @@ describe("the daily run and the notices (#234 D9)", () => {
       general: await job(b, { code: "6145", pay: 33000 }), // a General post is not judged against the Critical Skills minimum
       passing: await job(allPass, { pay: 60000 }), // a company whose live jobs all pass: told about the new minimum, not about any job under review
     };
-    await su.query("update job set permit_type = 'general' where id = $1", [jobs.general]);
+    await su.query("update job set permit_type = 'general', quota_full = true where id = $1", [jobs.general]); // S8: a stale mark the new version (no General list) clears
     await su.query("update job set closed_at = now(), close_reason = 'closed' where id = $1", [jobs.closed]);
     const fetched = String((await one(
       "insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, status, closes_at, salary_low, pass_route, badge, search_vector, own_page_url) values ($1, 'fetched', $2, 'Fake', 'Fake', 'it', 'critical_skills', 'live', $3, 1000, 'stated_pay', 'critical_skills_eligible', 'x', 'https://example.test/f') returning id",
@@ -369,7 +369,8 @@ describe("the daily run and the notices (#234 D9)", () => {
     expect((await notes("rules_minimums_changed")).length).toBe(3);
 
     const r = await run();
-    expect(r).toEqual({ versionId: c.versionId, applied: true, underReview: 2, floorsEnded: 1 });
+    expect(r).toEqual({ versionId: c.versionId, applied: true, underReview: 2, floorsEnded: 1, quotaChanged: 1 });
+    expect((await one("select quota_full from job where id = $1", [jobs.general])).quota_full).toBe(false);
     expect(Object.fromEntries(await Promise.all(Object.entries(jobs).map(async ([k, id]) => [k, await status(id)])))).toEqual({
       below: "under_review", atNew: "live", range: "live", hours: "under_review", publicPay: "live", draft: "draft", nonList: "live", closed: "closed", general: "live", passing: "live",
     });
@@ -410,7 +411,7 @@ describe("the daily run and the notices (#234 D9)", () => {
     expect((await su.query("select count(*)::int n from email_outbox where template = 'rules_jobs_under_review'")).rows[0].n).toBe(2);
     expect((await notes("rules_jobs_under_review")).length).toBe(2);
 
-    expect(await run()).toEqual({ versionId: c.versionId, applied: false, underReview: 0, floorsEnded: 0 });
+    expect(await run()).toEqual({ versionId: c.versionId, applied: false, underReview: 0, floorsEnded: 0, quotaChanged: 0 });
     expect((await su.query("select count(*)::int n from audit_event where action = 'rules.minimums_in_force'")).rows[0].n).toBe(1);
     // the floor step run twice on the same floor still writes one notice and one email (dedupe key per floor)
     const k = await su.connect();
@@ -418,6 +419,41 @@ describe("the daily run and the notices (#234 D9)", () => {
     expect((await db.pool("app_admin").query(END_FLOORS, [c.versionId])).rows[0].n).toBe(1);
     expect((await notes("pay_floor_expired")).length).toBe(1);
     expect((await su.query("select count(*)::int n from email_outbox where template = 'pay_floor_expired'")).rows[0].n).toBe(1);
+  });
+});
+
+describe("the quota notice (S8, #85)", () => {
+  const G = { general: R.GENERAL_MINIMUM, generalLower: R.GENERAL_LOWER_MINIMUM, generalLowerCodes: [...R.GENERAL_LOWER_CODES] };
+  const marks = async (ids: Record<string, string>) => Object.fromEntries(await Promise.all(Object.entries(ids).map(async ([k, id]) => [k, (await one("select quota_full from job where id = $1", [id])).quota_full])));
+  it("a version that adds a code marks its open General jobs quota_full, and the next version without the code clears them; nothing else is touched", async () => {
+    const c = await company();
+    const jobs = {
+      general: await job(c, { code: "6145", pay: 60000 }), otherCode: await job(c, { code: "5434", pay: 60000 }), critical: await job(c, { code: "6145", pay: 60000 }),
+      draft: await job(c, { code: "6145", pay: 60000, status: "draft" }), closed: await job(c, { code: "6145", pay: 60000, status: "closed" }),
+    };
+    await su.query("update job set permit_type = 'general' where id = any($1::bigint[])", [[jobs.general, jobs.otherCode, jobs.draft, jobs.closed]]);
+    await su.query("update job set closed_at = now(), close_reason = 'closed' where id = $1", [jobs.closed]);
+    const version = async (codes: string[]) => { const { requestId } = await ok(propose("ed1", "minimums", today, { ...M, ...G, generalQuotaFullCodes: codes })); await ok(decide("ad1", "confirm", requestId)); };
+    // the earlier test's live General job of 6145 is marked too: every open General job of the code, whoever's
+    const open = async (code: string) => (await one("select count(*)::int n from job where permit_type = 'general' and occupation_code = $1 and status <> 'closed'", [code])).n;
+    const [n6145, n5434] = [await open("6145"), await open("5434")];
+    expect(n6145).toBeGreaterThanOrEqual(2);
+    await version(["6145"]);
+    expect(await run()).toMatchObject({ applied: true, quotaChanged: n6145 });
+    expect(await marks(jobs)).toEqual({ general: true, otherCode: false, critical: false, draft: true, closed: false });
+    const audit = await one("select after from audit_event where action = 'rules.minimums_in_force' order by id desc limit 1");
+    expect(audit.after.quota_changed).toBe(n6145);
+    await version(["5434"]);
+    expect(await run()).toMatchObject({ applied: true, quotaChanged: n6145 + n5434 }); // the 6145 marks cleared, the 5434 ones set
+    expect(await marks(jobs)).toEqual({ general: false, otherCode: true, critical: false, draft: false, closed: false });
+    expect(await run()).toMatchObject({ applied: false, quotaChanged: 0 });
+  });
+  it("only app_admin (the rules run's login) may write quota_full: the portal, the fetcher and the candidate site are refused", async () => {
+    const c = await company();
+    const id = await job(c, { pay: 60000 });
+    for (const role of ["app_portal", "app_fetcher", "app_candidate"] as const)
+      await expect(db.pool(role).query("update job set quota_full = true where id = $1", [id]), role).rejects.toThrow(/permission denied/);
+    expect((await one("select quota_full from job where id = $1", [id])).quota_full).toBe(false);
   });
 });
 
@@ -472,6 +508,8 @@ describe("performance", () => {
       await client.query("begin");
       const costs = await measurePages(client, [{ text: IN_FORCE, values: [today] }, PENDING, LIVE_STATED, { text: NOTICES, values: [1, today] }]);
       assertPageBudget("rules: loader, pending list, run's job read, notices", costs, BUDGET.pages);
+      // S8: the quota step reads every open job once (it runs once per new minimums version) and writes only the rows that change
+      assertPageBudget("rules: quota step", await measurePages(client, [{ text: QUOTA_FULL, values: [["2136"]] }]), BUDGET.quotaPages);
     } finally { await client.query("rollback"); client.release(); }
   });
 });

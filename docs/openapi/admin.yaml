@@ -150,6 +150,11 @@ components:
         emailDomain: { type: [string, 'null'] }
         answer: { type: [string, 'null'], description: "The owner's latest answer to \"ask for more\". Plain text; show it as text, never as HTML." }
         answeredAt: { type: [string, 'null'] }
+        flags:
+          type: array
+          items: { enum: [shared_mailbox, lookalike_domain] }
+          description: "Extra reasons to look closely, never a refusal: `shared_mailbox` (the owner's email is hr@, jobs@, careers@, info@, admin@, recruitment@ or office@) and `lookalike_domain` (the email domain is within 2 edits of a saved company domain, 0 and 1 read as o and l)."
+        lookalikeOf: { type: [string, 'null'], description: The saved company domain the email domain looks like; null without `lookalike_domain`. }
     AuditEvent:
       type: object
       required: [id, at, kind, actor, action]
@@ -608,7 +613,7 @@ paths:
                       item: { $ref: '#/components/schemas/AccountReviewItem' }
               example:
                 items:
-                  - { id: '1042', status: open, claimedBy: null, createdAt: '2026-11-18 09:30:00.123456+00', reason: claim, detail: { found: true }, organisationId: '310', displayName: Example Care Ltd, kind: employer, organisationStatus: pending_review, signupPath: dete_claim, croNumber: '123456', wrcLicenceNumber: null, claimantEmail: owner@example.ie, emailDomain: example.ie, answer: null, answeredAt: null }
+                  - { id: '1042', status: open, claimedBy: null, createdAt: '2026-11-18 09:30:00.123456+00', reason: claim, detail: { found: true }, organisationId: '310', displayName: Example Care Ltd, kind: employer, organisationStatus: pending_review, signupPath: dete_claim, croNumber: '123456', wrcLicenceNumber: null, claimantEmail: owner@example.ie, emailDomain: example.ie, answer: null, answeredAt: null, flags: [], lookalikeOf: null }
                 next: null
         '400':
           description: "`bad_cursor`: `after` is not a token this list made. `bad_query`: an unknown or repeated query key."
