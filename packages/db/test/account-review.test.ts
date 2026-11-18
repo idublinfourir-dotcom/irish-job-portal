@@ -814,3 +814,70 @@ describe("performance budgets", () => {
     expect(median(approves)).toBeLessThanOrEqual(BUDGET.routeMs);
   });
 });
+
+// ===== N4: the owner is told of each decision, in the decision's own statement =====
+describe("decision notices (N4)", () => {
+  const notices = async (user: string) => (await su.query("select category, template_key, params from notification where portal_user_id = $1 order by id", [user])).rows;
+  const emails = async (user: string) => (await su.query("select template, params, status from email_outbox where portal_user_id = $1 order by id", [user])).rows;
+  it("approve, ask for more (with the question, through the route) and reject each write exactly one notice and one pending email to the owner", async () => {
+    const a = await registered();
+    await claimedBy("reviewer", a.item);
+    await approveAccount(admin(), staff.reviewer!, a.item);
+    const ap = { organisationId: a.org };
+    expect(await notices(a.user)).toEqual([{ category: "account", template_key: "account_approved", params: ap }]);
+    expect(await emails(a.user)).toEqual([{ template: "account_approved", params: ap, status: "pending" }]);
+
+    const m = await claimed();
+    await claimedBy("reviewer", m.item);
+    const question = "Please send a letter from the CRO showing you are a director.";
+    expect((await post("reviewer", { action: "ask_more", itemId: m.item, reason: "need_cro_proof", question })).status).toBe(200);
+    const mp = { organisationId: String(m.org), reason: "need_cro_proof", question };
+    expect(await notices(m.user)).toEqual([{ category: "account", template_key: "account_needs_info", params: mp }]);
+    expect(await emails(m.user)).toEqual([{ template: "account_needs_info", params: mp, status: "pending" }]);
+    expect(JSON.stringify(await audits(m.org))).not.toContain("CRO showing"); // the question is never in the audit log (#182)
+    expect((await post("reviewer", { action: "ask_more", itemId: m.item, question: "a‮b" })).json).toEqual({ error: "bad_question" });
+    // asked again later: a second notice, not a duplicate-key failure
+    await claimedBy("reviewer", m.item);
+    await askForMoreInfo(admin(), staff.reviewer!, m.item, "still_need_proof");
+    expect((await notices(m.user)).map((n) => n.params.reason)).toEqual(["need_cro_proof", "still_need_proof"]);
+
+    for (const [x, status] of [[await claimed(), "unclaimed"], [await registered(), "rejected"]] as const) {
+      await claimedBy("reviewer", x.item);
+      expect((await rejectAccount(admin(), staff.reviewer!, x.item, "fake_company")).organisationStatus).toBe(status);
+      const rp = { organisationId: String(x.org), reason: "fake_company" }; // the reason code only: no staff note, no free text
+      expect(await notices(x.user)).toEqual([{ category: "account", template_key: "account_rejected", params: rp }]);
+      expect(await emails(x.user)).toEqual([{ template: "account_rejected", params: rp, status: "pending" }]);
+    }
+  });
+  it("a refused decision writes neither; a failure in the statement rolls back the decision, the audit row, the notice and the email together", async () => {
+    const a = await claimed();
+    await claimedBy("reviewer", a.item);
+    expect(await refusal(approveAccount(admin(), staff.reviewer2!, a.item))).toBe("not_claimer");
+    expect(await notices(a.user)).toEqual([]);
+    await su.query("create function public.n4_boom() returns trigger language plpgsql as $$ begin if new.params->>'reason' = 'boom_test' then raise exception 'boom'; end if; return new; end $$");
+    await su.query("create trigger n4_boom after insert on email_outbox for each row execute function public.n4_boom()");
+    try {
+      expect(await refusal(rejectAccount(admin(), staff.reviewer!, a.item, "boom_test"))).toMatch(/boom/);
+    } finally {
+      await su.query("drop trigger n4_boom on email_outbox");
+      await su.query("drop function public.n4_boom()");
+    }
+    expect(await orgRow(a.org)).toMatchObject({ status: "pending_review" });
+    expect(await itemRow(a.item)).toMatchObject({ status: "claimed", outcome: null });
+    expect(await audits(a.org)).toEqual([]);
+    expect(await notices(a.user)).toEqual([]);
+    expect(await emails(a.user)).toEqual([]);
+  });
+  it("the fake sender sends the queued email to the owner's address (placeholder wording); nothing reaches Brevo", async () => {
+    const { sendPending } = await import("../src/outbox-cli.ts");
+    const a = await registered();
+    await claimedBy("reviewer", a.item);
+    await approveAccount(admin(), staff.reviewer!, a.item);
+    const email = (await su.query("select email from portal_user where id = $1", [a.user])).rows[0].email as string;
+    const sent: { to: string; subject: string; text: string }[] = [];
+    await sendPending(admin(), async (to, subject, text) => void sent.push({ to, subject, text }), 200);
+    expect(sent.filter((s) => s.to === email)).toEqual([{ to: email, subject: "A notice about your account on the portal", text: expect.stringContaining("PLACEHOLDER WORDING") }]);
+    expect(sent.find((s) => s.to === email)!.text).toContain("account_approved");
+    expect(await emails(a.user)).toMatchObject([{ template: "account_approved", status: "sent" }]);
+  });
+});

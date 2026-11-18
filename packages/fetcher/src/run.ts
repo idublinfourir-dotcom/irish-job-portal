@@ -1,7 +1,7 @@
 // The loop of design section 3.1: boards a few at a time, adverts one at a time. Never throws for one bad advert or one bad board.
 import { applySecondOpinion, SHOWN, type BatchResult } from "@portal/matcher";
 import { assess, type Assessment } from "@portal/rules";
-import type { RawAdvert } from "@portal/sources";
+import { PACE, RATE_LIMITED, realSleep, type RawAdvert } from "@portal/sources";
 import { isDue, hashAdvert } from "./hash";
 import { planAdvert, stateOf } from "./plan";
 import { failBoard, finishBoard, saveJob, saveKnown, saveReject, settleAdvert, startBoard, type BoardRun } from "./store";
@@ -186,10 +186,37 @@ async function save(deps: Deps, run: BoardRun, plan: typeof planAdvert, { advert
 export async function runBoards(deps: Deps, plan: typeof planAdvert = planAdvert): Promise<BoardReport[]> {
   const reports: BoardReport[] = new Array(deps.boards.length);
   const budget = { left: deps.maxModelRequests }; // shared by every board of the run
+  const pooled = deps.boards.flatMap((t, i) => (t.serial ? [] : [i]));
+  const serial = deps.boards.flatMap((t, i) => (t.serial ? [i] : []));
   let next = 0;
   const worker = async () => {
-    for (let i = next++; i < deps.boards.length; i = next++) reports[i] = await runBoard(deps, deps.boards[i]!, plan, budget);
+    for (let i = next++; i < pooled.length; i = next++) reports[pooled[i]!] = await runBoard(deps, deps.boards[pooled[i]!]!, plan, budget);
   };
-  await Promise.all(Array.from({ length: Math.min(deps.concurrency ?? 8, deps.boards.length) }, worker));
+  // One lane for the serial boards, a pause apart. After PACE.giveUpAfter boards in a row gave up on 429/503, the rest are failed without a request.
+  const lane = async () => {
+    const sleep = deps.sleep ?? realSleep;
+    let limited = 0;
+    for (const [n, i] of serial.entries()) {
+      const task = deps.boards[i]!;
+      const stop = limited >= PACE.giveUpAfter;
+      if (n && !stop) await sleep(PACE.serialBoardGapMs);
+      const skipped = { ...task, fetch: async () => { throw new Error(`skipped after repeated 429: ${limited} ${task.kind} boards in a row were refused`); } };
+      reports[i] = await runBoard(deps, stop ? skipped : task, plan, budget);
+      limited = RATE_LIMITED.test(reports[i].error ?? "") ? limited + 1 : stop ? limited : 0;
+    }
+  };
+  await Promise.all([lane(), ...Array.from({ length: Math.min(deps.concurrency ?? 8, pooled.length) }, worker)]);
   return reports;
+}
+
+/**
+ * Whether the run as a whole failed (W1): every board of one kind failed, or more than half of all boards. The caller ends red on a reason,
+ * after everything that worked was saved, so GitHub emails the owner. Null when the run is good enough.
+ */
+export function runFailure(reports: readonly BoardReport[]): string | null {
+  const failed = reports.filter((r) => !r.ok);
+  const kinds = [...new Set(reports.map((r) => r.kind))].filter((k) => reports.every((r) => r.kind !== k || !r.ok));
+  if (kinds.length) return `every ${kinds.join(", ")} board failed (${failed.length} of ${reports.length} boards failed)`;
+  if (failed.length * 2 > reports.length) return `${failed.length} of ${reports.length} boards failed`;
+  return null;
 }

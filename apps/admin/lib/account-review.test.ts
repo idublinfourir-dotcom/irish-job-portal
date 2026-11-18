@@ -20,6 +20,10 @@ describe("parseBody", () => {
     expect(parseBody(body({ action: "approve", itemId: "12", addDomain: true })).addDomain).toBe(true);
     expect(parseBody(body({ action: "ask_more", itemId: "12" })).reason).toBeUndefined();
     expect(parseBody(body({ action: "ask_more", itemId: "12", reason: "need_cro_proof" })).reason).toBe("need_cro_proof");
+    expect(parseBody(body({ action: "ask_more", itemId: "12", question: "Please send your CRO letter." })).question).toBe("Please send your CRO letter.");
+    for (const b of [{ action: "ask_more", itemId: "12", question: 5 }, { action: "reject", itemId: "12", reason: "nope", question: "x" }, { action: "approve", itemId: "12", question: "x" }])
+      expect(code(() => parseBody(body(b))), JSON.stringify(b)).toBe("bad_body");
+    expect(parseBody(body({ action: "ask_more", itemId: "12", question: "😀".repeat(1000) })).question).toHaveLength(2000); // the longest question fits the cap
     expect(parseBody(body({ action: "reject", itemId: "12", reason: "not_a_company" })).reason).toBe("not_a_company");
   });
   it("refuses text that is not a plain JSON object", () => {

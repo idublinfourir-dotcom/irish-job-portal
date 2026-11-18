@@ -1,9 +1,10 @@
 // The five ATS fetchers. Python: prototype/step0/run_day.py:147-282 (f_greenhouse, f_ashby, f_smartrecruiters, f_workday, f_amazon).
 // Each takes the fetch function as a parameter, makes the same requests in the same order as the Python (one at a time, no
-// retries, no cache), and returns every id seen plus full records only for ids not in `known`.
+// cache), and returns every id seen plus full records only for ids not in `known`. Not in Python (W1): makeCaller tries a 429 or
+// 503 again, and Workday skips the detail call of a posting whose one list location is not Irish.
 // Lever, Workable and Recruitee are not ported: no board uses them (PORT-MAP section 3).
 import { FetchFailedError, type BoardFetch, type SourceAdapter } from "../types";
-import { MAX_PAGES, asArr, asNum, asObj, asStr, at, get, guard, isIrish, job, makeCaller, or, pyStr, safeName, text, type Obj } from "./shared";
+import { MAX_PAGES, PACE, RATE_LIMITED, asArr, asNum, asObj, asStr, at, get, guard, isIrish, job, makeCaller, or, pyStr, safeName, text, type Obj } from "./shared";
 
 export type SlugBoard = { slug: string; employer: string };
 export type WorkdayBoard = { employer: string; tenant: string; wd: string; site: string };
@@ -11,10 +12,10 @@ export type WorkdayBoard = { employer: string; tenant: string; wd: string; site:
 const objs = (v: unknown) => asArr(v).map(asObj);
 
 // run_day.py:147-157. One call, no paging. The Irish filter runs on location.name before id and title are read.
-export const fetchGreenhouse: SourceAdapter<SlugBoard> = ({ slug, employer }, known, fetch) =>
+export const fetchGreenhouse: SourceAdapter<SlugBoard> = ({ slug, employer }, known, fetch, opts) =>
   guard(slug, async () => {
     safeName(slug, slug);
-    const call = makeCaller(slug, fetch, "https://boards-api.greenhouse.io");
+    const call = makeCaller(slug, fetch, "https://boards-api.greenhouse.io", opts);
     const seen: string[] = [];
     const adverts: BoardFetch["adverts"] = [];
     for (const j of objs(at(asObj(await call(`https://boards-api.greenhouse.io/v1/boards/${slug}/jobs?content=true`)), "jobs"))) {
@@ -28,10 +29,10 @@ export const fetchGreenhouse: SourceAdapter<SlugBoard> = ({ slug, employer }, kn
   });
 
 // run_day.py:177-189. One call; a missing "jobs" key is an empty board (Python `.get("jobs", [])`).
-export const fetchAshby: SourceAdapter<SlugBoard> = ({ slug, employer }, known, fetch) =>
+export const fetchAshby: SourceAdapter<SlugBoard> = ({ slug, employer }, known, fetch, opts) =>
   guard(slug, async () => {
     safeName(slug, slug);
-    const call = makeCaller(slug, fetch, "https://api.ashbyhq.com");
+    const call = makeCaller(slug, fetch, "https://api.ashbyhq.com", opts);
     const seen: string[] = [];
     const adverts: BoardFetch["adverts"] = [];
     for (const j of objs(get(asObj(await call(`https://api.ashbyhq.com/posting-api/job-board/${slug}?includeCompensation=true`)), "jobs", []))) {
@@ -48,11 +49,11 @@ export const fetchAshby: SourceAdapter<SlugBoard> = ({ slug, employer }, known, 
 
 // run_day.py:220-236. The list is already filtered to Ireland by the query (no location filter here). Pages of 100 until
 // totalFound; one detail call per posting not in `known`. Any failed call fails the whole board.
-export const fetchSmartRecruiters: SourceAdapter<SlugBoard> = ({ slug, employer }, known, fetch) =>
+export const fetchSmartRecruiters: SourceAdapter<SlugBoard> = ({ slug, employer }, known, fetch, opts) =>
   guard(slug, async () => {
     safeName(slug, slug);
     const base = `https://api.smartrecruiters.com/v1/companies/${slug}`;
-    const call = makeCaller(slug, fetch, "https://api.smartrecruiters.com");
+    const call = makeCaller(slug, fetch, "https://api.smartrecruiters.com", opts);
     const seen: string[] = [];
     const adverts: BoardFetch["adverts"] = [];
     for (let page = 0, off = 0; ; page++, off += 100) {
@@ -81,12 +82,12 @@ export const fetchSmartRecruiters: SourceAdapter<SlugBoard> = ({ slug, employer 
 // run_day.py:239-267. POST list pages of 20 (stop at "total" or once the offset is above 600), then one GET per posting
 // not in `known`. A detail call that fails for any reason is skipped and the posting is NOT counted as seen (Python
 // `except Exception: continue`): known quirk, see the tests.
-export const fetchWorkday: SourceAdapter<WorkdayBoard> = ({ employer, tenant, wd, site }, known, fetch) =>
+export const fetchWorkday: SourceAdapter<WorkdayBoard> = ({ employer, tenant, wd, site }, known, fetch, opts) =>
   guard(tenant, async () => {
     safeName(tenant, tenant, wd, site);
     const origin = `https://${tenant}.${wd}.myworkdayjobs.com`;
     const base = `${origin}/wday/cxs/${tenant}/${site}`;
-    const call = makeCaller(tenant, fetch, origin);
+    const call = makeCaller(tenant, fetch, origin, { ...opts, gapMs: PACE.workdayCallGapMs });
     const posts: Obj[] = [];
     for (let off = 0; ; ) {
       const js = asObj(await call(`${base}/jobs`, { appliedFacets: {}, limit: 20, offset: off, searchText: "Ireland" }));
@@ -104,10 +105,16 @@ export const fetchWorkday: SourceAdapter<WorkdayBoard> = ({ employer, tenant, wd
         seen.push(jid);
         continue;
       }
+      // Not in Python (W1): a single place in the list that is not Irish is dropped here, before its detail call. The detail's
+      // location is the same text (saved Pfizer bodies); "2 Locations" or no text cannot be decided, so those still get a detail call.
+      const listed = get(p, "locationsText");
+      if (typeof listed === "string" && listed && !/^\d+ Locations$/i.test(listed) && !isIrish(listed)) continue;
       let d: Obj;
       try {
         d = asObj(at(asObj(await call(base + asStr(path))), "jobPostingInfo"));
-      } catch {
+      } catch (e) {
+        // A detail refused for the rate limit fails the board: skipping it would leave a known posting unseen, and so closed.
+        if (e instanceof FetchFailedError && RATE_LIMITED.test(e.message)) throw e;
         continue;
       }
       const loc = [asStr(get(d, "location", "")), ...asArr(get(d, "additionalLocations", [])).map(asStr)].join(" / ");
@@ -119,9 +126,9 @@ export const fetchWorkday: SourceAdapter<WorkdayBoard> = ({ employer, tenant, wd
   });
 
 // run_day.py:270-282. Pages of 100 until "hits". No board name: there is one Amazon board. No location filter (the query is Ireland).
-export const fetchAmazon: SourceAdapter<undefined> = (_board, known, fetch) =>
+export const fetchAmazon: SourceAdapter<undefined> = (_board, known, fetch, opts) =>
   guard("amazon", async () => {
-    const call = makeCaller("amazon", fetch, "https://www.amazon.jobs");
+    const call = makeCaller("amazon", fetch, "https://www.amazon.jobs", opts);
     const seen: string[] = [];
     const adverts: BoardFetch["adverts"] = [];
     for (let page = 0, off = 0; ; page++, off += 100) {

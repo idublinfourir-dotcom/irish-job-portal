@@ -1,4 +1,4 @@
-// The daily backup (step 15, decisions #115 and #126). Run from the repo root with the app_backup login, by .github/workflows/backup.yml:
+// The backup, every 6 hours (step 15, decisions #115 and #126). Run from the repo root with the app_backup login, by .github/workflows/backup.yml:
 //   BACKUP_DATABASE_URL=... DATABASE_CA_CERT=... node packages/db/src/backup-cli.ts OUT_DIR
 // It exports one snapshot, counts every table of public, private and drizzle inside it, and keeps that transaction open while pg_dump dumps the
 // same snapshot, so the counts in the manifest and the dump are the same moment. The rows of public.cro_company are left out (88 MB, re-imported

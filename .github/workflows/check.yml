@@ -39,10 +39,11 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      # Fails on a high or critical advisory. The moderate ones today are in build tools only.
+      # Fails on a high or critical advisory, except the ones listed with a reason in packages/db/src/audit-gate-cli.ts. The moderate ones today are in
+      # build tools only. pipefail is not needed: npm audit exits 1 on any finding, the gate decides.
       # The WRC list tests read a small made-up PDF through pdftotext.
       - run: sudo apt-get install -y poppler-utils
-      - run: npm audit --audit-level=high
+      - run: npm audit --json | node packages/db/src/audit-gate-cli.ts
       # The backup tests run pg_dump and pg_restore (version 17) inside the database service container: nothing to install.
       - run: echo "PG_TOOLS_PREFIX=docker exec -i -e PGPASSWORD $(docker ps -q --filter ancestor=supabase/postgres:17.11.0.018)" >> "$GITHUB_ENV"
       - run: npm run check

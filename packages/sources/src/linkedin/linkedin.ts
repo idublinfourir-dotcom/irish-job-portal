@@ -3,7 +3,7 @@
 // owns no storage: the caller passes the waiting list in and gets the new list back (decision #143, Q8).
 // Nothing here reads a global: fetch, sleep and random are passed in. No file, no database, no real timer.
 import type { Fetch, RawAdvert } from "../types";
-import { pyStrip } from "../ats/shared";
+import { pyStrip, retryAfterMs } from "../ats/shared";
 import { strip } from "./html";
 import { TERM_GROUPS } from "./terms";
 
@@ -73,7 +73,6 @@ const ID_OK = /^\d{1,20}$/;
 
 /** run_day.py:388-390, the URL as built there: only spaces are escaped (a known quirk). */
 export const searchUrl = (term: string, start: number) => `${SEARCH}?keywords=${term.replaceAll(" ", "%20")}&location=Ireland&start=${start}`;
-const HTTP_DATE = /^[A-Za-z]{3}, \d\d [A-Za-z]{3} \d{4} \d\d:\d\d:\d\d GMT$/;
 
 class Halt extends Error {
   constructor(
@@ -190,10 +189,7 @@ export async function runLinkedin(input: LinkedinInput): Promise<LinkedinResult>
 
   /** The wait before a retry: Retry-After (seconds, or a date counted from the response's own Date header) if it gives a wait above zero, else double each time. */
   function waitMs(res: Response, attempt: number, r: NonNullable<LinkedinOptions["retry"]>): number {
-    const h = (res.headers.get("retry-after") ?? "").trim();
-    let ms = NaN;
-    if (/^\d{1,9}$/.test(h)) ms = Number(h) * 1000;
-    else if (HTTP_DATE.test(h)) ms = Date.parse(h) - Date.parse(res.headers.get("date") ?? "");
+    let ms = retryAfterMs(res);
     if (!(ms > 0)) ms = r.firstWaitMs * 2 ** attempt;
     return Math.min(ms, r.maxWaitMs ?? DEFAULT_MAX_WAIT_MS);
   }

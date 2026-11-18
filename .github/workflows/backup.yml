@@ -1,15 +1,15 @@
 name: Backup
 
-# The daily backup of the live database (step 15, decisions #115 and #126): pg_dump of public, private and drizzle in one exported snapshot, with a
+# The backup of the live database, every 6 hours (step 15, decisions #115 and #126): pg_dump of public, private and drizzle in one exported snapshot, with a
 # manifest of row counts, uploaded to the S3 bucket irish-job-portal-backups (eu-west-1; versioning on, a lifecycle rule expires old ones, both set in
 # the AWS console). public.cro_company rows are left out (re-imported weekly). The restore is proved by restore-check.yml.
 # Secrets (set by the engineer): BACKUP_DATABASE_URL (app_backup's Supabase session pooler string), BACKUP_S3_KEY_ID and BACKUP_S3_SECRET (the
 # job-portal-backup IAM user: put, get and list only, no delete). A red run emails the engineer.
 on:
   schedule:
-    # Daily, 02:47 UTC; GitHub may start it 4 to 8 hours late. Clear of the fetch (05:17, 06:02) and its watch (12:11, 17:41).
-    # Before the first real account, change this one line to "47 */6 * * *" (every 6 hours).
-    - cron: "47 2 * * *"
+    # Every 6 hours (O1, before the first real account): 00:47, 06:47, 12:47 and 18:47 UTC; GitHub may start it late. Clear of the fetch (05:17, 06:02)
+    # and its watch (12:11, 17:41). The file names carry the minute, so four a day never clash, and the restore check takes the newest by name.
+    - cron: "47 */6 * * *"
   workflow_dispatch:
 
 permissions:

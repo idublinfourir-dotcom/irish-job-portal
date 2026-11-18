@@ -25,7 +25,7 @@ const json = (file: string) => JSON.parse(readFileSync(file, "utf8")) as unknown
 // The rules matcher never fails. Its answer only feeds the rules chain; every badge is then checked by the model (`checkBatch` below).
 const matcher: FetcherMatcher = async (title, description) => ({ match: await rulesMatcher(title, description), quote: null, modelId: "rules", failure: null });
 
-type Deps = { fetch: typeof fetch; pool: (connectionString: string) => pg.Pool };
+type Deps = { fetch: typeof fetch; pool: (connectionString: string) => pg.Pool; sleep?: (ms: number) => Promise<void> };
 const real = (): Deps => ({ fetch: globalThis.fetch, pool: (connectionString) => new pg.Pool({ connectionString, max: 4, ssl: sslOptions() }) });
 // The rules in force on the run's UTC day, from the database (#229).
 const rulesInForce = async (db: Pick<pg.Pool, "query">, day: string) => {
@@ -66,7 +66,8 @@ export async function main(deps: Deps = real()): Promise<BoardReport[]> {
       checkBatch: createBatchChecker({ client, modelId, entries }),
       batchSize: process.env.FETCHER_BATCH_SIZE ? Number(process.env.FETCHER_BATCH_SIZE) : undefined,
       maxModelRequests,
-      boards: atsTasks(boards, deps.fetch, log),
+      boards: atsTasks(boards, deps.fetch, log, deps.sleep),
+      sleep: deps.sleep,
       // Stops assessing at this many minutes (default 55) so the run ends inside its job's time limit.
       deadline: new Date(started.getTime() + Math.max(1, whole("FETCHER_DEADLINE_MINUTES", 55)) * 60 * 1000),
       log,
