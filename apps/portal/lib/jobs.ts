@@ -3,11 +3,13 @@
 // adverts, on the structured fields the employer typed; the database has the last word (job_guard, signer_check, job_org_live, the deferred
 // statement check). There is no row level security: every read and write here is filtered by the login's own company.
 import { getPool, getRules, listAnswer, validId } from "@portal/db";
-import { assess, chainRules, isSoc2010, minimumForHours, type RulesSnapshot } from "@portal/rules";
+import { suggestCodes } from "@portal/matcher/rules";
+import { assess, chainRules, isSoc2010, minimumForHours, socTitle, type RulesSnapshot } from "@portal/rules";
 import type pg from "pg";
 import { isObject, no, ok, only, portalLogin, readPost, withinLimit, type Refusal } from "./company";
 
 export const JOBS_RATE = { windowMs: 10 * 60_000, max: 30 }; // posts, edits, renewals and closes together, per login
+export const CHECK_RATE = { windowMs: 10 * 60_000, max: 120 }; // dry-run rule checks, per login (the form calls it while the employer types)
 export const MAX_JOB_BODY = 24_000; // characters: a 10,000-character advert with its JSON escaping and the other fields
 const MAX_PAY = 1_000_000;
 
@@ -107,6 +109,14 @@ export function checkClose(b: unknown): { jobId: string; hireAnswer: Hire } | nu
 }
 
 // ===== the rules
+/**
+ * Conditions a code carries that its Ineligible title does not name (P6, 06-health-hospitality-eligibility.md): the employer ticks them with the same
+ * `exceptionConfirmed` as an Ineligible exception, and the refusal carries the wording. Placeholder wording. Every other named condition (chef experience
+ * and "not fast food" on 5434, disability services on 1242, 2229, 3231, 3239 and 6146) is already in its Ineligible title and asks for the same tick.
+ */
+export const CONDITIONS: Readonly<Record<string, string>> = {
+  "6145": "Care workers and home carers: the employer is a care provider, not a private household (a job in a private home is not eligible)",
+};
 export type Verdict = { ok: true; passRoute: "stated_pay" | "public_pay"; status: "live" | "in_review"; sector: string; stage: string }
   | { ok: false; code: string; stage?: string; exception?: string };
 
@@ -127,6 +137,8 @@ export async function rulesFor(p: Post, employerName: string, r: RulesSnapshot):
     const exception = title?.includes("with the exception of") ? title : undefined;
     if (!(exception && p.exceptionConfirmed)) return { ok: false, code: "OCCUPATION_INELIGIBLE", ...(exception ? { exception } : {}) };
   }
+  const condition = CONDITIONS[p.occupationCode];
+  if (condition && !p.exceptionConfirmed) return { ok: false, code: "OCCUPATION_INELIGIBLE", exception: condition };
   if (general && m.generalQuotaFullCodes!.includes(p.occupationCode)) return { ok: false, code: "QUOTA_FULL" }; // #85: a full quota blocks new postings
   if (!general) {
     if (onList === null && !m.nonListRoute) return { ok: false, code: "OCCUPATION_NOT_ON_LIST" };
@@ -181,13 +193,13 @@ type Acting = { userId: string; membershipId: number; organisationId: number };
 const POSTERS = new Set(["poster", "recruiter", "account_owner"]);
 
 /** The common start of every write: the session, the poster role, the rate limit. Returns the reply to send, or the acting member and the body. */
-async function writer<T>(request: Request, check: (b: unknown) => T | null, max?: number): Promise<Response | { who: Acting; body: T }> {
+async function writer<T>(request: Request, check: (b: unknown) => T | null, max?: number, key = "jobs", rate = JOBS_RATE): Promise<Response | { who: Acting; body: T }> {
   const read = await readPost(request, check, max);
   if (read instanceof Response) return read;
   const { login, body } = read;
   if (!login.membership) return no(403, "NOT_A_MEMBER");
   if (!POSTERS.has(login.membership.role)) return no(403, "NOT_A_POSTER");
-  if (!(await withinLimit(`jobs:${login.userId}`, JOBS_RATE))) return no(429, "TOO_MANY_REQUESTS");
+  if (!(await withinLimit(`${key}:${login.userId}`, rate))) return no(429, "TOO_MANY_REQUESTS");
   return { who: { userId: login.userId, membershipId: login.membership.id, organisationId: login.membership.organisationId }, body };
 }
 
@@ -347,4 +359,30 @@ export async function jobList(request: Request): Promise<Response> {
     if (r) return no(r.status, r.code);
     throw e;
   }
+}
+
+/**
+ * POST /api/portal/jobs/check (P4): the post body, checked as a live post would be (the agency and written authority checks, then rulesFor) and
+ * nothing written, so the form can show a refusal while the employer types. `status` is read but does not matter. The same codes as the post.
+ */
+export async function jobCheck(request: Request): Promise<Response> {
+  const w = await writer(request, checkPost, MAX_JOB_BODY, "jobcheck", CHECK_RATE);
+  if (w instanceof Response) return w;
+  const { who, body: p } = w;
+  const db = getPool();
+  const org = (await db.query(ORG, [who.organisationId])).rows[0] as { display_name: string; kind: string };
+  if (p.clientName && org.kind !== "agency") return no(400, "CLIENT_ONLY_FOR_AGENCIES");
+  if (p.clientName && p.statement && !p.statement.writtenAuthority) return no(400, "WRITTEN_AUTHORITY_REQUIRED");
+  const v = await rulesFor(p, p.clientName ?? org.display_name, await getRules(db));
+  return v.ok ? ok({ ok: true, status: v.status, passRoute: v.passRoute, sector: v.sector }) : verdictReply(v);
+}
+
+/** GET /api/portal/jobs/suggest?title= (P5): up to 3 SOC codes from the matcher's title rules, with their official titles. No AI, no database read but the session. */
+export async function jobSuggest(request: Request): Promise<Response> {
+  const login = await portalLogin(request);
+  if (login instanceof Response) return login;
+  const params = new URL(request.url).searchParams;
+  const title = line(params.get("title"), 2, 200);
+  if (!title || [...params.keys()].length !== 1) return no(400, "BAD_REQUEST");
+  return ok({ suggestions: suggestCodes(title).filter(isSoc2010).map((code) => ({ code, title: socTitle(code) })) });
 }

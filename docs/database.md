@@ -130,6 +130,7 @@ A visitor has no table. Their reports and contact messages are rows with no acco
 - `membership`: links a portal login to an organisation (#52, #103). One owner per organisation and one active company per login (#130). A viewer never signs. `app_portal` reads it and has no insert, update or delete right (migration 0009): every membership write goes through a `security definer` function: `claim_organisation`, `register_organisation` and the eight team functions of migration 0013 (see Callable functions). `invite_token_hash` holds only the sha256 of the invite token; the token itself is only in the email. `awaiting_approval` is not used yet (an invite is the owner's approval, whatever the invitee's domain). `app_admin` keeps its direct rights, and raises a company's `member_limit` (10 by default) by updating it.
 - `sponsorship_statement`: the signed "we will sponsor" statement per job, which strikes hold employers to (#19, #44). One current statement per job. The signer must be an eligible active member. `admin_on_behalf` needs a confirmed approval request (#16, #104).
 - `pay_floor`: a pay floor signed by a big-company employer for a role family, never an agency (#82, #100). Becomes active only with a confirmed approval request.
+- `job_authority_document` (migration 0038, audit row P8): optional stored copies of a client's written authority on an agency job that names a client. The tick (`sponsorship_statement.written_authority_on_file`) stays the rule. The case documents' limits (PDF, JPEG or PNG, 4 MB, 20 stored per job, keys `authority/<uuid>`); `app_portal` reads it and inserts the file columns only; routes `GET`, `POST /api/portal/jobs/<id>/authority` and `GET .../authority/<docId>` for the agency's posters, recruiters and owner. Retention rule 43 deletes the copy 30 days after the job closes (the `services_case_copy` setting) and keeps the row; rule 32 deleting a closed job cascades to it.
 
 Agency permit employer facts have no table: they sit on the job columns and on `sponsorship_statement` (#23, #36, #89). A client is not an account type.
 
@@ -183,7 +184,7 @@ Each key is a row in `setting`, run by `run_retention`. A rule skips any record 
 | `portal_removed_member` | 12 months after the last membership ends, or after sign-up if never a member | #133 |
 | `draft_job` | 12 months after creation, if never posted | #99, #122, guess |
 | `portal_signer_name` | 12 months after the job closes or the floor ends: signer name replaced | proposed |
-| `services_case_copy` | 30 days after the case closes: uploaded copies deleted | #99, guess |
+| `services_case_copy` | 30 days after the case closes: uploaded copies deleted; also an agency job's written authority copies 30 days after the job closes (rule 43, migration 0038) | #99, guess |
 | `services_case_record` | 6 years after the case closes, offer details included | #133 |
 | `case_invoice_record` | 6 years after the case closes | #133 |
 | `strike_and_report_evidence` | 12 months after decision and appeal, unless a ban rests on the case | #44, #99, #136 |

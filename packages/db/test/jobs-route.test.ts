@@ -376,7 +376,7 @@ describe("budgets: median of 9 calls", () => {
 // process, so the tests move the clock past that after changing the minimums row (only Date is faked; the other timers stay real).
 describe("General Employment Permit posts", () => {
   const care = { ...good, title: "Healthcare Assistant", description: "We are hiring a healthcare assistant for our care home in Cork. Full sponsorship offered.", county: "Cork",
-    occupationCode: "6145", salaryLow: 33000, salaryHigh: null, permitType: "general", statement: signed };
+    occupationCode: "6145", salaryLow: 33000, salaryHigh: null, permitType: "general", statement: signed, exceptionConfirmed: true };
   const chef = { ...good, title: "Head Chef", description: "We are hiring a head chef for our restaurant in Galway. Full sponsorship offered.", county: "Galway",
     occupationCode: "5434", salaryLow: 80000, salaryHigh: null };
   const GENERAL = { general: 36605, generalLower: 32691, generalLowerCodes: ["6145"], generalQuotaFullCodes: [] as string[] };

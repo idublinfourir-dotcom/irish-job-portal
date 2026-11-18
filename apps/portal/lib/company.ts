@@ -2,7 +2,7 @@
 // body. The database functions do the real checks (ban, email confirmed, one company per login, #191); this file only refuses
 // bad requests early and turns the functions' refusals into short codes.
 import { PortalRefused, requirePortal, type PortalLogin } from "@portal/auth";
-import { getPool, toWire, validId, withinRate } from "@portal/db";
+import { getPool, normaliseCompanyName, normaliseCroNumber, toWire, validId, withinRate } from "@portal/db";
 import { portalAuth, portalOrigin } from "./portal";
 
 export const MAX_BODY = 2048; // characters; the largest good body is about 250
@@ -104,4 +104,47 @@ export async function companyPost<T>(request: Request, check: (b: unknown) => T 
     if (r) return no(r.status, r.code);
     throw e;
   }
+}
+
+// ===== company search for the claim screen (P2)
+export const SEARCH_RATE = { windowMs: 10 * 60_000, max: 60 }; // searches per login
+// Unclaimed, unmerged companies by a name (organisation_name_trgm through LIKE) or an exact CRO number, then CRO register rows by name (cro_company_trgm)
+// or number that no company on the site holds yet (organisationId null: the screen offers to register with that number). Each branch takes at most 200
+// hits before ranking (ponytail: a common word ranks only the first 200 found; a word_similarity index scan if that shows). Only the four fields the screen shows.
+export const SEARCH = `with o as (
+    select o.id, o.display_name, coalesce(o.cro_number, (select min(n.cro_number) from organisation_name n where n.organisation_id = o.id)) cro, o.county, max(h.s) s
+    from (select * from (select n.organisation_id org, extensions.similarity(n.normalised_name, $1) s from organisation_name n where $1 <> '' and n.normalised_name like '%' || $1 || '%' limit 200) a
+          union all select id, 1 from organisation where $2::text is not null and cro_number = $2 and status not in ('rejected','closed') and merged_into_id is null
+          union all select organisation_id, 1 from organisation_name where $2::text is not null and cro_number = $2) h
+    join organisation o on o.id = h.org
+    where o.status = 'unclaimed' and o.merged_into_id is null group by o.id),
+  c as (
+    select null::bigint id, c.name display_name, c.cro_number cro, c.county, h.s
+    from (select * from (select id, extensions.similarity(normalised_name, $1) s from cro_company where $1 <> '' and normalised_name like '%' || $1 || '%' limit 200) a
+          union all select id, 1 from cro_company where $2::text is not null and cro_number = $2) h
+    join cro_company c on c.id = h.id
+    where not exists (select 1 from organisation x where x.cro_number = c.cro_number) and not exists (select 1 from organisation_name x where x.cro_number = c.cro_number))
+  select id "organisationId", display_name name, cro "croNumber", county from (select * from o union all select * from c) r order by s desc, id nulls last, name limit 20`;
+
+/** The query of the search, or null for a bad one: a name of 3 to 160 characters (compared on normaliseCompanyName's key) or a CRO number. Pure. */
+export function checkSearch(params: URLSearchParams): { key: string; cro: string | null } | null {
+  const q = params.get("q");
+  if (q === null || [...params.keys()].length !== 1) return null;
+  const t = q.trim();
+  if (t.length < 3 || t.length > 160 || /[\p{Cc}\p{Cf}]/u.test(t)) return null;
+  const c = normaliseCroNumber(t);
+  const cro = /^\d{1,8}$/.test(c) ? c : null;
+  const key = normaliseCompanyName(t);
+  if (!cro && key.length < 3) return null;
+  return { key: cro ? "" : key, cro };
+}
+
+/** GET /api/portal/claim/search?q=: at most 20 companies to claim (or CRO numbers to register with), by name or CRO number. Any signed-in portal login. */
+export async function companySearch(request: Request): Promise<Response> {
+  const login = await portalLogin(request);
+  if (login instanceof Response) return login;
+  const q = checkSearch(new URL(request.url).searchParams);
+  if (!q) return no(400, "BAD_REQUEST");
+  if (!(await withinLimit(`search:${login.userId}`, SEARCH_RATE))) return no(429, "TOO_MANY_REQUESTS");
+  return ok({ results: (await getPool().query(SEARCH, [q.key, q.cro])).rows });
 }

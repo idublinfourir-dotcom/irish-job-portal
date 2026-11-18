@@ -1,7 +1,7 @@
 // Made by npm run db:pull (packages/db/test/pull-schema.mjs) from a database built by packages/db/migrations.
 // Do not edit by hand: change a migration, then run npm run db:pull. schema.test.ts fails until the two match.
 import { relations } from "drizzle-orm/relations";
-import { job, application, candidateUser, consentRecord, organisation, contactRequest, membership, candidateHiddenOrganisation, message, jobSource, fetchedAdvert, payFloor, organisationName, staffUser, report, jobText, fetchRun, jobDailyStat, candidateAccount, candidateSession, candidateProfile, candidateCv, savedJob, trackerEntry, applyClick, alert, portalUser, portalAccount, portalSession, organisationDomain, detePermitCount, sponsorshipStatement, consentText, approvalRequest, staffSession, staffAccount, staffRole, servicesCase, caseNote, caseDocument, caseQuote, contentPage, contactMessage, strike, ban, notificationPreference, notification, setting, reviewItem, ownerReassign } from "./schema";
+import { job, jobAuthorityDocument, application, candidateUser, consentRecord, organisation, contactRequest, membership, candidateHiddenOrganisation, message, jobSource, fetchedAdvert, payFloor, organisationName, staffUser, report, jobText, fetchRun, jobDailyStat, candidateAccount, candidateSession, candidateProfile, candidateCv, savedJob, trackerEntry, applyClick, alert, portalUser, portalAccount, portalSession, organisationDomain, detePermitCount, sponsorshipStatement, consentText, approvalRequest, staffSession, staffAccount, staffRole, servicesCase, caseNote, caseDocument, caseQuote, contentPage, contactMessage, strike, ban, notificationPreference, notification, setting, reviewItem, ownerReassign } from "./schema";
 
 export const applicationRelations = relations(application, ({one, many}) => ({
 	job: one(job, {
@@ -74,6 +74,7 @@ export const jobRelations = relations(job, ({one, many}) => ({
 	strikes: many(strike),
 	consentRecords: many(consentRecord),
 	reviewItems: many(reviewItem),
+	jobAuthorityDocuments: many(jobAuthorityDocument),
 }));
 
 export const candidateUserRelations = relations(candidateUser, ({many}) => ({
@@ -180,6 +181,7 @@ export const organisationRelations = relations(organisation, ({one, many}) => ({
 	notifications: many(notification),
 	reviewItems: many(reviewItem),
 	ownerReassigns: many(ownerReassign),
+	jobAuthorityDocuments: many(jobAuthorityDocument),
 }));
 
 export const membershipRelations = relations(membership, ({one, many}) => ({
@@ -215,6 +217,7 @@ export const membershipRelations = relations(membership, ({one, many}) => ({
 	ownerReassigns_oldOwnerMembershipId: many(ownerReassign, {
 		relationName: "ownerReassign_oldOwnerMembershipId_membership_id"
 	}),
+	jobAuthorityDocuments: many(jobAuthorityDocument),
 }));
 
 export const candidateHiddenOrganisationRelations = relations(candidateHiddenOrganisation, ({one}) => ({
@@ -890,5 +893,20 @@ export const ownerReassignRelations = relations(ownerReassign, ({one}) => ({
 		fields: [ownerReassign.requestedByStaffUserId],
 		references: [staffUser.id],
 		relationName: "ownerReassign_requestedByStaffUserId_staffUser_id"
+	}),
+}));
+
+export const jobAuthorityDocumentRelations = relations(jobAuthorityDocument, ({one}) => ({
+	job: one(job, {
+		fields: [jobAuthorityDocument.jobId],
+		references: [job.id]
+	}),
+	organisation: one(organisation, {
+		fields: [jobAuthorityDocument.organisationId],
+		references: [organisation.id]
+	}),
+	membership: one(membership, {
+		fields: [jobAuthorityDocument.uploadedByMembershipId],
+		references: [membership.id]
 	}),
 }));

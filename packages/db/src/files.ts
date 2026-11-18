@@ -184,3 +184,52 @@ export const logoPut = (r: Request, env: FilesEnv) => fileRoute(r, env, "upload"
   if (old) await store.remove(old).catch(() => {});
   return { logo: { contentType: MIME[c.contentType], sizeBytes: up.bytes.length } };
 }, MAX_LOGO + 16 * 1024);
+
+// ===== the client's written authority on an agency job (P8: optional, beside the tick; PDF, JPEG or PNG, the case documents' limits) =====
+// The member comes from the login (an active poster, recruiter or owner); the job must be this company's agency job that names a client.
+const AUTH_META = `id::text as id, file_name as "fileName", content_type as "contentType", byte_size as "sizeBytes", uploaded_at as "uploadedAt", copy_deleted_at is not null as "copyDeleted"`;
+export const AUTHORITY_SQL = {
+  job: `select m.id as membership, m.organisation_id as org, (select count(*)::int from job_authority_document d where d.job_id = j.id and d.storage_key is not null) as stored
+    from membership m join job j on j.organisation_id = m.organisation_id
+    where m.portal_user_id = $2 and m.status = 'active' and m.role in ('account_owner','recruiter','poster')
+      and j.id = $1::bigint and j.source = 'agency' and j.permit_employer_kind = 'client'`,
+  insert: `insert into job_authority_document(job_id, organisation_id, uploaded_by_membership_id, storage_key, file_name, content_type, byte_size)
+    values ($1::bigint, $2, $3, $4, $5, $6, $7) returning ${AUTH_META}`,
+  list: `select ${AUTH_META} from job_authority_document where job_id = $1::bigint and organisation_id = $2 order by id`,
+  one: `select storage_key, file_name, content_type from job_authority_document where id = $1::bigint and job_id = $2::bigint and organisation_id = $3 and storage_key is not null`,
+};
+async function authorityJob(db: pg.Pool, jobId: string, userId: string) {
+  if (!validId(jobId)) throw new Refuse(400, "BAD_REQUEST");
+  const j = (await db.query(AUTHORITY_SQL.job, [jobId, userId])).rows[0] as { membership: string; org: string; stored: number } | undefined;
+  if (!j) throw new Refuse(404, "JOB_NOT_FOUND"); // another company's job, an employer's own job, or a viewer: all the same
+  return j;
+}
+
+export const authorityDocsGet = (r: Request, env: FilesEnv, jobId: string) => fileRoute(r, env, "read", async (db, userId) => {
+  const j = await authorityJob(db, jobId, userId);
+  return { documents: (await db.query(AUTHORITY_SQL.list, [jobId, j.org])).rows };
+});
+
+export const authorityDocsPost = (r: Request, env: FilesEnv, jobId: string) => fileRoute(r, env, "upload", async (db, userId) => {
+  const j = await authorityJob(db, jobId, userId);
+  // ponytail: two uploads at the same moment can both pass the count and make 21, as on case documents
+  if (j.stored >= MAX_CASE_DOCUMENTS) throw new Refuse(409, "DOCUMENT_LIMIT");
+  const f = await upload(r, ["pdf", "jpeg", "png"], "document");
+  const key = `authority/${randomUUID()}`;
+  const store = fileStore();
+  await store.put(key, f.bytes, MIME[f.kind]);
+  try {
+    return { document: (await db.query(AUTHORITY_SQL.insert, [jobId, j.org, j.membership, key, f.name, f.kind, f.bytes.length])).rows[0] };
+  } catch (e) {
+    await store.remove(key).catch(() => {});
+    throw e;
+  }
+});
+
+export const authorityDocGet = (r: Request, env: FilesEnv, jobId: string, docId: string) => fileRoute(r, env, "read", async (db, userId) => {
+  if (!validId(docId)) throw new Refuse(400, "BAD_REQUEST");
+  const j = await authorityJob(db, jobId, userId);
+  const d = (await db.query(AUTHORITY_SQL.one, [docId, jobId, j.org])).rows[0] as { storage_key: string; file_name: string; content_type: string } | undefined;
+  if (!d) throw new Refuse(404, "DOCUMENT_NOT_FOUND");
+  return download(await fileStore().link(d.storage_key, { fileName: d.file_name, contentType: mime(d.content_type), seconds: LINK_SECONDS }));
+});

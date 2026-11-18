@@ -441,6 +441,46 @@ paths:
         '409': { description: "`ALREADY_IN_A_COMPANY`: the login already has a company. `ORGANISATION_NOT_AVAILABLE`: the company is not unclaimed (or already has an owner). `NUMBER_ALREADY_REGISTERED`: a unique company number clash.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: ORGANISATION_NOT_AVAILABLE } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
         '429': { description: "`TOO_MANY_REQUESTS`: over the rate limit. `CLAIM_COOL_DOWN`: this login's claim of this company was rejected less than 24 hours ago. No `Retry-After` header.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: CLAIM_COOL_DOWN } } } }
+  /api/portal/claim/search:
+    get:
+      operationId: portalClaimSearch
+      summary: Find a company to claim by name or CRO number
+      description: |
+        For the claim screen. `q` is a name (at least 3 characters on the compare key: lower case, fadas removed, the legal form at the
+        end dropped) or a CRO number (digits, spaces and a leading IE allowed). At most 20 results, best name match first: unclaimed,
+        unmerged companies the site lists (`organisationId` set, claim it), then CRO register entries no company on the site holds
+        (`organisationId` null, register with that number). Only these four fields; no status, domain or other internal field.
+        Any signed-in portal login, with or without a company. Bad queries are refused before the rate limit counts.
+      security: [{ portalSession: [] }]
+      x-roles: [any active portal login]
+      x-rate-limit: 60 searches per login per 10 minutes
+      parameters:
+        - { name: q, in: query, required: true, description: A name of 3 to 160 characters or a CRO number. No other query key., schema: { type: string, minLength: 3, maxLength: 160 } }
+      responses:
+        '200':
+          description: The matches.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results]
+                properties:
+                  results:
+                    type: array
+                    maxItems: 20
+                    items:
+                      type: object
+                      required: [organisationId, name, croNumber, county]
+                      properties:
+                        organisationId: { oneOf: [{ $ref: '#/components/schemas/Id' }, { type: 'null' }] }
+                        name: { type: string }
+                        croNumber: { type: [string, 'null'] }
+                        county: { type: [string, 'null'] }
+              example: { results: [{ organisationId: '1042', name: Fake Bakery Limited, croNumber: '512345', county: null }, { organisationId: null, name: FAKE BAKERY SUPPLIES LIMITED, croNumber: '623456', county: Cork }] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+        '429': { $ref: '#/components/responses/TooMany' }
   /api/portal/register:
     post:
       operationId: portalRegister
@@ -920,6 +960,142 @@ paths:
         '409': { description: "`BAD_STATE`: the database's job guard refused the move.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_STATE } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
         '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/jobs/check:
+    post:
+      operationId: portalJobCheck
+      summary: Check a job post against the rules without saving it
+      description: |
+        The same body as a new post (`status` is read but does not matter), checked as a live post would be: the agency checks, then
+        the rules. Nothing is written, so the posting form can call it while the employer types. The same codes as the post: 400 for the
+        agency checks, 422 with the rule's code (and `exception` wording when a tick would pass it). Origin checked first.
+      security: [{ portalSession: [] }]
+      x-roles: [account_owner, recruiter, poster]
+      x-rate-limit: 120 checks per login per 10 minutes (its own count, not the posts' 30)
+      x-body-cap: 24000 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JobPost' }
+            example: { status: live, title: Staff Nurse, description: Ward nurse for a busy medical unit in Cork. NMBI registration needed., county: Cork, occupationCode: '2231', contractType: permanent, salaryLow: 40000, ownPageUrl: 'https://jobs.example.ie/nurse-17' }
+      responses:
+        '200':
+          description: The post would pass. `status` is what a live save would give (`live`, or `in_review` when the text needs a staff look; a restricted company's job also goes to review on save).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, status, passRoute, sector]
+                properties:
+                  ok: { type: boolean, const: true }
+                  status: { type: string, enum: [live, in_review] }
+                  passRoute: { type: string, enum: [stated_pay, public_pay] }
+                  sector: { type: string }
+              example: { ok: true, status: live, passRoute: stated_pay, sector: health }
+        '400': { description: "`BAD_REQUEST`: bad JSON or body. `CLIENT_ONLY_FOR_AGENCIES`: `clientName` from an employer. `WRITTEN_AUTHORITY_REQUIRED`: a statement on behalf of a client without `writtenAuthority: true`.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login. `NOT_A_MEMBER`: no company. `NOT_A_POSTER`: a viewer.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_A_POSTER } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '422': { description: "The rules would refuse a live post, with the same codes as the post: `GENERAL_RULES_NOT_SET`, `OCCUPATION_INELIGIBLE` (with `exception` when a tick would pass it, including care work not in a private household for 6145), `QUOTA_FULL`, `OCCUPATION_NOT_ON_LIST`, `CONTRACT_TOO_SHORT`, `RULES_FAILED` (with `stage`), `PAY_REQUIRED`, `PAY_BELOW_MINIMUM`, `STATEMENT_REQUIRED`.", content: { application/json: { schema: { $ref: '#/components/schemas/RulesVerdict' }, example: { code: PAY_BELOW_MINIMUM } } } }
+        '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/jobs/suggest:
+    get:
+      operationId: portalJobSuggest
+      summary: Suggest occupation codes for a job title
+      description: Up to 3 SOC 2010 codes from the matcher's title rules (the matcher's own answer first), each with its official title. No AI and no database read but the session. Any signed-in portal login.
+      security: [{ portalSession: [] }]
+      x-roles: [any active portal login]
+      parameters:
+        - { name: title, in: query, required: true, description: "The typed title: 2 to 200 characters on one line. No other query key.", schema: { type: string, minLength: 2, maxLength: 200 } }
+      responses:
+        '200':
+          description: The suggestions, best first (an empty list when no rule matches).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [suggestions]
+                properties:
+                  suggestions:
+                    type: array
+                    maxItems: 3
+                    items: { type: object, required: [code, title], properties: { code: { type: string, pattern: '^[1-9][0-9]{3}$' }, title: { type: string } } }
+              example: { suggestions: [{ code: '2231', title: Nurses }] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+  /api/portal/jobs/{id}/authority:
+    parameters:
+      - { name: id, in: path, required: true, description: The agency job id. Not an id is 400., schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      operationId: portalJobAuthorityList
+      summary: List the stored written authority copies of an agency job
+      description: The client's written authority kept on file for one of the agency's own jobs that names a client. The tick on the statement stays the rule; these copies are optional. Posters, recruiters and the owner. Another company's job, an employer's own job and a viewer are all 404.
+      security: [{ portalSession: [] }]
+      x-roles: [account_owner, recruiter, poster]
+      responses:
+        '200':
+          description: The copies, oldest first. `copyDeleted` is true once retention removed the stored copy (30 days after the job closes).
+          content:
+            application/json:
+              schema: { type: object, required: [documents], properties: { documents: { type: array, items: { $ref: '#/components/schemas/CaseDocument' } } } }
+              example: { documents: [{ id: '7', fileName: authority.pdf, contentType: pdf, sizeBytes: 182044, uploadedAt: '2026-11-18T09:30:00.000Z', copyDeleted: false }] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+        '404': { description: "`JOB_NOT_FOUND`: no agency job naming a client of this login's company, or the login may not post.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: JOB_NOT_FOUND } } } }
+    post:
+      operationId: portalJobAuthorityUpload
+      summary: Upload a copy of the client's written authority for an agency job
+      description: |
+        Multipart body with exactly one field, `file` (PDF, JPEG or PNG, found from the bytes). The case documents' limits: at most
+        4,194,304 bytes of file and 20 stored copies per job. Order: Origin check (403 `BAD_ORIGIN`), the `Content-Length` cap, the
+        session, the upload limit, then the job and the file.
+      security: [{ portalSession: [] }]
+      x-roles: [account_owner, recruiter, poster]
+      x-rate-limit: 10 uploads per login per hour (shared with the case document uploads)
+      x-body-cap: 4210688 bytes (4 MiB file plus 16 KiB of multipart wrapping), counted while reading
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, additionalProperties: false, required: [file], properties: { file: { type: string, format: binary } } }
+      responses:
+        '200':
+          description: The copy was stored.
+          content:
+            application/json:
+              schema: { type: object, required: [document], properties: { document: { $ref: '#/components/schemas/CaseDocument' } } }
+              example: { document: { id: '8', fileName: authority.pdf, contentType: pdf, sizeBytes: 90211, uploadedAt: '2026-11-18T09:31:00.000Z', copyDeleted: false } }
+        '400': { description: "`BAD_REQUEST`: not multipart, not exactly one `file` field, or a bad job id. `EMPTY_FILE`: the file has no bytes.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: EMPTY_FILE } } } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: the Origin header is not the portal's. `REFUSED`: the login is blocked or deleted.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_ORIGIN } } } }
+        '404': { description: "`JOB_NOT_FOUND`: no agency job naming a client of this login's company, or the login may not post.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: JOB_NOT_FOUND } } } }
+        '409': { description: "`DOCUMENT_LIMIT`: the job already holds 20 stored copies.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: DOCUMENT_LIMIT } } } }
+        '413': { description: "`FILE_TOO_LARGE`: over the cap by header or while reading.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILE_TOO_LARGE } } } }
+        '415': { description: "`WRONG_FILE_TYPE`: the bytes are not a PDF, JPEG or PNG.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: WRONG_FILE_TYPE } } } }
+        '429': { $ref: '#/components/responses/TooMany' }
+        '503': { description: "`FILES_UNAVAILABLE`: file storage is not set up.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILES_UNAVAILABLE } } } }
+  /api/portal/jobs/{id}/authority/{docId}:
+    parameters:
+      - { name: id, in: path, required: true, description: The agency job id., schema: { $ref: '#/components/schemas/Id' } }
+      - { name: docId, in: path, required: true, description: The copy's id., schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      operationId: portalJobAuthorityDownload
+      summary: Download one stored written authority copy
+      description: A 302 to a download link that works for 60 seconds, while the stored copy is kept. `Cache-Control` is `no-store` and `Referrer-Policy` is `no-referrer`.
+      security: [{ portalSession: [] }]
+      x-roles: [account_owner, recruiter, poster]
+      responses:
+        '302':
+          description: Redirect to the short-lived download link.
+          headers:
+            Location: { schema: { type: string, format: uri }, example: 'https://files.example.com/authority/made-up-key?signature=made-up' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+        '404': { description: "`JOB_NOT_FOUND`: as the list. `DOCUMENT_NOT_FOUND`: no such copy on this job, or its copy was removed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: DOCUMENT_NOT_FOUND } } } }
+        '503': { description: "`FILES_UNAVAILABLE`: file storage is not set up.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILES_UNAVAILABLE } } } }
   /api/portal/job-stats:
     get:
       operationId: portalJobStats

@@ -1,7 +1,7 @@
 // No database: the post body checks, the hours minimum, the rules verdicts and the refusal codes. The routes end to end: packages/db/test/jobs-route.test.ts.
 import { GENERAL_LOWER_CODES, GENERAL_LOWER_MINIMUM, GENERAL_MINIMUM, rulesV1 } from "@portal/rules";
 import { describe, expect, it } from "vitest";
-import { checkClose, checkEdit, checkPost, checkRenew, jobRefusal, minimumForHours, rulesFor, verdictReply, type Post, type Verdict } from "./jobs";
+import { checkClose, checkEdit, checkPost, checkRenew, CONDITIONS, jobRefusal, minimumForHours, rulesFor, verdictReply, type Post, type Verdict } from "./jobs";
 
 const desc = "We are hiring a software engineer to build our payments platform in Dublin. Full sponsorship offered.";
 export const good = {
@@ -147,7 +147,7 @@ describe("jobRefusal", () => {
 
 describe("rulesFor: General Employment Permit posts", () => {
   const sponsor = { signerName: "Fake Signer", signerTitle: "HR Director" };
-  const care = { occupationCode: "6145", title: "Healthcare Assistant", description: "We are hiring a healthcare assistant for our care home in Cork. Full sponsorship offered.", permitType: "general", statement: sponsor };
+  const care = { occupationCode: "6145", title: "Healthcare Assistant", description: "We are hiring a healthcare assistant for our care home in Cork. Full sponsorship offered.", permitType: "general", statement: sponsor, exceptionConfirmed: true };
   const withGeneral = async (m: object = {}) => {
     const today = await rulesV1();
     return { ...today, minimums: { ...today.minimums, general: GENERAL_MINIMUM, generalLower: GENERAL_LOWER_MINIMUM, generalLowerCodes: [...GENERAL_LOWER_CODES], generalQuotaFullCodes: [], ...m } };
@@ -224,5 +224,26 @@ describe("rulesFor: an Ineligible entry with an exception", () => {
   it("the pharmaceutical technician (3217, S.I. 558/2026) is Ineligible with an exception", async () => {
     const v = await run({ occupationCode: "3217", title: "Pharmaceutical Technician" });
     expect(v).toMatchObject({ ok: false, code: "OCCUPATION_INELIGIBLE", exception: expect.stringContaining("Pharmaceutical Technicians working in healthcare settings") });
+  });
+});
+
+describe("rulesFor: conditions the Ineligible titles do not name (P6)", () => {
+  const sponsor = { signerName: "Fake Signer", signerTitle: "HR Director" };
+  const care = { occupationCode: "6145", title: "Home Carer", description: "We are hiring a home carer for our care company in Cork. Full sponsorship offered.", salaryLow: 33000, salaryHigh: null, permitType: "general", statement: sponsor };
+  const general = async () => {
+    const today = await rulesV1();
+    return { ...today, minimums: { ...today.minimums, general: GENERAL_MINIMUM, generalLower: GENERAL_LOWER_MINIMUM, generalLowerCodes: ["6145"], generalQuotaFullCodes: [] } };
+  };
+  it("a care job (6145) needs the tick that the employer is not a private household, and the refusal carries the wording", async () => {
+    expect(await rulesFor(post(care), "Fake Care Limited", await general())).toEqual({ ok: false, code: "OCCUPATION_INELIGIBLE", exception: CONDITIONS["6145"] });
+    expect(CONDITIONS["6145"]).toContain("private household");
+    expect(await rulesFor(post({ ...care, exceptionConfirmed: true }), "Fake Care Limited", await general())).toMatchObject({ ok: true });
+  });
+  it("every other named condition is already in an Ineligible title that asks for the tick", async () => {
+    const lists = (await rulesV1()).occupationLists.filter((e) => e.list === "ineligible" && e.title.includes("with the exception of"));
+    const named = (code: string, words: string[]) => expect(words.every((w) => lists.find((e) => e.code === code)?.title.includes(w)), code).toBe(true);
+    named("5434", ["5 years", "2 years", "fast food"]); // chefs: experience and "not fast food"
+    for (const code of ["1242", "2229", "3231", "3239", "6146"]) named(code, ["disability services"]);
+    expect((await rulesV1()).occupationLists.some((e) => e.code === "6145"), "6145 is on no list, so its condition lives in CONDITIONS").toBe(false);
   });
 });

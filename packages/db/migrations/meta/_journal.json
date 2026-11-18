@@ -253,6 +253,13 @@
       "when": 1794300032000,
       "tag": "0036_portal_notices",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794300034000,
+      "tag": "0038_authority_document",
+      "breakpoints": true
     }
   ]
 }

@@ -2306,3 +2306,40 @@ export const ownerReassign = pgTable("owner_reassign", {
 	check("owner_reassign_check3", sql`(status = 'open'::text) = ((decided_by_staff_user_id IS NULL) AND (decided_at IS NULL))`),
 	check("owner_reassign_status_check", sql`status = ANY (ARRAY['open'::text, 'done'::text, 'cancelled'::text])`),
 ]);
+
+export const jobAuthorityDocument = pgTable("job_authority_document", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "job_authority_document_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	jobId: bigint("job_id", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	organisationId: bigint("organisation_id", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	uploadedByMembershipId: bigint("uploaded_by_membership_id", { mode: "number" }),
+	storageKey: text("storage_key"),
+	fileName: text("file_name"),
+	contentType: text("content_type"),
+	byteSize: integer("byte_size"),
+	uploadedAt: timestamp("uploaded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	copyDeletedAt: timestamp("copy_deleted_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("job_authority_document_job_idx").using("btree", table.jobId.asc().nullsLast().op("int8_ops")),
+	index("job_authority_document_member_idx").using("btree", table.uploadedByMembershipId.asc().nullsLast().op("int8_ops")),
+	index("job_authority_document_org_idx").using("btree", table.organisationId.asc().nullsLast().op("int8_ops")),
+	foreignKey({
+			columns: [table.jobId],
+			foreignColumns: [job.id],
+			name: "job_authority_document_job_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.organisationId],
+			foreignColumns: [organisation.id],
+			name: "job_authority_document_organisation_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.uploadedByMembershipId],
+			foreignColumns: [membership.id],
+			name: "job_authority_document_uploaded_by_membership_id_fkey"
+		}),
+	check("job_authority_document_check", sql`(storage_key IS NULL) = (copy_deleted_at IS NOT NULL)`),
+]);

@@ -44,4 +44,14 @@ export function occupation(title: string, description: string): OccupationMatch 
   return match("none", "unknown", "none");
 }
 
+/**
+ * Up to `max` SOC 2010 codes for an employer's typed title (P5): the matcher's own answer first, then the codes of the other title rules
+ * that match, in rule order. Codes that are not four digits (intern, the AMBIG groups, "none") are left out. No description, no AI.
+ */
+export function suggestCodes(title: string, max = 3): string[] {
+  const t = ` ${title.toLowerCase()} `;
+  const codes = [occupation(title, "").occupationCode, ...RULES.filter((r) => r.regex.test(t)).map((r) => r.code)];
+  return [...new Set(codes.filter((c) => /^\d{4}$/.test(c)))].slice(0, max);
+}
+
 export const rulesMatcher: Matcher = async (title, description) => occupation(title, description);
