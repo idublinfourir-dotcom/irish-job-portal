@@ -786,6 +786,47 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '500': { $ref: '#/components/responses/ServerError' }
+  /api/permit-rises:
+    get:
+      operationId: listPermitRises
+      summary: Read the DETE names whose permit count went up in the newest monthly import
+      description: >-
+        D6 (#49): each DETE name and year whose count rose in the newest monthly import (rows found within a day of the newest), biggest rise first,
+        at most 200, with the linked company when there is one. DETE publishes these counts. No query keys (any is `bad_query`). Nothing here writes.
+      security: [{ staffSession: [] }]
+      x-roles: [any active staff member]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The rises.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [rises]
+                properties:
+                  rises:
+                    type: array
+                    maxItems: 200
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [deteName, year, before, after, organisationId, organisation, foundAt]
+                      properties:
+                        deteName: { type: string }
+                        year: { type: integer }
+                        before: { type: integer, minimum: 0 }
+                        after: { type: integer, minimum: 1 }
+                        organisationId: { oneOf: [{ $ref: '#/components/schemas/Id' }, { type: 'null' }] }
+                        organisation: { $ref: '#/components/schemas/NullableText' }
+                        foundAt: { $ref: '#/components/schemas/Timestamp' }
+              example: { rises: [{ deteName: 'Example Ltd', year: 2026, before: 3, after: 5, organisationId: '1042', organisation: 'Example', foundAt: '2026-11-15T03:10:00.000Z' }] }
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /api/companies/domains:
     get:
       operationId: listCompanyDomains
