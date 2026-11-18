@@ -96,7 +96,7 @@ components:
       example: '2136'
     Sector:
       type: string
-      enum: [health, IT, construction and engineering, finance, pharma and science, other]
+      enum: [health, IT, construction and engineering, finance, care, hospitality, pharma and science, other]
     County:
       type: string
       description: One of the 26 counties of the Republic of Ireland.
@@ -173,6 +173,12 @@ components:
         registrationStatus: { enum: [none, in_progress, registered, null] }
         locationKind: { enum: [abroad, ireland, null] }
         currentStamp: { enum: ['0', '1', '1A', '1G', '1H', '2', '2A', '3', '4', 4EUFAM, 4D, 4S, '5', '6', null], description: Needs `locationKind` ireland. }
+    JobReason:
+      enum: [under_review, hidden_after_report, no_longer_available, null]
+      description: |
+        Why a saved or tracked job is not shown (S20): null while live; `under_review` (under review by the employer), `hidden_after_report`
+        (hidden while a report is looked at), `no_longer_available` (closed, expired, or hidden for any other reason). A code only, never the
+        report or staff notes; the page words it.
     Alert:
       type: object
       required: [id, occupationCode, sector, county, salaryMin, badge, frequency, status, pauseReason, lastSentAt]
@@ -424,21 +430,24 @@ paths:
         Handed to Better Auth after the bot check. The POST endpoints the site uses: `sign-up/email`, `sign-in/email`,
         `sign-in/social` (Google), `sign-out`, `send-verification-email`, `request-password-reset` and `reset-password`.
 
-        - Bot check first (only when BOT_CHECK=on) on `sign-up/email`, `sign-in/email`, `request-password-reset` and
-          `send-verification-email`: 403 `{ "code": "BOT_SUSPECTED" }` before Better Auth reads the body.
+        - Bot check first (only when BOT_CHECK=on) on `sign-up/email`, `sign-in/email`, `request-password-reset`,
+          `send-verification-email` and `sign-in/social` (the Google start): 403 `{ "code": "BOT_SUSPECTED" }` before Better Auth reads the body.
         - Better Auth's origin check is on (trusted origin: CANDIDATE_AUTH_URL).
-        - Rate limits per client address (`x-vercel-forwarded-for`), stored in the database: `sign-in/email` and `sign-up/email`
-          5 a minute; `request-password-reset` and `send-verification-email` 3 in 5 minutes. On top, those two are limited to 3 an
+        - Rate limits per client address (`x-vercel-forwarded-for`), stored in the database: `sign-in/email`, `sign-up/email` and
+          `sign-in/social` 5 a minute; `request-password-reset` and `send-verification-email` 3 in 5 minutes. On top, those two are limited to 3 an
           hour per email address (keyed hash, counted before the address is looked up; an address over 254 characters is 400
           `INVALID_EMAIL`).
         - `sign-up/email` takes Better Auth's `name`, `email`, `password` plus the three answers `needsPermit`, `over18` and
           `acceptsTerms`, each the JSON value `true`; otherwise 400 `SIGNUP_ANSWERS_REFUSED`. A name must be 1 to 100 characters
-          (`SIGNUP_NAME_REFUSED`). Email must be confirmed before sign-in works.
+          (`SIGNUP_NAME_REFUSED`). Email must be confirmed before sign-in works. A `needsPermit` of `false` (the "no" answer, #8) adds one
+          to that UTC day's count (C5, #253) after the rate limit and the bot check, and keeps nothing else about the visitor.
+          A Google sign-up's "no" (`additionalData` on `sign-in/social`) counts once too, when the callback proves a new Google
+          account, and is refused there as before (`error=SIGNUP_ANSWERS_REFUSED`); a returning Google user's answers are not read.
         - A suspended or deleted candidate cannot start a session (403).
         - A password reset ends every other session.
       security: [{}, { candidateSession: [] }]
       x-roles: [anyone]
-      x-rate-limit: sign-in and sign-up 5 a minute per address; reset and resend 3 in 5 minutes per address and 3 an hour per email
+      x-rate-limit: sign-in, sign-up and the Google start 5 a minute per address; reset and resend 3 in 5 minutes per address and 3 an hour per email
       x-body-cap: none set by this repo (Better Auth's own handling)
       responses:
         '200':
@@ -611,6 +620,32 @@ paths:
         '404': { $ref: '#/components/responses/PublicNotFound' }
         '429': { $ref: '#/components/responses/PublicTooMany' }
 
+  /api/job/similar:
+    get:
+      operationId: getSimilarJobs
+      tags: [public]
+      summary: More jobs like one live job
+      description: Up to 6 live jobs of the same occupation, else of the same sector, newest first with full-quota jobs last; never the job itself. Public cards only. A job that is not live, or an unknown id, is 404. Open to visitors.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      parameters:
+        - { name: id, in: query, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: The similar jobs (an empty list when there are none).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobs]
+                additionalProperties: false
+                properties:
+                  jobs: { type: array, maxItems: 6, items: { $ref: '#/components/schemas/SmallJobCard' } }
+              example: { jobs: [{ jobId: '1043', title: Staff Nurse, employerName: Example Care Ltd, county: Cork, salaryLow: 38000, salaryHigh: 45000, payGrade: null, badge: critical_skills_eligible }] }
+        '404': { $ref: '#/components/responses/PublicNotFound' }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
   /api/company:
     get:
       operationId: getCompanyPage
@@ -745,6 +780,41 @@ paths:
         '404': { $ref: '#/components/responses/PublicNotFound' }
         '429': { $ref: '#/components/responses/PublicTooMany' }
 
+  /api/help:
+    get:
+      operationId: getHelpPage
+      tags: [public]
+      summary: A published help page by slug
+      description: |
+        One help page ("Not sure?", S17) by slug, from the published pages only: a draft or withdrawn page, another kind's slug, an unknown
+        or malformed slug (not lowercase letters, digits and hyphens, at most 100) is 404 `NOT_FOUND`. No text is published yet.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      parameters:
+        - { name: slug, in: query, required: true, schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,99}$' } }
+      responses:
+        '200':
+          description: The help page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, kind, slug, title, body, sourceUrl, checkedOn, publishedAt, updatedAt]
+                properties:
+                  id: { $ref: '#/components/schemas/Id' }
+                  kind: { const: help }
+                  slug: { type: string }
+                  title: { type: string }
+                  body: { type: string }
+                  sourceUrl: { type: [string, 'null'] }
+                  checkedOn: { type: [string, 'null'] }
+                  publishedAt: { $ref: '#/components/schemas/Timestamp' }
+                  updatedAt: { $ref: '#/components/schemas/Timestamp' }
+              example: { id: '12', kind: help, slug: not-sure, title: Not sure?, body: Placeholder text., sourceUrl: null, checkedOn: null, publishedAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z' }
+        '404': { $ref: '#/components/responses/PublicNotFound' }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
   /api/contact:
     post:
       operationId: sendContactMessage
@@ -753,7 +823,8 @@ paths:
       description: |
         Files one message for staff. Open to visitors, who must give `name` and `email`; a signed-in candidate may leave them out
         (the account's are used) and the sender id comes from the session. A suspended or deleted candidate is treated as a
-        visitor. The reply is only `{ ok: true }`: it never says whether an email has an account. Order: bot check, Origin, body
+        visitor, so may send topic `appeal` (C3), which a signed-in active candidate may not choose. The reply is only `{ ok: true }`:
+        it never says whether an email has an account. Order: bot check, Origin, body
         cap, JSON, session, field checks, rate limits. `body` may hold line breaks and tabs, no other control characters.
       security: [{}, { candidateSession: [] }]
       x-roles: [anyone]
@@ -768,7 +839,7 @@ paths:
               additionalProperties: false
               required: [topic, body]
               properties:
-                topic: { enum: [general, account, data_request, other] }
+                topic: { enum: [general, account, data_request, other, appeal] }
                 name: { type: string, minLength: 1, maxLength: 120, description: 'Required for a visitor. Not blank, no control characters.' }
                 email: { type: string, maxLength: 254, pattern: '^[^\s@]+@[^\s@]+\.[^\s@]+$', description: Required for a visitor. }
                 body: { type: string, minLength: 1, maxLength: 5000, description: Not blank. Counted in characters (code points). }
@@ -957,8 +1028,19 @@ paths:
                 type: object
                 required: [profile]
                 properties:
-                  profile: { oneOf: [{ $ref: '#/components/schemas/Profile' }, { type: 'null' }] }
-              example: { profile: { fullName: Alex Example, phone: '+353 1 555 0100', occupationCode: '2136', yearsExperience: 4, hasRelevantDegree: true, degreeField: Computing, degreeAwardedMonth: '2020-06-01', registrationBody: null, registrationNumber: null, registrationStatus: none, locationKind: abroad, currentStamp: null } }
+                  profile:
+                    oneOf:
+                      - allOf: [{ $ref: '#/components/schemas/Profile' }]
+                        required: [degreeBox]
+                        properties:
+                          degreeBox:
+                            enum: [relevant, last_12_months, none]
+                            description: |
+                              The degree box pre-fill (S19, decisions 69 and 108), derived on each read, never stored or written: `none` without a
+                              relevant degree, `last_12_months` until the same month a year after `degreeAwardedMonth` starts in Irish time,
+                              otherwise (or with no date) `relevant`.
+                      - { type: 'null' }
+              example: { profile: { fullName: Alex Example, phone: '+353 1 555 0100', occupationCode: '2136', yearsExperience: 4, hasRelevantDegree: true, degreeField: Computing, degreeAwardedMonth: '2020-06-01', registrationBody: null, registrationNumber: null, registrationStatus: none, locationKind: abroad, currentStamp: null, degreeBox: relevant } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
     put:
@@ -1006,7 +1088,7 @@ paths:
       operationId: listSaved
       tags: [account]
       summary: Saved jobs
-      description: Newest first, at most 200 (the cap, so no paging). A job that is no longer live shows only its id, title and employer, with `live` false.
+      description: Newest first, at most 200 (the cap, so no paging). A job that is no longer live shows only its id, title and employer, with `live` false and its `reason`.
       security: [{ candidateSession: [] }]
       x-roles: [candidate]
       responses:
@@ -1023,11 +1105,12 @@ paths:
                     maxItems: 200
                     items:
                       allOf: [{ $ref: '#/components/schemas/SmallJobCard' }]
-                      required: [live, savedAt]
+                      required: [live, reason, savedAt]
                       properties:
                         live: { type: boolean }
+                        reason: { $ref: '#/components/schemas/JobReason' }
                         savedAt: { $ref: '#/components/schemas/Timestamp' }
-              example: { saved: [{ jobId: '1042', title: Staff Nurse, employerName: Example Care Ltd, county: Dublin, salaryLow: 38000, salaryHigh: 45000, payGrade: null, badge: null, live: true, savedAt: '2026-11-17T10:00:00.000Z' }] }
+              example: { saved: [{ jobId: '1042', title: Staff Nurse, employerName: Example Care Ltd, county: Dublin, salaryLow: 38000, salaryHigh: 45000, payGrade: null, badge: null, live: true, reason: null, savedAt: '2026-11-17T10:00:00.000Z' }, { jobId: '1007', title: Chef de Partie, employerName: Example Hotel Ltd, live: false, reason: under_review, savedAt: '2026-11-12T10:00:00.000Z' }] }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
     post:
@@ -1292,7 +1375,7 @@ paths:
       operationId: getOwnJob
       tags: [account]
       summary: One saved or tracked job, closed or not
-      description: A live job comes with its page address, saved flag and stage. A closed job shows only its id, title and employer, with up to 5 similar live jobs (same occupation, else same sector).
+      description: A live job comes with its page address, saved flag and stage. A job that is not live shows only its id, title, employer and `reason`, with up to 5 similar live jobs (same occupation, else same sector).
       security: [{ candidateSession: [] }]
       x-roles: [candidate]
       parameters:
@@ -1308,15 +1391,16 @@ paths:
                 properties:
                   job:
                     allOf: [{ $ref: '#/components/schemas/SmallJobCard' }]
-                    required: [live, saved, stage]
+                    required: [live, reason, saved, stage]
                     properties:
                       live: { type: boolean }
+                      reason: { $ref: '#/components/schemas/JobReason' }
                       ownPageUrl: { type: [string, 'null'], description: Live jobs only. }
                       closedAt: { type: [string, 'null'], format: date-time, description: Closed jobs only. }
                       saved: { type: boolean }
                       stage: { type: [string, 'null'] }
                   similar: { type: array, maxItems: 5, items: { $ref: '#/components/schemas/SmallJobCard' }, description: Closed jobs only. }
-              example: { job: { jobId: '1042', title: Staff Nurse, employerName: Example Care Ltd, live: false, closedAt: '2026-11-10T00:00:00.000Z', saved: true, stage: null }, similar: [] }
+              example: { job: { jobId: '1042', title: Staff Nurse, employerName: Example Care Ltd, live: false, reason: hidden_after_report, closedAt: null, saved: true, stage: applied }, similar: [] }
         '400':
           description: '`BAD_REQUEST`: `id` is missing or not an id.'
           content:

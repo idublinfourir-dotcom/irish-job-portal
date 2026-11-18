@@ -1,6 +1,6 @@
 // No database: the body checks of the candidate account routes. Everything that is not exactly a good body is refused (null).
 import { describe, expect, it } from "vitest";
-import { checkAnswer, checkDelete, checkJobId, checkProfile, checkSettings, checkStage, EXPORT_SQL, exportFilename, isStamp4, STAMPS } from "./candidate";
+import { checkAnswer, checkDelete, checkJobId, checkProfile, checkSettings, checkStage, degreeBox, EXPORT_SQL, exportFilename, isStamp4, STAMPS } from "./candidate";
 
 const check = checkProfile(new Set(["2136", "2229"]));
 const good = { fullName: "Fake Person", phone: "+353 1 234 5678", occupationCode: "2136", yearsExperience: 5, hasRelevantDegree: true, degreeField: "Computing",
@@ -86,5 +86,30 @@ describe("the data export", () => {
     expect(EXPORT_SQL).not.toMatch(/password|token|storage_key|dedupe_key|unsubscribe/i);
     expect(EXPORT_SQL).not.toMatch(/select \*|\.\*/);
     expect(EXPORT_SQL.match(/\$1/g)!.length).toBeGreaterThanOrEqual(12);
+  });
+});
+
+describe("degreeBox (S19, #69, #108): the degree box pre-fill from the award month, in Irish time", () => {
+  const at = (iso: string) => new Date(iso);
+  it("no degree, or no answer, is none whatever the date", () => {
+    expect(degreeBox(false, null, at("2026-11-18T12:00:00Z"))).toBe("none");
+    expect(degreeBox(null, null, at("2026-11-18T12:00:00Z"))).toBe("none");
+    expect(degreeBox(false, "2026-10-01", at("2026-11-18T12:00:00Z"))).toBe("none");
+  });
+  it("a degree with no date is relevant", () => expect(degreeBox(true, null, at("2026-11-18T12:00:00Z"))).toBe("relevant"));
+  it("recent until the same month a year on starts in Dublin (summer time: Dublin is an hour ahead of UTC)", () => {
+    expect(degreeBox(true, "2025-05-01", at("2026-04-30T22:59:59Z"))).toBe("last_12_months"); // 23:59:59 on 30 April in Dublin
+    expect(degreeBox(true, "2025-05-01", at("2026-04-30T23:00:00Z"))).toBe("relevant"); // already 1 May in Dublin, still April in UTC
+  });
+  it("winter: Dublin is on UTC", () => {
+    expect(degreeBox(true, "2025-12-01", at("2026-11-30T23:59:59Z"))).toBe("last_12_months");
+    expect(degreeBox(true, "2025-12-01", at("2026-12-01T00:00:00Z"))).toBe("relevant");
+    expect(degreeBox(true, "2025-01-01", at("2025-12-31T23:59:59Z"))).toBe("last_12_months"); // the year turns over
+    expect(degreeBox(true, "2025-01-01", at("2026-01-01T00:00:00Z"))).toBe("relevant");
+  });
+  it("this month and a month still to come are recent; an old degree is relevant", () => {
+    expect(degreeBox(true, "2026-11-01", at("2026-11-18T12:00:00Z"))).toBe("last_12_months");
+    expect(degreeBox(true, "2027-06-01", at("2026-11-18T12:00:00Z"))).toBe("last_12_months");
+    expect(degreeBox(true, "1995-09-01", at("2026-11-18T12:00:00Z"))).toBe("relevant");
   });
 });

@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./ssl": "./src/ssl.ts",
-    "./rules-data": "./src/rules-data.ts"
+    "./rules-data": "./src/rules-data.ts",
+    "./staff-tools": "./src/staff-tools.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

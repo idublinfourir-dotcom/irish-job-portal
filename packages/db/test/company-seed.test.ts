@@ -1,4 +1,5 @@
-// Integration: the company seed (D2, #246) through the real command, main(argv, env, log), against the real test database as app_admin.
+// Integration: the company seed (D2, #246) through the real command, main(argv, env, log), against the real test database with the owner login
+// (portal_owner); app_admin is refused by the database without a confirmed company_seed request (0047).
 // Fake names only. The fetcher side (a fetched advert under a seeded brand name) is in packages/db/test/seeded-employer.test.ts.
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -28,7 +29,7 @@ const write = (...rows: string[]) => {
   writeFileSync(f, [HEAD, ...rows].join("\n") + "\n");
   return f;
 };
-const ENV = (role = "app_admin") => ({ DETE_ADMIN_DATABASE_URL: urlFor(db.name, role), DATABASE_SSL: "disable" });
+const ENV = (role = "portal_owner") => ({ SEED_OWNER_DATABASE_URL: urlFor(db.name, role), DATABASE_SSL: "disable" });
 async function seed(file: string, env: Record<string, string> = ENV()) {
   const out: string[] = [];
   const code = await main([file], env, (l) => out.push(l));
@@ -148,10 +149,14 @@ describe("company seed", () => {
 });
 
 describe("security", () => {
-  it("refuses without DETE_ADMIN_DATABASE_URL, and the other logins cannot run it", async () => {
-    const f = write(`${id("Sec")}\temployer\tX Brand\t`);
-    expect(await seed(f, {})).toEqual({ code: 2, out: ["DETE_ADMIN_DATABASE_URL is not set (the app_admin login)"] });
+  it("refuses without SEED_OWNER_DATABASE_URL, and the other logins cannot run it", async () => {
+    const p = id("Sec");
+    const f = write(`${p}\temployer\tX Brand\t`);
+    expect(await seed(f, {})).toEqual({ code: 2, out: ["SEED_OWNER_DATABASE_URL is not set (the owner login, portal_owner)"] });
     for (const role of ["app_portal", "app_candidate", "app_fetcher"]) await expect(seed(f, ENV(role)), role).rejects.toThrow(/permission denied/);
+    // app_admin alone: the two-person rule (0047), nothing written
+    await expect(seed(f, ENV("app_admin"))).rejects.toThrow(/two-person rule: organisation rows are added only by a confirmed company_seed request/);
+    expect(await orgsNamed(p)).toEqual([]);
   });
 
   it("the portal, candidate and fetcher logins cannot write admin or dete names, or set a DETE link", async () => {

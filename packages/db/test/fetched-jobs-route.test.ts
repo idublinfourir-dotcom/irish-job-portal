@@ -5,6 +5,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestDb, type TestDb } from "./db";
 import { fixtures } from "./fixtures";
+import { loadSpec, replyProblems } from "./openapi";
 import { counted, median, ROLE_NAMES, staffHarness, type Route } from "./staff-routes-harness";
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
@@ -18,6 +19,7 @@ const PAY = "Join our team building fake things. The salary is €60,000 a year.
 let db: TestDb, h: Awaited<ReturnType<typeof staffHarness>>, route: Route, su: pg.Pool;
 let id: (prefix: string) => string;
 let F: { org: () => Promise<number> };
+const spec = loadSpec("admin");
 const call = (who: string | null, body?: unknown, o: Parameters<typeof h.call>[4] = {}) => h.call(route, "/api/fetched-jobs", who, body, o);
 const act = (who: string | null, action: string, extra: object = {}) => call(who, { action, ...extra });
 const ok = (r: ReturnType<typeof call>) => h.ok(r);
@@ -42,12 +44,12 @@ afterAll(async () => {
 });
 
 /** A fetched job the fetcher queued, as postgres: the trigger makes its fetched_job item. */
-async function queued(o: { title?: string; text?: string | null; county?: string | null } = {}) {
+async function queued(o: { title?: string; text?: string | null; county?: string | null; employer?: string } = {}) {
   const src = (await su.query("insert into job_source(kind, board) values ('greenhouse', $1) returning id", [id("b")])).rows[0].id;
   const title = o.title ?? "Fixed-term Platform Engineer";
   const advert = (await su.query(
-    "insert into fetched_advert(job_source_id, external_id, url, title, employer_name, result, stage, reason) values ($1, $2, 'https://jobs.example.test/a', $3, 'Acme Widgets', 'queued', '7 contract unclear (admin queue)', 'title') returning id::text",
-    [src, id("ext"), title])).rows[0].id as string;
+    "insert into fetched_advert(job_source_id, external_id, url, title, employer_name, result, stage, reason) values ($1, $2, 'https://jobs.example.test/a', $3, $4, 'queued', '7 contract unclear (admin queue)', 'title') returning id::text",
+    [src, id("ext"), title, o.employer ?? "Acme Widgets"])).rows[0].id as string;
   const org = await F.org();
   const job = (await su.query(
     `insert into job(organisation_id, source, job_source_id, fetched_advert_id, title, employer_name, county, sector, occupation_code, permit_type, status, closes_at, search_vector, own_page_url)
@@ -108,6 +110,23 @@ describe("list and item", () => {
     const forged = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
     for (const c of ["x", "!!!", "a".repeat(300), forged({ t: "now", i: "1" }), forged({ t: "2026-11-11 10:00:00+00", i: "1; drop table job" }), forged(null)]) await no(call("jr1", undefined, { query: `?after=${c}` }), 400, "bad_cursor");
     await no(call("jr1", undefined, { query: "?x=1" }), 400, "bad_query");
+  });
+
+  it("shows staff the WRC licensed agency flag on the list and the item (0042), and the reply matches docs/openapi/admin.yaml", async () => {
+    await su.query("insert into wrc_licence(licence_number, agency_name, trading_name) values ('EA9901', 'Fake Listed Recruiters Limited', null) on conflict do nothing");
+    const listed = await queued({ title: "Fixed-term Platform Engineer WRC", employer: "Fake Listed Recruiters Limited" });
+    const plain = await queued({ title: "Fixed-term Platform Engineer plain" });
+    const all: { id: string; wrcAgency: boolean }[] = [];
+    for (let query = ""; ;) {
+      const r = await call("jr1", undefined, { query });
+      expect([r.status, replyProblems(spec, "GET", "/api/fetched-jobs", r.status, r.json)]).toEqual([200, []]);
+      all.push(...r.json.items);
+      if (!r.json.next) break;
+      query = `?after=${r.json.next}`;
+    }
+    expect([listed.item, plain.item].map((i) => all.find((x) => x.id === i)?.wrcAgency)).toEqual([true, false]);
+    const one = await call("jr1", undefined, { query: `?id=${listed.item}` });
+    expect([one.json.item.wrcAgency, replyProblems(spec, "GET", "/api/fetched-jobs", one.status, one.json)]).toEqual([true, []]);
   });
 });
 

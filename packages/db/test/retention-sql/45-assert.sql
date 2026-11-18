@@ -11,6 +11,7 @@ select c3t.chk('apps','203 (job closed 11 months) untouched', $$ select candidat
 select c3t.chk('apps','205, 206, 207 (job closed 37 months) deleted by application_record', $$ select not exists(select 1 from application where id in (205,206,207)) $$);
 select c3t.chk('apps','208 (job closed 35 months) kept', $$ select exists(select 1 from application where id=208) $$);
 select c3t.chk('apps','frozen application listed in skipped', $$ select exists(select 1 from c3t.last where j->'skipped' @> '[{"id":"202","rule":"application_and_cv"}]') $$);
+select c3t.chk('apps','R4 (0041): c3-a2, frozen by an open case, told once: one notice and one email for application_and_cv', $$ select (select count(*) from notification where candidate_user_id='c3-a2' and template_key='deletion_on_hold' and dedupe_key='deletion_on_hold:application_and_cv:c3-a2')=1 and (select count(*) from email_outbox where candidate_user_id='c3-a2' and template='deletion_on_hold')=1 $$);
 -- inactive
 select c3t.chk('inactive','i1 (13 months) warned, outbox warning queued, profile and CV still there', $$ select (select inactive_warned_at is not null from candidate_user where id='c3-i1') and exists(select 1 from email_outbox where candidate_user_id='c3-i1' and template='inactive-warning') and exists(select 1 from candidate_profile where candidate_user_id='c3-i1') and exists(select 1 from candidate_cv where candidate_user_id='c3-i1') $$);
 select c3t.chk('inactive','i2 (11 months) not warned', $$ select inactive_warned_at is null from candidate_user where id='c3-i2' $$);
@@ -55,7 +56,7 @@ select c3t.chk('consent','bare proof 201 (erased 73 months ago) deleted; 202 (60
 -- messages and review items
 select c3t.chk('messages','contact_message: closed 25 months, answered-never-closed 25 months and spam 25 months deleted; 23 months, new 30 months, open review item kept', $$ select not exists(select 1 from contact_message where id in (1,3,6)) and (select count(*) from contact_message where id in (2,4,5))=3 $$);
 select c3t.chk('messages','review_item: done 25 months and dropped (created 25 months) deleted; 23 months and open kept', $$ select not exists(select 1 from review_item where id in (1001,1003)) and (select count(*) from review_item where id in (1000,1002,1004))=3 $$);
-select c3t.chk('messages','notification: read 13 months and unread 13 months deleted; 11 months both kept', $$ select (select count(*) from notification)=2 and not exists(select 1 from notification where dedupe_key in ('n1','n3')) $$);
+select c3t.chk('messages','notification: read 13 months and unread 13 months deleted; 11 months both kept', $$ select (select count(*) from notification where template_key <> 'deletion_on_hold')=2 and not exists(select 1 from notification where dedupe_key in ('n1','n3')) $$);
 -- outbox
 select c3t.chk('outbox','sent 31 days: body (params) emptied, row kept; sent 10 days untouched', $$ select (select params is null from email_outbox where id=1) and (select params is not null from email_outbox where id=2) $$);
 select c3t.chk('outbox','failed 31 days and stuck sending 40 days: body emptied; pending 40 days untouched', $$ select (select params is null from email_outbox where id in (4)) and (select params is null from email_outbox where id=6) and (select params is not null and status='pending' from email_outbox where id=5) $$);

@@ -61,8 +61,8 @@ describe("withBotCheck", () => {
   const req = (path: string, method = "POST", body = "{}") => new Request(`https://x.test${path}`, { method, body: method === "GET" ? undefined : body });
   beforeEach(() => { handler.mockClear(); vi.stubEnv("BOT_CHECK", "on"); fake.mockResolvedValue(verdict(true)); });
 
-  it("refuses a bot on the four checked routes (any case, trailing slash) without calling the handler or reading the body", async () => {
-    for (const p of ["sign-up/email", "sign-in/email", "request-password-reset", "send-verification-email"])
+  it("refuses a bot on the five checked routes (any case, trailing slash) without calling the handler or reading the body", async () => {
+    for (const p of ["sign-up/email", "sign-in/email", "request-password-reset", "send-verification-email", "sign-in/social"])
       for (const variant of [`/api/auth/candidate/${p}`, `/api/auth/candidate/${p}/`, `/API/AUTH/CANDIDATE/${p.toUpperCase()}`, `/api/auth/candidate/${p.replace("e", "%65")}`, "/api/auth/candidate/sign-in/email%zz"]) {
         const r = req(variant);
         const out = await withBotCheck(r, handler);
@@ -71,7 +71,7 @@ describe("withBotCheck", () => {
     expect(handler).not.toHaveBeenCalled();
   });
   it("lets other routes and GETs through without asking the service", async () => {
-    for (const r of [req("/api/auth/candidate/sign-in/social"), req("/api/auth/candidate/sign-out"), req("/api/auth/candidate/callback/google"), req("/api/auth/candidate/sign-up/email", "GET")])
+    for (const r of [req("/api/auth/candidate/sign-out"), req("/api/auth/candidate/link-social"), req("/api/auth/candidate/callback/google"), req("/api/auth/candidate/sign-up/email", "GET")])
       expect(await (await withBotCheck(r, handler)).text()).toBe("handled");
     expect(fake).not.toHaveBeenCalled();
   });

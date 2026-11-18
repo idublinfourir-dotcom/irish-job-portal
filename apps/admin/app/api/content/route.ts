@@ -1,9 +1,9 @@
-// The content editor (#234 D3): GET lists the pages of every state (?kind=&status=&after=) or shows one with its body (?id=); POST creates or edits a draft and
+// The content editor (#234 D3): GET lists the pages of every state (?kind=&status=&after=), shows one with its body (?id=) or lists the stale guides (?stale=1, Q14); POST creates or edits a draft and
 // publishes or withdraws a page. Who may do what is decided in the database calls: a content editor writes drafts, publishes help and updates and withdraws any
 // page; a rules-data editor publishes guides and occupation texts. The database wants a source and a checked-on date to publish anything but help.
 import { staffSettings } from "@portal/auth";
-import { createContentDraft, editContentDraft, getContentPage, getPool, listContentPages, publishContent, withdrawContent } from "@portal/db";
-import { checkLength, checkOrigin, id19, parseBody, readQuery, refuse, type Field, type Spec } from "../../../lib/admin-api";
+import { createContentDraft, editContentDraft, getContentPage, getPool, listContentPages, listStaleGuides, publishContent, withdrawContent } from "@portal/db";
+import { BadRequest, checkLength, checkOrigin, id19, parseBody, readQuery, refuse, type Field, type Spec } from "../../../lib/admin-api";
 import { requireStaff } from "../../../lib/staff";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,11 @@ const FIELDS: Record<string, Field> = {
 export async function GET(request: Request) {
   try {
     const staff = await requireStaff(request.headers);
-    const q = readQuery(request.url, ["id", "kind", "status", "after"]);
+    const q = readQuery(request.url, ["id", "kind", "status", "after", "stale"]);
+    if (q.stale !== undefined) {
+      if (q.stale !== "1" || Object.keys(q).length > 1) throw new BadRequest("bad_query");
+      return Response.json(await listStaleGuides(getPool(), staff));
+    }
     if (q.id !== undefined) {
       const found = await getContentPage(getPool(), staff, q.id);
       return found ? Response.json({ item: found }) : Response.json({ error: "not_found" }, { status: 404 });

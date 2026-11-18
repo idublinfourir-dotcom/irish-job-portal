@@ -1,7 +1,7 @@
 // Unit tests for the pure parts of the account review module: the email domain cut, the free provider list, the page token and the reason code. No database.
 import { describe, expect, it } from "vitest";
 import { QueueRefused } from "./admin-queue";
-import { decodeReviewCursor, domainOf, FREE_EMAIL_DOMAINS, isFreeEmailDomain, REASON } from "./account-review";
+import { decodeReviewCursor, domainOf, FREE_EMAIL_DOMAINS, isFreeEmailDomain, REASON, reviewFlags } from "./account-review";
 
 describe("domainOf", () => {
   it("is the part after the first @, lower case, as the sign-up functions cut it", () => {
@@ -47,5 +47,17 @@ describe("decodeReviewCursor", () => {
   it("refuses anything else", () => {
     for (const t of [undefined, 5, "", "!!", "x".repeat(201), token("text"), token(null), token({ t: "yesterday", i: "1" }), token({ t: "2026-11-12 10:00:00+00", i: "1; drop" }), token({ t: "2026-11-12 10:00:00+00" })])
       expect(why(t), String(t)).toBe("bad_cursor");
+  });
+});
+
+describe("reviewFlags (P10)", () => {
+  it("flags a shared mailbox by the part before @, any case, and only that exact part", () => {
+    for (const e of ["hr@acme.ie", "JOBS@acme.ie", "careers@acme.ie", "info@acme.ie", "admin@acme.ie", "recruitment@acme.ie", "Office@acme.ie"]) expect(reviewFlags(e, null), e).toEqual(["shared_mailbox"]);
+    for (const e of ["jane@acme.ie", "hr.jane@acme.ie", "hrr@acme.ie", "info2@acme.ie", "acme@hr.ie", "no-at-sign"]) expect(reviewFlags(e, null), e).toEqual([]);
+    expect(reviewFlags(null, null)).toEqual([]);
+  });
+  it("adds lookalike_domain when the read found a near saved domain, after the mailbox flag", () => {
+    expect(reviewFlags("jane@acrne.ie", "acme.ie")).toEqual(["lookalike_domain"]);
+    expect(reviewFlags("hr@acrne.ie", "acme.ie")).toEqual(["shared_mailbox", "lookalike_domain"]);
   });
 });

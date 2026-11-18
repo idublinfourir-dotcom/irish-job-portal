@@ -16,7 +16,9 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 25, not 15 (18 Nov 2026, PR #68): the job's wall-clock cap, not a test budget. The test step took 354 s on PR #67 and 622 s on PR #68 (237 files,
+    # the same files as fast as main locally), so a slow runner cut the job during the builds. Each test keeps its own budget.
+    timeout-minutes: 25
     # The database tests use the same image and port as packages/db/test/test-db.sh. Keep them in step.
     services:
       postgres:

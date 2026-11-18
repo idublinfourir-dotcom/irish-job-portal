@@ -1,6 +1,7 @@
 // Ported from schema-trial-3 41-harness.sql to 46-run.sh (test C3): retention and erasure, with fixtures in replica mode
 // (CHECKs still run, triggers and foreign-key checks off), two drains as app_admin, then the trial's assertions.
 // The SQL files in retention-sql/ are the trial's, unchanged except for the psql-only lines (\set, \timing, \echo, \gset), which psql() strips.
+// 45-assert.sql has one change since: the notification count leaves out the deletion_on_hold notices (0041), and one check for them is added.
 // The 50,000 candidate page sweep is not here (it becomes a CI page gate).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

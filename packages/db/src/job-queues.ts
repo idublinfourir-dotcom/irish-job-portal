@@ -193,3 +193,49 @@ export async function rejectJobItem(db: Db, staffUserId: string, itemId: string 
     await c.query(JOBQ_CLOSE, [r.job_id]);
   });
 }
+
+// ===== the client's written authority on an agency job (P8), for the staff who check agency jobs =====
+// The agency_client_check role (account_reviewer) or an administrator, as the queue. Any agency job that names a client, held or not. The list gives
+// metadata only; each opened copy is a 60-second link and one data_access audit row (codes and ids only), written in the same transaction.
+const AUTH_COLS = `d.id::text as id, d.file_name as "fileName", d.content_type as "contentType", d.byte_size as "sizeBytes", d.uploaded_at as "uploadedAt", d.copy_deleted_at is not null as "copyDeleted"`;
+const AUTH_JOB = "from job j where j.id = $1::bigint and j.source = 'agency' and j.permit_employer_kind = 'client'";
+export const JOBQ_AUTHORITY_LIST =
+  `select coalesce((select jsonb_agg(x order by x.id::bigint) from (select ${AUTH_COLS} from job_authority_document d where d.job_id = j.id) x), '[]') as documents ${AUTH_JOB}`;
+export const JOBQ_AUTHORITY_ONE =
+  "select d.storage_key, d.file_name, d.content_type from job_authority_document d join job j on j.id = d.job_id " +
+  "where d.id = $2::bigint and d.job_id = $1::bigint and d.storage_key is not null and j.source = 'agency' and j.permit_employer_kind = 'client'";
+export const JOBQ_AUTHORITY_AUDIT =
+  "insert into audit_event(kind, actor_staff_user_id, role_in_force, action, object_type, object_id, after, source) " +
+  "values ('data_access', $1, $2, 'job_authority.open', 'job_authority_document', $3, jsonb_build_object('jobId', $4::text), 'panel')";
+export type AuthorityDocument = { id: string; fileName: string | null; contentType: string | null; sizeBytes: number | null; uploadedAt: string; copyDeleted: boolean };
+
+/** The written authority copies kept on an agency job; null when the id is not an agency job that names a client. */
+export async function listJobAuthority(db: Pick<pg.Pool, "query">, staffUserId: string, jobId: string): Promise<AuthorityDocument[] | null> {
+  if (!mayAct(await rolesOf(db, staffUserId), "agency_client_check")) throw new QueueRefused("not_reviewer");
+  if (!validId(jobId)) return null;
+  return (await db.query<{ documents: AuthorityDocument[] }>(JOBQ_AUTHORITY_LIST, [jobId])).rows[0]?.documents ?? null;
+}
+
+/** A 60-second download link to one stored copy, with its audit row; null when there is no such stored copy on that agency job. `link` makes the link (the file store). */
+export async function openJobAuthority(db: Pick<pg.Pool, "connect">, staffUserId: string, jobId: string, docId: string,
+  link: (key: string, fileName: string, contentType: string) => Promise<string>): Promise<string | null> {
+  if (typeof staffUserId !== "string" || staffUserId.length === 0 || staffUserId.length > 200) throw new QueueRefused("not_active_staff");
+  const c = await db.connect();
+  try {
+    await c.query("begin");
+    const roles = await rolesOf(c, staffUserId);
+    if (!mayAct(roles, "agency_client_check")) throw new QueueRefused("not_reviewer");
+    const d = validId(jobId) && validId(docId)
+      ? (await c.query<{ storage_key: string; file_name: string; content_type: string }>(JOBQ_AUTHORITY_ONE, [jobId, docId])).rows[0] : undefined;
+    if (!d) { await c.query("rollback"); return null; }
+    const url = await link(d.storage_key, d.file_name, d.content_type);
+    await c.query(JOBQ_AUTHORITY_AUDIT, [staffUserId, roles.includes("account_reviewer") ? "account_reviewer" : "administrator", docId, jobId]);
+    await c.query("commit");
+    return url;
+  } catch (e) {
+    await c.query("rollback").catch(() => {});
+    throw e;
+  } finally {
+    c.release();
+  }
+}

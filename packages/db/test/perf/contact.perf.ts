@@ -11,7 +11,7 @@ import { assertPageBudget, measurePages, type Statement } from "./pages";
 
 vi.setConfig({ testTimeout: 600_000, hookTimeout: 600_000 });
 // Measured on 16 Nov 2026 (printed by the test): insert 14 (visitor), 20 (candidate), 17 (portal) pages; inbox page 10 pages, also 3,000 messages in; read one 16;
-// claim 15; decide 13; each under 1 ms. Each budget is about 3 times the measure; the time limit is far above it, for a busy machine.
+// claim 15; decide 13; each under 1 ms. C3 (18 Nov 2026): read one 22 pages, read one appeal 23 (portal) and 24 (candidate site), the email looked up on the unique email index. Each budget is about 3 times the measure; the time limit is far above it, for a busy machine.
 export const INSERT_PAGES = 60; // the visitor's insert, the signed-in candidate's, the portal user's
 export const LIST_PAGES = 30; // role check + one page of the inbox
 export const ONE_PAGES = 50; // role check + read + the audit row
@@ -38,6 +38,9 @@ beforeAll(async () => {
       ${row("claimed", "g").replace("now() - (g", "now() - ((g + 3)")}, 'perf-sc2', now() from generate_series(${OPEN}, ${2 * OPEN}) g`);
     await k.query(`insert into contact_message(surface, candidate_user_id, from_name, from_email, topic, body, status, created_at, closed_at)
       ${row("closed", "g").replace("now() - (g", "now() - ((g + 100000)")}, now() from generate_series(1, ${DECIDED}) g`);
+    // C3: two appeals from held logins, one per side, so the read of an appeal is measured on its email lookups.
+    await k.query("update candidate_user set suspended_at = now() where id = 'perf-c-500'; update portal_user set status = 'blocked' where id = 'perf-p-50'");
+    await k.query(`insert into contact_message(surface, from_name, from_email, topic, body) values ('candidate_site', 'Fake', 'PERF-C-500@example.test', 'appeal', 'x'), ('portal', 'Fake', 'perf-p-50@example.test', 'appeal', 'x')`);
   } finally {
     await k.end();
   }
@@ -84,6 +87,12 @@ it("every inbox call stays under its page and time budget, and the list reads th
   await page("app_admin", "inbox, 3,000 in", [check, { text: CONTACT_AFTER, values: [deep.created_text, deep.id] }], LIST_PAGES, /contact_message_inbox_idx/);
   const audit = (action: string) => ({ text: CONTACT_AUDIT, values: ["admin_action", "perf-sc", "services_case_handler", action, one, "perf-c-2", "{}"] });
   await page("app_admin", "read one", [check, { text: CONTACT_ITEM, values: [one] }, audit("contact.read")], ONE_PAGES);
+  const c2 = new pg.Client({ connectionString: urlFor(db.name, "app_admin") });
+  await c2.connect();
+  const appeals = (await c2.query("select surface, id::text from contact_message where topic = 'appeal'")).rows as { surface: string; id: string }[];
+  await c2.end();
+  for (const a of appeals)
+    await page("app_admin", `read one appeal (${a.surface})`, [check, { text: CONTACT_ITEM, values: [a.id] }, audit("contact.read")], ONE_PAGES, a.surface === "portal" ? /portal_user_email_key/ : /candidate_user_email_key/);
   await page("app_admin", "claim", [check, { text: CONTACT_CLAIM, values: [one, "perf-sc", "24 hours"] }, audit("contact.claim")], STEP_PAGES);
   await page("app_admin", "decide", [check, { text: CONTACT_DECIDE, values: [one, "answered", "perf-sc"] }, audit("contact.answered")], STEP_PAGES);
 });

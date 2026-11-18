@@ -95,9 +95,11 @@ describe("each filter alone and combined", () => {
       await job({ occ: "1122", sector: "construction and engineering", county: "Dublin", low: 39999, ago: "2 hours" }),
       await job({ occ: "2231", sector: "health", county: "Dublin", low: 60000, high: 60000, quota: true, ago: "1 hour" }),
       await job({ occ: "2136", sector: "IT", county: "Cork", sponsor: true, ago: "10 days" }),
+      await job({ occ: "6145", sector: "care", county: "Dublin", low: 34000 }), // #257
+      await job({ occ: "5434", sector: "hospitality", county: "Cork", low: 36000, ago: "3 hours" }),
     ];
     const cases: SearchFilters[] = [
-      {}, { occupationCode: "2231" }, { occupationCode: "3111" }, { sector: "health" }, { sector: "pharma and science" }, { county: "Dublin" }, { salaryMin: 40000 },
+      {}, { sector: "care" }, { sector: "hospitality" }, { sector: "care", county: "Dublin" }, { sector: "hospitality", county: "Dublin" }, { occupationCode: "2231" }, { occupationCode: "3111" }, { sector: "health" }, { sector: "pharma and science" }, { county: "Dublin" }, { salaryMin: 40000 },
       { salaryMin: 0 }, { badge: "sponsor_confirmed" }, { postedWithin: 1 }, { postedWithin: 3 }, { postedWithin: 7 }, { postedWithin: 30 }, { salaryStated: true },
       { sector: "health", county: "Dublin" }, { sector: "IT", badge: "sponsor_confirmed" }, { county: "Dublin", salaryMin: 40000, postedWithin: 7 },
       { occupationCode: "2231", sector: "health", county: "Dublin", salaryMin: 45000, badge: "sponsor_confirmed", postedWithin: 3, salaryStated: true },
@@ -204,9 +206,11 @@ describe("search and the alert run agree", () => {
       await job({ occ: "2136", sector: "IT", county: "Dublin", high: 70000, sponsor: true }),
       await job({ occ: null, sector: "finance", county: "Galway", low: 40000 }),
       await job({ occ: "2231", sector: "health", county: "Dublin", low: 60000, high: 60000, quota: true }),
+      await job({ occ: "6146", sector: "care", county: "Dublin", low: 38000 }), // #257
+      await job({ occ: "9273", sector: "hospitality", county: "Galway" }),
     ];
     const searches: SearchFilters[] = [
-      { sector: "health" }, { county: "Dublin" }, { salaryMin: 40000 }, { badge: "sponsor_confirmed" }, { occupationCode: "2231" },
+      { sector: "care" }, { sector: "hospitality" }, { sector: "health" }, { county: "Dublin" }, { salaryMin: 40000 }, { badge: "sponsor_confirmed" }, { occupationCode: "2231" },
       { sector: "health", county: "Dublin", salaryMin: 40000 }, { occupationCode: "2231", county: "Dublin", salaryMin: 45000, badge: "sponsor_confirmed" }, {},
     ];
     const c = await f.F.cand();
@@ -232,17 +236,17 @@ describe("search and the alert run agree", () => {
 
 describe("sectorCounts", () => {
   it("counts live jobs per sector, zero included, against the rows", async () => {
-    for (const s of ["health", "health", "IT", "finance", "other"]) await job({ sector: s });
+    for (const s of ["health", "health", "IT", "finance", "care", "other"]) await job({ sector: s });
     await job({ sector: "health", status: "closed" });
     await job({ sector: "IT", closes: "now() - interval '1 minute'" });
     await job({ sector: "pharma and science", quota: true });
     const rows = (await su("select sector, count(*)::int n from job where status = 'live' and closes_at > now() group by sector")).rows as { sector: string; n: number }[];
     const got = await sectorCounts(candidate());
-    expect(got.map((g) => g.sector)).toEqual(["health", "IT", "construction and engineering", "finance", "pharma and science", "other"]);
+    expect(got.map((g) => g.sector)).toEqual(["health", "IT", "construction and engineering", "finance", "care", "hospitality", "pharma and science", "other"]);
     for (const g of got) expect(g.jobs, g.sector).toBe(rows.find((r) => r.sector === g.sector)?.n ?? 0);
     expect(got).toEqual([
       { sector: "health", jobs: 2 }, { sector: "IT", jobs: 1 }, { sector: "construction and engineering", jobs: 0 }, { sector: "finance", jobs: 1 },
-      { sector: "pharma and science", jobs: 1 }, { sector: "other", jobs: 1 },
+      { sector: "care", jobs: 1 }, { sector: "hospitality", jobs: 0 }, { sector: "pharma and science", jobs: 1 }, { sector: "other", jobs: 1 },
     ]);
   });
 });

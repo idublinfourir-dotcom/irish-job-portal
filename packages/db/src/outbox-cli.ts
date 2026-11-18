@@ -28,8 +28,9 @@ export const LIVE_JOBS =
 export const PENDING_ALERTS = "select exists(select 1 from email_outbox where template = 'job_alert' and status = 'pending') as any";
 export const ADDRESSES =
   "select o.id, coalesce(cu.email, pu.email, su.email, mu.email, m.invited_email, cm.from_email, " +
-  // The deleted-account notice goes to a login that is already deleted, so its address is the one deleteAccount copied into params.
-  "case when o.template = 'account_deleted' then o.params->>'email' end) as email from email_outbox o " +
+  // The deleted-account notice goes to a login that is already deleted, so its address is the one deleteAccount copied into params;
+  // so does a deletion_on_hold email to a login deleted while an open case holds its erasure (run_retention, 0041).
+  "case when o.template in ('account_deleted', 'deletion_on_hold') then o.params->>'email' end) as email from email_outbox o " +
   "left join candidate_user cu on cu.id = o.candidate_user_id and cu.deleted_at is null " +
   "left join portal_user pu on pu.id = o.portal_user_id and pu.deleted_at is null " +
   "left join staff_user su on su.id = o.staff_user_id " +

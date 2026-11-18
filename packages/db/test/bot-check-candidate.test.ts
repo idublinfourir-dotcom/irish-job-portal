@@ -90,8 +90,14 @@ describe("BOT_CHECK=on, the fake says bot", () => {
     const r = await AUTH(new Request(`${BASE}/api/auth/candidate/sign-up/email`, { method: "POST", body: "not json", headers: { origin: BASE } }));
     expect([r.status, await r.text()]).toEqual([403, '{"code":"BOT_SUSPECTED"}']);
   });
-  it("Google sign-in and the other Better Auth routes are not checked", async () => {
-    const r = await AUTH(post("/api/auth/candidate/sign-in/social", { provider: "google", callbackURL: "/" }));
+  it("the Google start is checked (C5): a bot is refused before any state is stored or any 'no' counted", async () => {
+    const req = post("/api/auth/candidate/sign-in/social", { provider: "google", callbackURL: "/", additionalData: { needsPermit: false } });
+    const [r, statements] = await counted(() => AUTH(req));
+    expect([r.status, await r.text(), req.bodyUsed, statements]).toEqual([403, '{"code":"BOT_SUSPECTED"}', false, 0]);
+    expect([await count("select 1 from candidate_verification"), await count("select 1 from signup_no_count")]).toEqual([0, 0]);
+  });
+  it("the Google callback and the other Better Auth routes are not checked", async () => {
+    const r = await AUTH(new Request(`${BASE}/api/auth/candidate/callback/google?code=x&state=y`, { method: "POST", headers: { origin: BASE } }));
     expect(await r.text()).not.toContain("BOT_SUSPECTED");
     expect(verdict).not.toHaveBeenCalled();
     const out = await AUTH(post("/api/auth/candidate/sign-out", {}));

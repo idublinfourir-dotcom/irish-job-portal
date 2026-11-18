@@ -199,3 +199,39 @@ export async function enableLogin(db: Db, staff: string, target: string): Promis
     await audit(c, staff, "enable", "staff_user", target, {});
   });
 }
+
+// ===== suspend a candidate login, block a portal login, and lift either (step 15 C3; one administrator, at once) =====
+// Hold on: the login's open sessions end in the same transaction (the session hook in @portal/auth already refuses a held login's next request). The reason is a
+// code, kept in the audit row (and, for a portal login, in blocked_reason_code); never free text. Appeal is the contact form (decision #55).
+export type HoldPool = "candidate" | "portal";
+const HOLD = {
+  candidate: {
+    on: "update candidate_user set suspended_at = now() where id = $1 and suspended_at is null",
+    off: "update candidate_user set suspended_at = null where id = $1 and suspended_at is not null",
+    exists: "select 1 from candidate_user where id = $1",
+    sessions: "delete from candidate_session where user_id = $1",
+    actions: ["account.suspend", "account.unsuspend"],
+  },
+  portal: {
+    on: "update portal_user set status = 'blocked', blocked_at = now(), blocked_reason_code = $2 where id = $1 and status is distinct from 'blocked'",
+    off: "update portal_user set status = 'active', blocked_at = null, blocked_reason_code = null where id = $1 and status = 'blocked'",
+    exists: "select 1 from portal_user where id = $1",
+    sessions: "delete from portal_session where user_id = $1",
+    actions: ["account.block", "account.unblock"],
+  },
+} as const;
+const REASON = /^[a-z][a-z0-9_]{0,62}$/;
+
+/** Suspends (on) or lifts (off) a login of one pool. Administrators only. Refuses not_found, already_held (on) and not_held (off). */
+export async function setLoginHold(db: Db, staff: string, pool: HoldPool, userId: string, on: boolean, reason: string): Promise<{ sessionsEnded: number }> {
+  if (!validStaffId(userId)) throw new QueueRefused("bad_user_id"); // the same id shape in all three pools (Better Auth ids)
+  if (typeof reason !== "string" || !REASON.test(reason)) throw new QueueRefused("bad_reason");
+  const h = HOLD[pool];
+  return inTransaction(db, staff, async (c) => {
+    const done = await c.query(on ? h.on : h.off, pool === "portal" && on ? [userId, reason] : [userId]);
+    if (done.rowCount !== 1) throw new QueueRefused((await c.query(h.exists, [userId])).rowCount ? (on ? "already_held" : "not_held") : "not_found");
+    const ended = on ? ((await c.query(h.sessions, [userId])).rowCount ?? 0) : 0;
+    await c.query(AUDIT, [staff, h.actions[on ? 0 : 1], `${pool}_user`, userId, JSON.stringify(on ? { sessionsEnded: ended } : {}), reason, null, null]);
+    return { sessionsEnded: ended };
+  });
+}

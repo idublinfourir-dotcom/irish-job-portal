@@ -219,6 +219,8 @@ export const job = pgTable("job", {
 	sponsorSort: integer("sponsor_sort").default(sql`'-1'`).notNull(),
 	weeklyHours: smallint("weekly_hours"),
 	underReviewSince: timestamp("under_review_since", { withTimezone: true, mode: 'string' }),
+	exceptionConfirmedAt: timestamp("exception_confirmed_at", { withTimezone: true, mode: 'string' }),
+	underReviewReason: text("under_review_reason"),
 }, (table) => [
 	index("job_closed_idx").using("btree", table.closedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'closed'::text)`),
 	index("job_company_page_idx").using("btree", sql`organisation_id`, sql`((NOT quota_full))`, sql`posted_at`, sql`id`).where(sql`(status = 'live'::text)`),
@@ -287,6 +289,8 @@ export const job = pgTable("job", {
 	check("job_status_check", sql`status = ANY (ARRAY['draft'::text, 'in_review'::text, 'live'::text, 'under_review'::text, 'hidden'::text, 'closed'::text])`),
 	check("job_close_reason_check", sql`close_reason = ANY (ARRAY['expired'::text, 'closed'::text, 'removed'::text, 'under_review_expired'::text, 'abandoned'::text, 'recheck_failed'::text, 'source_stale'::text])`),
 	check("job_hidden_reason_check", sql`hidden_reason = ANY (ARRAY['report'::text, 'organisation_suspended'::text, 'admin'::text])`),
+	check("job_under_review_reason_check", sql`under_review_reason = ANY (ARRAY['pay_check'::text, 'GENERAL_RULES_NOT_SET'::text, 'OCCUPATION_INELIGIBLE'::text, 'QUOTA_FULL'::text, 'OCCUPATION_NOT_ON_LIST'::text, 'CONTRACT_TOO_SHORT'::text, 'RULES_FAILED'::text, 'PAY_REQUIRED'::text, 'PAY_BELOW_MINIMUM'::text, 'STATEMENT_REQUIRED'::text, 'NEEDS_REVIEW'::text])`),
+	check("job_under_review_reason_check2", sql`(status = 'under_review'::text) = (under_review_reason IS NOT NULL)`),
 	check("job_permit_history_check", sql`permit_history = ANY (ARRAY['has_history'::text, 'first_time'::text, 'not_linked'::text])`),
 	check("job_application_route_check", sql`application_route = ANY (ARRAY['own_page'::text, 'on_site'::text])`),
 	check("job_permit_employer_kind_check", sql`permit_employer_kind = ANY (ARRAY['self'::text, 'client'::text])`),
@@ -351,6 +355,7 @@ export const fetchedAdvert = pgTable("fetched_advert", {
 	quotedEvidence: text("quoted_evidence"),
 	matcherModel: text("matcher_model"),
 	contentHash: text("content_hash"),
+	wrcAgency: boolean("wrc_agency").default(false).notNull(),
 }, (table) => [
 	index("fetched_advert_rejected_idx").using("btree", table.lastSeenAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(result = 'rejected'::text)`),
 	foreignKey({
@@ -886,6 +891,26 @@ export const detePermitCount = pgTable("dete_permit_count", {
 		}),
 	unique("dete_permit_count_dete_name_year_month_key").on(table.deteName, table.year, table.month),
 	check("dete_permit_count_month_check", sql`(month >= 1) AND (month <= 12)`),
+]);
+
+export const detePermitRise = pgTable("dete_permit_rise", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "dete_permit_rise_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	foundAt: timestamp("found_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	deteName: text("dete_name").notNull(),
+	year: smallint().notNull(),
+	permitsBefore: integer("permits_before").notNull(),
+	permitsAfter: integer("permits_after").notNull(),
+}, (table) => [
+	index("dete_permit_rise_found_idx").using("btree", table.foundAt.asc().nullsLast().op("timestamptz_ops")),
+	check("dete_permit_rise_check", sql`permits_after > permits_before`),
+]);
+
+export const signupNoCount = pgTable("signup_no_count", {
+	day: date().primaryKey().notNull(),
+	count: integer().notNull(),
+}, () => [
+	check("signup_no_count_count_check", sql`count > 0`),
 ]);
 
 export const wrcLicence = pgTable("wrc_licence", {
@@ -1457,7 +1482,7 @@ export const contactMessage = pgTable("contact_message", {
 	check("contact_message_check2", sql`((body IS NOT NULL) AND ((char_length(body) >= 1) AND (char_length(body) <= 5000))) OR ((body IS NULL) AND (from_name IS NULL) AND (from_email IS NULL) AND (candidate_user_id IS NULL) AND (portal_user_id IS NULL))`),
 	check("contact_message_check", sql`num_nonnulls(candidate_user_id, portal_user_id) <= 1`),
 	check("contact_message_surface_check", sql`surface = ANY (ARRAY['candidate_site'::text, 'portal'::text])`),
-	check("contact_message_topic_check", sql`topic = ANY (ARRAY['general'::text, 'account'::text, 'data_request'::text, 'other'::text])`),
+	check("contact_message_topic_check", sql`topic = ANY (ARRAY['general'::text, 'account'::text, 'data_request'::text, 'other'::text, 'appeal'::text])`),
 	check("contact_message_status_check", sql`status = ANY (ARRAY['new'::text, 'claimed'::text, 'answered'::text, 'closed'::text, 'spam'::text])`),
 ]);
 
@@ -2305,4 +2330,41 @@ export const ownerReassign = pgTable("owner_reassign", {
 	check("owner_reassign_check2", sql`completes_after >= (requested_at + '7 days'::interval)`),
 	check("owner_reassign_check3", sql`(status = 'open'::text) = ((decided_by_staff_user_id IS NULL) AND (decided_at IS NULL))`),
 	check("owner_reassign_status_check", sql`status = ANY (ARRAY['open'::text, 'done'::text, 'cancelled'::text])`),
+]);
+
+export const jobAuthorityDocument = pgTable("job_authority_document", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "job_authority_document_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	jobId: bigint("job_id", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	organisationId: bigint("organisation_id", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	uploadedByMembershipId: bigint("uploaded_by_membership_id", { mode: "number" }),
+	storageKey: text("storage_key"),
+	fileName: text("file_name"),
+	contentType: text("content_type"),
+	byteSize: integer("byte_size"),
+	uploadedAt: timestamp("uploaded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	copyDeletedAt: timestamp("copy_deleted_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("job_authority_document_job_idx").using("btree", table.jobId.asc().nullsLast().op("int8_ops")),
+	index("job_authority_document_member_idx").using("btree", table.uploadedByMembershipId.asc().nullsLast().op("int8_ops")),
+	index("job_authority_document_org_idx").using("btree", table.organisationId.asc().nullsLast().op("int8_ops")),
+	foreignKey({
+			columns: [table.jobId],
+			foreignColumns: [job.id],
+			name: "job_authority_document_job_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.organisationId],
+			foreignColumns: [organisation.id],
+			name: "job_authority_document_organisation_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.uploadedByMembershipId],
+			foreignColumns: [membership.id],
+			name: "job_authority_document_uploaded_by_membership_id_fkey"
+		}),
+	check("job_authority_document_check", sql`(storage_key IS NULL) = (copy_deleted_at IS NOT NULL)`),
 ]);

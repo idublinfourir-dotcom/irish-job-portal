@@ -1,5 +1,5 @@
 // The daily rules run (#93, #234 D9): on the first run on or after the day a confirmed minimums version comes into force, every live employer or
-// agency job whose stated pay is now below the minimum goes "under review" (the employer's own job list shows the reason 'pay_check', 0019), and
+// agency job whose stated pay is now below the minimum goes "under review" with the reason 'pay_check' (job.under_review_reason, 0045), and
 // every active pay floor ends as 'expired' (#82), its company's owner told (N5). One transaction; the version's run_at records that it was applied, so a second run does nothing.
 // Run from the repo root with the app_admin login, daily from .github/workflows/daily-fetch.yml after the job expiry step:
 //   RULES_ADMIN_DATABASE_URL=... node packages/db/src/rules-run-cli.ts
@@ -36,7 +36,7 @@ export function belowMinimum(j: Job, m: Minimums, criticalSkills: ReadonlySet<st
 // #93: the jobs go under review and, in the same statement, each company's account owner gets one email and one portal notice naming them (the first 20
 // by id, with the count) and saying they close after 30 days unless the pay is edited. A company with no active owner gets none; a second run cannot repeat it (dedupe key).
 export const UNDER_REVIEW =
-  "with u as (update job set status = 'under_review' where id = any($1::bigint[]) and status = 'live' returning id, organisation_id, title), " +
+  "with u as (update job set status = 'under_review', under_review_reason = 'pay_check' where id = any($1::bigint[]) and status = 'live' returning id, organisation_id, title), " +
   "t as (select m.portal_user_id as p, g.org, g.n, g.jobs from (select organisation_id as org, count(*)::int as n, " +
   "(array_agg(jsonb_build_object('id', id, 'title', title) order by id))[1:20] as jobs from u group by organisation_id) g " +
   "join membership m on m.organisation_id = g.org and m.role = 'account_owner' and m.status = 'active'), " +
@@ -59,7 +59,14 @@ export const END_FLOORS =
   "e as (insert into email_outbox(template, portal_user_id, params, dedupe_key) select 'pay_floor_expired', p, params, 'pay_floor_expired:' || floor from t on conflict (dedupe_key) do nothing) " +
   "select count(*)::int as n from f";
 
-export type RunResult = { versionId: string | null; applied: boolean; underReview: number; floorsEnded: number };
+// S8 (#85): the quota notice. Each job write sets the mark from the version in force (trigger job_quota_full, 0045); this step puts every
+// existing row right when a new version applies. Every open General job of a code in generalQuotaFullCodes is marked quota_full (the search sorts it last), and one whose code
+// left the list is cleared; only rows that change are written. A version with no General figures has no list, so every mark is cleared.
+export const QUOTA_FULL =
+  "with q as (select id, coalesce(permit_type = 'general' and occupation_code = any($1::text[]), false) as full from job where status <> 'closed') " +
+  "update job j set quota_full = q.full from q where j.id = q.id and j.quota_full <> q.full";
+
+export type RunResult = { versionId: string | null; applied: boolean; underReview: number; floorsEnded: number; quotaChanged: number };
 
 export async function runRules(c: pg.ClientBase): Promise<RunResult> {
   await c.query("begin");
@@ -67,20 +74,21 @@ export async function runRules(c: pg.ClientBase): Promise<RunResult> {
     const v = (await c.query<{ id: string; done: boolean; today: string }>(PICK)).rows[0];
     if (!v || v.done) {
       await c.query("commit");
-      return { versionId: v?.id ?? null, applied: false, underReview: 0, floorsEnded: 0 };
+      return { versionId: v?.id ?? null, applied: false, underReview: 0, floorsEnded: 0, quotaChanged: 0 };
     }
     const rules = await loadRules(c, v.today);
     const cs = new Set(rules.occupationLists.filter((o) => o.list === "critical-skills").map((o) => o.code));
     const ids = (await c.query<Job>(LIVE_STATED)).rows.filter((j) => belowMinimum(j, rules.minimums, cs)).map((j) => j.id);
     const underReview = (await c.query<{ jobs: number }>(UNDER_REVIEW, [ids, v.id])).rows[0]!.jobs;
     const floorsEnded = (await c.query<{ n: number }>(END_FLOORS, [v.id])).rows[0]!.n;
+    const quotaChanged = (await c.query(QUOTA_FULL, [rules.minimums.generalQuotaFullCodes ?? []])).rowCount ?? 0;
     await c.query("update rules_version set run_at = now() where id = $1::bigint", [v.id]);
     await c.query(
       "insert into audit_event(kind, actor_system, action, object_type, object_id, after, source) values ('admin_action', 'rules-run-cli', 'rules.minimums_in_force', 'rules_version', $1, $2, 'scheduled_job')",
-      [v.id, { under_review: underReview, floors_ended: floorsEnded }],
+      [v.id, { under_review: underReview, floors_ended: floorsEnded, quota_changed: quotaChanged }],
     );
     await c.query("commit");
-    return { versionId: v.id, applied: true, underReview, floorsEnded };
+    return { versionId: v.id, applied: true, underReview, floorsEnded, quotaChanged };
   } catch (e) {
     await c.query("rollback").catch(() => {});
     throw e;
@@ -95,7 +103,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: s
   try {
     await client.connect();
     const r = await runRules(client);
-    log(r.applied ? `minimums version ${r.versionId} applied: ${r.underReview} jobs under review, ${r.floorsEnded} pay floors ended` : "no new minimums today");
+    log(r.applied ? `minimums version ${r.versionId} applied: ${r.underReview} jobs under review, ${r.floorsEnded} pay floors ended, ${r.quotaChanged} quota marks changed` : "no new minimums today");
     return 0;
   } catch (e) {
     log(`refused: ${(e as Error).message}`);

@@ -1,6 +1,6 @@
 // No database: the body checks and the refusal codes of the claim and register POSTs.
 import { describe, expect, it } from "vitest";
-import { checkClaim, checkRegister, refusalFor } from "./company";
+import { checkClaim, checkRegister, checkSearch, refusalFor } from "./company";
 
 describe("checkClaim", () => {
   it("takes only an organisationId as a string of digits (no 0, no leading zeros, at most the bigint top)", () => {
@@ -79,4 +79,22 @@ describe("refusalFor", () => {
   it("leaves every other error alone, so it is a 500 and not a quiet refusal", () => {
     for (const e of [{ code: "23505", constraint: "organisation_slug_key" }, { code: "42501" }, new Error("boom"), null, undefined]) expect(refusalFor(e)).toBeNull();
   });
+});
+
+describe("checkSearch (P2)", () => {
+  const q = (s: string) => checkSearch(new URLSearchParams(s));
+  it("takes a name of 3 or more characters on its compare key, or a CRO number", () => {
+    expect(q("q=Acme")).toEqual({ key: "acme", cro: null });
+    expect(q("q=" + encodeURIComponent("  ACME Holdings Ltd. "))).toEqual({ key: "acme holdings", cro: null });
+    expect(q("q=" + encodeURIComponent("Ó Sé & Co"))).toEqual({ key: "o se and co", cro: null });
+    expect(q("q=123456")).toEqual({ key: "", cro: "123456" });
+    expect(q("q=" + encodeURIComponent("IE 0123456"))).toEqual({ key: "", cro: "123456" });
+    expect(q("q=12")).toBeNull(); // under 3 characters
+    expect(q("q=123")).toEqual({ key: "", cro: "123" });
+    expect(q("q=123456789")).toEqual({ key: "123456789", cro: null }); // nine digits is a name search, never a CRO lookup
+  });
+  it.each([
+    ["no q", ""], ["empty", "q="], ["two characters", "q=ab"], ["spaces", "q=%20%20%20%20"], ["punctuation only", "q=%25%25%25%25"],
+    ["long", "q=" + "a".repeat(161)], ["control", "q=acme%00"], ["bidi", "q=acme%E2%80%AE"], ["extra key", "q=acme&x=1"], ["two q", "q=acme&q=beta"],
+  ])("refuses %s", (_n, s) => expect(q(s)).toBeNull());
 });

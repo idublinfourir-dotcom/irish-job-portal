@@ -78,6 +78,14 @@ describe("portal, BOT_CHECK=on, the fake says bot", () => {
     expect([r.status, await r.text(), req.bodyUsed, statements]).toEqual([403, '{"code":"BOT_SUSPECTED"}', false, 0]);
     expect(await count("select 1 from contact_message")).toBe(0);
   });
+  it("refuses a signed-out appeal (C3) the same way: nothing is read, counted or written", async () => {
+    verdict.mockResolvedValue(bot);
+    const { POST: CONTACT } = await import("../../../apps/portal/app/api/portal/contact/route");
+    const req = post("/api/portal/contact", { topic: "appeal", name: "Fake Bot", email: "fake.bot.appeal@example.test", body: "let me back in" });
+    const [r, statements] = await counted(() => CONTACT(req));
+    expect([r.status, await r.text(), req.bodyUsed, statements]).toEqual([403, '{"code":"BOT_SUSPECTED"}', false, 0]);
+    expect([await count("select 1 from contact_message"), await count("select 1 from portal_rate_limit where key like 'contact:%'")]).toEqual([0, 0]);
+  });
 });
 
 describe("portal, BOT_CHECK=on, the fake says human", () => {

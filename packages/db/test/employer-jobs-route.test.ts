@@ -4,8 +4,10 @@
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestDb, type TestDb } from "./db";
+import { loadSpec, replyProblems } from "./openapi";
 import { fixtures } from "./fixtures";
-import { counted, median, ROLE_NAMES, staffHarness, type Route } from "./staff-routes-harness";
+import { memoryStore, setFileStore, type MemoryStore } from "../src/file-store";
+import { BASE, counted, median, ROLE_NAMES, staffHarness, type Route } from "./staff-routes-harness";
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 
@@ -41,6 +43,7 @@ beforeAll(async () => {
   await su.query("insert into organisation_name(name, normalised_name, kind, source) values ('Fake Known Client Limited', 'fake known client limited', 'alias', 'dete')");
 });
 afterAll(async () => {
+  setFileStore(undefined);
   const { getPool } = await import("../src");
   await getPool().end();
   await db.drop();
@@ -323,5 +326,103 @@ describe("performance", () => {
     expect(ms.claim).toBeLessThan(BUDGET.claimMs);
     expect(ms.approve).toBeLessThan(BUDGET.approveMs);
     expect(ms.reject).toBeLessThan(BUDGET.rejectMs);
+  });
+});
+
+// Gap 4 (P8): the staff read of an agency job's written authority, GET /api/employer-jobs/authority. memoryStore() is the file store; no network.
+// Statements, requireStaff's 2 included: list 4 (roles, the list); open 7 (begin, roles, the copy, the audit row, commit). Medians over 9 warm calls,
+// 18 Nov 2026: list 2.9 ms, open 2.9 ms; limits about 4 times that with a floor.
+describe("the written authority, for the staff who check agency jobs (gap 4)", () => {
+  const AUTH_BUDGET = { list: 4, open: 7, listMs: 15, openMs: 20 };
+  let authRoute: Route, store: MemoryStore;
+  const raw = async (who: string | null, query: string) => authRoute.GET(new Request(`${BASE}/api/employer-jobs/authority${query}`, { headers: who ? { cookie: h.cookies[who]! } : {} }));
+  const json = async (who: string | null, query: string) => { const r = await raw(who, query); return { status: r.status, json: await r.json() }; };
+  const audits = async (doc: string) => (await su.query("select kind, actor_staff_user_id, role_in_force, action, object_type, after from audit_event where object_type = 'job_authority_document' and object_id = $1 order by id", [doc])).rows;
+  async function withCopies(n = 2) {
+    const c = await company();
+    const j = await post(c);
+    const docs: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const key = `authority/fake-staff-${j.id}-${i}`;
+      store.objects.set(key, { bytes: new Uint8Array([37, 80, 68, 70]), contentType: "application/pdf" });
+      docs.push((await su.query("insert into job_authority_document(job_id, organisation_id, uploaded_by_membership_id, storage_key, file_name, content_type, byte_size) values ($1, $2, $3, $4, $5, 'pdf', 4) returning id::text",
+        [j.id, c.org, c.mem, key, `authority ${i}.pdf`])).rows[0].id);
+    }
+    return { c, job: j.id, docs };
+  }
+  beforeAll(async () => {
+    authRoute = await import("../../../apps/admin/app/api/employer-jobs/authority/route");
+    store = memoryStore();
+    setFileStore(store);
+  });
+
+  it("an account reviewer or an administrator lists the copies and opens one through a 60-second link, each open one audit row", async () => {
+    const { job, docs } = await withCopies();
+    for (const who of ["only_account_reviewer", "only_administrator"]) {
+      const l = await json(who, `?jobId=${job}`);
+      expect(l.status).toBe(200);
+      expect(l.json.documents.map((d: { id: string }) => d.id)).toEqual(docs);
+      expect(l.json.documents[0]).toEqual({ id: docs[0], fileName: "authority 0.pdf", contentType: "pdf", sizeBytes: 4, uploadedAt: expect.any(String), copyDeleted: false });
+      expect(replyProblems(loadSpec("admin"), "GET", "/api/employer-jobs/authority", 200, l.json)).toEqual([]);
+    }
+    const r = await raw("only_account_reviewer", `?jobId=${job}&docId=${docs[1]}`);
+    expect([r.status, r.headers.get("cache-control"), r.headers.get("referrer-policy")]).toEqual([302, "no-store", "no-referrer"]);
+    const u = new URL(r.headers.get("location")!);
+    expect([u.pathname, u.searchParams.get("expires")]).toEqual([`/authority/fake-staff-${job}-1`, "60"]);
+    await raw("only_administrator", `?jobId=${job}&docId=${docs[1]}`);
+    expect(await audits(docs[1]!)).toEqual([
+      { kind: "data_access", actor_staff_user_id: h.staff.only_account_reviewer, role_in_force: "account_reviewer", action: "job_authority.open", object_type: "job_authority_document", after: { jobId: job } },
+      { kind: "data_access", actor_staff_user_id: h.staff.only_administrator, role_in_force: "administrator", action: "job_authority.open", object_type: "job_authority_document", after: { jobId: job } },
+    ]);
+    expect(await audits(docs[0]!)).toEqual([]); // listing writes none
+  });
+
+  it("security: every other role, no role, a disabled login and no session are refused with no audit row; hostile and wrong ids are 404 or 400", async () => {
+    const { c, job, docs } = await withCopies(1);
+    for (const r of ROLE_NAMES.filter((x) => x !== "account_reviewer" && x !== "administrator")) {
+      expect([(await json(`only_${r}`, `?jobId=${job}`)).status, (await json(`only_${r}`, `?jobId=${job}`)).json.error], r).toEqual([403, "not_reviewer"]);
+      expect((await raw(`only_${r}`, `?jobId=${job}&docId=${docs[0]}`)).status, r).toBe(403);
+    }
+    expect((await json("norole", `?jobId=${job}`)).json.error).toBe("not_reviewer");
+    expect(await json("disabled", `?jobId=${job}&docId=${docs[0]}`)).toEqual({ status: 401, json: { error: "not_active" } });
+    expect((await json(null, `?jobId=${job}&docId=${docs[0]}`)).status).toBe(401);
+    expect(await audits(docs[0]!)).toEqual([]); // no refused call wrote a row
+    const who = "only_account_reviewer";
+    for (const q of ["", `?docId=${docs[0]}`, `?jobId=${job}&jobId=${job}`, `?jobId=${job}&x=1`]) expect((await json(who, q)).json.error, q).toBe("bad_query");
+    for (const id of ["0", "x", "-1", "9223372036854775808", "1;drop table job", "'%00", "1".repeat(5000)]) {
+      expect((await json(who, `?jobId=${encodeURIComponent(id)}`)).status, id).toBe(404);
+      expect((await json(who, `?jobId=${job}&docId=${encodeURIComponent(id)}`)).status, id).toBe(404);
+    }
+    const other = await withCopies(1);
+    expect((await json(who, `?jobId=${job}&docId=${other.docs[0]}`)).status).toBe(404); // a copy of another job
+    const own = await post(c, { client: null }); // the agency's own job names no client
+    expect((await json(who, `?jobId=${own.id}`)).status).toBe(404);
+    await su.query("update job_authority_document set storage_key = null, file_name = null, copy_deleted_at = now() where id = $1", [docs[0]]);
+    expect((await json(who, `?jobId=${job}`)).json.documents[0]).toMatchObject({ copyDeleted: true, fileName: null });
+    expect((await json(who, `?jobId=${job}&docId=${docs[0]}`)).status).toBe(404); // a deleted copy has no link
+    expect(await audits(docs[0]!)).toEqual([]);
+    // storage off: 503 and no audit row (the link is made before the row is written)
+    const two = await withCopies(1);
+    setFileStore(undefined);
+    const keep = Object.fromEntries(["FILES_S3_KEY_ID", "FILES_S3_SECRET", "FILES_S3_BUCKET", "FILES_S3_REGION"].map((k) => [k, process.env[k]]));
+    for (const k of Object.keys(keep)) delete process.env[k];
+    try {
+      expect(await json(who, `?jobId=${two.job}&docId=${two.docs[0]}`)).toEqual({ status: 503, json: { error: "files_unavailable" } });
+    } finally { Object.assign(process.env, Object.fromEntries(Object.entries(keep).filter(([, v]) => v !== undefined))); setFileStore(store); }
+    expect(await audits(two.docs[0]!)).toEqual([]);
+    // the admin login only reads the copies: no write on the table
+    await expect(db.pool("app_admin").query("update job_authority_document set file_name = 'x' where id = $1", [two.docs[0]])).rejects.toThrow(/permission denied/);
+  });
+
+  it("performance: statements and time", async () => {
+    const { job, docs } = await withCopies(20);
+    const who = "only_account_reviewer";
+    const [, listN] = await counted(() => raw(who, `?jobId=${job}`));
+    const [, openN] = await counted(() => raw(who, `?jobId=${job}&docId=${docs[0]}`));
+    expect([listN, openN]).toEqual([AUTH_BUDGET.list, AUTH_BUDGET.open]);
+    const listMs = await median(() => raw(who, `?jobId=${job}`)), openMs = await median((i) => raw(who, `?jobId=${job}&docId=${docs[i]}`));
+    console.log(`authority staff read: list ${listMs.toFixed(1)} ms, open ${openMs.toFixed(1)} ms`);
+    expect(listMs).toBeLessThan(AUTH_BUDGET.listMs);
+    expect(openMs).toBeLessThan(AUTH_BUDGET.openMs);
   });
 });

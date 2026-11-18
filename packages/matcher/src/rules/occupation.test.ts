@@ -1,6 +1,6 @@
 // Made-up titles and text only. Expected values were checked against the Python (classify.occupation).
 import { describe, expect, it } from "vitest";
-import { occupation, rulesMatcher, TITLE_RULES } from "./index";
+import { occupation, rulesMatcher, suggestCodes, TITLE_RULES } from "./index";
 import { pyRegex } from "./pyRegex";
 
 const m = (code: string, onList: "yes" | "no" | "unknown", confidence: "none" | "low" | "medium" | "high") => ({ occupationCode: code, onCriticalSkillsList: onList, confidence });
@@ -353,6 +353,29 @@ describe("hostile input", () => {
   // 400,000 about 2.5 s when measured. The Python does the same; a title length cap belongs to the caller.
   it("known quirk: a very long title of rule-9 words ending in 'bim' is slow (quadratic), still finishes at 100,000 characters", () => {
     const ms = time(() => occupation(`${"operator ".repeat(11_000)}bim`, ""));
+    expect(ms).toBeLessThan(HOSTILE_BUDGET_MS);
+  });
+});
+
+describe("suggestCodes (P5: the posting form's code suggestion)", () => {
+  it("puts the matcher's answer first, then other matching rules' four-digit codes, at most 3", () => {
+    expect(suggestCodes("Staff Nurse")).toEqual(["2231"]);
+    expect(suggestCodes("Senior Software Engineer")).toEqual(["2136"]);
+    expect(suggestCodes("Software Architect")).toEqual(["2135"]); // AMBIG-ARCH also matches and is left out
+    expect(suggestCodes("Sous Chef")).toEqual(["5434"]);
+    expect(suggestCodes("Data Engineer Architect Developer Scientist")).toEqual(["2136", "2139", "2112"]);
+    expect(suggestCodes("Data Engineer Architect Developer Scientist", 1)).toHaveLength(1);
+  });
+  it("leaves out the non-code groups and answers nothing for no match", () => {
+    expect(suggestCodes("Software Intern")).toEqual([]); // the matcher says "intern"
+    expect(suggestCodes("Software Intern Developer")).toEqual(["2136"]); // "intern" first, then the 2136 rule
+    expect(suggestCodes("Product Manager")).toEqual([]); // AMBIG-PRODUCT
+    expect(suggestCodes("Zzz")).toEqual([]);
+    expect(suggestCodes("")).toEqual([]);
+    for (const c of suggestCodes("Nurse Midwife Pharmacist Doctor")) expect(c).toMatch(/^\d{4}$/);
+  });
+  it("stays fast on a 200-character hostile title (the route's cap)", () => {
+    const ms = time(() => suggestCodes(`${"operator ".repeat(22)}bim`));
     expect(ms).toBeLessThan(HOSTILE_BUDGET_MS);
   });
 });

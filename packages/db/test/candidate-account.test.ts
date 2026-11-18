@@ -111,6 +111,7 @@ describe("profile", () => {
     expect([put.status, put.json]).toEqual([200, { ok: true, deletionOffered: false, alertsPaused: 0 }]);
     const got = (await call(R.profile, "GET", null, p)).json.profile;
     expect(got).toMatchObject({ fullName: "Fake Person", occupationCode: "2111", yearsExperience: 4, degreeAwardedMonth: "2026-05-01", currentStamp: "1G", phone: null });
+    expect(got.degreeBox).toBe(new Date() < new Date("2027-04-30T23:00:00Z") ? "last_12_months" : "relevant"); // S19: May 2026 is recent until 1 May 2027 in Dublin
     expect((await one("select visible_to_employers, visible_fields from candidate_profile where candidate_user_id=$1", [p.id]))[0]).toEqual({ visible_to_employers: false, visible_fields: null });
   });
   it("PUT replaces the whole profile, and touches only this login's row", async () => {
@@ -367,6 +368,54 @@ describe("one saved or tracked job, closed or not", () => {
     for (const id of [j, c]) expect(await call(R.job, "GET", null, { ...b, query: `?id=${id}` }), id).toMatchObject({ status: 404, code: "JOB_NOT_FOUND" });
     expect((await call(R.job, "GET", null, { ...a, query: `?id=${j}` })).status).toBe(404);
     for (const q of ["", "?id=", "?id=abc", "?id=1;drop", "?id=-5", "?id=99999999999999999999"]) expect((await call(R.job, "GET", null, { ...a, query: q })).code, q).toBe("BAD_REQUEST");
+  });
+});
+
+describe("S19: the degree box pre-fill on the profile read", () => {
+  it("relevant for an old degree, none without one, never stored", async () => {
+    const a = await login(), b = await login();
+    await call(R.profile, "PUT", { ...profile, hasRelevantDegree: true, degreeAwardedMonth: "2019-09-01" }, a);
+    await call(R.profile, "PUT", { ...profile, hasRelevantDegree: false }, b);
+    expect((await call(R.profile, "GET", null, a)).json.profile.degreeBox).toBe("relevant");
+    expect((await call(R.profile, "GET", null, b)).json.profile.degreeBox).toBe("none");
+    expect(await call(R.profile, "PUT", { ...profile, degreeBox: "relevant" }, a)).toMatchObject({ status: 400, code: "BAD_REQUEST" }); // derived, not writable
+  });
+});
+
+describe("S20: why a saved or tracked job is not shown", () => {
+  async function hiddenByReport(): Promise<string> {
+    const j = await job("live");
+    const r = (await su.query("insert into report(target_kind, target_job_id, reason, evidence_text) values ('job', $1, 'other', 'SECRET EVIDENCE') returning id", [j])).rows[0].id;
+    await su.query("update job set status = 'hidden', hidden_reason = 'report', hidden_report_id = $2, search_vector = null where id = $1", [j, r]);
+    return j;
+  }
+  it("each card says live (null), under review, hidden after a report, or no longer available; nothing of the report", async () => {
+    const p = await login();
+    const live = await job("live"), review = await job("live"), reported = await hiddenByReport(), staff = await job("hidden");
+    const closed = await job("closed", { reason: "closed" }), expired = await job("live", { closes: "now() - interval '1 day'" });
+    const orgHidden = await job("live");
+    await su.query("update job set status = 'hidden', hidden_reason = 'organisation_suspended' where id = $1", [orgHidden]);
+    const want: Record<string, string | null> = { [live]: null, [review]: "under_review", [reported]: "hidden_after_report", [staff]: "no_longer_available",
+      [closed]: "no_longer_available", [expired]: "no_longer_available", [orgHidden]: "no_longer_available" };
+    for (const j of Object.keys(want)) await call(R.saved, "POST", { jobId: j }, p);
+    await su.query("update job set status = 'under_review' where id = $1", [review]); // saved while live, then the employer's review started
+    const list = (await call(R.saved, "GET", null, p)).json.saved as { jobId: string; reason: string | null }[];
+    expect(Object.fromEntries(list.map((x) => [x.jobId, x.reason]))).toEqual(want);
+    for (const [j, reason] of Object.entries(want)) {
+      const r = await call(R.job, "GET", null, { ...p, query: `?id=${j}` });
+      expect(r.json.job.reason, j).toBe(reason);
+    }
+    const all = JSON.stringify(list) + JSON.stringify((await call(R.job, "GET", null, { ...p, query: `?id=${reported}` })).json);
+    for (const leak of ["SECRET EVIDENCE", "hiddenReportId", "hidden_report_id", "hiddenReason", "organisation_suspended", "admin"]) expect(all).not.toContain(leak);
+  });
+  it("a tracked (applied) job that was hidden after a report says so too", async () => {
+    const p = await login(), j = await hiddenByReport();
+    await su.query("insert into tracker_entry(candidate_user_id, job_id, route, origin, stage) values ($1,$2,'redirect','mark_applied','applied')", [p.id, j]);
+    expect((await call(R.job, "GET", null, { ...p, query: `?id=${j}` })).json.job).toMatchObject({ live: false, reason: "hidden_after_report", stage: "applied" });
+  });
+  it("app_candidate reads the hidden reason code only, never the report id", async () => {
+    await app.query("select hidden_reason from job limit 1");
+    await expect(app.query("select hidden_report_id from job limit 1")).rejects.toMatchObject({ code: "42501" });
   });
 });
 

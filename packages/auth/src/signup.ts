@@ -14,6 +14,9 @@ const POOLS = {
   portal: { purpose: "portal_signup_terms", view: "portal_consent_record", userField: "portalUserId", column: "portal_user_id" },
 } as const;
 const NAME_MAX = 100;
+// One row per UTC day (migration 0044): no address, no IP, no user agent, nothing about the visitor.
+export const COUNT_NO =
+  "insert into signup_no_count(day, count) values ((now() at time zone 'UTC')::date, 1) on conflict (day) do update set count = signup_no_count.count + 1";
 type Adapter = { findMany: (a: unknown) => Promise<unknown[]>; create: (a: unknown) => Promise<unknown> };
 
 /** The three answers, or the reason they are refused. Only the JSON value `true` passes: strings, numbers, objects and lists do not. */
@@ -104,6 +107,10 @@ export function signupPlugin(database: Pool, pool: SignupPool): BetterAuthPlugin
       before: [{
         matcher: (ctx) => ctx.path === "/sign-up/email",
         handler: createAuthMiddleware(async (ctx) => {
+          // C5 (#253): a "no" to the permit question adds one to today's count and nothing else is kept. Better Auth's per-IP limit
+          // (5 a minute) and the bot check run before this hook, so a script cannot inflate the count cheaply. A Google "no" is counted
+          // in the user-create step instead (index.ts), so each attempt counts once whichever way it comes.
+          if (pool === "candidate" && (ctx.body as { needsPermit?: unknown } | undefined)?.needsPermit === false) await database.query(COUNT_NO);
           if (pool === "candidate") checkSignup(ctx.body, true);
           else checkPortalSignup(ctx.body, true);
           await currentTermsId(database, pool);

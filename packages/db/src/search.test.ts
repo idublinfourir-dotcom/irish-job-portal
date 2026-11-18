@@ -285,7 +285,7 @@ describe("sectorCounts", () => {
     const db = { query: () => Promise.resolve({ rows: [{ sector: "IT", n: 5 }, { sector: "it", n: 2 }, { sector: "health", n: 1 }] }) } as never;
     expect(await sectorCounts(db)).toEqual([
       { sector: "health", jobs: 1 }, { sector: "IT", jobs: 5 }, { sector: "construction and engineering", jobs: 0 }, { sector: "finance", jobs: 0 },
-      { sector: "pharma and science", jobs: 0 }, { sector: "other", jobs: 0 },
+      { sector: "care", jobs: 0 }, { sector: "hospitality", jobs: 0 }, { sector: "pharma and science", jobs: 0 }, { sector: "other", jobs: 0 },
     ]);
   });
 });

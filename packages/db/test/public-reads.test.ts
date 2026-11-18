@@ -16,7 +16,7 @@ const secret = "trial-only-secret-trial-only-secret-32";
 const BASE = "http://localhost:3000";
 type Handler = (r: Request) => Promise<Response>;
 let db: TestDb, su: pg.Pool;
-let AUTH: Handler, JOBS: Handler, JOB: Handler, COMPANY: Handler, OCCUPATION: Handler;
+let AUTH: Handler, JOBS: Handler, JOB: Handler, SIMILAR: Handler, COMPANY: Handler, OCCUPATION: Handler, HELP: Handler;
 let slug: string, jobIds: string[];
 const TOTAL = 27; // more than a candidate's page (20), so both page
 
@@ -28,8 +28,13 @@ beforeAll(async () => {
   ({ POST: AUTH } = await import("../../../apps/candidate/app/api/auth/candidate/[...all]/route"));
   ({ GET: JOBS } = await import("../../../apps/candidate/app/api/jobs/route"));
   ({ GET: JOB } = await import("../../../apps/candidate/app/api/job/route"));
+  ({ GET: SIMILAR } = await import("../../../apps/candidate/app/api/job/similar/route"));
   ({ GET: COMPANY } = await import("../../../apps/candidate/app/api/company/route"));
   ({ GET: OCCUPATION } = await import("../../../apps/candidate/app/api/occupation/route"));
+  ({ GET: HELP } = await import("../../../apps/candidate/app/api/help/route"));
+  await su.query(`insert into content_page(kind, slug, title, body, status, published_at, source_url, checked_on) values
+    ('help', 'not-sure', 'Placeholder help', 'PLACEHOLDER: who needs a permit', 'published', now(), null, null), ('help', 'draft-help', 'Draft', 'Draft body', 'draft', null, null, null),
+    ('guide', 'a-guide', 'A guide', 'Guide body', 'published', now(), 'https://enterprise.gov.ie/', '2026-11-01')`);
   const org = (await su.query("insert into organisation(slug, display_name, kind, status) values ('fake-visitor-org', 'Fake Org', 'employer', 'verified') returning id, slug")).rows[0];
   slug = org.slug;
   const src = (await su.query("insert into job_source(kind, board) values ('portal', 'fake-board') returning id")).rows[0].id;
@@ -140,6 +145,33 @@ describe("a visitor (S3)", () => {
   });
 });
 
+describe('S17: the "Not sure?" help page', () => {
+  it("serves a published help page by slug to a visitor and a candidate", async () => {
+    const { cookie } = await login();
+    for (const o of [{}, { cookie }]) {
+      const g = await get(HELP, "/api/help?slug=not-sure", o);
+      expect([g.status, g.body.title, g.body.kind, g.body.body]).toEqual([200, "Placeholder help", "help", "PLACEHOLDER: who needs a permit"]);
+    }
+  });
+  it("is a clear 404 when no help page of that slug is published: a draft, a guide's slug, unknown, missing or hostile slugs", async () => {
+    for (const slug of ["draft-help", "a-guide", "no-such-page", "", "Not-Sure", "x'; drop table content_page; --", "../etc", "a".repeat(101), "a%00b"]) {
+      const g = await get(HELP, `/api/help?slug=${encodeURIComponent(slug)}`);
+      expect([g.status, g.body], slug).toEqual([404, { code: "NOT_FOUND" }]);
+    }
+    expect([(await get(HELP, "/api/help")).status, (await get(HELP, "/api/help?slug=a&slug=not-sure")).status]).toEqual([404, 404]);
+  });
+  it("is rate limited like the other public reads", async () => {
+    const ip = "192.0.2.40";
+    await get(HELP, "/api/help?slug=not-sure", { ip });
+    await su.query("update candidate_rate_limit set count = 60 where key = $1", [`read:ip:${ip}:60000`]);
+    expect((await get(HELP, "/api/help?slug=not-sure", { ip })).status).toBe(429);
+  });
+  it("costs a visitor 3 statements (2 rate counts, the page)", async () => {
+    const [g, statements] = await counted(() => get(HELP, "/api/help?slug=not-sure"));
+    expect([g.status, statements]).toEqual([200, BUDGET.visitor]);
+  });
+});
+
 describe("the replies match docs/openapi/candidate.yaml (decision #248)", () => {
   it("the four public reads, a visitor's and a candidate's, and their error bodies", async () => {
     const spec = loadSpec("candidate");
@@ -151,6 +183,8 @@ describe("the replies match docs/openapi/candidate.yaml (decision #248)", () => 
       [OCCUPATION, "/api/occupation", "/api/occupation?code=1122", { cookie }],
       [JOBS, "/api/jobs", `/api/jobs?after=${cursor}`, {}], // a visitor's cursor: 401 SIGN_IN_FOR_MORE
       [JOBS, "/api/jobs", "/api/jobs?sort=best", {}], [JOB, "/api/job", "/api/job?id=999999999", {}],
+      [HELP, "/api/help", "/api/help?slug=not-sure", {}], [HELP, "/api/help", "/api/help?slug=draft-help", {}],
+      [SIMILAR, "/api/job/similar", `/api/job/similar?id=${jobIds[0]}`, {}], [SIMILAR, "/api/job/similar", "/api/job/similar?id=999999999", { cookie }],
     ];
     for (const [route, doc, path, o] of cases) {
       const g = await get(route, path, o);
@@ -249,5 +283,50 @@ describe("the read limit (S5)", () => {
     expect([g.status, g.body]).toEqual([429, { code: "TOO_MANY_REQUESTS" }]);
     expect(Number(g.retry)).toBeLessThanOrEqual(60);
     expect((await get(JOBS, "/api/jobs", { cookie: b.cookie, ip: freshIp() })).status).toBe(200);
+  });
+});
+
+describe("more jobs like this (S9, GET /api/job/similar)", () => {
+  type Card = { jobId: string };
+  const ids = (g: Got) => (g.body.jobs as Card[]).map((j) => j.jobId);
+  it("a visitor and a candidate get up to 6 live jobs of the same occupation, newest first, never the job itself, public card fields only", async () => {
+    const { cookie } = await login();
+    const newest = jobIds.at(-1)!;
+    for (const o of [{}, { cookie }]) {
+      const g = await get(SIMILAR, `/api/job/similar?id=${newest}`, o);
+      expect([g.status, ids(g)]).toEqual([200, newestFirst().slice(1, 7)]);
+      expect(Object.keys((g.body.jobs as object[])[0]!).sort()).toEqual(["badge", "county", "employerName", "jobId", "payGrade", "salaryHigh", "salaryLow", "title"]);
+    }
+    expect(ids(await get(SIMILAR, `/api/job/similar?id=${jobIds[0]}`))).toEqual(newestFirst().slice(0, 6));
+  });
+  it("falls back to the sector when no other live job shares the occupation; a full-quota job sorts last", async () => {
+    const one = (await su.query(
+      `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, occupation_code, permit_type, badge, quota_full, status, closes_at, own_page_url, search_vector)
+       select organisation_id, source, job_source_id, 'Fake Lone', employer_name, 'it', '2136', permit_type, badge, false, 'live', closes_at, own_page_url, search_vector from job where id = $1 returning id::text`, [jobIds[0]])).rows[0].id;
+    await su.query("update job set quota_full = true where id = $1", [jobIds.at(-1)]);
+    try {
+      expect(ids(await get(SIMILAR, `/api/job/similar?id=${one}`))).toEqual(newestFirst().slice(1, 7));
+      expect(ids(await get(SIMILAR, `/api/job/similar?id=${jobIds[0]}`))).not.toContain(jobIds.at(-1));
+    } finally {
+      await su.query("update job set quota_full = false where id = $1", [jobIds.at(-1)]);
+      await su.query("delete from job where id = $1", [one]);
+    }
+  });
+  it("a job that is not live (under review, expired) and an unknown or hostile id are 404, never 500", async () => {
+    const id = jobIds[1]!;
+    for (const [set, undo] of [["status = 'under_review'", "status = 'live'"], ["closes_at = now() - interval '1 day'", "closes_at = now() + interval '20 days'"]]) {
+      await su.query(`update job set ${set} where id = $1`, [id]);
+      try { expect((await get(SIMILAR, `/api/job/similar?id=${id}`)).status, set).toBe(404); } finally { await su.query(`update job set ${undo} where id = $1`, [id]); }
+    }
+    for (const bad of ["999999999", "", "1;drop table job", "-1", "1e3", "a".repeat(5000), "%00"]) expect((await get(SIMILAR, `/api/job/similar?id=${encodeURIComponent(bad)}`)).status, bad.slice(0, 20)).toBe(404);
+    expect((await get(SIMILAR, "/api/job/similar")).status).toBe(404);
+  });
+  it("is rate limited like the other public reads and costs 4 statements for a visitor (2 rate counts, the lookup, one similar query)", async () => {
+    const ip = "192.0.2.50";
+    await get(SIMILAR, `/api/job/similar?id=${jobIds[0]}`, { ip });
+    await su.query("update candidate_rate_limit set count = 60 where key = $1", [`read:ip:${ip}:60000`]);
+    expect((await get(SIMILAR, `/api/job/similar?id=${jobIds[0]}`, { ip })).status).toBe(429);
+    const [, n] = await counted(() => get(SIMILAR, `/api/job/similar?id=${jobIds[0]}`));
+    expect(n).toBe(4);
   });
 });
