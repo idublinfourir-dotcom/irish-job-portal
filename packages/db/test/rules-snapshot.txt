@@ -64,7 +64,7 @@ check job_check6 on job: CHECK (((source <> ALL (ARRAY['employer'::text, 'agency
 check job_check7 on job: CHECK (((status = 'hidden'::text) = (hidden_reason IS NOT NULL)))
 check job_check8 on job: CHECK (((hidden_report_id IS NULL) OR (hidden_reason = 'report'::text)))
 check job_check9 on job: CHECK (((hidden_reason IS DISTINCT FROM 'report'::text) OR (hidden_report_id IS NOT NULL)))
-check job_close_reason_check on job: CHECK ((close_reason = ANY (ARRAY['expired'::text, 'closed'::text, 'removed'::text, 'under_review_expired'::text, 'abandoned'::text, 'recheck_failed'::text])))
+check job_close_reason_check on job: CHECK ((close_reason = ANY (ARRAY['expired'::text, 'closed'::text, 'removed'::text, 'under_review_expired'::text, 'abandoned'::text, 'recheck_failed'::text, 'source_stale'::text])))
 check job_health_insurance_eur_check on job: CHECK ((health_insurance_eur >= 0))
 check job_hidden_reason_check on job: CHECK ((hidden_reason = ANY (ARRAY['report'::text, 'organisation_suspended'::text, 'admin'::text])))
 check job_hire_answer_check on job: CHECK ((hire_answer = ANY (ARRAY['yes'::text, 'no'::text])))
@@ -76,6 +76,7 @@ check job_permit_type_check on job: CHECK ((permit_type = ANY (ARRAY['critical_s
 check job_recheck_failed_fetched on job: CHECK (((close_reason IS DISTINCT FROM 'recheck_failed'::text) OR (source = 'fetched'::text)))
 check job_screening_questions_check on job: CHECK (((jsonb_typeof(screening_questions) = 'array'::text) AND (jsonb_array_length(screening_questions) <= 5)))
 check job_source_check on job: CHECK ((source = ANY (ARRAY['fetched'::text, 'employer'::text, 'agency'::text, 'admin_manual'::text])))
+check job_source_stale_fetched on job: CHECK (((close_reason IS DISTINCT FROM 'source_stale'::text) OR (source = 'fetched'::text)))
 check job_sponsor_sort_check on job: CHECK ((sponsor_sort >= '-1'::integer))
 check job_status_check on job: CHECK ((status = ANY (ARRAY['draft'::text, 'in_review'::text, 'live'::text, 'under_review'::text, 'hidden'::text, 'closed'::text])))
 check job_weekly_hours_check on job: CHECK (((weekly_hours >= 1) AND (weekly_hours <= 60)))
@@ -341,7 +342,7 @@ rights app_fetcher on email_outbox: table[insert] columns[select(dedupe_key)]
 rights app_fetcher on feature_flag: table[select] columns[]
 rights app_fetcher on fetch_run: table[insert,select,update] columns[]
 rights app_fetcher on fetched_advert: table[insert,select,update] columns[]
-rights app_fetcher on job: table[select] columns[insert(application_route,badge,close_reason,closed_at,closes_at,contract_months,contract_type,county,employer_name,fetched_advert_id,health_insurance_eur,job_source_id,occupation_code,organisation_id,own_page_url,pass_route,permit_employer_check,permit_employer_kind,permit_employer_name,permit_employer_name_id,permit_type,salary_high,salary_low,search_vector,sector,source,status,title) update(badge,close_reason,closed_at,closes_at,contract_months,contract_type,county,employer_name,health_insurance_eur,occupation_code,own_page_url,pass_route,permit_employer_check,permit_employer_kind,permit_employer_name,permit_employer_name_id,permit_type,salary_high,salary_low,search_vector,sector,status,title)]
+rights app_fetcher on job: table[select] columns[insert(application_route,badge,close_reason,closed_at,closes_at,contract_months,contract_type,county,employer_name,fetched_advert_id,health_insurance_eur,job_source_id,occupation_code,organisation_id,own_page_url,pass_route,permit_employer_check,permit_employer_kind,permit_employer_name,permit_employer_name_id,permit_type,salary_high,salary_low,search_vector,sector,source,status,title) update(badge,close_reason,closed_at,closes_at,contract_months,contract_type,county,employer_name,health_insurance_eur,job_source_id,occupation_code,own_page_url,pass_route,permit_employer_check,permit_employer_kind,permit_employer_name,permit_employer_name_id,permit_type,salary_high,salary_low,search_vector,sector,status,title)]
 rights app_fetcher on job_daily_stat: table[] columns[]
 rights app_fetcher on job_source: table[insert,select,update] columns[]
 rights app_fetcher on job_text: table[delete,insert,select,update] columns[]
