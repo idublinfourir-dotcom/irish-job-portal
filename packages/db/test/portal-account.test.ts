@@ -132,7 +132,7 @@ describe("download my data", () => {
     expect(r.headers.get("content-disposition")).toBe(`attachment; filename="${exportFilename(new Date())}"`);
     const d = r.json;
     expect(d.account).toMatchObject({ email: c.recruiter.email, emailConfirmed: true, signInMethods: ["credential"] });
-    expect(d.memberships).toEqual([expect.objectContaining({ organisationId: c.org, organisation: c.name, role: "recruiter", status: "active" })]);
+    expect(d.memberships).toEqual([expect.objectContaining({ organisationId: String(c.org), organisation: c.name, role: "recruiter", status: "active" })]);
     expect(d.notices.map((x: { templateKey: string }) => x.templateKey)).toEqual(["fake_notice"]);
     expect(d.consents.length).toBeGreaterThanOrEqual(2); // the sign-up terms and the case's consent
     expect(d.messagesYouSent).toEqual([expect.objectContaining({ body: "My own question" })]);

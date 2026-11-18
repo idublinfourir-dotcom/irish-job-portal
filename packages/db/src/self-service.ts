@@ -1,6 +1,7 @@
 // Audit row R1: the portal login's own data export and self delete (migration 0034), and the staff member's own data export. Candidates have theirs in
 // candidate.ts. Staff never delete their own login: an administrator disables it (staff-admin.ts, disableLogin).
 import type pg from "pg";
+import { toWire } from "./wire";
 import { fileStore } from "./file-store";
 import { staffRoles } from "./staff-admin";
 
@@ -14,8 +15,9 @@ export function accountRefusal(e: unknown): { status: number; code: string } | n
 }
 
 /** The portal login that holds this session token: its data and one audit row, in one statement. */
+// toWire: the shared reply format (ids as text, times in UTC with Z), as every other portal reply.
 export const portalExport = async (db: Pick<pg.Pool, "query">, token: string) =>
-  ({ exportedAt: new Date().toISOString(), ...(await db.query("select private.portal_account_export($1) r", [token])).rows[0].r });
+  toWire({ exportedAt: new Date().toISOString(), ...(await db.query("select private.portal_account_export($1) r", [token])).rows[0].r }) as Record<string, unknown>;
 
 /** Erases the login that holds this session token (every session ends with it), then removes its stored files. The rows are already gone when a removal
  *  fails, so the key (a random id, never a name) goes to the server log for removal by hand, as the retention run does; the reply still says deleted. */

@@ -1371,7 +1371,7 @@ paths:
                 properties:
                   exportedAt: { $ref: '#/components/schemas/Timestamp' }
                   account: { type: object }
-                  memberships: { type: array, items: { type: object, properties: { organisationId: { $ref: '#/components/schemas/NumId' }, organisation: { type: string }, role: { type: string, enum: [viewer, poster, recruiter, account_owner] }, isSigner: { type: boolean }, status: { type: string }, joinedAt: { type: [string, 'null'] }, removedAt: { type: [string, 'null'] } } } }
+                  memberships: { type: array, items: { type: object, properties: { organisationId: { $ref: '#/components/schemas/Id' }, organisation: { type: string }, role: { type: string, enum: [viewer, poster, recruiter, account_owner] }, isSigner: { type: boolean }, status: { type: string }, joinedAt: { type: [string, 'null'] }, removedAt: { type: [string, 'null'] } } } }
                   notices: { type: array }
                   notificationSettings: { type: array }
                   consents: { type: array }
@@ -1385,7 +1385,7 @@ paths:
               example:
                 exportedAt: '2026-11-18T09:30:00.000Z'
                 account: { name: Alex Example, email: alex@example.com, emailConfirmed: true, createdAt: '2026-10-01T09:00:00+00:00', lastActiveAt: '2026-11-18T09:00:00+00:00', signInMethods: [credential] }
-                memberships: [{ organisationId: 1042, organisation: Example Software Ltd, role: recruiter, isSigner: false, status: active, joinedAt: null, removedAt: null }]
+                memberships: [{ organisationId: '1042', organisation: Example Software Ltd, role: recruiter, isSigner: false, status: active, joinedAt: null, removedAt: null }]
                 notices: []
                 notificationSettings: []
                 consents: []
