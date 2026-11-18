@@ -288,13 +288,16 @@ export async function jobPost(request: Request): Promise<Response> {
   });
 }
 
-const LOCK = "select status, badge, pass_route, sector, permit_type, title, occupation_code, salary_low, salary_high, pay_grade, health_insurance_eur, weekly_hours from job " +
+const LOCK = "select status, badge, pass_route, sector, permit_type, title, occupation_code, salary_low, salary_high, pay_grade, health_insurance_eur, weekly_hours, " +
+  "under_review_reason, contract_type, contract_months, county, permit_employer_kind, permit_employer_name, (select advert_text from job_text where job_id = job.id) as advert_text from job " +
   "where id = $1 and organisation_id = $2 and source in ('employer','agency') for update";
 
 /**
  * POST /api/portal/jobs/edit: the whole post again with its jobId. A draft stays a draft, or goes live with the rules (status "live").
  * On a job past draft the status field does not move it; a change to the pay (salary, grade, health insurance, hours), the title or the
  * occupation runs the rules again and needs a fresh signed statement when the job shows "Sponsor confirmed" (#226); other edits do neither.
+ * A job a renewal moved to Under review for a non-pay rule (under_review_reason other than 'pay_check') runs the rules on any edit of a field they
+ * read (the advert text, contract, county, client and statement too) and goes live again when they pass, as a pay edit does for 'pay_check' (#93).
  */
 export async function jobEdit(request: Request): Promise<Response> {
   const w = await writer(request, checkEdit, MAX_JOB_BODY);
@@ -309,14 +312,17 @@ export async function jobEdit(request: Request): Promise<Response> {
     const pay = j.salary_low !== p.salaryLow || j.salary_high !== p.salaryHigh || j.pay_grade !== p.payGrade || j.health_insurance_eur !== p.healthInsuranceEur;
     const key = pay || j.title !== p.title || j.occupation_code !== p.occupationCode || j.permit_type !== p.permitType || (j.weekly_hours ?? 39) !== p.weeklyHours;
     const publish = j.status === "draft" && p.status === "live";
+    const fix = j.status === "under_review" && j.under_review_reason !== "pay_check" && (key || j.advert_text !== p.description || j.contract_type !== p.contractType
+      || j.contract_months !== p.contractMonths || j.county !== p.county || j.permit_employer_kind !== (p.clientName ? "client" : "self")
+      || j.permit_employer_name !== p.clientName || (p.statement !== null && j.badge !== "sponsor_confirmed"));
     let status: string = j.status, passRoute = j.pass_route, sector = j.sector, ticked: boolean | null = null;
-    if (publish || (j.status !== "draft" && key)) {
+    if (publish || (j.status !== "draft" && key) || fix) {
       const v = await rulesFor(p, p.clientName ?? org.display_name, await getRules(c));
       if (!v.ok) return verdictReply(v);
       if (publish) status = v.status;
       else if (v.status === "in_review" && j.status === "live") return no(409, "NEEDS_REVIEW"); // the guard keeps a live job live or closes it
       // #93: a job under review (the minimums rose) goes live again when its new pay passes; the guard allows that only on a pay change.
-      else if (v.status === "live" && j.status === "under_review" && pay) status = "live";
+      else if (v.status === "live" && j.status === "under_review" && (pay || fix)) status = "live";
       passRoute = v.passRoute; sector = v.sector; ticked = v.ticked;
     }
     if (j.status !== "draft" && key && j.badge === "sponsor_confirmed" && !p.statement) return no(422, "STATEMENT_REQUIRED"); // the same rule refusal as rulesFor gives a General post

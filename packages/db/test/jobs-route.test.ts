@@ -13,8 +13,10 @@ import { fixtures } from "./fixtures";
 // Statements counted on every pg.Client.query call, measured on 12 November 2026: a live post 9 (requirePortal 3, rate count 1, begin, the
 // company, the job, its text, commit), with a statement 12 (the text, supersede, the statement); the list 4 (requirePortal 3, the function).
 // A renewal 8 (18 November 2026, P14: requirePortal 3, rate count 1, begin, the locked job with its text, the update, commit; the rules are cached), median 3 ms.
+// An edit 10 (requirePortal 3, rate count 1, begin, the locked job with its advert text, the company, the update, the text, commit), the same with the
+// 0045 fix check (18 November 2026).
 // Times, median of 9 calls, measured warm: post 5 to 8 ms, list of 60 jobs 3 to 5 ms. Budgets are about 4 times that, with a floor for a busy laptop.
-const BUDGET = { post: 9, signed: 12, list: 4, renew: 8, postMs: 40, listMs: 25, renewMs: 40 };
+const BUDGET = { post: 9, signed: 12, list: 4, renew: 8, edit: 10, postMs: 40, listMs: 25, renewMs: 40 };
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
@@ -382,6 +384,88 @@ describe("renewal re-runs the rules (P14, #254)", () => {
     expect((await renew(c.owner.cookie, { jobId: id })).json?.status).toBe("under_review");
     const portal = db.pool("app_portal");
     await expect(portal.query("update job set status = 'live', posted_by_membership_id = $2 where id = $1", [id, c.owner.mem])).rejects.toThrow(/may not move a job from under_review to live/);
+  });
+});
+
+describe("back live after a renewal's non-pay rule is fixed (gap 1 follow-up, 0045 job_guard)", () => {
+  const scamText = `${desc} Candidates must pay a registration fee before the interview.`;
+  // the advert text and its search vector, as an edit writes them together
+  const SCAM = "with t as (update job_text set advert_text = advert_text || ' Candidates must pay a registration fee before the interview.' where job_id = $1 returning advert_text) " +
+    "update job set search_vector = to_tsvector('english', title || ' ' || employer_name || ' ' || (select advert_text from t)) where id = $1";
+  const shown = async (c: Company, id: string) => { const j = (await list(c.viewer.cookie)).json!.jobs.find((x: { id: string }) => x.id === id); return [j.status, j.reason, j.reviewCode]; };
+  /** A live job, made to fail the renewal by a stored field, renewed into Under review with that rule. */
+  async function moved(c: Company, set: string, code: string) {
+    const id = (await post(c.owner.cookie, good)).json!.jobId;
+    await su.query(set, [id]);
+    const r = await renew(c.owner.cookie, { jobId: id });
+    expect([r.json?.status, r.json?.code]).toEqual(["under_review", code]);
+    return id as string;
+  }
+  it("a code, a title or an advert fix through the edit route that passes the rules sets the job live and clears the reason", async () => {
+    await seedTexts();
+    const c = await company();
+    const code = await moved(c, "update job set occupation_code = '4112' where id = $1", "OCCUPATION_INELIGIBLE");
+    const r = await edit(c.owner.cookie, { ...good, jobId: code });
+    expect([r.status, r.json?.status]).toEqual([200, "live"]);
+    expect(await job(Number(code))).toMatchObject({ status: "live", under_review_reason: null, under_review_since: null, occupation_code: "2136" });
+    expect(await shown(c, code)).toEqual(["live", null, null]);
+    const title = await moved(c, "update job set title = 'Software Engineer Intern' where id = $1", "RULES_FAILED");
+    expect((await edit(c.owner.cookie, { ...good, jobId: title })).json?.status).toBe("live");
+    const scam = await moved(c, SCAM, "NEEDS_REVIEW");
+    expect((await edit(c.owner.cookie, { ...good, jobId: scam })).json?.status).toBe("live"); // the advert text only: no pay, title or code change
+    expect((await job(Number(scam))).advert_text).toBe(desc);
+  });
+  it("an edit that still fails leaves it under review with the failing code; an edit that changes nothing the rules read cannot flip it", async () => {
+    await seedTexts();
+    const c = await company();
+    const code = await moved(c, "update job set occupation_code = '4112' where id = $1", "OCCUPATION_INELIGIBLE");
+    const same0 = await edit(c.owner.cookie, { ...good, jobId: code, occupationCode: "4112" }); // nothing the rules read changed: saved, not moved
+    expect([same0.status, same0.json?.status]).toEqual([200, "under_review"]);
+    const still = await edit(c.owner.cookie, { ...good, jobId: code, occupationCode: "4112", title: "Senior Software Engineer" });
+    expect([still.status, still.json?.code]).toEqual([422, "OCCUPATION_INELIGIBLE"]);
+    const other = await edit(c.owner.cookie, { ...good, jobId: code, occupationCode: "4113" }); // another Ineligible code
+    expect([other.status, other.json?.code]).toEqual([422, "OCCUPATION_INELIGIBLE"]);
+    expect(await shown(c, code)).toEqual(["under_review", "renewal_check", "OCCUPATION_INELIGIBLE"]);
+    const scam = await moved(c, SCAM, "NEEDS_REVIEW");
+    const kept = await edit(c.owner.cookie, { ...good, jobId: scam, description: scamText, county: "Cork" }); // a county edit with the wording kept: still needs a staff check
+    expect([kept.status, kept.json?.status]).toEqual([200, "under_review"]);
+    expect(await shown(c, scam)).toEqual(["under_review", "renewal_check", "NEEDS_REVIEW"]);
+    const same = await edit(c.owner.cookie, { ...good, jobId: scam, description: scamText, county: "Cork" }); // nothing changed
+    expect([same.status, same.json?.status]).toEqual([200, "under_review"]);
+    // the database: the portal cannot set it live without changing a field the rules read, nor with a field that is not one
+    const portal = db.pool("app_portal");
+    await expect(portal.query("update job set status = 'live', posted_by_membership_id = $2 where id = $1", [scam, c.owner.mem])).rejects.toThrow(/may not move a job from under_review to live/);
+    await expect(portal.query("update job set status = 'live', own_page_url = 'https://example.test/other', posted_by_membership_id = $2 where id = $1", [scam, c.owner.mem])).rejects.toThrow(/may not move/);
+    expect((await job(Number(scam))).status).toBe("under_review");
+  });
+  it("a pay_check job still needs a passing pay edit (#93); another company and a viewer are refused", async () => {
+    await seedTexts();
+    const c = await company(), other = await company();
+    const id = (await post(c.owner.cookie, good)).json!.jobId;
+    await su.query("update job set status = 'under_review', under_review_reason = 'pay_check', salary_low = 30000, salary_high = null where id = $1", [id]);
+    const titleOnly = await edit(c.owner.cookie, { ...good, jobId: id, salaryLow: 30000, salaryHigh: null, title: "Senior Software Engineer" });
+    expect([titleOnly.status, titleOnly.json?.code]).toEqual([422, "PAY_BELOW_MINIMUM"]);
+    const advertOnly = await edit(c.owner.cookie, { ...good, jobId: id, salaryLow: 30000, salaryHigh: null, description: `${desc} Hybrid working.` });
+    expect([advertOnly.status, advertOnly.json?.status]).toEqual([200, "under_review"]); // no pay change: the rules do not run and it stays
+    await expect(db.pool("app_portal").query("update job set status = 'live', title = 'Fake retitled', posted_by_membership_id = $2 where id = $1", [id, c.owner.mem])).rejects.toThrow(/may not move/);
+    const scam = await moved(c, "update job set occupation_code = '4112' where id = $1", "OCCUPATION_INELIGIBLE");
+    expect((await edit(other.owner.cookie, { ...good, jobId: scam })).json).toEqual({ code: "JOB_NOT_FOUND" });
+    expect((await edit(c.viewer.cookie, { ...good, jobId: scam })).json).toEqual({ code: "NOT_A_POSTER" });
+    expect((await job(Number(scam))).status).toBe("under_review");
+    expect((await edit(c.owner.cookie, { ...good, jobId: id })).json?.status).toBe("live"); // the pay edit
+    expect((await job(Number(id))).under_review_reason).toBeNull();
+  });
+  it("budget: the edit route's statements are unchanged by the fix check (the advert text is read inside the job lock)", async () => {
+    await seedTexts();
+    const c = await company();
+    const scam = await moved(c, SCAM, "NEEDS_REVIEW");
+    const [fixed, nFix] = await counted(() => edit(c.owner.cookie, { ...good, jobId: scam }));
+    expect(fixed.json?.status).toBe("live");
+    const plain = (await post(c.owner.cookie, good)).json!.jobId;
+    const [, nPlain] = await counted(() => edit(c.owner.cookie, { ...good, jobId: plain, salaryLow: 51000 }));
+    console.log(`edit budget: ${nPlain} statements (a fix ${nFix})`);
+    expect(nPlain).toBeLessThanOrEqual(BUDGET.edit);
+    expect(nFix).toBeLessThanOrEqual(BUDGET.edit);
   });
 });
 

@@ -870,8 +870,10 @@ paths:
       description: |
         The whole post again plus `jobId`. A draft stays a draft, or goes live with the rules (`status: live`). On a job past draft
         the `status` field does not move it; a change to the pay (salary, grade, health insurance, hours), the title, the occupation
-        or the permit type runs the rules again and, on a `sponsor_confirmed` job, needs a fresh `statement`. A job under review
-        goes live again when a pay change passes. A closed or hidden job cannot be edited. Another company's job is 404. Origin checked first.
+        or the permit type runs the rules again and, on a `sponsor_confirmed` job, needs a fresh `statement`. A job under review for
+        `pay_check` goes live again when a pay change passes. A job under review for `renewal_check` runs the rules on any change to a
+        field they read (also the advert text, contract, county, client or a new statement) and goes live again when they pass; a change
+        that still fails is the 422 of that rule and the job stays under review. A closed or hidden job cannot be edited. Another company's job is 404. Origin checked first.
       security: [{ portalSession: [] }]
       x-roles: [account_owner, recruiter, poster]
       x-rate-limit: posts, edits, renewals and closes together, 30 per login per 10 minutes
