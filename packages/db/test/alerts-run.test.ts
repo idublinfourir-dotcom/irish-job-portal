@@ -68,7 +68,7 @@ describe("the outbox row", () => {
     const j1 = await job({ sector: "health", at: "2026-11-15T10:00:00Z" }), j2 = await job({ sector: "health", at: "2026-11-15T11:00:00Z" });
     const a1 = await alert(c, { sector: "health" }), a2 = await alert(c), a3 = await alert(c, { sector: "nothing-matches" });
     const r = await run(MON);
-    expect(r).toEqual({ alerts_due: 3, candidates_queued: 1, rows_written: 1 });
+    expect(r).toEqual({ alerts_due: 3, candidates_queued: 1, rows_written: 1, alerts_paused: 0 });
     const rows = await outbox(c);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ template: "job_alert", status: "pending", dedupe_key: `job_alert:${c}:2026-11-16` });
@@ -82,9 +82,9 @@ describe("the outbox row", () => {
     const c = await cand();
     const j1 = await job();
     await alert(c);
-    expect(await run(MON)).toEqual({ alerts_due: 1, candidates_queued: 1, rows_written: 1 });
+    expect(await run(MON)).toEqual({ alerts_due: 1, candidates_queued: 1, rows_written: 1, alerts_paused: 0 });
     const j2 = await job({ at: "2026-11-16T07:00:00Z" });
-    expect(await run(new Date("2026-11-16T20:00:00Z"))).toEqual({ alerts_due: 0, candidates_queued: 0, rows_written: 0 });
+    expect(await run(new Date("2026-11-16T20:00:00Z"))).toEqual({ alerts_due: 0, candidates_queued: 0, rows_written: 0, alerts_paused: 0 });
     expect(await outbox(c)).toHaveLength(1);
     await run(TUE);
     const rows = (await outbox(c)).map((x) => x.params.alerts[0].job_ids);
@@ -96,7 +96,7 @@ describe("the outbox row", () => {
     const a = await alert(c);
     await run(MON);
     await su("update alert set last_sent_at = null where id = $1", [a]);
-    expect(await run(new Date("2026-11-16T23:59:00Z"))).toEqual({ alerts_due: 1, candidates_queued: 1, rows_written: 0 });
+    expect(await run(new Date("2026-11-16T23:59:00Z"))).toEqual({ alerts_due: 1, candidates_queued: 1, rows_written: 0, alerts_paused: 0 });
     expect(await outbox(c)).toHaveLength(1);
   });
   it("at most 20 jobs per alert, the newest first; at most 10 alerts per candidate, the oldest alerts", async () => {
@@ -181,10 +181,100 @@ describe("which alerts are due", () => {
     const ids: number[] = [];
     for (const [c, o] of nothing) ids.push(await alert(c, o));
     await alert(on);
-    expect(await run(MON)).toEqual({ alerts_due: 1, candidates_queued: 1, rows_written: 1 });
+    expect(await run(MON)).toEqual({ alerts_due: 1, candidates_queued: 1, rows_written: 1, alerts_paused: 0 });
     for (const [c] of nothing) expect(await outbox(c)).toHaveLength(0);
     for (const a of ids) expect(await lastSent(a)).toBeNull();
     expect(await outbox(on)).toHaveLength(1);
+  });
+});
+
+describe("dormant candidates (C2)", () => {
+  // MON is the run time; the setting alert_dormant is 90 days
+  const ago = (d: number) => new Date(MON.getTime() - d * 864e5);
+  const idle = async (d: number) => { const c = await cand(); await su("update candidate_user set last_active_at = $2 where id = $1", [c, ago(d)]); return c; };
+  const state = async (id: number) => (await su("select status, pause_reason, last_sent_at from alert where id = $1", [id])).rows[0];
+
+  it("an active candidate's alert is queued; a 91-day idle one is paused dormant with nothing queued; other pauses are left alone", async () => {
+    await job();
+    const active = await idle(10), edge = await idle(89), gone = await idle(91);
+    const a1 = await alert(active), a2 = await alert(edge), a3 = await alert(gone), a4 = await alert(gone, { status: "paused", reason: "candidate" }),
+      a5 = await alert(gone, { frequency: "weekly" }), a6 = await alert(gone, { status: "unsubscribed" });
+    expect(await run(MON)).toEqual({ alerts_due: 2, candidates_queued: 2, rows_written: 2, alerts_paused: 2 });
+    expect(await outbox(active)).toHaveLength(1);
+    expect(await outbox(edge)).toHaveLength(1);
+    expect(await outbox(gone)).toHaveLength(0);
+    for (const a of [a3, a5]) expect(await state(a)).toEqual({ status: "paused", pause_reason: "dormant", last_sent_at: null });
+    expect(await state(a4)).toMatchObject({ status: "paused", pause_reason: "candidate" });
+    expect(await state(a6)).toMatchObject({ status: "unsubscribed", pause_reason: null });
+    for (const a of [a1, a2]) expect(await lastSent(a)).toEqual(MON);
+    const audit = (await su("select after from audit_event where action = 'job_alerts.run' order by id desc limit 1")).rows[0].after;
+    expect(audit).toMatchObject({ alerts_paused: 2 });
+    expect(await run(TUE)).toMatchObject({ alerts_paused: 0 }); // already paused: counted once
+  });
+
+  it("a null last_active_at is never dormant (as in retention); an empty setting pauses nobody", async () => {
+    await job();
+    const none = await cand(), old = await idle(100);
+    await su("update candidate_user set last_active_at = null where id = $1", [none]);
+    const a1 = await alert(old), a2 = await alert(none);
+    await su("update setting set value = null where key = 'alert_dormant'");
+    try {
+      expect(await run(MON)).toMatchObject({ alerts_due: 2, alerts_paused: 0 });
+    } finally { await su("update setting set value = 90 where key = 'alert_dormant'"); }
+    expect(await run(TUE)).toMatchObject({ alerts_due: 1, alerts_paused: 1 });
+    expect(await state(a1)).toMatchObject({ status: "paused", pause_reason: "dormant" });
+    expect(await state(a2)).toMatchObject({ status: "active" });
+  });
+
+  it("a new last_active_at resumes only dormant pauses, of that candidate only, with new jobs counted from then", async () => {
+    const me = await idle(200), other = await idle(200);
+    const d1 = await alert(me), mine = await alert(me, { status: "paused", reason: "candidate" }), stamp = await alert(me, { status: "paused", reason: "stamp_4" });
+    const unsub = await alert(me, { status: "unsubscribed" }), theirs = await alert(other);
+    await run(MON);
+    expect(await state(theirs)).toMatchObject({ pause_reason: "dormant" });
+    // the C1 sign-in statement (packages/auth/src/index.ts), run as app_candidate
+    await db.query("app_candidate", "update candidate_user set last_active_at = now() where id = $1", [me]);
+    const back = await state(d1);
+    expect(back).toMatchObject({ status: "active", pause_reason: null });
+    expect(Math.abs(back.last_sent_at.getTime() - Date.now())).toBeLessThan(60_000);
+    expect(await state(mine)).toMatchObject({ status: "paused", pause_reason: "candidate" });
+    expect(await state(stamp)).toMatchObject({ status: "paused", pause_reason: "stamp_4" });
+    expect(await state(unsub)).toMatchObject({ status: "unsubscribed" });
+    expect(await state(theirs)).toMatchObject({ status: "paused", pause_reason: "dormant" });
+    // an update that leaves last_active_at as it is, and a deleted candidate, resume nothing
+    await su("update candidate_user set name = 'Fake' where id = $1", [other]);
+    await su("update candidate_user set deleted_at = now(), last_active_at = now() where id = $1", [other]);
+    expect(await state(theirs)).toMatchObject({ status: "paused", pause_reason: "dormant" });
+  });
+
+  it("no app role writes pause_reason dormant; keeping a reason already dormant is allowed", async () => {
+    const c = await idle(200), a = await alert(c);
+    await run(MON);
+    for (const role of ["app_candidate", "app_portal", "app_admin", "app_fetcher"] as const) {
+      const fresh = await alert(c);
+      await expect(db.query(role, "update alert set status = 'paused', pause_reason = 'dormant' where id = $1", [fresh]), role).rejects.toThrow(/permission denied|alert guard/);
+    }
+    await expect(db.query("app_candidate", `insert into alert(candidate_user_id, frequency, status, pause_reason, unsubscribe_token) values ($1, 'daily', 'paused', 'dormant', $2)`,
+      [c, f.id("tok").padEnd(40, "x")])).rejects.toThrow(/alert guard/);
+    // the pause route's statement on an alert already paused dormant keeps the reason
+    await db.query("app_candidate", "update alert set pause_reason = case when status = 'active' then 'candidate' else pause_reason end, status = case when status = 'active' then 'paused' else status end where id = $1", [a]);
+    expect(await state(a)).toMatchObject({ status: "paused", pause_reason: "dormant" });
+    await expect(db.query("app_candidate", "select private.alert_resume_dormant()")).rejects.toThrow(/permission denied/);
+  });
+
+  it("the 12-month retention warning still works for a candidate whose alerts are paused dormant", async () => {
+    const c = await cand();
+    await su("update candidate_user set last_active_at = now() - interval '13 months' where id = $1", [c]);
+    const a = await alert(c);
+    await queueAlerts(db.pool("app_admin")); // now(): dormant
+    expect(await state(a)).toMatchObject({ pause_reason: "dormant" });
+    for (let i = 0; i < 5; i++) {
+      await db.query("app_admin", "select private.run_retention(1000)");
+      if ((await su("select inactive_warned_at from candidate_user where id = $1", [c])).rows[0].inactive_warned_at) break;
+    }
+    expect((await su("select inactive_warned_at from candidate_user where id = $1", [c])).rows[0].inactive_warned_at).not.toBeNull();
+    expect((await su("select template from email_outbox where candidate_user_id = $1", [c])).rows).toEqual([{ template: "inactive-warning" }]);
+    expect(await state(a)).toMatchObject({ pause_reason: "dormant" }); // the warning is not activity
   });
 });
 
@@ -198,7 +288,7 @@ describe("who may run it", () => {
     const lines: string[] = [];
     const env = (role: string) => ({ ALERTS_ADMIN_DATABASE_URL: urlFor(db.name, role), DATABASE_SSL: "disable" });
     expect(await main([], env("app_admin"), (l) => lines.push(l))).toBe(0);
-    expect(lines).toEqual([expect.stringMatching(/^job alerts: \d+ alerts due, \d+ candidates queued, \d+ emails written$/)]);
+    expect(lines).toEqual([expect.stringMatching(/^job alerts: \d+ alerts due, \d+ candidates queued, \d+ emails written, \d+ paused for dormancy$/)]);
     expect(await main([], env("app_portal"), (l) => lines.push(l))).toBe(1);
     expect(lines.at(-1)).toMatch(/^refused: permission denied/);
     expect(await main([], {}, (l) => lines.push(l))).toBe(2);
@@ -239,7 +329,7 @@ describe("performance", () => {
       const r = await queueAlerts(counting, MON);
       const ms = Date.now() - t0;
       expect(statements).toBe(1);
-      expect(r).toEqual({ alerts_due: 5000, candidates_queued: 1000, rows_written: 1000 });
+      expect(r).toEqual({ alerts_due: 5000, candidates_queued: 1000, rows_written: 1000, alerts_paused: 0 });
       expect(ms).toBeLessThan(15_000);
     } finally { await c.end(); }
     const plan = plans.find((p) => p.includes("new_job")) ?? plans.join("\n");

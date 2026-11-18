@@ -225,6 +225,13 @@
       "when": 1794300027000,
       "tag": "0031_company_profile",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794300029000,
+      "tag": "0033_dormant_alerts",
+      "breakpoints": true
     }
   ]
 }

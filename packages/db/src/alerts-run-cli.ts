@@ -5,7 +5,7 @@
 import pg from "pg";
 import { sslOptions } from "./ssl.ts";
 
-export type AlertRun = { alerts_due: number; candidates_queued: number; rows_written: number };
+export type AlertRun = { alerts_due: number; candidates_queued: number; rows_written: number; alerts_paused: number };
 
 export async function queueAlerts(db: Pick<pg.ClientBase, "query">, now?: Date): Promise<AlertRun> {
   return (await db.query("select private.queue_job_alerts(coalesce($1::timestamptz, now())) r", [now ?? null])).rows[0].r;
@@ -19,7 +19,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: s
   try {
     await client.connect();
     const r = await queueAlerts(client);
-    log(`job alerts: ${r.alerts_due} alerts due, ${r.candidates_queued} candidates queued, ${r.rows_written} emails written`);
+    log(`job alerts: ${r.alerts_due} alerts due, ${r.candidates_queued} candidates queued, ${r.rows_written} emails written, ${r.alerts_paused} paused for dormancy`);
     return 0;
   } catch (e) {
     log(`refused: ${(e as Error).message}`);

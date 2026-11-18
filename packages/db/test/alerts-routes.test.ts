@@ -56,7 +56,7 @@ async function login(o: { suspended?: boolean; unverified?: boolean } = {}) {
   const id = (await su.query("select id from candidate_user where email=$1", [email])).rows[0].id as string;
   if (o.suspended) await su.query("update candidate_user set suspended_at=now() where id=$1", [id]);
   if (o.unverified) await su.query("update candidate_user set email_verified=false where id=$1", [id]);
-  return { cookie, id };
+  return { cookie, id, email, password, h };
 }
 type P = Awaited<ReturnType<typeof login>>;
 type Opts = { cookie?: string; origin?: string | null; raw?: string; headers?: Record<string, string> };
@@ -173,6 +173,45 @@ describe("the candidate's own alerts", () => {
     await su.query("update alert set last_sent_at = now() - interval '2 days' where id=$1", [id]);
     await call(R.resume, "POST", { id }, p);
     expect((await one("select now() - last_sent_at > interval '1 day' as old from alert where id=$1", [id]))[0].old).toBe(true);
+  });
+});
+
+describe("dormant pauses (C2): a sign-in resumes them", () => {
+  const signIn = async (p: P) => expect((await AUTH(new Request(`${BASE}/api/auth/candidate/sign-in/email`,
+    { method: "POST", headers: p.h, body: JSON.stringify({ email: p.email, password: p.password }) }))).status).toBe(200);
+  const goDormant = async (p: P) => {
+    await su.query("update candidate_user set last_active_at = now() - interval '91 days' where id = $1", [p.id]);
+    await su.query("select private.queue_job_alerts(now())");
+  };
+  it("the real sign-in route resumes only the dormant pauses; a candidate pause stays paused", async () => {
+    const p = await login();
+    const d = await create(p), mine = await create(p);
+    await call(R.pause, "POST", { id: mine }, p);
+    await goDormant(p);
+    expect(await status(d)).toEqual({ status: "paused", pause_reason: "dormant" });
+    expect((await call(R.alerts, "GET", null, p)).json.alerts.find((a: { id: string }) => a.id === d)).toMatchObject({ status: "paused", pauseReason: "dormant" });
+    await signIn(p);
+    expect(await status(d)).toEqual({ status: "active", pause_reason: null });
+    expect(await status(mine)).toEqual({ status: "paused", pause_reason: "candidate" });
+  });
+  it("another candidate's sign-in or resume call never touches a dormant alert", async () => {
+    const a = await login(), b = await login();
+    const d = await create(a);
+    await goDormant(a);
+    await signIn(b);
+    expect(await status(d)).toEqual({ status: "paused", pause_reason: "dormant" });
+    expect((await call(R.resume, "POST", { id: d }, b)).code).toBe("ALERT_NOT_FOUND");
+    expect((await call(R.pause, "POST", { id: d }, b)).code).toBe("ALERT_NOT_FOUND");
+    expect(await status(d)).toEqual({ status: "paused", pause_reason: "dormant" });
+  });
+  it("a Stamp 4 pause is not lifted by a sign-in, nor by the resume route", async () => {
+    const p = await login();
+    const id = await create(p);
+    await su.query("update alert set status = 'paused', pause_reason = 'stamp_4' where id = $1", [id]);
+    await su.query("insert into candidate_profile(candidate_user_id, location_kind, current_stamp) values ($1, 'ireland', '4')", [p.id]);
+    await signIn(p);
+    expect((await call(R.resume, "POST", { id }, p)).code).toBe("STAMP_4");
+    expect(await status(id)).toEqual({ status: "paused", pause_reason: "stamp_4" });
   });
 });
 
