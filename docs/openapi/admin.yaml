@@ -1600,6 +1600,62 @@ paths:
           description: "`already_decided`, `claimed_by_other`, `not_claimed`, `not_claimer`: the item's state does not allow it. `job_not_in_review`: the job is no longer in review. `company_not_active`: approve of a job whose company may not go live (not verified, or suspended, banned or closed)."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_claimer } } }
         '500': { $ref: '#/components/responses/ServerError' }
+  /api/employer-jobs/authority:
+    get:
+      operationId: getEmployerJobAuthority
+      summary: List or open the client's written authority kept on an agency job
+      description: >-
+        P8. With `jobId` only: the copies an agency uploaded on its job that names a client (metadata only, oldest first, a copy removed by
+        retention shows `copyDeleted`). With `jobId` and `docId`: 302 to a 60-second download link of that stored copy, and one `data_access`
+        audit row (`job_authority.open`, the copy's id, the job id, the role in force). The list writes no audit row. For the staff who check
+        agency jobs: account_reviewer (the agency_client_check queue) or an administrator. Only `jobId` and `docId`, each at most once.
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer, administrator]
+      x-rate-limit: none
+      parameters:
+        - { name: jobId, in: query, required: true, schema: { type: string }, example: '5501' }
+        - { name: docId, in: query, required: false, schema: { type: string }, example: '77' }
+      responses:
+        '200':
+          description: The copies (without `docId`).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [documents]
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [id, fileName, contentType, sizeBytes, uploadedAt, copyDeleted]
+                      properties:
+                        id: { $ref: '#/components/schemas/Id' }
+                        fileName: { type: [string, 'null'] }
+                        contentType: { type: [string, 'null'], enum: [pdf, jpeg, png, null] }
+                        sizeBytes: { type: [integer, 'null'] }
+                        uploadedAt: { $ref: '#/components/schemas/Timestamp' }
+                        copyDeleted: { type: boolean }
+              example: { documents: [{ id: '77', fileName: client-authority.pdf, contentType: pdf, sizeBytes: 182044, uploadedAt: '2026-11-18T10:00:00.000Z', copyDeleted: false }] }
+        '302':
+          description: "The download link (with `docId`), valid 60 seconds; not cached, no referrer."
+          headers:
+            Location: { schema: { type: string, format: uri }, example: 'https://files.example.com/authority/made-up-key?signature=made-up' }
+        '400':
+          description: "`bad_query`: no `jobId`, or an unknown or repeated key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_reviewer`: neither account_reviewer nor administrator."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_reviewer } } }
+        '404':
+          description: "`not_found`: no agency job naming a client with that id, or no stored copy with that id on it (also an id that is not an id)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503':
+          description: "`files_unavailable`: file storage is not set up. No audit row is written."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: files_unavailable } } }
   /api/fetched-jobs:
     get:
       operationId: listFetchedJobQueue

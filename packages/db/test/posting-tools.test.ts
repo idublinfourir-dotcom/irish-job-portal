@@ -298,6 +298,33 @@ describe("P8: the client's written authority on an agency job", () => {
     expect((await list(a.poster, job)).json.documents.every((d: { copyDeleted: boolean }) => d.copyDeleted)).toBe(true);
     expect((await link(a.poster, job, doc)).code).toBe("DOCUMENT_NOT_FOUND");
   });
+  it("gap 4: an upload racing another for the 20th copy waits on the job lock and is DOCUMENT_LIMIT, with no object left behind", async () => {
+    const a = await company("agency", "Fake Agency Limited");
+    const job = await clientJob(a.poster);
+    const fill = `insert into job_authority_document(job_id, organisation_id, storage_key, file_name, content_type, byte_size) values ($1, $2, $3, 'f.pdf', 'pdf', 10)`;
+    await su.query(`insert into job_authority_document(job_id, organisation_id, storage_key, file_name, content_type, byte_size)
+      select $1, $2, 'authority/fake-race-' || g, 'f.pdf', 'pdf', 10 from generate_series(1, 19) g`, [job, a.org]);
+    const objects = store.objects.size;
+    // the other upload: its 20th copy is inserted and not yet committed, so it holds the lock on the job row
+    const other = await db.pool("app_portal").connect();
+    try {
+      await other.query("begin");
+      await other.query(fill, [job, a.org, "authority/fake-race-20"]);
+      const racing = up(a.poster, job); // its first count sees 19 committed copies and passes; its insert waits on the lock
+      await new Promise((r) => setTimeout(r, 300));
+      expect((await su.query("select count(*)::int n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'")).rows[0].n).toBeGreaterThanOrEqual(1);
+      await other.query("commit");
+      const r = await racing;
+      expect([r.status, r.code]).toEqual([409, "DOCUMENT_LIMIT"]);
+    } finally { other.release(); }
+    expect(await one("select count(*)::int n from job_authority_document where job_id = $1 and storage_key is not null", [job])).toEqual({ n: 20 });
+    expect(store.objects.size).toBe(objects); // the refused upload's object was removed
+    // any writer, not only the route: a 21st is refused by the database
+    await expect(db.pool("app_portal").query(fill, [job, a.org, "authority/fake-direct"])).rejects.toThrow(/authority refused: DOCUMENT_LIMIT/);
+    // a copy deleted by retention frees a place
+    await su.query("update job_authority_document set storage_key = null, file_name = null, copy_deleted_at = now() where storage_key = 'authority/fake-race-1'");
+    expect((await up(a.poster, job)).status).toBe(200);
+  });
   it("performance: statements per call", async () => {
     const a = await company("agency", "Fake Agency Limited");
     const job = await clientJob(a.poster);

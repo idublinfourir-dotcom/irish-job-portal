@@ -221,6 +221,15 @@ describe("rulesFor: an Ineligible entry with an exception", () => {
     expect(await run({ exceptionConfirmed: true })).toMatchObject({ ok: true, passRoute: "stated_pay" });
     expect(await run({ exceptionConfirmed: true, salaryLow: 50000 })).toEqual({ ok: false, code: "PAY_BELOW_MINIMUM" });
   });
+  it("gap 1: `ticked` says whether the pass needed the tick (stored on the job); a tick a code does not need is not reported", async () => {
+    expect(await run({ exceptionConfirmed: true })).toMatchObject({ ok: true, ticked: true });
+    expect(await rulesFor(post({ exceptionConfirmed: true }), "Fake Payments Limited", await rulesV1())).toMatchObject({ ok: true, ticked: false });
+    expect(await rulesFor(post(), "Fake Payments Limited", await rulesV1())).toMatchObject({ ok: true, ticked: false });
+    const today = await rulesV1();
+    const general = { ...today, minimums: { ...today.minimums, general: GENERAL_MINIMUM, generalLower: GENERAL_LOWER_MINIMUM, generalLowerCodes: ["6145"], generalQuotaFullCodes: [] } };
+    const care = { occupationCode: "6145", title: "Home Carer", description: "We are hiring a home carer for our care company in Cork. Full sponsorship offered.", salaryLow: 33000, salaryHigh: null, permitType: "general", statement: sponsor };
+    expect(await rulesFor(post({ ...care, exceptionConfirmed: true }), "Fake Care Limited", general)).toMatchObject({ ok: true, ticked: true }); // a CONDITIONS entry
+  });
   it("a code with no exception wording is refused with or without the tick, and no wording is returned", async () => {
     expect(await run({ occupationCode: "4112", exceptionConfirmed: true })).toEqual({ ok: false, code: "OCCUPATION_INELIGIBLE" });
   });

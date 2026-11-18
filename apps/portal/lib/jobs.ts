@@ -29,7 +29,7 @@ export type Post = {
   contractType: "permanent" | "fixed_term"; contractMonths: number | null; salaryLow: number | null; salaryHigh: number | null;
   payGrade: string | null; healthInsuranceEur: number | null; weeklyHours: number; ownPageUrl: string; clientName: string | null; statement: Statement | null;
   permitType: "critical_skills" | "general";
-  /** The employer ticked the exception wording of an Ineligible entry ("with the exception of ..."). Not stored: it only lets this check pass. */
+  /** The employer ticked the exception wording of an Ineligible entry ("with the exception of ...") or a CONDITIONS entry. Stored on the job (exception_confirmed_at) when the rules pass with it. */
   exceptionConfirmed: boolean;
 };
 const POST_KEYS = ["status", "title", "description", "county", "occupationCode", "contractType", "contractMonths", "salaryLow", "salaryHigh", "payGrade",
@@ -123,7 +123,8 @@ export function checkClose(b: unknown): { jobId: string; hireAnswer: Hire } | nu
 export const CONDITIONS: Readonly<Record<string, string>> = {
   "6145": "Care workers and home carers: the employer is a care provider, not a private household (a job in a private home is not eligible)",
 };
-export type Verdict = { ok: true; passRoute: "stated_pay" | "public_pay"; status: "live" | "in_review"; sector: string; stage: string }
+/** `ticked`: the pass needed the exception tick (the job stores it, so a renewal does not ask again). */
+export type Verdict = { ok: true; passRoute: "stated_pay" | "public_pay"; status: "live" | "in_review"; sector: string; stage: string; ticked: boolean }
   | { ok: false; code: string; stage?: string; exception?: string };
 
 /**
@@ -137,14 +138,17 @@ export async function rulesFor(p: Post, employerName: string, r: RulesSnapshot):
   const general = p.permitType === "general";
   if (general && (m.general === undefined || m.generalLower === undefined || !m.generalLowerCodes || !m.generalQuotaFullCodes)) return { ok: false, code: "GENERAL_RULES_NOT_SET" };
   const onList = listAnswer(r.occupationLists, p.occupationCode);
+  let ticked = false;
   if (onList === "no") {
     // an Ineligible entry that names an exception passes when the employer confirmed they meet it; the reply carries the wording so the page can show it
     const title = r.occupationLists.find((e) => e.code === p.occupationCode && e.list === "ineligible")?.title;
     const exception = title?.includes("with the exception of") ? title : undefined;
     if (!(exception && p.exceptionConfirmed)) return { ok: false, code: "OCCUPATION_INELIGIBLE", ...(exception ? { exception } : {}) };
+    ticked = true;
   }
   const condition = CONDITIONS[p.occupationCode];
   if (condition && !p.exceptionConfirmed) return { ok: false, code: "OCCUPATION_INELIGIBLE", exception: condition };
+  if (condition) ticked = true;
   if (general && m.generalQuotaFullCodes!.includes(p.occupationCode)) return { ok: false, code: "QUOTA_FULL" }; // #85: a full quota blocks new postings
   if (!general) {
     if (onList === null && !m.nonListRoute) return { ok: false, code: "OCCUPATION_NOT_ON_LIST" };
@@ -173,7 +177,7 @@ export async function rulesFor(p: Post, employerName: string, r: RulesSnapshot):
   else if (!general && a.publicPayTier > 0 && onList === "yes") passRoute = "public_pay"; // a public pay-scale employer on a list role (#67)
   else return { ok: false, code: pay === null ? "PAY_REQUIRED" : "PAY_BELOW_MINIMUM" };
   if (general && !p.statement) return { ok: false, code: "STATEMENT_REQUIRED" }; // #31: a General job appears only when the employer confirms sponsorship
-  return { ok: true, passRoute, status: a.bucket === "queue" || a.scamFlag ? "in_review" : "live", sector: a.sector, stage: a.stage };
+  return { ok: true, passRoute, status: a.bucket === "queue" || a.scamFlag ? "in_review" : "live", sector: a.sector, stage: a.stage, ticked };
 }
 export function verdictReply(v: Verdict & { ok: false }): Response {
   return Response.json({ code: v.code, ...(v.stage ? { stage: v.stage } : {}), ...(v.exception ? { exception: v.exception } : {}) }, { status: 422 });
@@ -231,13 +235,15 @@ const TEXT = "select id from consent_text where purpose = 'sponsorship_statement
 // search_vector is built the way packages/fetcher/src/store.ts builds it: title, employer name and advert text.
 const INSERT_JOB =
   "insert into job(organisation_id, source, job_source_id, title, employer_name, county, sector, occupation_code, contract_type, contract_months, permit_type, badge, " +
-  "salary_low, salary_high, health_insurance_eur, pay_grade, weekly_hours, pass_route, status, closes_at, search_vector, own_page_url, permit_employer_kind, permit_employer_name, posted_by_membership_id) " +
-  "values ($1, $2, (select id from job_source where kind = 'portal' and board = 'employer'), $3::text, $4::text, $5, $6, $7, $8, $9, $23, $10, $11, $12, $13, $14, $15, $16, $17, " +
-  "now() + interval '30 days', to_tsvector('english', $3::text || ' ' || $4::text || ' ' || $18::text), $19, $20, $21, $22) returning id, status, badge, pass_route";
+  "salary_low, salary_high, health_insurance_eur, pay_grade, weekly_hours, pass_route, status, closes_at, search_vector, own_page_url, permit_employer_kind, permit_employer_name, posted_by_membership_id, " +
+  "exception_confirmed_at) values ($1, $2, (select id from job_source where kind = 'portal' and board = 'employer'), $3::text, $4::text, $5, $6, $7, $8, $9, $23, $10, $11, $12, $13, $14, $15, $16, $17, " +
+  "now() + interval '30 days', to_tsvector('english', $3::text || ' ' || $4::text || ' ' || $18::text), $19, $20, $21, $22, case when $24::boolean then now() end) returning id, status, badge, pass_route";
 const UPDATE_JOB =
   "update job set title = $3::text, county = $4, sector = $5, occupation_code = $6, contract_type = $7, contract_months = $8, badge = $9, salary_low = $10, salary_high = $11, " +
   "health_insurance_eur = $12, pay_grade = $13, weekly_hours = $14, pass_route = $15, status = $16, own_page_url = $17, permit_employer_kind = $18, permit_employer_name = $19, " +
-  "posted_by_membership_id = $20, permit_type = $22, search_vector = to_tsvector('english', $3::text || ' ' || employer_name || ' ' || $21::text) " +
+  "posted_by_membership_id = $20, permit_type = $22, search_vector = to_tsvector('english', $3::text || ' ' || employer_name || ' ' || $21::text), " +
+  // $23: the rules ran and needed the tick (kept, or set now), ran without it (cleared), or did not run (null: kept as it is)
+  "exception_confirmed_at = case when $23::boolean is null then exception_confirmed_at when $23 then coalesce(exception_confirmed_at, now()) end " +
   "where id = $1 and organisation_id = $2 returning id, status, badge, pass_route";
 const UPSERT_TEXT = "insert into job_text(job_id, advert_text) values ($1, $2) on conflict (job_id) do update set advert_text = excluded.advert_text";
 const SUPERSEDE = "update sponsorship_statement set superseded_at = now() where job_id = $1 and superseded_at is null";
@@ -267,7 +273,7 @@ export async function jobPost(request: Request): Promise<Response> {
   return inTx(async (c) => {
     const org = (await c.query(ORG, [who.organisationId])).rows[0] as { display_name: string; kind: string };
     if (p.clientName && org.kind !== "agency") return no(400, "CLIENT_ONLY_FOR_AGENCIES");
-    let v: Verdict = { ok: true, passRoute: "stated_pay", status: "live", sector: "other", stage: "" };
+    let v: Verdict = { ok: true, passRoute: "stated_pay", status: "live", sector: "other", stage: "", ticked: false };
     if (p.status === "live") {
       v = await rulesFor(p, p.clientName ?? org.display_name, await getRules(c));
       if (!v.ok) return verdictReply(v);
@@ -275,7 +281,7 @@ export async function jobPost(request: Request): Promise<Response> {
     const r = (await c.query(INSERT_JOB, [who.organisationId, org.kind === "agency" ? "agency" : "employer", p.title, org.display_name, p.county, v.sector, p.occupationCode,
       p.contractType, p.contractMonths, p.statement ? "sponsor_confirmed" : null, p.salaryLow, p.salaryHigh, p.healthInsuranceEur, p.payGrade, p.weeklyHours,
       p.status === "live" ? v.passRoute : null, p.status === "live" ? v.status : "draft", p.description, p.ownPageUrl, p.clientName ? "client" : "self", p.clientName,
-      who.membershipId, p.permitType])).rows[0];
+      who.membershipId, p.permitType, v.ticked])).rows[0];
     await c.query(UPSERT_TEXT, [r.id, p.description]);
     if (p.statement) { const refused = await sign(c, String(r.id), who, p); if (refused) return refused; }
     return jobReply(r);
@@ -303,7 +309,7 @@ export async function jobEdit(request: Request): Promise<Response> {
     const pay = j.salary_low !== p.salaryLow || j.salary_high !== p.salaryHigh || j.pay_grade !== p.payGrade || j.health_insurance_eur !== p.healthInsuranceEur;
     const key = pay || j.title !== p.title || j.occupation_code !== p.occupationCode || j.permit_type !== p.permitType || (j.weekly_hours ?? 39) !== p.weeklyHours;
     const publish = j.status === "draft" && p.status === "live";
-    let status: string = j.status, passRoute = j.pass_route, sector = j.sector;
+    let status: string = j.status, passRoute = j.pass_route, sector = j.sector, ticked: boolean | null = null;
     if (publish || (j.status !== "draft" && key)) {
       const v = await rulesFor(p, p.clientName ?? org.display_name, await getRules(c));
       if (!v.ok) return verdictReply(v);
@@ -311,13 +317,13 @@ export async function jobEdit(request: Request): Promise<Response> {
       else if (v.status === "in_review" && j.status === "live") return no(409, "NEEDS_REVIEW"); // the guard keeps a live job live or closes it
       // #93: a job under review (the minimums rose) goes live again when its new pay passes; the guard allows that only on a pay change.
       else if (v.status === "live" && j.status === "under_review" && pay) status = "live";
-      passRoute = v.passRoute; sector = v.sector;
+      passRoute = v.passRoute; sector = v.sector; ticked = v.ticked;
     }
     if (j.status !== "draft" && key && j.badge === "sponsor_confirmed" && !p.statement) return no(422, "STATEMENT_REQUIRED"); // the same rule refusal as rulesFor gives a General post
     const badge = p.statement ? "sponsor_confirmed" : j.status !== "draft" && key ? null : j.badge;
     const r = (await c.query(UPDATE_JOB, [p.jobId, who.organisationId, p.title, p.county, sector, p.occupationCode, p.contractType, p.contractMonths, badge, p.salaryLow,
       p.salaryHigh, p.healthInsuranceEur, p.payGrade, p.weeklyHours, passRoute, status, p.ownPageUrl, p.clientName ? "client" : "self", p.clientName, who.membershipId,
-      p.description, p.permitType])).rows[0];
+      p.description, p.permitType, ticked])).rows[0];
     await c.query(UPSERT_TEXT, [p.jobId, p.description]);
     if (p.statement) { const refused = await sign(c, p.jobId, who, p); if (refused) return refused; }
     return jobReply(r);
@@ -327,19 +333,22 @@ export async function jobEdit(request: Request): Promise<Response> {
 // The live job as the rules read it, locked: its stored fields, its advert text, the company's name and whether a statement is signed.
 const RENEW_LOCK =
   "select j.title, j.county, j.occupation_code, j.contract_type, j.contract_months, j.salary_low, j.salary_high, j.pay_grade, j.health_insurance_eur, j.weekly_hours, " +
-  "j.own_page_url, j.permit_type, j.permit_employer_kind, j.permit_employer_name, t.advert_text, o.display_name, " +
+  "j.own_page_url, j.permit_type, j.permit_employer_kind, j.permit_employer_name, j.exception_confirmed_at is not null as ticked, t.advert_text, o.display_name, " +
   "exists (select 1 from sponsorship_statement s where s.job_id = j.id and s.superseded_at is null) as signed " +
   "from job j join organisation o on o.id = j.organisation_id left join job_text t on t.job_id = j.id " +
   "where j.id = $1 and j.organisation_id = $2 and j.source in ('employer','agency') and j.status = 'live' for update of j";
-// $5 'live' renews for 30 days from now; 'under_review' keeps the end date and moves the job to Under review. The hire answer is kept either way.
+// $5 'live' renews for 30 days from now; 'under_review' keeps the end date and moves the job to Under review with the rule code $6 as its reason.
+// $7 the tick, as on an edit: the rules passed and needed it (kept or set now), passed without it (cleared), or failed (null: kept). The hire answer is kept either way.
 const RENEW =
   "update job set status = $5::text, closes_at = case when $5::text = 'live' then now() + interval '30 days' else closes_at end, posted_by_membership_id = $3, " +
+  "under_review_reason = $6, exception_confirmed_at = case when $7::boolean is null then exception_confirmed_at when $7 then coalesce(exception_confirmed_at, now()) end, " +
   "hire_answer = coalesce($4, hire_answer), hire_answered_at = case when $4::text is null then hire_answered_at else now() end, " +
   "hire_answered_by_membership_id = case when $4::text is null then hire_answered_by_membership_id else $3 end where id = $1 and organisation_id = $2 returning id, status, closes_at";
 /**
  * POST /api/portal/jobs/renew: a live job gets a new 30 days from now (#48), with the optional "Did you hire someone through us?" answer (#49).
  * The rules in force run first (#254): a job that no longer passes, or would now need a staff check, goes to Under review instead (its end date stays),
- * and the reply says why. An Ineligible entry with an exception is asked again (422 with the wording), not moved, until the tick comes back.
+ * and the reply says why. The exception tick stored at post or edit counts; a job without it whose code now has a condition (the Ineligible list
+ * or CONDITIONS changed since it was posted) is asked for it (422 with the wording, nothing moved) and stores it once it passes with it.
  */
 export async function jobRenew(request: Request): Promise<Response> {
   const w = await writer(request, checkRenew);
@@ -352,13 +361,14 @@ export async function jobRenew(request: Request): Promise<Response> {
       contractMonths: j.contract_months, salaryLow: j.salary_low, salaryHigh: j.salary_high, payGrade: j.pay_grade, healthInsuranceEur: j.health_insurance_eur,
       weeklyHours: j.weekly_hours ?? 39, ownPageUrl: j.own_page_url, clientName: j.permit_employer_kind === "client" ? j.permit_employer_name : null,
       statement: j.signed ? { signerName: "", signerTitle: "", writtenAuthority: false } : null, // rulesFor asks only whether one is signed
-      permitType: j.permit_type, exceptionConfirmed: body.exceptionConfirmed };
+      permitType: j.permit_type, exceptionConfirmed: body.exceptionConfirmed || j.ticked };
     const v = await rulesFor(p, p.clientName ?? j.display_name, await getRules(c));
-    if (!v.ok && v.exception && !body.exceptionConfirmed) return verdictReply(v);
+    if (!v.ok && v.exception && !p.exceptionConfirmed) return verdictReply(v);
     const status = v.ok && v.status === "live" ? "live" : "under_review";
-    const r = (await c.query(RENEW, [body.jobId, who.organisationId, who.membershipId, body.hireAnswer, status])).rows[0];
+    const reason = status === "live" ? null : v.ok ? "NEEDS_REVIEW" : v.code;
+    const r = (await c.query(RENEW, [body.jobId, who.organisationId, who.membershipId, body.hireAnswer, status, reason, v.ok ? v.ticked : null])).rows[0];
     if (status === "live") return ok({ jobId: r.id, status, closesAt: r.closes_at });
-    return ok({ jobId: r.id, status, closesAt: r.closes_at, code: v.ok ? "NEEDS_REVIEW" : v.code, ...(!v.ok && v.stage ? { stage: v.stage } : {}) });
+    return ok({ jobId: r.id, status, closesAt: r.closes_at, code: reason, ...(!v.ok && v.stage ? { stage: v.stage } : {}) });
   });
 }
 

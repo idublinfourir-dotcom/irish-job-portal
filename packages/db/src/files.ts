@@ -10,7 +10,7 @@ import { checkUpload, cleanName, EXT, MAX_BODY, MIME, readUpload, type Kind } fr
 import { fileStore, FilesUnavailable } from "./file-store";
 import { validId } from "./search";
 
-export { memoryStore, setFileStore, type FileStore, type MemoryStore } from "./file-store";
+export { FilesUnavailable, memoryStore, setFileStore, type FileStore, type MemoryStore } from "./file-store";
 
 export const UPLOAD_RATE = { windowMs: 60 * 60_000, max: 10 }; // uploads per login an hour, on top of the candidate write limit
 export const MAX_CASE_DOCUMENTS = 20; // stored copies per case, uploaded by this side
@@ -21,6 +21,8 @@ export type FilesEnv = CandidateEnv & { side: Side };
 const no = (status: number, code: string) => Response.json({ code }, { status });
 const download = (url: string) => new Response(null, { status: 302, headers: { location: url, "cache-control": "no-store", "referrer-policy": "no-referrer" } });
 const mime = (t: string) => MIME[t as Kind] ?? "application/octet-stream";
+/** A 60-second download link to a stored copy (the staff read of written authority, job-queues.ts). Throws FilesUnavailable when storage is off. */
+export const fileLink = (key: string, fileName: string, kind: string) => fileStore().link(key, { fileName, contentType: mime(kind), seconds: LINK_SECONDS });
 const REFUSED_STATUS: Record<string, number> = { EMPTY_FILE: 400, FILE_TOO_LARGE: 413, WRONG_FILE_TYPE: 415 };
 
 type Mode = "read" | "write" | "upload";
@@ -212,7 +214,7 @@ export const authorityDocsGet = (r: Request, env: FilesEnv, jobId: string) => fi
 
 export const authorityDocsPost = (r: Request, env: FilesEnv, jobId: string) => fileRoute(r, env, "upload", async (db, userId) => {
   const j = await authorityJob(db, jobId, userId);
-  // ponytail: two uploads at the same moment can both pass the count and make 21, as on case documents
+  // a first count before the body is read; the insert counts again under a lock on the job (private.job_authority_limit, 0045), so two uploads at once cannot make 21
   if (j.stored >= MAX_CASE_DOCUMENTS) throw new Refuse(409, "DOCUMENT_LIMIT");
   const f = await upload(r, ["pdf", "jpeg", "png"], "document");
   const key = `authority/${randomUUID()}`;
@@ -222,6 +224,7 @@ export const authorityDocsPost = (r: Request, env: FilesEnv, jobId: string) => f
     return { document: (await db.query(AUTHORITY_SQL.insert, [jobId, j.org, j.membership, key, f.name, f.kind, f.bytes.length])).rows[0] };
   } catch (e) {
     await store.remove(key).catch(() => {});
+    if ((e as { message?: string })?.message === "authority refused: DOCUMENT_LIMIT") throw new Refuse(409, "DOCUMENT_LIMIT");
     throw e;
   }
 });

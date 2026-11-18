@@ -219,6 +219,8 @@ export const job = pgTable("job", {
 	sponsorSort: integer("sponsor_sort").default(sql`'-1'`).notNull(),
 	weeklyHours: smallint("weekly_hours"),
 	underReviewSince: timestamp("under_review_since", { withTimezone: true, mode: 'string' }),
+	exceptionConfirmedAt: timestamp("exception_confirmed_at", { withTimezone: true, mode: 'string' }),
+	underReviewReason: text("under_review_reason"),
 }, (table) => [
 	index("job_closed_idx").using("btree", table.closedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'closed'::text)`),
 	index("job_company_page_idx").using("btree", sql`organisation_id`, sql`((NOT quota_full))`, sql`posted_at`, sql`id`).where(sql`(status = 'live'::text)`),
@@ -287,6 +289,8 @@ export const job = pgTable("job", {
 	check("job_status_check", sql`status = ANY (ARRAY['draft'::text, 'in_review'::text, 'live'::text, 'under_review'::text, 'hidden'::text, 'closed'::text])`),
 	check("job_close_reason_check", sql`close_reason = ANY (ARRAY['expired'::text, 'closed'::text, 'removed'::text, 'under_review_expired'::text, 'abandoned'::text, 'recheck_failed'::text, 'source_stale'::text])`),
 	check("job_hidden_reason_check", sql`hidden_reason = ANY (ARRAY['report'::text, 'organisation_suspended'::text, 'admin'::text])`),
+	check("job_under_review_reason_check", sql`under_review_reason = ANY (ARRAY['pay_check'::text, 'GENERAL_RULES_NOT_SET'::text, 'OCCUPATION_INELIGIBLE'::text, 'QUOTA_FULL'::text, 'OCCUPATION_NOT_ON_LIST'::text, 'CONTRACT_TOO_SHORT'::text, 'RULES_FAILED'::text, 'PAY_REQUIRED'::text, 'PAY_BELOW_MINIMUM'::text, 'STATEMENT_REQUIRED'::text, 'NEEDS_REVIEW'::text])`),
+	check("job_under_review_reason_check2", sql`(status = 'under_review'::text) = (under_review_reason IS NOT NULL)`),
 	check("job_permit_history_check", sql`permit_history = ANY (ARRAY['has_history'::text, 'first_time'::text, 'not_linked'::text])`),
 	check("job_application_route_check", sql`application_route = ANY (ARRAY['own_page'::text, 'on_site'::text])`),
 	check("job_permit_employer_kind_check", sql`permit_employer_kind = ANY (ARRAY['self'::text, 'client'::text])`),

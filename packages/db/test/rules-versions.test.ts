@@ -21,7 +21,10 @@ vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 // notices, audit, commit (10); loadRules is one statement. Times are medians of 9 warm calls, limits about 4 times the measured one with a floor
 // for a busy laptop (list measured 2.9 ms). Pages: the loader, the pending list, the run's job read and the notices on a database with 300 jobs,
 // measured 7 + 7 + 321 + 41 = 376 (the run's read scans job: it runs once per new minimum, ponytail: an index on live portal jobs if that grows).
-const BUDGET = { list: 6, propose: 8, confirm: 10, load: 1, listMs: 15, proposeMs: 30, confirmMs: 40, loadMs: 15, pages: 600, quotaPages: 1500 };
+const BUDGET = { list: 6, propose: 8, confirm: 10, load: 1, listMs: 15, proposeMs: 30, confirmMs: 40, loadMs: 15, pages: 600, quotaPages: 1500, quotaTriggerPages: 10, quotaWriteMs: 130 }; // gap 3 (18 Nov 2026): trigger read 2 pages, a 300-row General write 32 ms
+// The job_quota_full trigger's read, as written in migration 0045 (the trigger runs it once per General job written).
+const QUOTA_LOOKUP = "select coalesce((select v.data->'generalQuotaFullCodes' from rules_version v where v.kind = 'minimums' and v.effective_from <= current_date " +
+  "order by v.effective_from desc, v.id desc limit 1) ? $1::text, false) as full";
 
 const secret = "trial-only-secret-trial-only-secret-32";
 const BASE = "http://localhost:3002";
@@ -345,7 +348,8 @@ describe("the daily run and the notices (#234 D9)", () => {
       general: await job(b, { code: "6145", pay: 33000 }), // a General post is not judged against the Critical Skills minimum
       passing: await job(allPass, { pay: 60000 }), // a company whose live jobs all pass: told about the new minimum, not about any job under review
     };
-    await su.query("update job set permit_type = 'general', quota_full = true where id = $1", [jobs.general]); // S8: a stale mark the new version (no General list) clears
+    await su.query("update job set permit_type = 'general' where id = $1", [jobs.general]);
+    await su.query("update job set quota_full = true where id = $1", [jobs.general]); // S8: a stale mark (written alone, so the 0045 trigger leaves it) the new version (no General list) clears
     await su.query("update job set closed_at = now(), close_reason = 'closed' where id = $1", [jobs.closed]);
     const fetched = String((await one(
       "insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, status, closes_at, salary_low, pass_route, badge, search_vector, own_page_url) values ($1, 'fetched', $2, 'Fake', 'Fake', 'it', 'critical_skills', 'live', $3, 1000, 'stated_pay', 'critical_skills_eligible', 'x', 'https://example.test/f') returning id",
@@ -375,6 +379,8 @@ describe("the daily run and the notices (#234 D9)", () => {
       below: "under_review", atNew: "live", range: "live", hours: "under_review", publicPay: "live", draft: "draft", nonList: "live", closed: "closed", general: "live", passing: "live",
     });
     expect(await status(fetched)).toBe("live");
+    // gap 2: the move names its reason, which the employer's job list shows as 'pay_check'
+    expect((await su.query("select under_review_reason r from job where id = any($1::bigint[])", [[jobs.below, jobs.hours]])).rows).toEqual([{ r: "pay_check" }, { r: "pay_check" }]);
     expect(await one("select status, ended_at is not null ended from pay_floor where id = $1", [floor])).toEqual({ status: "expired", ended: true });
     // N5: the floor's company owner hears it ended, once (ids only); not the recruiter, not another company
     const fp = { organisationId: a.org, floorId: Number(floor), versionId: Number(c.versionId) };
@@ -510,6 +516,13 @@ describe("performance", () => {
       assertPageBudget("rules: loader, pending list, run's job read, notices", costs, BUDGET.pages);
       // S8: the quota step reads every open job once (it runs once per new minimums version) and writes only the rows that change
       assertPageBudget("rules: quota step", await measurePages(client, [{ text: QUOTA_FULL, values: [["2136"]] }]), BUDGET.quotaPages);
+      // gap 3: the job_quota_full trigger's read (0045), here with over 1,000 minimums versions, and its cost on a write of 300 General jobs
+      const trig = await measurePages(client, [{ text: QUOTA_LOOKUP, values: ["2136"] }]);
+      assertPageBudget("rules: quota trigger read", trig, BUDGET.quotaTriggerPages);
+      expect(trig[0]!.scans).toContain("rules_version_in_force_idx");
+      const writeMs = await median(async (i) => { await client.query("update job set permit_type = $2 where organisation_id = $1", [c.org, i % 2 ? "critical_skills" : "general"]); });
+      console.log(`quota trigger: ${trig[0]!.pages} pages; 300-row write median ${writeMs.toFixed(1)} ms`);
+      expect(writeMs).toBeLessThan(BUDGET.quotaWriteMs);
     } finally { await client.query("rollback"); client.release(); }
   });
 });

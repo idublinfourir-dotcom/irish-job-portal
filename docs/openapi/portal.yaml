@@ -137,7 +137,7 @@ components:
                 signerTitle: { type: string, minLength: 2, maxLength: 120 }
                 writtenAuthority: { type: boolean, description: Required true when `clientName` is set (the client's written authority is on file). }
         permitType: { type: string, enum: [critical_skills, general], default: critical_skills }
-        exceptionConfirmed: { type: boolean, description: "The employer meets the exception named on an Ineligible list entry. Not stored." }
+        exceptionConfirmed: { type: boolean, description: "The employer meets the exception named on an Ineligible list entry (or a listed condition, as for care work). Stored on the job when a live post or an edit passes with it, so a renewal does not ask again; cleared when the rules pass without needing it." }
       example:
         status: live
         title: Senior Software Engineer
@@ -788,7 +788,8 @@ paths:
       summary: List my company's own jobs
       description: |
         The company's employer and agency jobs (at most 200, newest first), each with its state and why it is held: `reason` is
-        `restricted_company` or `staff_check` for `in_review`, `pay_check` for `under_review`, the hidden reason for `hidden`.
+        `restricted_company` or `staff_check` for `in_review`; for `under_review`, `pay_check` (the minimums rose) or `renewal_check` (a renewal
+        failed the rules in force, with the rule code in `reviewCode`); the hidden reason for `hidden`. `exceptionConfirmed`: the exception tick is stored.
         `clientCheck` is true while an agency client check is open. A login with no company gets 404 `NO_COMPANY`, as the company GET. Any active member, viewers too.
       security: [{ portalSession: [] }]
       x-roles: [any member]
@@ -822,9 +823,11 @@ paths:
                         closedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
                         closeReason: { type: [string, 'null'] }
                         hireAnswer: { type: [string, 'null'], enum: [yes, no, null] }
-                        reason: { type: [string, 'null'] }
+                        reason: { type: [string, 'null'], enum: [restricted_company, staff_check, pay_check, renewal_check, report, organisation_suspended, admin, null] }
+                        reviewCode: { type: [string, 'null'], enum: [GENERAL_RULES_NOT_SET, OCCUPATION_INELIGIBLE, QUOTA_FULL, OCCUPATION_NOT_ON_LIST, CONTRACT_TOO_SHORT, RULES_FAILED, PAY_REQUIRED, PAY_BELOW_MINIMUM, STATEMENT_REQUIRED, NEEDS_REVIEW, null] }
+                        exceptionConfirmed: { type: boolean }
                         clientCheck: { type: boolean }
-              example: { jobs: [{ id: '5501', title: Senior Software Engineer, status: live, badge: sponsor_confirmed, passRoute: stated_pay, occupationCode: '2136', county: Dublin, salaryLow: 70000, salaryHigh: 85000, payGrade: null, weeklyHours: 39, postedAt: '2026-11-10T08:00:00.000Z', closesAt: '2026-12-10T08:00:00.000Z', closedAt: null, closeReason: null, hireAnswer: null, reason: null, clientCheck: false }] }
+              example: { jobs: [{ id: '5501', title: Senior Software Engineer, status: live, badge: sponsor_confirmed, passRoute: stated_pay, occupationCode: '2136', county: Dublin, salaryLow: 70000, salaryHigh: 85000, payGrade: null, weeklyHours: 39, postedAt: '2026-11-10T08:00:00.000Z', closesAt: '2026-12-10T08:00:00.000Z', closedAt: null, closeReason: null, hireAnswer: null, reason: null, reviewCode: null, exceptionConfirmed: false, clientCheck: false }, { id: '5502', title: Senior Software Engineer, status: under_review, badge: sponsor_confirmed, passRoute: stated_pay, occupationCode: '2136', county: Dublin, salaryLow: 50000, salaryHigh: null, payGrade: null, weeklyHours: 39, postedAt: '2026-10-10T08:00:00.000Z', closesAt: '2026-11-20T08:00:00.000Z', closedAt: null, closeReason: null, hireAnswer: null, reason: renewal_check, reviewCode: PAY_BELOW_MINIMUM, exceptionConfirmed: false, clientCheck: false }] }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`REFUSED`: blocked or deleted login. `NOT_A_MEMBER`: the membership ended between the session read and the list.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: REFUSED } } } }
         '404': { description: "`NO_COMPANY`: the login has no company.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NO_COMPANY } } } }
@@ -902,7 +905,8 @@ paths:
         A live job of the company gets a new end 30 days from now, with the optional answer to "Did you hire someone through us?". Origin checked first.
         The rules in force run first (#254): a job that no longer passes them, or whose advert would now need a staff check, is not renewed but goes to
         Under review (its end date stays), and the 200 reply says so with `status` and `code`. A pay edit that passes brings it back live (#93).
-        A role on the Ineligible list with an exception is asked again: 422 with the wording, nothing changed, until `exceptionConfirmed` is true.
+        The exception tick stored at the post or last edit counts. Only a job without it whose role now has an exception or condition (the list
+        changed after it was posted) is asked: 422 with the wording, nothing changed, until `exceptionConfirmed` is true, which is then stored.
       security: [{ portalSession: [] }]
       x-roles: [account_owner, recruiter, poster]
       x-rate-limit: posts, edits, renewals and closes together, 30 per login per 10 minutes
@@ -918,7 +922,7 @@ paths:
               properties:
                 jobId: { $ref: '#/components/schemas/Id' }
                 hireAnswer: { type: string, enum: [yes, no] }
-                exceptionConfirmed: { type: boolean, description: The employer meets the exception named by an Ineligible entry; asked again on each renewal. }
+                exceptionConfirmed: { type: boolean, description: "The employer meets the exception named by an Ineligible entry. Needed only when the 422 asks for it (no tick is stored on the job); stored once the renewal passes with it." }
             example: { jobId: '5501', hireAnswer: no }
       responses:
         '200':
@@ -943,7 +947,7 @@ paths:
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or a database refusal. `NOT_A_MEMBER`: no company. `NOT_A_POSTER`: a viewer. `COMPANY_NOT_ACTIVE`: the company cannot post.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_A_POSTER } } } }
         '404': { description: "`JOB_NOT_FOUND`: no live employer or agency job of this company with that id.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: JOB_NOT_FOUND } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
-        '422': { description: "`OCCUPATION_INELIGIBLE` with the `exception` wording: the role is an Ineligible entry with an exception and `exceptionConfirmed` was not true. Nothing changed.", content: { application/json: { schema: { $ref: '#/components/schemas/RulesVerdict' } } } }
+        '422': { description: "`OCCUPATION_INELIGIBLE` with the `exception` wording: the role has an exception or condition, no tick is stored on the job and `exceptionConfirmed` was not true. Nothing changed.", content: { application/json: { schema: { $ref: '#/components/schemas/RulesVerdict' } } } }
         '429': { $ref: '#/components/responses/TooMany' }
   /api/portal/jobs/close:
     post:
@@ -1091,7 +1095,7 @@ paths:
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: the Origin header is not the portal's. `REFUSED`: the login is blocked or deleted.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_ORIGIN } } } }
         '404': { description: "`JOB_NOT_FOUND`: no agency job naming a client of this login's company, or the login may not post.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: JOB_NOT_FOUND } } } }
-        '409': { description: "`DOCUMENT_LIMIT`: the job already holds 20 stored copies.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: DOCUMENT_LIMIT } } } }
+        '409': { description: "`DOCUMENT_LIMIT`: the job already holds 20 stored copies (checked again under a lock on the job, so two uploads at once cannot pass it).", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: DOCUMENT_LIMIT } } } }
         '413': { description: "`FILE_TOO_LARGE`: over the cap by header or while reading.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILE_TOO_LARGE } } } }
         '415': { description: "`WRONG_FILE_TYPE`: the bytes are not a PDF, JPEG or PNG.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: WRONG_FILE_TYPE } } } }
         '429': { $ref: '#/components/responses/TooMany' }
