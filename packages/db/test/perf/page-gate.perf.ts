@@ -481,7 +481,7 @@ it("the trust and safety report list stays under the limit", async () => {
   }
 });
 
-// The daily fetch guard (src/fetch-guard-cli.ts): one statement as app_fetcher on a year of runs (22,700 rows; about 30 a day in real life, so
+// The daily fetch guard (src/fetch-guard-cli.ts), skipping Workday as daily-fetch.yml does (W1b): one statement as app_fetcher on a year of runs (22,700 rows; about 30 a day in real life, so
 // all but 30 of the fill's rows are moved to earlier days). Budget: 30 pages and
 // MS_LIMIT ms, both when a good run is found at once and in the worst case (every run today failed, so the whole day's range is read), and the
 // plan must use fetch_run_started_idx.
@@ -493,10 +493,10 @@ it("the fetch guard is one statement, under its page and time budget, and uses t
   await client.connect();
   try {
     const day = utcDayStart(new Date());
-    const hit = (await measurePages(client, [{ text: GOOD_RUN_TODAY, values: [day] }]))[0]!;
+    const hit = (await measurePages(client, [{ text: GOOD_RUN_TODAY, values: [day, ["workday"]] }]))[0]!;
     await su.query("update fetch_run set error = 'fake failure' where started_at >= $1", [day]);
     await owner.query("vacuum (analyze) fetch_run");
-    const worst = (await measurePages(client, [{ text: GOOD_RUN_TODAY, values: [day] }]))[0]!;
+    const worst = (await measurePages(client, [{ text: GOOD_RUN_TODAY, values: [day, ["workday"]] }]))[0]!;
     console.log(`\n=== fetch guard (app_fetcher): good run found ${hit.pages} pages / ${hit.ms} ms [${hit.scans}]; worst, none good ${worst.pages} pages / ${worst.ms} ms [${worst.scans}]`);
     for (const c of [hit, worst]) {
       expect(c.pages).toBeLessThanOrEqual(30);

@@ -80,3 +80,12 @@ it("sends the queued emails every day after the alerts are queued and before ret
   expect(yml.indexOf("name: Send queued emails")).toBeGreaterThan(yml.indexOf("name: Queue job alerts"));
   expect(yml.indexOf("name: Apply the retention rules")).toBeGreaterThan(yml.indexOf("name: Send queued emails"));
 });
+// W1b: Workday is fetched on the laptop (workday-fetch.yml), so this run and its guard leave it out, and its model budget shrinks to make room.
+it("no longer fetches Workday: the Fetch step and the guard skip it, and the model budget is 30 of the key's 50 a day", () => {
+  expect(step("Fetch")).toMatch(/\n {10}FETCHER_SKIP_KINDS: workday\n/);
+  expect(step("Already fetched today?")).toMatch(/\n {10}FETCHER_SKIP_KINDS: workday\n/);
+  expect(yml.match(/FETCHER_SKIP_KINDS/g)).toHaveLength(2); // nothing else changes
+  expect(yml).not.toMatch(/FETCHER_ONLY_KINDS/);
+  expect(step("Fetch")).toMatch(/FETCHER_MAX_MODEL_REQUESTS: "30"\n/);
+  expect(yml).not.toMatch(/self-hosted/);
+});

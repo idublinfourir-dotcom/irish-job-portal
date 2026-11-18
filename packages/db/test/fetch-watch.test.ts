@@ -8,16 +8,18 @@ vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 let db: Awaited<ReturnType<typeof createTestDb>>;
 let src: number;
 let src2: number;
+let wd: number;
 const NOW = new Date("2026-11-13T18:41:00Z");
 // Rows go in the order given (ids rise with it); `two` puts the row on the second board.
-const go = async (rows: { at: string; done?: boolean; error?: string; two?: boolean }[], statuses: string[] = [], role = "app_fetcher") => {
+// `wd` puts the row on a Workday board; `skip` is FETCHER_SKIP_KINDS.
+const go = async (rows: { at: string; done?: boolean; error?: string; two?: boolean; wd?: boolean }[], statuses: string[] = [], role = "app_fetcher", skip?: string) => {
   await db.query("postgres", "delete from fetch_run");
   for (const r of rows)
-    await db.query("postgres", "insert into fetch_run(job_source_id, started_at, finished_at, error) values ($1, $2, $3, $4)", [r.two ? src2 : src, r.at, r.done === false ? null : r.at, r.error ?? null]);
+    await db.query("postgres", "insert into fetch_run(job_source_id, started_at, finished_at, error) values ($1, $2, $3, $4)", [r.wd ? wd : r.two ? src2 : src, r.at, r.done === false ? null : r.at, r.error ?? null]);
   const calls: string[][] = [];
   const gh = async (a: string[]) => (calls.push(a), a[0] === "run" ? JSON.stringify(statuses.map((status) => ({ status }))) : "");
   const lines: string[] = [];
-  const code = await main({ FETCHER_DATABASE_URL: urlFor(db.name, role), DATABASE_SSL: "disable" }, (l) => lines.push(l), NOW, gh);
+  const code = await main({ FETCHER_DATABASE_URL: urlFor(db.name, role), DATABASE_SSL: "disable", ...(skip === undefined ? {} : { FETCHER_SKIP_KINDS: skip }) }, (l) => lines.push(l), NOW, gh);
   return { code, line: lines.join(), calls };
 };
 
@@ -25,6 +27,7 @@ beforeAll(async () => {
   db = await createTestDb();
   src = (await db.query("postgres", "insert into job_source(kind, board) values ('board','fakeboard') returning id")).rows[0].id;
   src2 = (await db.query("postgres", "insert into job_source(kind, board) values ('board','fakeboard2') returning id")).rows[0].id;
+  wd = (await db.query("postgres", "insert into job_source(kind, board) values ('workday','fakewd') returning id")).rows[0].id;
 });
 afterAll(() => db.drop());
 
@@ -70,6 +73,25 @@ describe("fetch watch against the real fetch_run table", () => {
     const r = await go([{ at: "2026-11-13T12:09:00Z" }, { at: "2026-11-13T12:09:05Z", error: "x", two: true }], ["queued"]);
     expect(r).toMatchObject({ code: 0, line: "a fetch worked today (UTC) but 1 board failed; one is already running" });
     expect(r.calls).toHaveLength(1);
+  });
+  // W1b: Workday is fetched on the laptop. Its failures are the laptop's business: no GitHub retry (it would be challenged too).
+  it("with FETCHER_SKIP_KINDS=workday, failed Workday rows only beside a good GitHub run: no retry, green, gh never called", async () => {
+    const r = await go([{ at: "2026-11-13T05:20:00Z" }, { at: "2026-11-13T08:17:00Z", error: "HTTP 429 after 3 tries (cf-mitigated challenge)", wd: true }], [], "app_fetcher", "workday");
+    expect(r).toMatchObject({ code: 0, line: "a fetch worked today (UTC)", calls: [] });
+  });
+  it("with the skip, failed Workday rows only and no other run: red for the GitHub fetch, never a retry for Workday", async () => {
+    const r = await go([{ at: "2026-11-13T08:17:00Z", error: "HTTP 429", wd: true }], [], "app_fetcher", "workday");
+    expect(r).toMatchObject({ code: 1, line: "no fetch worked today by 18:41 UTC; started one" });
+    expect(r.calls.at(-1)).toContain("guarded=true");
+  });
+  it("with the skip, a good Workday run alone is not today's fetch: red, starts the guarded run", async () => {
+    const r = await go([{ at: "2026-11-13T08:17:00Z", wd: true }], [], "app_fetcher", "workday");
+    expect(r.code).toBe(1);
+    expect(r.calls.at(-1)).toEqual(["workflow", "run", "daily-fetch.yml", "-f", "guarded=true"]);
+  });
+  it("without the skip the failed Workday board counts, as before", async () => {
+    const r = await go([{ at: "2026-11-13T05:20:00Z" }, { at: "2026-11-13T08:17:00Z", error: "HTTP 429", wd: true }]);
+    expect(r.line).toBe("a fetch worked today (UTC) but 1 board failed; started a retry");
   });
   it("performance: a good day is two statements and no gh call, within a loose time limit", async () => {
     const t0 = Date.now();

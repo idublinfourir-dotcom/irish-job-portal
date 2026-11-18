@@ -1,0 +1,53 @@
+name: Workday fetch
+
+# Fetches only the Workday boards, on the engineer's laptop through a GitHub self-hosted runner (W1b, the engineer's choice, 18 Nov 2026).
+# Workday's Cloudflare answers GitHub's own runners with a bot challenge (run 44262644215: HTTP 429, cf-mitigated: challenge, an HTML page)
+# and the laptop with 200. Every other board stays in daily-fetch.yml, which skips Workday. Setup and how to stop it: docs/workday-runner.md.
+# Triggers are the schedule and a person only, never pull_request or push: code from a pull request must never run on the laptop.
+# No guard step (the schedule or a person decides) and no admin steps (those stay in the daily fetch). A run waits while the laptop is off;
+# GitHub keeps it queued up to 24 hours.
+# Secrets: FETCHER_DATABASE_URL and FETCHER_MODEL_KEY, given to the Fetch step only.
+on:
+  schedule:
+    - cron: "17 8 * * *" # daily, 08:17 UTC (14:17 Dhaka), when the laptop is likely on
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never two runs at once; a second one waits. Its own group: it never blocks the daily fetch.
+concurrency:
+  group: workday-fetch
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: [self-hosted, workday]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Fetch
+        env:
+          FETCHER_DATABASE_URL: ${{ secrets.FETCHER_DATABASE_URL }}
+          FETCHER_MODEL_KEY: ${{ secrets.FETCHER_MODEL_KEY }}
+          FETCHER_ONLY_KINDS: workday
+          FETCHER_MODEL_URL: https://openrouter.ai/api/v1
+          FETCHER_MODEL_ID: "nvidia/nemotron-3-ultra-550b-a55b:free"
+          # The free key allows 50 requests a day: 30 for the daily fetch, 10 here, 10 spare.
+          FETCHER_MAX_MODEL_REQUESTS: "10"
+          FETCHER_BATCH_SIZE: "13"
+          FETCHER_DEADLINE_MINUTES: "25"
+          FETCHER_MODEL_GAP_MS: "4000"
+          FETCHER_MODEL_TIMEOUT_MS: "300000"
+          FETCHER_BOARDS_FILE: packages/fetcher/data/boards.json
+          PORTAL_PRIVATE_DATA: packages/fetcher/data
+        run: |
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          npx vitest run --config packages/fetcher/vitest.run.config.ts --silent=false

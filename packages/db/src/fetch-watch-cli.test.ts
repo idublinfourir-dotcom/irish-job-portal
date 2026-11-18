@@ -70,6 +70,29 @@ describe("fetch watch decision", () => {
   });
 });
 
+describe("fetch watch with skipped kinds (W1b)", () => {
+  it("passes the skipped kinds to both questions as a parameter", async () => {
+    const seen: unknown[][] = [];
+    const db = { query: async (sql: string, values: unknown[]) => (seen.push(values), sql === FAILED_BOARDS_TODAY ? { rows: [{ n: 0 }] } : { rowCount: 1 }) } as never;
+    expect(await watch(db, () => {}, NOW, fakeGh([]).gh, ["workday"])).toBe(0);
+    expect(seen).toEqual([[new Date("2026-11-13T00:00:00Z"), ["workday"]], [new Date("2026-11-13T00:00:00Z"), ["workday"]]]);
+    expect(FAILED_BOARDS_TODAY).toMatch(/kind = any\(\$2::text\[\]\)/);
+  });
+  it("with no skip it passes an empty list (every kind counts, as before)", async () => {
+    const seen: unknown[][] = [];
+    const db = { query: async (_s: string, values: unknown[]) => (seen.push(values), { rowCount: 1, rows: [{ n: 0 }] }) } as never;
+    await watch(db, () => {}, NOW, fakeGh([]).gh);
+    expect(seen[0]![1]).toEqual([]);
+  });
+  it("a bad FETCHER_SKIP_KINDS is exit 2 before it connects or calls gh", async () => {
+    const calls: string[][] = [];
+    const lines: string[] = [];
+    expect(await main({ FETCHER_DATABASE_URL: "postgres://x@127.0.0.1:1/x", FETCHER_SKIP_KINDS: "x;y" }, (l) => lines.push(l), NOW, async (a) => (calls.push(a), "[]"))).toBe(2);
+    expect(lines).toEqual(["FETCHER_SKIP_KINDS must be a comma list of board kinds"]);
+    expect(calls).toEqual([]);
+  });
+});
+
 describe("fetch watch main, failure paths", () => {
   it("exit 2 without the login", async () => {
     const lines: string[] = [];

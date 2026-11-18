@@ -36,6 +36,8 @@ jobs:
           FETCHER_DATABASE_URL: ${{ secrets.FETCHER_DATABASE_URL }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          # Workday is fetched on the laptop (workday-fetch.yml): its runs neither count as today's fetch nor start a retry here.
+          FETCHER_SKIP_KINDS: workday
         run: |
           export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
           node packages/db/src/fetch-watch-cli.ts

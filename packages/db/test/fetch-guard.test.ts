@@ -9,15 +9,17 @@ import { createTestDb, testPassword, urlFor } from "./db";
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 let db: Awaited<ReturnType<typeof createTestDb>>;
 let src: number;
+let wd: number;
 const NOW = new Date("2026-11-12T06:02:00Z");
 // Fake `now` at 06:02 UTC; each case clears fetch_run first and inserts the rows it names.
-const run = async (rows: { at: string; done?: boolean; error?: string }[]) => {
+// `wd` puts the row on a Workday board; `skip` is FETCHER_SKIP_KINDS.
+const run = async (rows: { at: string; done?: boolean; error?: string; wd?: boolean }[], skip?: string) => {
   await db.query("postgres", "delete from fetch_run");
   for (const r of rows)
-    await db.query("postgres", "insert into fetch_run(job_source_id, started_at, finished_at, error) values ($1, $2, $3, $4)", [src, r.at, r.done === false ? null : r.at, r.error ?? null]);
+    await db.query("postgres", "insert into fetch_run(job_source_id, started_at, finished_at, error) values ($1, $2, $3, $4)", [r.wd ? wd : src, r.at, r.done === false ? null : r.at, r.error ?? null]);
   const out = join(mkdtempSync(join(tmpdir(), "guard-")), "out");
   const lines: string[] = [];
-  const env = { FETCHER_DATABASE_URL: urlFor(db.name, "app_fetcher"), DATABASE_SSL: "disable", GITHUB_OUTPUT: out };
+  const env = { FETCHER_DATABASE_URL: urlFor(db.name, "app_fetcher"), DATABASE_SSL: "disable", GITHUB_OUTPUT: out, ...(skip === undefined ? {} : { FETCHER_SKIP_KINDS: skip }) };
   const code = await main(env, (l) => lines.push(l), NOW);
   return { code, skipped: existsSync(out) && readFileSync(out, "utf8") === "skip=true\n", line: lines.join() };
 };
@@ -25,6 +27,7 @@ const run = async (rows: { at: string; done?: boolean; error?: string }[]) => {
 beforeAll(async () => {
   db = await createTestDb();
   src = (await db.query("postgres", "insert into job_source(kind, board) values ('board','fakeboard') returning id")).rows[0].id;
+  wd = (await db.query("postgres", "insert into job_source(kind, board) values ('workday','fakewd') returning id")).rows[0].id;
 });
 afterAll(() => db.drop());
 
@@ -39,6 +42,16 @@ describe("fetch guard against the real fetch_run table", () => {
   it("UTC day boundary: 00:00:00 today counts, 23:59:59 yesterday does not", async () => {
     expect((await run([{ at: "2026-11-12T00:00:00Z" }])).skipped).toBe(true);
     expect((await run([{ at: "2026-11-11T23:59:59Z" }])).skipped).toBe(false);
+  });
+  // W1b: the laptop fetched Workday at 05:00; the GitHub run must still fetch every other board.
+  it("only a good Workday run today, with FETCHER_SKIP_KINDS=workday: not fetched today, fetch", async () => {
+    expect(await run([{ at: "2026-11-12T05:00:00Z", wd: true }], "workday")).toMatchObject({ code: 0, skipped: false, line: "no fetch has worked yet today (UTC): fetching" });
+  });
+  it("the same row without the skip still counts (both unset is every kind, as before)", async () => {
+    expect(await run([{ at: "2026-11-12T05:00:00Z", wd: true }])).toMatchObject({ skipped: true });
+  });
+  it("with the skip, a good run of another kind still skips, and a failed Workday run changes nothing", async () => {
+    expect(await run([{ at: "2026-11-12T05:00:00Z", wd: true, error: "HTTP 429" }, { at: "2026-11-12T05:20:00Z" }], "workday")).toMatchObject({ skipped: true });
   });
   it("without GITHUB_OUTPUT it still decides and prints one line", async () => {
     const lines: string[] = [];

@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { FetchFailedError } from "@portal/sources";
 import { fake, fixtures, none, reply } from "../../sources/src/ats/testkit";
-import { atsTasks, type BoardsFile } from "./boards";
+import { atsTasks, KINDS, kindFilter, type BoardsFile } from "./boards";
 
 // One body that every adapter reads as an empty board.
 const EMPTY = { jobs: [], hits: 0, content: [], totalFound: 0, jobPostings: [], total: 0 };
@@ -58,5 +58,30 @@ describe("atsTasks", () => {
     const [task] = atsTasks({ greenhouse: [["../../evil?x=1", "E"]] }, fetch);
     await expect(task!.fetch(none)).rejects.toBeInstanceOf(FetchFailedError);
     expect(calls).toEqual([]);
+  });
+});
+
+// W1b: FETCHER_ONLY_KINDS / FETCHER_SKIP_KINDS, the kinds one run fetches (Workday on the laptop, the rest on GitHub).
+describe("kindFilter", () => {
+  const kinds = (only?: string, skip?: string) => atsTasks(CONFIG, fake(() => reply(EMPTY)).fetch).filter((t) => kindFilter(only, skip)(t.kind)).map((t) => t.kind);
+  it("knows exactly the kinds atsTasks makes", () => expect([...KINDS].sort()).toEqual([...new Set(kinds())].sort()));
+  it("both unset or blank: every kind, as before", () => {
+    expect(kinds()).toEqual(["greenhouse", "ashby", "smartrecruiters", "workday", "amazon"]);
+    expect(kinds("", " ")).toEqual(kinds());
+  });
+  it("only: just those kinds; skip: every kind but those (spaces and empty items ignored)", () => {
+    expect(kinds("workday")).toEqual(["workday"]);
+    expect(kinds(" workday , amazon,")).toEqual(["workday", "amazon"]);
+    expect(kinds(undefined, "workday")).toEqual(["greenhouse", "ashby", "smartrecruiters", "amazon"]);
+  });
+  it("refuses both set, an unknown kind, a kind with no adapter, a wrong case and a list of no kinds", () => {
+    expect(() => kindFilter("workday", "workday")).toThrow(/not both/);
+    expect(() => kindFilter("workday", "greenhouse")).toThrow(/not both/);
+    expect(() => kindFilter("workdy")).toThrow(/unknown board kind in FETCHER_ONLY_KINDS: "workdy"/);
+    expect(() => kindFilter(undefined, "workday,lever")).toThrow(/FETCHER_SKIP_KINDS: "lever"/);
+    expect(() => kindFilter("Workday")).toThrow(/unknown/);
+    expect(() => kindFilter(",")).toThrow(/unknown/);
+    expect(() => kindFilter("constructor")).toThrow(/unknown/);
+    expect(() => kindFilter("workday'; drop table job;--")).toThrow(/unknown/);
   });
 });

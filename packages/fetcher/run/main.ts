@@ -8,7 +8,7 @@ import { loadRules } from "@portal/db/rules-data";
 import { sslOptions } from "@portal/db/ssl";
 import { chatClient, createBatchChecker, spacedClient, rulesMatcher, type ListEntry } from "@portal/matcher";
 import { chainRules, checkSnapshot, cleanEmployerName } from "@portal/rules";
-import { atsTasks, runBoards, type BoardReport, type BoardsFile, type FetcherMatcher } from "../src";
+import { atsTasks, kindFilter, runBoards, type BoardReport, type BoardsFile, type FetcherMatcher } from "../src";
 
 const need = (name: string) => {
   const v = process.env[name];
@@ -38,10 +38,14 @@ const rulesInForce = async (db: Pick<pg.Pool, "query">, day: string) => {
 
 export async function main(deps: Deps = real()): Promise<BoardReport[]> {
   const started = new Date();
+  // The kinds this run fetches (W1b: Workday on the laptop's runner, the rest on GitHub's). A bad value stops the run before anything is read.
+  const keep = kindFilter(process.env.FETCHER_ONLY_KINDS, process.env.FETCHER_SKIP_KINDS);
   // Same DETE file and loading as packages/rules/src/chain/assess.parity.ts.
   const deteNames = new Set((json(join(need("PORTAL_PRIVATE_DATA"), "L2", "dete-2026.json")) as [string, number][]).map(([name]) => cleanEmployerName(name)));
   const boards = json(need("FETCHER_BOARDS_FILE")) as BoardsFile;
   const log = (line: string) => console.log(line);
+  const tasks = atsTasks(boards, deps.fetch, log, deps.sleep).filter((t) => keep(t.kind));
+  if (!tasks.length) throw new Error("the fetch did not start: no board of the kinds asked for is in FETCHER_BOARDS_FILE");
 
   // The model's address, key and id, the occupation lists, and the most requests this run may make (the free service allows a fixed number a day).
   const modelId = need("FETCHER_MODEL_ID");
@@ -66,7 +70,7 @@ export async function main(deps: Deps = real()): Promise<BoardReport[]> {
       checkBatch: createBatchChecker({ client, modelId, entries }),
       batchSize: process.env.FETCHER_BATCH_SIZE ? Number(process.env.FETCHER_BATCH_SIZE) : undefined,
       maxModelRequests,
-      boards: atsTasks(boards, deps.fetch, log, deps.sleep),
+      boards: tasks,
       sleep: deps.sleep,
       // Stops assessing at this many minutes (default 55) so the run ends inside its job's time limit.
       deadline: new Date(started.getTime() + Math.max(1, whole("FETCHER_DEADLINE_MINUTES", 55)) * 60 * 1000),
