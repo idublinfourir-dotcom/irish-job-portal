@@ -5,6 +5,9 @@
 import type pg from "pg";
 import { QueueRefused, RELEASE, STALE_AFTER, TAKE_OVER } from "./admin-queue";
 import { isTime, PAGE_SIZE, validId } from "./search";
+import { domainProblem } from "./domain-check";
+
+export { domainProblem, FREE_EMAIL_DOMAINS, isFreeEmailDomain } from "./domain-check";
 
 type Db = Pick<pg.Pool, "query" | "connect">;
 
@@ -217,17 +220,7 @@ async function decide(
 }
 
 // ===== approve =====
-// ponytail: a short fixed list of free and consumer email providers, mostly the ones Irish applicants use. It misses new or regional providers; when one
-// slips through, a reviewer simply does not tick "add domain". Swap in a maintained list (disposable and free-mail data) if reviewers ever need help here.
-export const FREE_EMAIL_DOMAINS: ReadonlySet<string> = new Set([
-  "gmail.com", "googlemail.com", "outlook.com", "outlook.ie", "hotmail.com", "hotmail.ie", "hotmail.co.uk", "hotmail.fr", "outlook.co.uk", "live.com", "live.ie", "msn.com",
-  "yahoo.com", "yahoo.ie", "yahoo.co.uk", "yahoo.co.in", "rediffmail.com", "ymail.com", "icloud.com", "me.com", "mac.com", "aol.com", "proton.me", "protonmail.com", "pm.me",
-  "gmx.com", "gmx.net", "gmx.de", "web.de", "qq.com", "163.com", "tutanota.com", "fastmail.com", "mail.com", "zoho.com", "yandex.com", "eircom.net", "iol.ie", "btinternet.com", "sky.com",
-]);
-export const isFreeEmailDomain = (domain: string) => FREE_EMAIL_DOMAINS.has(domain);
-const DOMAIN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
-
-const DOMAIN_LOCK = "select pg_advisory_xact_lock(hashtext($1))"; // two reviewers adding one domain to two companies at once: the second waits and then sees the first
+export const DOMAIN_LOCK = "select pg_advisory_xact_lock(hashtext($1))"; // two reviewers adding one domain to two companies at once: the second waits and then sees the first
 const DOMAIN_OTHER = "select exists (select 1 from organisation_domain where domain = $1 and organisation_id <> $2::bigint) as other";
 const DOMAIN_ADD =
   "insert into organisation_domain(organisation_id, domain, source, added_by_staff_id) values ($1::bigint, $2, 'admin', $3) on conflict (organisation_id, domain) do nothing";
@@ -249,8 +242,8 @@ export async function approveAccount(db: Db, staffUserId: string, itemId: string
     if (opts.addDomain === true) {
       domain = domainOf(r.claimant_email);
       if (domain === null) throw new QueueRefused("no_claimant");
-      if (!DOMAIN.test(domain) || domain.length > 253) throw new QueueRefused("bad_domain");
-      if (isFreeEmailDomain(domain)) throw new QueueRefused("free_email_domain");
+      const why = domainProblem(domain);
+      if (why) throw new QueueRefused(why);
       await c.query(DOMAIN_LOCK, [domain]);
       if ((await c.query<{ other: boolean }>(DOMAIN_OTHER, [domain, r.organisation_id])).rows[0]!.other) throw new QueueRefused("domain_owned_by_other");
       await c.query(DOMAIN_ADD, [r.organisation_id, domain, staffUserId]);
