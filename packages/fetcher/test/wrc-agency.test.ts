@@ -1,6 +1,7 @@
 // D8 (#212, migration 0042): the fetcher's adverts are flagged wrc_agency when the employer name matches an agency or trading name on the WRC
 // licensed agency list, through the real runBoards as app_fetcher. Staff only: app_fetcher still cannot read the list, the candidate and portal
-// roles cannot read the flag, and the name pattern in @portal/rules is unchanged. Fake names only; no network.
+// roles cannot read the flag, and the name pattern in @portal/rules is unchanged. The refresh after a WRC list import (0047)
+// is tested through importWrc in packages/db/test/registers.test.ts. Fake names only; no network.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { isAgencyName } from "@portal/rules";
 import { createTestDb, type TestDb } from "../../db/test/db";
@@ -68,6 +69,37 @@ describe("the WRC agency flag on fetched adverts", () => {
       expect(await flag(a.id), employer).toBe(expected); // a direction mark is dropped by the normalising, as in the fetcher's own employer lookup
     }
     expect((await su("select count(*)::int n from wrc_licence where agency_name is null"))[0].n).toBe(0);
+  });
+
+  it("only app_admin (the import's login) may run the refresh; it cannot set the flag itself", async () => {
+    for (const role of ["app_fetcher", "app_candidate", "app_portal", "anon", "authenticated"] as const)
+      await expect(db.query(role, "select private.refresh_wrc_agency()"), role).rejects.toMatchObject({ code: "42501" });
+    await expect(db.query("app_admin", "update fetched_advert set wrc_agency = true")).rejects.toMatchObject({ code: "42501" });
+    expect((await db.query("app_admin", "select private.refresh_wrc_agency() as n")).rows[0].n).toBe(0); // nothing changed since the import
+  });
+
+  it("the refresh after an import stays within budget: 5,000 open adverts and 5,000 licences, under 700 pages and 500 ms", async () => {
+    const src = (await su("select job_source_id from fetched_advert limit 1"))[0].job_source_id;
+    await su("insert into fetched_advert(job_source_id, external_id, employer_name, result) select $1, 'bulk-' || g, 'Fake Bulk Employer ' || g, 'rejected' from generate_series(1, 5000) g", [src]);
+    await su("insert into wrc_licence(licence_number, agency_name) select 'EA' || (200000 + g), 'Fake Bulk Employer ' || g from generate_series(1, 5000, 50) g");
+    await su("insert into wrc_licence(licence_number, agency_name, trading_name) select 'EA' || (300000 + g), 'Fake Unrelated Agency ' || g, 'Fake Unrelated Trading ' || g from generate_series(1, 4900) g");
+    await su("analyze fetched_advert; analyze wrc_licence");
+    const client = await db.pool("app_admin").connect();
+    try {
+      await client.query("begin");
+      const t = performance.now();
+      expect((await client.query("select private.refresh_wrc_agency() as n")).rows[0].n).toBe(100);
+      const ms = performance.now() - t;
+      // pages of the scan itself (a warm pass changes the 100, the measured pass reads everything again), rolled back
+      const costs = await measurePages(client, [{ text: "select private.refresh_wrc_agency()", values: [] }]);
+      await client.query("rollback");
+      console.log(`wrc refresh: ${costs[0]!.pages} pages, ${Math.round(ms)} ms (first run, 100 changed)`);
+      assertPageBudget("wrc refresh", costs, 700); // measured 18 Nov 2026: 221 pages, 62 ms
+      expect(ms).toBeLessThan(500);
+    } finally {
+      await client.query("rollback").catch(() => {});
+      client.release();
+    }
   });
 
   it("the lookup reads the WRC list by index: within 20 pages with 5,000 licences", async () => {

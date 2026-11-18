@@ -1,5 +1,5 @@
 // Performance (D2, #246): the company seed loads the real 94-row file into a database the size the live one will grow to (24,326 DETE names over
-// five years, about 122,000 DETE rows, and 20,000 fake companies with a name each), as app_admin. Budgets: the statement count (bounded, whatever the
+// five years, about 122,000 DETE rows, and 20,000 fake companies with a name each), as the owner login (portal_owner). Budgets: the statement count (bounded, whatever the
 // file size: one statement per step, names batched with unnest) and the wall time of the whole load, then of the second run, which writes nothing.
 import { readFileSync } from "node:fs";
 import type pg from "pg";
@@ -47,7 +47,7 @@ function counting(pool: pg.Pool) {
 it("loads the 94-row file inside the statement and time budgets, and a second run writes nothing", async () => {
   expect(rows).toHaveLength(94);
   const timed = async () => {
-    const k = counting(db.pool("app_admin"));
+    const k = counting(db.pool("portal_owner")); // the owner login runs the command (0047 holds app_admin to the panel path)
     const t = performance.now();
     const r = await seedCompanies(k.db, rows);
     return { r, ms: performance.now() - t, statements: k.sql.length };

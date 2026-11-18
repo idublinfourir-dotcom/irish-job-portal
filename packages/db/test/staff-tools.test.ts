@@ -6,7 +6,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { main as remindersMain } from "../src/scheduled-checks-cli";
 import { CONTENT_STALE, STALE_DAYS } from "../src/content-admin";
-import { OVERDUE, SCHEDULED_LIST, workingDayBefore } from "../src/staff-tools";
+import { OVERDUE, OVERDUE_APPROVALS, SCHEDULED_LIST, workingDayBefore } from "../src/staff-tools";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { loadSpec, replyProblems } from "./openapi";
 import { assertPageBudget, measurePages } from "./perf/pages";
@@ -16,10 +16,11 @@ vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 
 // Statements per call through the route (requireStaff is 2): a list is the role check and its read (4; settings 5, two reads); a write is begin,
 // role check, its statements, commit. Medians over 9 warm calls, measured 18 Nov 2026: 2.0 to 3.5 ms; limit 15. Pages of one read on the bulk rows
-// below (planning + execution + serialisation), measured: scheduled list 17, overdue 17, stale guides 6; limits about 3 times that.
+// below (planning + execution + serialisation), measured: scheduled list 17, overdue 17, stale guides 6; limits about 3 times that. Overdue is 5 (two
+// reads, 0047; approvals 37 pages on 1,000 pending, approval_request_pending_idx); a seed confirm is 16 for a one-line file (seedRows 10, use_company_seed 1, lock, status, audit, begin and commit).
 const BUDGET = {
-  scheduledList: 4, scheduledDone: 6, overdue: 4, settingsList: 5, settingPropose: 8, settingConfirm: 10, seedPropose: 7, stale: 4,
-  ms: 15, pages: { scheduled: 50, overdue: 50, stale: 20 }, cliStatements: 2, cliMs: 100,
+  scheduledList: 4, scheduledDone: 6, overdue: 5, settingsList: 5, settingPropose: 8, settingConfirm: 10, seedPropose: 7, seedConfirm: 16, stale: 4,
+  ms: 15, pages: { scheduled: 50, overdue: 50, overdueApprovals: 100, stale: 20 }, cliStatements: 2, cliMs: 100,
 };
 
 let db: TestDb, h: Awaited<ReturnType<typeof staffHarness>>, su: pg.Pool;
@@ -157,10 +158,25 @@ describe("Q12: the overdue view", () => {
     expect(replyProblems(spec, "GET", "/api/overdue", r.status, r.json)).toEqual([]);
     for (const who of [...NOT_ADMIN, "norole"]) await no(call("/api/overdue", who), 403, "not_administrator");
   });
+
+  it("lists approval requests still waiting for a second person after one working day; not a fresh, decided or used one", async () => {
+    const propose = async (key: string, value: number) => (await ok(call("/api/settings", "only_administrator", { action: "propose", key, value }))).requestId as string;
+    const [waiting, fresh, decided] = [await propose("contact_message", 25), await propose("claim_needs_info", 31), await propose("inactive_profile", 13)];
+    await ok(call("/api/settings", "ad2", { action: "refuse", requestId: decided }));
+    await su.query("update approval_request set created_at = now() - interval '10 days' where id = any($1::bigint[])", [[waiting, decided]]);
+    const r = await call("/api/overdue", "only_administrator");
+    expect([r.status, replyProblems(spec, "GET", "/api/overdue", r.status, r.json)]).toEqual([200, []]);
+    const mine = r.json.approvals.filter((a: { id: string }) => [waiting, fresh, decided].includes(a.id));
+    expect(mine).toEqual([{ id: waiting, kind: "setting", target_table: "setting", target_id: "contact_message", proposed_by: h.staff.only_administrator, created_at: expect.any(String) }]);
+    expect(r.json.approvalsTruncated).toBe(false);
+    for (const who of [...NOT_ADMIN, "norole"]) await no(call("/api/overdue", who), 403, "not_administrator");
+    for (const id of [waiting, fresh]) await ok(call("/api/settings", "only_administrator", { action: "refuse", requestId: id }));
+  });
 });
 
 describe("R2: a setting's value through two administrators", () => {
   const value = async (key: string) => (await su.query("select value, updated_by_staff_user_id by from setting where key = $1", [key])).rows[0];
+  const guess = async (key: string) => (await su.query("select is_guess from setting where key = $1", [key])).rows[0].is_guess;
   it("one administrator proposes, a different one confirms, and the value is written with its audit row naming both", async () => {
     const p = await call("/api/settings", "only_administrator", { action: "propose", key: "draft_job", value: 6 });
     expect([p.status, replyProblems(spec, "POST", "/api/settings", p.status, p.json)]).toEqual([200, []]);
@@ -174,6 +190,7 @@ describe("R2: a setting's value through two administrators", () => {
     const c = await call("/api/settings", "ad2", { action: "confirm", requestId: p.json.requestId });
     expect([c.status, c.json, replyProblems(spec, "POST", "/api/settings", c.status, c.json)]).toEqual([200, { ok: true, key: "draft_job", value: 6 }, []]);
     expect(await value("draft_job")).toEqual({ value: 6, by: h.staff.ad2 });
+    expect(await guess("draft_job")).toBe(false); // seeded as a guess; two administrators decided it
     // the database's own row (setting_guard: second is the request's confirmer) and the confirm row naming the proposer
     expect((await su.query("select action, actor_staff_user_id a, second_staff_user_id s, after->>'value' v from audit_event where action in ('setting.change', 'setting.confirm') and object_id = 'draft_job' order by id")).rows)
       .toEqual([{ action: "setting.change", a: h.staff.ad2, s: h.staff.ad2, v: "6" }, { action: "setting.confirm", a: h.staff.ad2, s: h.staff.only_administrator, v: "6" }]);
@@ -183,6 +200,10 @@ describe("R2: a setting's value through two administrators", () => {
     const p = (await ok(call("/api/settings", "ad2", { action: "propose", key: "apply_click", value: null }))).requestId;
     await ok(call("/api/settings", "only_administrator", { action: "confirm", requestId: p }));
     expect((await value("apply_click")).value).toBeNull();
+    // cleared means not set, so still to be decided: a decided setting cleared becomes a guess again
+    expect(await guess("review_item_done")).toBe(false);
+    await ok(call("/api/settings", "only_administrator", { action: "confirm", requestId: (await ok(call("/api/settings", "ad2", { action: "propose", key: "review_item_done", value: null }))).requestId }));
+    expect([(await value("review_item_done")).value, await guess("review_item_done")]).toEqual([null, true]);
     await no(call("/api/settings", "ad2", { action: "propose", key: "apply_click", value: null }), 409, "no_change");
     const w = (await ok(call("/api/settings", "ad2", { action: "propose", key: "apply_click", value: 14 }))).requestId;
     await ok(call("/api/settings", "ad2", { action: "refuse", requestId: w }));
@@ -232,7 +253,7 @@ describe("Q14: the company seed through two people", () => {
     expect([c.status, c.json.created, c.json.namesAdded, replyProblems(spec, "POST", "/api/companies/seed", c.status, c.json)]).toEqual([200, 2, 3, []]);
     expect((await su.query("select display_name, kind from organisation where display_name in ('Fake Seed Co', 'Fake Other Co') order by display_name")).rows)
       .toEqual([{ display_name: "Fake Other Co", kind: "agency" }, { display_name: "Fake Seed Co", kind: "employer" }]);
-    expect((await su.query("select status, confirmed_by_staff_user_id c from approval_request where id = $1", [p.json.requestId])).rows[0]).toEqual({ status: "confirmed", c: h.staff.only_administrator });
+    expect((await su.query("select status, confirmed_by_staff_user_id c, applied_at is not null used from approval_request where id = $1", [p.json.requestId])).rows[0]).toEqual({ status: "confirmed", c: h.staff.only_administrator, used: true });
     expect((await su.query("select action, second_staff_user_id s from audit_event where object_type = 'approval_request' and object_id = $1 order by id", [p.json.requestId])).rows)
       .toEqual([{ action: "company_seed.propose", s: null }, { action: "company_seed.confirm", s: h.staff.only_rules_data_editor }]);
     await no(call("/api/companies/seed", "ad2", { action: "confirm", requestId: p.json.requestId }), 409, "request_not_pending");
@@ -258,6 +279,33 @@ describe("Q14: the company seed through two people", () => {
     const p = (await ok(call("/api/companies/seed", "only_rules_data_editor", { action: "propose", text: file(`${hostile}\temployer\t<script>x</script> Fake\t`) }))).requestId;
     await ok(call("/api/companies/seed", "ad2", { action: "confirm", requestId: p }));
     expect((await su.query("select count(*)::int n from organisation where display_name = $1", [hostile])).rows[0].n).toBe(1);
+  });
+  it("the database holds app_admin's seed writes to a confirmed company_seed request used once, in the same transaction", async () => {
+    const asAdmin = async (fn: (c: pg.PoolClient) => Promise<unknown>) => {
+      const c = await db.pool("app_admin").connect();
+      try {
+        await c.query("begin");
+        await c.query("select set_config('app.staff_user_id', $1, true)", [h.staff.ad2]);
+        return await fn(c);
+      } finally { await c.query("rollback"); c.release(); }
+    };
+    const insOrg = "insert into organisation(slug, display_name, kind, signup_path) values ('fake-direct-co', 'Fake Direct Co', 'employer', 'admin')";
+    await expect(asAdmin((c) => c.query(insOrg))).rejects.toThrow(/two-person rule: organisation rows are added only by a confirmed company_seed request/);
+    const org = (await su.query("select id from organisation limit 1")).rows[0].id;
+    await expect(asAdmin((c) => c.query("insert into organisation_name(organisation_id, name, normalised_name, kind, source) values ($1, 'Fake Direct', 'fake direct', 'alias', 'admin')", [org])))
+      .rejects.toThrow(/two-person rule: organisation_name rows are added only/);
+    // a used request cannot be used again (the second apply), a pending one or another kind cannot be used at all
+    const used = (await su.query("select id::text from approval_request where kind = 'company_seed' and status = 'confirmed' and applied_at is not null limit 1")).rows[0].id;
+    await expect(asAdmin((c) => c.query("select private.use_company_seed($1)", [used]))).rejects.toThrow(/already used/);
+    const pending = (await ok(call("/api/companies/seed", "only_rules_data_editor", { action: "propose", text: file("Fake Direct Co\temployer\tFake Direct\t") }))).requestId;
+    await expect(asAdmin((c) => c.query("select private.use_company_seed($1)", [pending]))).rejects.toThrow(/is pending, not confirmed/);
+    const setting = (await su.query("select id::text from approval_request where kind = 'setting' and status = 'confirmed' limit 1")).rows[0].id;
+    await expect(asAdmin((c) => c.query("select private.use_company_seed($1)", [setting]))).rejects.toThrow(/needs company_seed|already used/);
+    for (const role of ["app_portal", "app_candidate", "app_fetcher", "anon", "authenticated"] as const)
+      await expect(db.query(role, "select private.use_company_seed($1)", [pending]), role).rejects.toMatchObject({ code: "42501" });
+    await expect(asAdmin((c) => c.query("update approval_request set applied_at = now() where id = $1", [pending]))).rejects.toMatchObject({ code: "42501" });
+    await ok(call("/api/companies/seed", "only_rules_data_editor", { action: "refuse", requestId: pending }));
+    expect((await su.query("select count(*)::int n from organisation where display_name = 'Fake Direct Co'")).rows[0].n).toBe(0);
   });
   it("refuses every other role", async () => {
     for (const who of ["only_account_reviewer", "only_fetched_job_reviewer", "only_trust_and_safety", "only_services_case_handler", "only_content_editor", "norole"]) {
@@ -296,7 +344,16 @@ describe("performance", () => {
     await su.query("insert into review_item(queue, reason, detail, created_at) select 'scheduled_check', 'bulk', jsonb_build_object('key', 'bulk:' || g, 'role', (array['rules_data_editor','fetched_job_reviewer','administrator'])[1 + g % 3]), now() - (g || ' minutes')::interval from generate_series(1, 900) g");
     await su.query("insert into review_item(queue, reason, detail, status, created_at) select 'scheduled_check', 'bulk', jsonb_build_object('key', 'done:' || g, 'role', 'rules_data_editor'), 'done', now() - interval '30 days' from generate_series(1, 3000) g");
     await su.query("insert into content_page(kind, slug, title, body, source_url, checked_on, status, published_at) select 'guide', 'bulk-' || g, 'Fake', 'Fake body', 'https://example.test/s', current_date - (g % 400), 'published', now() from generate_series(1, 300) g");
-    await su.query("analyze review_item; analyze content_page");
+    // 2,000 approval requests, half still pending, a tenth of those older than a working day
+    const ac = await su.connect();
+    try {
+      await ac.query("select set_config('app.staff_user_id', $1, false)", [h.staff.only_administrator]);
+      await ac.query("insert into approval_request(kind, target_table, target_id, change, reason) select 'pay_floor', 'pay_floor', 'bulk:' || g, '{}', 'bulk' from generate_series(1, 2000) g");
+      await ac.query("select set_config('app.staff_user_id', $1, false)", [h.staff.ad2]);
+      await ac.query("update approval_request set status = 'refused' where target_id like 'bulk:%' and right(target_id, 1) in ('0','2','4','6','8')");
+      await ac.query("update approval_request set created_at = now() - interval '9 days' where target_id like 'bulk:%' and right(target_id, 2) in ('11','31','51','71','91')");
+    } finally { ac.release(); }
+    await su.query("analyze review_item; analyze content_page; analyze approval_request");
     const done = (await su.query("select id::text from review_item where queue = 'scheduled_check' and status = 'open' and detail->>'role' = 'rules_data_editor' order by id limit 20")).rows.map((r) => r.id);
     const counts = [
       (await counted(() => call("/api/scheduled-checks", "only_rules_data_editor")))[1],
@@ -309,7 +366,9 @@ describe("performance", () => {
     const [p, proposeN] = await counted(() => call("/api/settings", "only_administrator", { action: "propose", key: "fetch_run", value: 6 }));
     const [, confirmN] = await counted(() => call("/api/settings", "ad2", { action: "confirm", requestId: p.json.requestId }));
     const [, seedN] = await counted(() => call("/api/companies/seed", "only_rules_data_editor", { action: "propose", text: "display_name\tkind\tbrand_names\tdete_names\nFake Perf Co\temployer\tFake Perf\t\n" }));
-    expect([proposeN, confirmN, seedN]).toEqual([BUDGET.settingPropose, BUDGET.settingConfirm, BUDGET.seedPropose]);
+    const seedPending = (await su.query("select id::text from approval_request where kind = 'company_seed' and status = 'pending'")).rows[0].id;
+    const [, seedConfirmN] = await counted(() => call("/api/companies/seed", "only_administrator", { action: "confirm", requestId: seedPending }));
+    expect([proposeN, confirmN, seedN, seedConfirmN]).toEqual([BUDGET.settingPropose, BUDGET.settingConfirm, BUDGET.seedPropose, BUDGET.seedConfirm]);
     const measured: Record<string, number> = {};
     for (const [path, who, q] of [["/api/scheduled-checks", "only_rules_data_editor", ""], ["/api/overdue", "only_administrator", ""], ["/api/settings", "only_administrator", ""], ["/api/content", "only_content_editor", "?stale=1"]] as const)
       expect(measured[path + q] = await median(() => ok(call(path, who, undefined, { query: q }))), path).toBeLessThan(BUDGET.ms);
@@ -317,6 +376,7 @@ describe("performance", () => {
     const client = await su.connect();
     try {
       for (const [name, text, values, budget] of [["scheduled list", SCHEDULED_LIST, [["rules_data_editor"]], BUDGET.pages.scheduled], ["overdue", OVERDUE, [workingDayBefore(new Date()).toISOString()], BUDGET.pages.overdue],
+        ["overdue approvals", OVERDUE_APPROVALS, [workingDayBefore(new Date()).toISOString()], BUDGET.pages.overdueApprovals],
         ["stale guides", CONTENT_STALE, [STALE_DAYS], BUDGET.pages.stale]] as const) {
         const cost = await measurePages(client, [{ text, values: [...values] }]);
         measured[`${name} pages`] = cost[0]!.pages;

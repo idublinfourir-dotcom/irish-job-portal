@@ -217,6 +217,29 @@ describe("WRC import (as app_admin)", () => {
     expect(await state()).toBe(was);
     await expect(importWrc(a, list(30), "2026-12-01", null, { acceptCountChange: true })).resolves.toMatchObject({ rows: 30 });
   });
+  it("each import flags again the adverts still open against the new list, in its transaction (0047); gone adverts keep their flag", async () => {
+    const a = db.pool("app_admin");
+    const src = (await su("insert into job_source(kind, board) values ('greenhouse', 'wrc-reflag') returning id")).rows[0].id;
+    const advert = async (ext: string, employer: string) => (await su("insert into fetched_advert(job_source_id, external_id, employer_name, result) values ($1, $2, $3, 'rejected') returning id", [src, ext, employer])).rows[0].id;
+    const flags = async () => (await su("select external_id, wrc_agency from fetched_advert where job_source_id = $1 order by external_id", [src])).rows.map((r) => [r.external_id, r.wrc_agency]);
+    const base = list(30).rows;
+    await importWrc(a, { rows: base, duplicates: [], badNumbers: 0 }, "2026-12-02", null, { acceptCountChange: true });
+    await advert("a-open", "Late Fake Recruiters Ltd");
+    await advert("b-gone", "Late Fake Recruiters Ltd");
+    await advert("c-dropped", "Trade 1"); // EA9001's trading name now
+    await advert("d-plain", "Fake Bakery Ltd");
+    await su("update fetched_advert set gone_at = now() where job_source_id = $1 and external_id = 'b-gone'", [src]);
+    expect(await flags()).toEqual([["a-open", false], ["b-gone", false], ["c-dropped", true], ["d-plain", false]]);
+    const next = [...base.map((r) => (r.licenceNumber === "EA9001" ? { ...r, tradingName: "Renamed Fake Trade" } : r)),
+      { licenceNumber: "EA9999", agencyName: "LATE FAKE RECRUITERS LIMITED", tradingName: "Late Fake Recruiters Ltd", address: null, county: null }];
+    // a refused import changes no flag (same transaction)
+    await expect(importWrc(a, { rows: next.slice(0, 5), duplicates: [], badNumbers: 0 }, "2026-12-03", null)).rejects.toThrow(/more than 5% apart/);
+    expect(await flags()).toEqual([["a-open", false], ["b-gone", false], ["c-dropped", true], ["d-plain", false]]);
+    const r = await importWrc(a, { rows: next, duplicates: [], badNumbers: 0 }, "2026-12-03", null);
+    expect(await flags()).toEqual([["a-open", true], ["b-gone", false], ["c-dropped", false], ["d-plain", false]]);
+    expect(r.reflagged).toBe(2);
+    expect((await importWrc(a, { rows: next, duplicates: [], badNumbers: 0 }, "2026-12-04", null)).reflagged).toBe(0); // nothing left to change
+  });
   it.skipIf(!hasPdftotext)("the command fetches the alias, imports, and does nothing when ETag and Last-Modified are unchanged (unless --force)", async () => {
     const pdf = wrcPdf([L(31, "Cork"), L(32, "Cork")]);
     let hits = 0;

@@ -17,7 +17,7 @@ export class QueueRefused extends Error {
 // ===== the list =====
 const COLS =
   "r.id, r.status, r.claimed_by_staff_user_id, r.created_at::text as created_text, j.id as job_id, j.organisation_id, j.title, j.employer_name, " +
-  "j.own_page_url, j.occupation_code, j.permit_history, j.sponsor_sort, f.stage, f.reason " +
+  "j.own_page_url, j.occupation_code, j.permit_history, j.sponsor_sort, f.stage, f.reason, coalesce(f.wrc_agency, false) as wrc_agency " +
   "from review_item r join job j on j.id = r.job_id left join fetched_advert f on f.id = j.fetched_advert_id";
 // Oldest first on review_item_queue_idx (queue, created_at, id) where status in ('open','claimed').
 const OPEN = "r.queue = 'fetched_job' and r.status in ('open','claimed')";
@@ -26,7 +26,7 @@ export const QUEUE_AFTER = `select ${COLS} where ${OPEN} and (r.created_at, r.id
 
 type Row = {
   id: string; status: string; claimed_by_staff_user_id: string | null; created_text: string; job_id: string; organisation_id: string; title: string;
-  employer_name: string; own_page_url: string | null; occupation_code: string | null; permit_history: string; sponsor_sort: number; stage: string | null; reason: string | null;
+  employer_name: string; own_page_url: string | null; occupation_code: string | null; permit_history: string; sponsor_sort: number; stage: string | null; reason: string | null; wrc_agency: boolean;
 };
 export type QueueItem = {
   id: string; status: string; claimedBy: string | null; jobId: string; organisationId: string; title: string; employerName: string;
@@ -37,12 +37,14 @@ export type QueueItem = {
   permitHistory: string; sponsorPermits: number | null;
   /** Why the fetcher queued it: the fetched_advert stage and reason. */
   stage: string | null; reason: string | null;
+  /** The employer name is an agency or trading name on the WRC licensed agency list (0042; staff only). A signal, never a verdict. */
+  wrcAgency: boolean;
 };
 
 const item = (r: Row): QueueItem => ({
   id: r.id, status: r.status, claimedBy: r.claimed_by_staff_user_id, jobId: r.job_id, organisationId: r.organisation_id, title: r.title, employerName: r.employer_name,
   advertUrl: r.own_page_url, occupationCode: r.occupation_code, permitHistory: r.permit_history, sponsorPermits: r.sponsor_sort >= 0 ? r.sponsor_sort : null,
-  stage: r.stage, reason: r.reason,
+  stage: r.stage, reason: r.reason, wrcAgency: r.wrc_agency,
 });
 
 export const queueCursor = (r: { created_text: string; id: string }) => Buffer.from(JSON.stringify({ t: r.created_text, i: r.id })).toString("base64url");

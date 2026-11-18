@@ -289,7 +289,7 @@ components:
         advertText: { type: [string, 'null'], description: Only on the one-item read. }
     FetchedQueueItem:
       type: object
-      required: [id, status, jobId, organisationId, title, employerName, permitHistory]
+      required: [id, status, jobId, organisationId, title, employerName, permitHistory, wrcAgency]
       properties:
         id: { $ref: '#/components/schemas/Id' }
         status: { type: string }
@@ -304,6 +304,7 @@ components:
         sponsorPermits: { type: [integer, 'null'] }
         stage: { type: [string, 'null'] }
         reason: { type: [string, 'null'] }
+        wrcAgency: { type: boolean, description: "The advert's employer name is an agency or trading name on the WRC licensed agency list (staff only)." }
         advertText: { type: [string, 'null'], description: Only on the one-item read. }
     ManualRow:
       type: object
@@ -1538,7 +1539,7 @@ paths:
                       item: { $ref: '#/components/schemas/FetchedQueueItem' }
               example:
                 items:
-                  - { id: '3301', status: open, claimedBy: null, jobId: '6601', organisationId: '320', title: Software Engineer, employerName: Example Software Ltd, advertUrl: 'https://jobs.example.com/12345', occupationCode: null, permitHistory: has_history, sponsorPermits: 14, stage: 4 occupation, reason: occupation unclear }
+                  - { id: '3301', status: open, claimedBy: null, jobId: '6601', organisationId: '320', title: Software Engineer, employerName: Example Software Ltd, advertUrl: 'https://jobs.example.com/12345', occupationCode: null, permitHistory: has_history, sponsorPermits: 14, stage: 4 occupation, reason: occupation unclear, wrcAgency: false }
                 next: null
         '400':
           description: "`bad_query`: an unknown or repeated key. `bad_cursor`: a token this list did not make."
@@ -2517,11 +2518,12 @@ paths:
   /api/overdue:
     get:
       operationId: listOverdue
-      summary: List queue items older than one working day
+      summary: List queue items and approval requests older than one working day
       description: >-
         Open and claimed review items of every queue created before `before`: one working day ago, counting Monday to Friday in Irish time
         only (Monday 10:00 gives Friday 10:00; at the weekend, the start of Friday). No bank holidays. Oldest first, at most 100
-        (`truncated` says more exist). Each item is opened in its own queue's route. No query key is allowed (step 15 Q12).
+        (`truncated` says more exist). Each item is opened in its own queue's route. `approvals`: two-person requests still pending (waiting
+        for a second person) proposed before `before`, oldest first, at most 100 (`approvalsTruncated`). No query key is allowed (step 15 Q12).
       security: [{ staffSession: [] }]
       x-roles: [administrator]
       x-rate-limit: none
@@ -2532,9 +2534,22 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [before, items, truncated]
+                required: [before, items, truncated, approvals, approvalsTruncated]
                 properties:
                   before: { $ref: '#/components/schemas/Timestamp' }
+                  approvals:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, kind, target_table, target_id, proposed_by, created_at]
+                      properties:
+                        id: { $ref: '#/components/schemas/Id' }
+                        kind: { type: string }
+                        target_table: { type: string }
+                        target_id: { type: string }
+                        proposed_by: { $ref: '#/components/schemas/LoginId' }
+                        created_at: { $ref: '#/components/schemas/DbTime' }
+                  approvalsTruncated: { type: boolean }
                   items:
                     type: array
                     items:
@@ -2551,6 +2566,8 @@ paths:
                 before: '2026-11-17T10:00:00.000Z'
                 items: [{ id: '88', queue: fetched_job, status: open, claimed_by: null, created_at: '2026-11-16 05:40:00.123456+00' }]
                 truncated: false
+                approvals: [{ id: '41', kind: setting, target_table: setting, target_id: draft_job, proposed_by: staff_example_1, created_at: '2026-11-15 09:00:00.123456+00' }]
+                approvalsTruncated: false
         '400':
           description: "`bad_query`: any query key."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }

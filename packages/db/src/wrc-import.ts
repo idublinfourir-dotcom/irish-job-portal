@@ -119,12 +119,14 @@ export const WRC_UPSERT =
   "on conflict (licence_number) do update set agency_name = excluded.agency_name, trading_name = excluded.trading_name, address = excluded.address, " +
   "county = excluded.county, last_seen_on = excluded.last_seen_on, missed_imports = 0";
 export const WRC_MISSED = "update wrc_licence set missed_imports = least(missed_imports + 1, 100) where last_seen_on < $1::date returning licence_number, missed_imports";
+// Adverts still open are flagged again against the new list (0047); the number changed is returned.
+export const WRC_REFRESH = "select private.refresh_wrc_agency() as n";
 export const RECORD_IMPORT =
   "insert into register_import(source, validator, imported_on, row_count) values ($1, $2, $3::date, $4) " +
   "on conflict (source) do update set validator = excluded.validator, imported_on = excluded.imported_on, row_count = excluded.row_count";
 export const LAST_IMPORT = "select validator, row_count from register_import where source = $1";
 
-export type WrcResult = { rows: number; inserted: number; before: number; unreadable: number; duplicates: string[]; lapsed: string[] };
+export type WrcResult = { reflagged: number; rows: number; inserted: number; before: number; unreadable: number; duplicates: string[]; lapsed: string[] };
 
 /**
  * Loads the parsed list in one transaction. Refused (nothing written) when it has no rows, more than 2% of rows with no usable number, or a row count more than 5% away
@@ -144,9 +146,10 @@ export async function importWrc(db: Db, parsed: WrcParsed, today: string, valida
       throw new ImportRefused(`the list has ${rows.length} agencies but the last one had ${before} (more than 5% apart): check the PDF, then run again with --accept-count-change`);
     const up = await client.query(WRC_UPSERT, [rows.map((r) => r.licenceNumber), rows.map((r) => r.agencyName), rows.map((r) => r.tradingName), rows.map((r) => r.address), rows.map((r) => r.county), today]);
     const missed = await client.query<{ licence_number: string; missed_imports: number }>(WRC_MISSED, [today]);
+    const reflagged = (await client.query<{ n: number }>(WRC_REFRESH)).rows[0]!.n;
     await client.query(RECORD_IMPORT, ["wrc", validator, today, rows.length]);
     await client.query("commit");
-    return { rows: rows.length, inserted: up.rowCount ?? 0, before, unreadable: parsed.badNumbers, duplicates: parsed.duplicates, lapsed: missed.rows.filter((r) => r.missed_imports >= 2).map((r) => r.licence_number) };
+    return { reflagged, rows: rows.length, inserted: up.rowCount ?? 0, before, unreadable: parsed.badNumbers, duplicates: parsed.duplicates, lapsed: missed.rows.filter((r) => r.missed_imports >= 2).map((r) => r.licence_number) };
   } catch (e) {
     await client.query("rollback");
     throw e;

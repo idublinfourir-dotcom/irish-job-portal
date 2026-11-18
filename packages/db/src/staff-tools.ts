@@ -97,12 +97,19 @@ export const OVERDUE =
   "select id::text as id, queue, status, claimed_by_staff_user_id as claimed_by, created_at::text as created_at from review_item " +
   `where status in ('open','claimed') and created_at < $1::timestamptz order by created_at, id limit ${MAX_SHOWN + 1}`;
 export type OverdueItem = { id: string; queue: string; status: string; claimed_by: string | null; created_at: string };
+// Two-person requests waiting for a second person, oldest first (approval_request is small: one pending per target, approval_request_pending_unique).
+export const OVERDUE_APPROVALS =
+  "select id::text as id, kind, target_table, target_id, proposed_by_staff_user_id as proposed_by, created_at::text as created_at from approval_request " +
+  `where status = 'pending' and created_at < $1::timestamptz order by created_at, id limit ${MAX_SHOWN + 1}`;
+export type OverdueApproval = { id: string; kind: string; target_table: string; target_id: string; proposed_by: string; created_at: string };
 
-/** Open and claimed items of every queue older than one working day. Administrators only. */
-export async function listOverdue(db: Q, staff: string, now = new Date()): Promise<{ before: string; items: OverdueItem[]; truncated: boolean }> {
+/** Open and claimed items of every queue, and approval requests waiting for a second person, older than one working day. Administrators only. */
+export async function listOverdue(db: Q, staff: string, now = new Date()) {
   await requireRole(db, staff, ["administrator"], "not_administrator");
   const before = workingDayBefore(now).toISOString();
-  return { before, ...page((await db.query<OverdueItem>(OVERDUE, [before])).rows) };
+  const [items, approvals] = await Promise.all([db.query<OverdueItem>(OVERDUE, [before]), db.query<OverdueApproval>(OVERDUE_APPROVALS, [before])]);
+  const a = page(approvals.rows);
+  return { before, ...page(items.rows), approvals: a.items, approvalsTruncated: a.truncated };
 }
 
 // ===== the two-person requests of Q14 and R2 =====
@@ -159,12 +166,14 @@ export async function proposeCompanySeed(db: Db, staff: string, text: unknown): 
   });
 }
 
+const USE_SEED = "select private.use_company_seed($1::bigint)";
 /** An administrator who did not propose confirms: the seed runs in the same transaction, so a failure leaves the request pending. */
 export async function confirmCompanySeed(db: Db, staff: string, requestId: unknown): Promise<SeedResult> {
   return inTransaction(db, staff, ["administrator"], "not_administrator", async (c) => {
     const r = await lockRequest(c, "company_seed", requestId);
     if (r.proposed_by === staff) throw new QueueRefused("same_person");
     await c.query(SET_STATUS, [r.id, "confirmed"]);
+    await c.query(USE_SEED, [r.id]); // marks it used (applied_at): a request is applied once, and the database's seed guard needs it
     const out = await seedRows(c, r.change.rows as SeedRow[]);
     const { refused, deteNotFound, notes, ...counts } = out;
     await audit(c, staff, "company_seed.confirm", "approval_request", r.id, { ...counts, refused: refused.length, deteNotFound: deteNotFound.length, notes: notes.length }, r.proposed_by);
@@ -213,7 +222,8 @@ export async function confirmSetting(db: Db, staff: string, requestId: unknown):
     const value = r.change.value as number | null;
     if ((await c.query<{ value: number | null }>(SETTING_OF, [r.target_id])).rows[0]?.value === value) throw new QueueRefused("no_change"); // changed since the proposal
     await c.query(SET_STATUS, [r.id, "confirmed"]);
-    await c.query("update setting set value = $2 where key = $1", [r.target_id, value]);
+    // A confirmed value is a staff decision, no longer a guess; cleared (null) means not set, and a value not set is still to be decided.
+    await c.query("update setting set value = $2, is_guess = $2::integer is null where key = $1", [r.target_id, value]);
     await audit(c, staff, "setting.confirm", "setting", r.target_id, { request_id: r.id, value }, r.proposed_by);
     return { key: r.target_id, value };
   });

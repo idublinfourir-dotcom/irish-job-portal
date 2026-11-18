@@ -19,7 +19,7 @@ it("a fetched job under a seeded brand name lands on the seeded company, which a
   await importPermits(db.pool("app_admin"), [{ deteName: "Seedfake Ireland Limited", year: 2026, permits: 9, sourceFile: null }]);
   const f = join(mkdtempSync(join(tmpdir(), "seeded-")), "seed.tsv");
   writeFileSync(f, "display_name\tkind\tbrand_names\tdete_names\nSeedfake\temployer\tSeedfake ;; Seedfake Careers\tSeedfake Ireland Limited\n");
-  expect(await main([f], { DETE_ADMIN_DATABASE_URL: urlFor(db.name, "app_admin"), DATABASE_SSL: "disable" }, () => {})).toBe(0);
+  expect(await main([f], { SEED_OWNER_DATABASE_URL: urlFor(db.name, "portal_owner"), DATABASE_SSL: "disable" }, () => {})).toBe(0);
   const org = (await db.query("postgres", "select id, permit_history from organisation where display_name = 'Seedfake'")).rows[0];
   expect(org.permit_history).toBe("has_history");
 
