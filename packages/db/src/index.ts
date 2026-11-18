@@ -67,6 +67,7 @@ export function resetHealthCache() {
 export * from "./content";
 export * from "./public-pages";
 export * from "./candidate-route";
+export * from "./public-read";
 export * from "./candidate";
 export * from "./files";
 

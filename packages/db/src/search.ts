@@ -194,12 +194,15 @@ export const SOURCE = "left join job_source s on s.id = job.job_source_id"; // "
 export const LIVE = "job.status = 'live' and job.closes_at > now()"; // the one visibility rule; 'infinity' passes
 
 type Query = { text: string; values: unknown[] };
+/** A page size a caller may ask for: 1 to PAGE_SIZE. A visitor gets fewer (public-read.ts, #46). */
+export const pageSize = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= PAGE_SIZE;
 
 /**
  * One page: the first page (with the capped count from the same index walk), or the page after or before a cursor.
  * Fetches one row more than a page, to know whether there is a further page.
  */
-export function listQuery(sort: Sort, cursor?: Cursor, dir: "after" | "before" = "after", filters: SearchFilters = {}): Query {
+export function listQuery(sort: Sort, cursor?: Cursor, dir: "after" | "before" = "after", filters: SearchFilters = {}, size = PAGE_SIZE): Query {
+  if (!pageSize(size)) throw new BadSearchInput("bad page size"); // written into the text, so only a whole number from 1 to PAGE_SIZE
   const keys = KEYS[sort].map((k) => k.col);
   const desc = (d: string) => ["(not job.quota_full)", ...keys.map((k) => `job.${k}`), "job.id"].map((c) => `${c} ${d}`).join(", ");
   if (!cursor) {
@@ -212,7 +215,7 @@ export function listQuery(sort: Sort, cursor?: Cursor, dir: "after" | "before" =
         `with ${kw && `${kw}, `}hits as materialized (select id, (not quota_full) as r, ${ks} from job where ${LIVE}${where} ` +
         `order by (not quota_full) desc, ${keys.map((k) => `${k} desc`).join(", ")}, id desc limit ${COUNT_CAP + 1}) ` +
         `select ${LIST}, (select count(*) from hits)::int as capped ` +
-        `from (select id, r, ${page.join(", ")} from hits order by r desc, ${page.map((k) => `${k} desc`).join(", ")}, id desc limit ${PAGE_SIZE + 1}) page ` +
+        `from (select id, r, ${page.join(", ")} from hits order by r desc, ${page.map((k) => `${k} desc`).join(", ")}, id desc limit ${size + 1}) page ` +
         `join job on job.id = page.id ${SOURCE} order by page.r desc, ${page.map((k) => `page.${k} desc`).join(", ")}, page.id desc`,
       values,
     };
@@ -222,7 +225,7 @@ export function listQuery(sort: Sort, cursor?: Cursor, dir: "after" | "before" =
   const values: unknown[] = [!cursor.quotaFull, ...cursor.keys, cursor.id];
   const { with: kw, where } = filterSql(filters, values);
   const order = `order by ${desc(dir === "after" ? "desc" : "asc")}`;
-  const walk = `where ${LIVE}${where} and ((not job.quota_full), ${keys.map((k) => `job.${k}`).join(", ")}, job.id) ${op} (${row}) ${order} limit ${PAGE_SIZE + 1}`;
+  const walk = `where ${LIVE}${where} and ((not job.quota_full), ${keys.map((k) => `job.${k}`).join(", ")}, job.id) ${op} (${row}) ${order} limit ${size + 1}`;
   // With a keyword the walk takes only ids, so it stays in the index and does not read every row it skips (a rare word skips most rows).
   const text = kw
     ? `with ${kw}, page as materialized (select job.id from job ${walk}) select ${LIST} from page join job on job.id = page.id ${SOURCE} ${order}`
@@ -276,9 +279,10 @@ export function cursorOf(sort: Sort, r: ListRow, f = NO_FILTERS): string {
 
 /**
  * Live jobs a candidate may see, sponsor history first by default (#157), narrowed by `filters` (parseSearch). At most one of `after` and
- * `before`; a cursor works only with the sort and filters it was made with.
+ * `before`; a cursor works only with the sort and filters it was made with. `limit` (1 to PAGE_SIZE, default PAGE_SIZE) is the page size.
  */
-export async function listJobs(db: Db, opts: { sort?: Sort; after?: string; before?: string; filters?: SearchFilters } = {}): Promise<JobList> {
+export async function listJobs(db: Db, opts: { sort?: Sort; after?: string; before?: string; filters?: SearchFilters; limit?: number } = {}): Promise<JobList> {
+  const size = opts.limit ?? PAGE_SIZE;
   const sort = opts.sort ?? "sponsor";
   if (!SORTS.includes(sort)) throw new BadSearchInput("unknown sort");
   if (opts.after !== undefined && opts.before !== undefined) throw new BadSearchInput("after and before together");
@@ -286,10 +290,10 @@ export async function listJobs(db: Db, opts: { sort?: Sort; after?: string; befo
   const f = filterHash(filters);
   const dir = opts.before !== undefined ? "before" : "after";
   const token = opts.after ?? opts.before;
-  const { text, values } = listQuery(sort, token === undefined ? undefined : decodeCursor(sort, token, f), dir, filters);
+  const { text, values } = listQuery(sort, token === undefined ? undefined : decodeCursor(sort, token, f), dir, filters, size);
   const all = (await db.query<ListRow>(text, values)).rows;
-  const more = all.length > PAGE_SIZE;
-  const rows = all.slice(0, PAGE_SIZE);
+  const more = all.length > size;
+  const rows = all.slice(0, size);
   if (dir === "before") rows.reverse(); // read backwards, shown forwards
   const first = rows[0];
   const last = rows.at(-1);

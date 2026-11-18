@@ -25,14 +25,20 @@ const no = (status: number, code: string) => Response.json({ code }, { status })
 // the app's own: each app role may write only its own. last_request holds the END of the window, as in packages/auth/src/email-limit.ts: Better
 // Auth deletes rows whose last_request is older than its longest window (better-auth rate-limiter, deleteExpiredRows), so storing the last call's
 // time would let a 10-minute or hour-long count restart after a few minutes' pause.
-export async function withinRate(table: "candidate_rate_limit" | "portal_rate_limit", key: string, rate: { windowMs: number; max: number }): Promise<boolean> {
-  const { rows } = await getPool().query(
-    `insert into ${table} as r (id, key, count, last_request) values ($1, $2, 1, $3::bigint + $4::bigint)
+export const rateSql = (table: RateTable) =>
+  `insert into ${table} as r (id, key, count, last_request) values ($1, $2, 1, $3::bigint + $4::bigint)
      on conflict (key) do update set count = case when r.last_request <= $3::bigint then 1 else r.count + 1 end,
        last_request = case when r.last_request <= $3::bigint then $3::bigint + $4::bigint else r.last_request end
-     returning count`, [randomUUID(), key, Date.now(), rate.windowMs]);
-  return rows[0].count <= rate.max;
+     returning count, last_request`;
+type RateTable = "candidate_rate_limit" | "portal_rate_limit";
+/** The client address as Vercel gives it (the only address header trusted; the auth pools read the same one). Every other header is ignored. */
+export const clientAddress = (h: Headers) => (h.get("x-vercel-forwarded-for") ?? "").split(",")[0]!.trim().slice(0, 64) || "none";
+/** Counts one call under `key`: the count in this window and the window's end (ms since 1970). */
+export async function countRate(table: RateTable, key: string, rate: { windowMs: number }): Promise<{ count: number; end: number }> {
+  const { rows } = await getPool().query(rateSql(table), [randomUUID(), key, Date.now(), rate.windowMs]);
+  return { count: rows[0].count, end: Number(rows[0].last_request) };
 }
+export const withinRate = async (table: RateTable, key: string, rate: { windowMs: number; max: number }) => (await countRate(table, key, rate)).count <= rate.max;
 const withinLimit = (userId: string) => withinRate("candidate_rate_limit", `candidate:${userId}`, CANDIDATE_RATE);
 
 /** One transaction on one connection. */
