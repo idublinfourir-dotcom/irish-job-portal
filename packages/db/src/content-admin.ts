@@ -113,6 +113,18 @@ export async function listContentPages(db: Q, staff: string, o: { kind?: string;
   return { items: rows.map(summary), next: all.length > CONTENT_PAGE && last ? Buffer.from(JSON.stringify({ t: last.updated_text, i: last.id })).toString("base64url") : null };
 }
 
+// Q14 (20c: "a list of stale checked-on dates"): published guides whose checked-on date is over STALE_DAYS old, oldest first, on content_page_stale_idx
+// (checked_on) where kind = 'guide' and status = 'published'. ponytail: 90 days is a placeholder until the owner names the period; guides only, as the index.
+export const STALE_DAYS = 90;
+export const CONTENT_STALE = `select ${COLS} from content_page where kind = 'guide' and status = 'published' and checked_on < current_date - $1::int order by checked_on, id limit 101`;
+
+/** Published guides not checked for STALE_DAYS, oldest first, at most 100. */
+export async function listStaleGuides(db: Q, staff: string) {
+  await requireRole(db, staff, EDITORS, "not_content_staff");
+  const rows = (await db.query<ContentRow>(CONTENT_STALE, [STALE_DAYS])).rows;
+  return { staleDays: STALE_DAYS, items: rows.slice(0, 100).map(summary), truncated: rows.length > 100 };
+}
+
 /** One page with its body, whatever its state. null for an unknown or malformed id. */
 export async function getContentPage(db: Q, staff: string, id: string) {
   await requireRole(db, staff, EDITORS, "not_content_staff");

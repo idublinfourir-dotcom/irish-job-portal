@@ -1135,7 +1135,8 @@ paths:
       summary: List content pages, or show one
       description: >-
         Without `id`: pages of every state, newest change first, 20 a page, filtered by `kind` and `status`. With `id`: one page with its
-        body. Only `id`, `kind`, `status` and `after`, each at most once (anything else is `bad_query`).
+        body. With `stale=1` alone (step 15 Q14): the published guides whose checked-on date is over `staleDays` (90) days old, oldest
+        first, at most 100. Only `id`, `kind`, `status`, `after` and `stale`, each at most once (anything else is `bad_query`).
       security: [{ staffSession: [] }]
       x-roles: [content_editor, rules_data_editor, administrator]
       x-rate-limit: none
@@ -1144,9 +1145,10 @@ paths:
         - { name: kind, in: query, required: false, schema: { type: string, enum: [guide, update, help, occupation] } }
         - { name: status, in: query, required: false, schema: { type: string, enum: [draft, published, withdrawn] } }
         - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Cursor' } }
+        - { name: stale, in: query, required: false, schema: { const: '1' } }
       responses:
         '200':
-          description: The page (no `id`), or `{ item }` with `body` (with `id`).
+          description: The page (no `id`), `{ item }` with `body` (with `id`), or the stale guides (with `stale=1`).
           content:
             application/json:
               schema:
@@ -1163,11 +1165,17 @@ paths:
                         allOf:
                           - $ref: '#/components/schemas/ContentSummary'
                           - { type: object, required: [body], properties: { body: { type: string } } }
+                  - type: object
+                    required: [staleDays, items, truncated]
+                    properties:
+                      staleDays: { type: integer }
+                      items: { type: array, items: { $ref: '#/components/schemas/ContentSummary' } }
+                      truncated: { type: boolean }
               example:
                 items: [{ id: '41', kind: help, slug: how-to-apply, title: How to apply, status: draft, sourceUrl: null, checkedOn: null, publishedAt: null, updatedBy: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', updatedAt: '2026-11-18 09:30:00.123456+00' }]
                 next: null
         '400':
-          description: "`bad_query`: an unknown or repeated key. `bad_kind`, `bad_status`: not one of the values. `bad_cursor`: a token this list did not make."
+          description: "`bad_query`: an unknown or repeated key, or `stale` with another key or not `1`. `bad_kind`, `bad_status`: not one of the values. `bad_cursor`: a token this list did not make."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_kind } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
@@ -2277,4 +2285,370 @@ paths:
         '400': { description: "`bad_query`: any query key.", content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403': { description: "`not_active_staff`: the login was disabled between the session check and the read.", content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_active_staff } } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/scheduled-checks:
+    get:
+      operationId: listScheduledChecks
+      summary: List the open scheduled reminders for my roles
+      description: >-
+        The open scheduled_check items (step 15 Q3) the daily command writes: a weekly DETE notice check, a monthly hand check of 100 jobs,
+        a 6-monthly big-company review and one per big-company name due for review (rules_data_editor), and a quarterly role review
+        (administrator; the hand check is fetched_job_reviewer). Each member sees the items of the roles they hold; an administrator sees
+        them all. Oldest first, at most 100 (`truncated` says more exist). No query key is allowed.
+      security: [{ staffSession: [] }]
+      x-roles: [rules_data_editor, fetched_job_reviewer, administrator]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The reminders.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, truncated]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, reason, detail, status, created_at]
+                      properties:
+                        id: { $ref: '#/components/schemas/Id' }
+                        reason: { type: string, enum: [dete_notice_check, hand_check_100, big_company_review, role_review, big_company_name_review] }
+                        detail:
+                          type: object
+                          description: "`key` names the reminder and its period; `role` works it; a big-company name review also has `name` and `reviewOn`."
+                          required: [key, role]
+                          properties:
+                            key: { type: string }
+                            role: { type: string }
+                            name: { type: string }
+                            reviewOn: { $ref: '#/components/schemas/Date' }
+                        status: { type: string, enum: [open, claimed] }
+                        created_at: { $ref: '#/components/schemas/DbTime' }
+                  truncated: { type: boolean }
+              example:
+                items: [{ id: '501', reason: dete_notice_check, detail: { key: 'dete_notice_check:2026-W47', role: rules_data_editor }, status: open, created_at: '2026-11-16 05:40:00.123456+00' }]
+                truncated: false
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_scheduled_staff`: none of the three roles."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_scheduled_staff } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: doneScheduledCheck
+      summary: Mark a scheduled reminder done
+      description: >-
+        `done` closes one open reminder of a role the member holds (an administrator: any), with an audit row. The Origin header must be the
+        admin app's origin.
+      security: [{ staffSession: [] }]
+      x-roles: [rules_data_editor, fetched_job_reviewer, administrator]
+      x-rate-limit: none
+      x-body-cap: 200
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, itemId]
+              properties:
+                action: { const: done }
+                itemId: { $ref: '#/components/schemas/Id' }
+            example: { action: done, itemId: '501' }
+      responses:
+        '200':
+          description: Done.
+          content: { application/json: { schema: { type: object, required: [ok], properties: { ok: { const: true } } }, example: { ok: true } } }
+        '400':
+          description: "`bad_body`: not one JSON object, an unknown or missing field, or over 200 characters. `bad_action`: not `done`. `bad_item_id`: not an id."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_item_id } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_scheduled_staff`: none of the three roles."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_scheduled_staff } } }
+        '404':
+          description: "`not_found`: no such reminder, or one of a role the member does not hold."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`already_decided`: the reminder is done or dropped."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: already_decided } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/overdue:
+    get:
+      operationId: listOverdue
+      summary: List queue items older than one working day
+      description: >-
+        Open and claimed review items of every queue created before `before`: one working day ago, counting Monday to Friday in Irish time
+        only (Monday 10:00 gives Friday 10:00; at the weekend, the start of Friday). No bank holidays. Oldest first, at most 100
+        (`truncated` says more exist). Each item is opened in its own queue's route. No query key is allowed (step 15 Q12).
+      security: [{ staffSession: [] }]
+      x-roles: [administrator]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The overdue items.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [before, items, truncated]
+                properties:
+                  before: { $ref: '#/components/schemas/Timestamp' }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, queue, status, claimed_by, created_at]
+                      properties:
+                        id: { $ref: '#/components/schemas/Id' }
+                        queue: { type: string }
+                        status: { type: string, enum: [open, claimed] }
+                        claimed_by: { oneOf: [{ $ref: '#/components/schemas/LoginId' }, { type: 'null' }] }
+                        created_at: { $ref: '#/components/schemas/DbTime' }
+                  truncated: { type: boolean }
+              example:
+                before: '2026-11-17T10:00:00.000Z'
+                items: [{ id: '88', queue: fetched_job, status: open, claimed_by: null, created_at: '2026-11-16 05:40:00.123456+00' }]
+                truncated: false
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_administrator`: no administrator role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/settings:
+    get:
+      operationId: listSettings
+      summary: List the settings and the pending changes
+      description: >-
+        Every `setting` row (the retention periods and limits) with its value, and the value changes waiting for a second administrator
+        (step 15 R2). No query key is allowed.
+      security: [{ staffSession: [] }]
+      x-roles: [administrator]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The settings.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [settings, pending]
+                properties:
+                  settings:
+                    type: array
+                    items:
+                      type: object
+                      required: [key, value, unit, is_guess, solicitor_confirmed_at, updated_by, updated_at]
+                      properties:
+                        key: { type: string }
+                        value: { type: [integer, 'null'] }
+                        unit: { type: [string, 'null'], enum: [days, months, count, null] }
+                        is_guess: { type: boolean }
+                        solicitor_confirmed_at: { oneOf: [{ $ref: '#/components/schemas/DbTime' }, { type: 'null' }] }
+                        updated_by: { oneOf: [{ $ref: '#/components/schemas/LoginId' }, { type: 'null' }] }
+                        updated_at: { $ref: '#/components/schemas/DbTime' }
+                  pending:
+                    type: array
+                    items:
+                      type: object
+                      required: [requestId, key, value, proposedBy, createdAt]
+                      properties:
+                        requestId: { $ref: '#/components/schemas/Id' }
+                        key: { type: string }
+                        value: { type: [integer, 'null'] }
+                        proposedBy: { $ref: '#/components/schemas/LoginId' }
+                        createdAt: { $ref: '#/components/schemas/DbTime' }
+              example:
+                settings: [{ key: draft_job, value: 12, unit: months, is_guess: true, solicitor_confirmed_at: null, updated_by: null, updated_at: '2026-11-01 09:30:00.123456+00' }]
+                pending: [{ requestId: '130', key: draft_job, value: 6, proposedBy: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', createdAt: '2026-11-18 09:30:00.123456+00' }]
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_administrator`: no administrator role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: actOnSetting
+      summary: Propose, confirm or refuse a setting's new value
+      description: >-
+        `propose`: an administrator proposes a new value for a known key (a whole number from 0 to 100,000, or null for not set); one pending
+        change per key. `confirm`: a different administrator confirms and the value is written at once (the database's setting guard uses the
+        request and writes the audit row naming both). `refuse`: a different administrator refuses, or the proposer withdraws. The unit never
+        changes here. The Origin header must be the admin app's origin.
+      security: [{ staffSession: [] }]
+      x-roles: [administrator]
+      x-rate-limit: none
+      x-body-cap: 300
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, key, value]
+                  properties:
+                    action: { const: propose }
+                    key: { type: string, pattern: '^[a-z][a-z0-9_]{0,62}$' }
+                    value: { type: [integer, 'null'], minimum: 0, maximum: 100000 }
+                - type: object
+                  additionalProperties: false
+                  required: [action, requestId]
+                  properties:
+                    action: { type: string, enum: [confirm, refuse] }
+                    requestId: { $ref: '#/components/schemas/Id' }
+            example: { action: propose, key: draft_job, value: 6 }
+      responses:
+        '200':
+          description: "`propose`: the request id. `confirm`: the key and value written. `refuse`: `{ ok: true }`."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { const: true }
+                  requestId: { $ref: '#/components/schemas/Id' }
+                  key: { type: string }
+                  value: { type: [integer, 'null'] }
+              example: { ok: true, requestId: '130' }
+        '400':
+          description: "`bad_body`: not one JSON object, an unknown or missing field, or over 300 characters. `bad_action`: unknown action. `bad_key`: not a key's shape. `bad_value`: missing, not a whole number from 0 to 100,000 and not null. `bad_request_id`: not an id."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_value } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_administrator`: no administrator role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
+        '404':
+          description: "`not_found`: no such setting, or no such setting request."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`no_change`: the value is already that. `decision_pending`: a change of that key waits already. `request_not_pending`: the request is not pending. `same_person`: the proposer confirming."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: same_person } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/companies/seed:
+    get:
+      operationId: listCompanySeed
+      summary: Show the pending company seed import
+      description: >-
+        The company seed (brand list) import waiting for an administrator, at most one, with its parsed rows (step 15 Q14). No query key is allowed.
+      security: [{ staffSession: [] }]
+      x-roles: [rules_data_editor, administrator]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The pending import, if any.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pending]
+                properties:
+                  pending:
+                    type: array
+                    items:
+                      type: object
+                      required: [requestId, proposedBy, createdAt, rows]
+                      properties:
+                        requestId: { $ref: '#/components/schemas/Id' }
+                        proposedBy: { $ref: '#/components/schemas/LoginId' }
+                        createdAt: { $ref: '#/components/schemas/DbTime' }
+                        rows:
+                          type: array
+                          items:
+                            type: object
+                            required: [line, displayName, kind, brandNames, deteNames]
+                            properties:
+                              line: { type: integer }
+                              displayName: { type: string }
+                              kind: { type: string, enum: [employer, public_body, agency] }
+                              brandNames: { type: array, items: { type: string } }
+                              deteNames: { type: array, items: { type: string } }
+              example:
+                pending: [{ requestId: '140', proposedBy: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', createdAt: '2026-11-18 09:30:00.123456+00', rows: [{ line: 2, displayName: Example Co, kind: employer, brandNames: [Example], deteNames: [Example Co Limited] }] }]
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_seed_staff`: neither role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_seed_staff } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: actOnCompanySeed
+      summary: Propose, confirm or refuse a company seed import
+      description: >-
+        `propose` (rules_data_editor): `text` is a file in the company seed command's format (tab separated: display_name, kind, brand_names,
+        dete_names; names split by " ;; "), at most 1,000,000 characters; a file with any bad line is refused whole. One pending import at a
+        time. `confirm` (an administrator who did not propose): the seed runs in the same transaction and its counts are returned; a row whose
+        names reach two companies or another row's company is refused alone and listed. `refuse`: an administrator refuses, or the proposer
+        withdraws. The Origin header must be the admin app's origin.
+      security: [{ staffSession: [] }]
+      x-roles: [rules_data_editor, administrator]
+      x-rate-limit: none
+      x-body-cap: 1100000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, text]
+                  properties:
+                    action: { const: propose }
+                    text: { type: string, maxLength: 1000000 }
+                - type: object
+                  additionalProperties: false
+                  required: [action, requestId]
+                  properties:
+                    action: { type: string, enum: [confirm, refuse] }
+                    requestId: { $ref: '#/components/schemas/Id' }
+            example: { action: propose, text: "display_name\tkind\tbrand_names\tdete_names\nExample Co\temployer\tExample\tExample Co Limited\n" }
+      responses:
+        '200':
+          description: "`propose`: the request id and the number of rows. `confirm`: the seed's counts and lists. `refuse`: `{ ok: true }`."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { const: true }
+                  requestId: { $ref: '#/components/schemas/Id' }
+                  rows: { type: integer }
+                  created: { type: integer }
+                  found: { type: integer }
+                  namesAdded: { type: integer }
+                  deteRowsLinked: { type: integer }
+                  labelsChanged: { type: integer }
+                  refused: { type: array, items: { type: string } }
+                  deteNotFound: { type: array, items: { type: string } }
+                  notes: { type: array, items: { type: string } }
+              example: { ok: true, created: 1, found: 0, namesAdded: 2, deteRowsLinked: 1, labelsChanged: 1, refused: [], deteNotFound: [], notes: [] }
+        '400':
+          description: "`bad_body`: not one JSON object, an unknown or missing field, or over the cap. `bad_action`: unknown action. `bad_text`: not a string, empty or over 1,000,000 characters. `bad_data`: a bad file; `stage` gives the first errors. `bad_request_id`: not an id."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_data, stage: 'line 2: at least one brand name is needed' } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_rules_data_editor`: propose without that role. `not_administrator`: confirm without that role. `not_seed_staff`: refuse with neither role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_rules_data_editor } } }
+        '404':
+          description: "`not_found`: no such import request."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`decision_pending`: an import waits already. `request_not_pending`: the request is not pending. `same_person`: the proposer confirming."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: decision_pending } } }
         '500': { $ref: '#/components/responses/ServerError' }

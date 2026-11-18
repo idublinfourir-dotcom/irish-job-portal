@@ -77,77 +77,80 @@ export type SeedResult = { created: number; found: number; namesAdded: number; d
 
 /** Loads the rows. A row is refused (nothing of it written) when its names reach two companies, a company another row reaches, a name with no company, or a DETE name linked to another company. */
 export async function seedCompanies(db: Db, rows: SeedRow[]): Promise<SeedResult> {
-  return inTransaction(db, async (c) => {
-    const allNames = [...new Set(rows.flatMap((r) => [...r.brandNames, ...r.deteNames]))];
-    const allDete = rows.flatMap((r) => r.deteNames);
-    const norm = new Map((await c.query<{ name: string; norm: string }>(NORMS, [allNames])).rows.map((r) => [r.name, r.norm]));
-    const existing = new Map<string, { norm: string; id: string; target: string | null; kind: string | null; display_name: string | null }[]>();
-    for (const e of (await c.query(EXISTING, [[...new Set(norm.values())]])).rows) existing.set(e.norm, [...(existing.get(e.norm) ?? []), e]);
-    const dete = new Map<string, (string | null)[]>();
-    for (const d of (await c.query<{ dete_name: string; target: string | null }>(DETE_STATE, [allDete])).rows) dete.set(d.dete_name, [...(dete.get(d.dete_name) ?? []), d.target]);
+  return inTransaction(db, (c) => seedRows(c, rows));
+}
 
-    const refused: string[] = [];
-    const notes: string[] = [];
-    const deteNotFound = allDete.filter((x) => !dete.has(x)).map((x) => `DETE name not found: ${x}`);
-    // A normalised form on two rows, or two rows on one company, would make the outcome depend on the order: both rows are refused.
-    const rowsOf = new Map<string, Set<number>>();
-    const add = (key: string, line: number) => rowsOf.set(key, (rowsOf.get(key) ?? new Set()).add(line));
-    const norms = (r: SeedRow) => [...new Set([...r.deteNames, ...r.brandNames].map((x) => norm.get(x)!))];
-    for (const r of rows) for (const k of norms(r)) add(`n:${k}`, r.line);
-    const plan = rows.map((r) => {
-      const hits = norms(r).flatMap((k) => existing.get(k) ?? []);
-      const targets = [...new Set(hits.map((h) => h.target))];
-      const org = targets[0] ?? null;
-      if (org) add(`o:${org}`, r.line);
-      return { r, hits, targets, org };
-    });
-    const accepted = plan.filter(({ r, hits, targets, org }) => {
-      const why = (text: string) => (refused.push(`line ${r.line} (${r.displayName}): ${text}`), false);
-      const shared = norms(r).find((k) => rowsOf.get(`n:${k}`)!.size > 1);
-      if (shared !== undefined) return why(`the name form "${shared}" is also on line ${[...rowsOf.get(`n:${shared}`)!].find((l) => l !== r.line)}`);
-      if (targets.includes(null)) return why("a name is stored with no company; staff fix that name first");
-      if (targets.length > 1) return why(`its names belong to ${targets.length} companies (${hits.map((h) => `${h.display_name} ${h.target}`).filter((x, i, a) => a.indexOf(x) === i).join(", ")}); staff merge them first`);
-      if (org && rowsOf.get(`o:${org}`)!.size > 1) return why(`another line reaches the same company ${org} (${hits[0]!.display_name}); put them on one line`);
-      const elsewhere = r.deteNames.find((x) => (dete.get(x) ?? []).some((t) => t !== null && t !== org));
-      if (elsewhere) return why(`the DETE name "${elsewhere}" is linked to another company; staff move it with dete-cli link if it is wrong`);
-      if (org && hits[0]!.kind !== r.kind) notes.push(`line ${r.line} (${r.displayName}): company ${org} is ${hits[0]!.kind}, the file says ${r.kind}; kind not changed`);
-      return true;
-    });
+/** seedCompanies inside a transaction the caller holds (the panel's confirm, staff-tools.ts, runs it with the approval in one transaction). */
+export async function seedRows(c: Pick<pg.ClientBase, "query">, rows: SeedRow[]): Promise<SeedResult> {
+  const allNames = [...new Set(rows.flatMap((r) => [...r.brandNames, ...r.deteNames]))];
+  const allDete = rows.flatMap((r) => r.deteNames);
+  const norm = new Map((await c.query<{ name: string; norm: string }>(NORMS, [allNames])).rows.map((r) => [r.name, r.norm]));
+  const existing = new Map<string, { norm: string; id: string; target: string | null; kind: string | null; display_name: string | null }[]>();
+  for (const e of (await c.query(EXISTING, [[...new Set(norm.values())]])).rows) existing.set(e.norm, [...(existing.get(e.norm) ?? []), e]);
+  const dete = new Map<string, (string | null)[]>();
+  for (const d of (await c.query<{ dete_name: string; target: string | null }>(DETE_STATE, [allDete])).rows) dete.set(d.dete_name, [...(dete.get(d.dete_name) ?? []), d.target]);
 
-    // New companies, with the slug register_organisation would give: -2, -3 on a clash, here also with the slugs this file adds.
-    const fresh = accepted.filter((p) => !p.org);
-    if (fresh.length) {
-      const bases = fresh.map((p) => slugBase(p.r.displayName));
-      const taken = new Set((await c.query<{ slug: string }>(SLUGS, [bases, bases.map((b) => `${b}-%`)])).rows.map((x) => x.slug));
-      const slugs = bases.map((b) => {
-        let s = b;
-        for (let i = 2; taken.has(s); i++) s = `${b}-${i}`;
-        taken.add(s);
-        return s;
-      });
-      const ids = new Map((await c.query<{ id: string; slug: string }>(INSERT_ORGS, [slugs, fresh.map((p) => p.r.displayName), fresh.map((p) => p.r.kind)])).rows.map((x) => [x.slug, x.id]));
-      fresh.forEach((p, i) => (p.org = ids.get(slugs[i]!)!));
-    }
-
-    // Names: a DETE name first (legal, from dete), then each brand name (alias, from admin), skipping a form the company already has.
-    const nameId = new Map<string, string>(); // `${org} ${norm}` to its name row
-    for (const p of accepted) for (const h of p.hits) nameId.set(`${p.org} ${h.norm}`, h.id);
-    const added = new Map<string, [string, string, string, string, string]>();
-    for (const p of accepted)
-      for (const [list, kind, source] of [[p.r.deteNames, "legal", "dete"], [p.r.brandNames, "alias", "admin"]] as const)
-        for (const x of list) {
-          const key = `${p.org} ${norm.get(x)}`;
-          if (!nameId.has(key) && !added.has(key)) added.set(key, [p.org!, x, norm.get(x)!, kind, source]);
-        }
-    const add2 = [...added.values()];
-    if (add2.length) {
-      const r = await c.query<{ id: string; organisation_id: string; normalised_name: string }>(INSERT_NAMES, [0, 1, 2, 3, 4].map((i) => add2.map((a) => a[i])));
-      for (const x of r.rows) nameId.set(`${x.organisation_id} ${x.normalised_name}`, x.id);
-    }
-
-    const links = accepted.flatMap((p) => p.r.deteNames.filter((x) => dete.has(x)).map((x) => [nameId.get(`${p.org} ${norm.get(x)}`)!, x] as const));
-    const linked = links.length ? (await c.query(LINK, [links.map((l) => l[0]), links.map((l) => l[1])])).rowCount ?? 0 : 0;
-    const labelsChanged = (await c.query<{ changed: number }>(REFRESH)).rows[0]!.changed;
-    return { created: fresh.length, found: accepted.length - fresh.length, namesAdded: add2.length, deteRowsLinked: linked, labelsChanged, refused, deteNotFound, notes };
+  const refused: string[] = [];
+  const notes: string[] = [];
+  const deteNotFound = allDete.filter((x) => !dete.has(x)).map((x) => `DETE name not found: ${x}`);
+  // A normalised form on two rows, or two rows on one company, would make the outcome depend on the order: both rows are refused.
+  const rowsOf = new Map<string, Set<number>>();
+  const add = (key: string, line: number) => rowsOf.set(key, (rowsOf.get(key) ?? new Set()).add(line));
+  const norms = (r: SeedRow) => [...new Set([...r.deteNames, ...r.brandNames].map((x) => norm.get(x)!))];
+  for (const r of rows) for (const k of norms(r)) add(`n:${k}`, r.line);
+  const plan = rows.map((r) => {
+    const hits = norms(r).flatMap((k) => existing.get(k) ?? []);
+    const targets = [...new Set(hits.map((h) => h.target))];
+    const org = targets[0] ?? null;
+    if (org) add(`o:${org}`, r.line);
+    return { r, hits, targets, org };
   });
+  const accepted = plan.filter(({ r, hits, targets, org }) => {
+    const why = (text: string) => (refused.push(`line ${r.line} (${r.displayName}): ${text}`), false);
+    const shared = norms(r).find((k) => rowsOf.get(`n:${k}`)!.size > 1);
+    if (shared !== undefined) return why(`the name form "${shared}" is also on line ${[...rowsOf.get(`n:${shared}`)!].find((l) => l !== r.line)}`);
+    if (targets.includes(null)) return why("a name is stored with no company; staff fix that name first");
+    if (targets.length > 1) return why(`its names belong to ${targets.length} companies (${hits.map((h) => `${h.display_name} ${h.target}`).filter((x, i, a) => a.indexOf(x) === i).join(", ")}); staff merge them first`);
+    if (org && rowsOf.get(`o:${org}`)!.size > 1) return why(`another line reaches the same company ${org} (${hits[0]!.display_name}); put them on one line`);
+    const elsewhere = r.deteNames.find((x) => (dete.get(x) ?? []).some((t) => t !== null && t !== org));
+    if (elsewhere) return why(`the DETE name "${elsewhere}" is linked to another company; staff move it with dete-cli link if it is wrong`);
+    if (org && hits[0]!.kind !== r.kind) notes.push(`line ${r.line} (${r.displayName}): company ${org} is ${hits[0]!.kind}, the file says ${r.kind}; kind not changed`);
+    return true;
+  });
+
+  // New companies, with the slug register_organisation would give: -2, -3 on a clash, here also with the slugs this file adds.
+  const fresh = accepted.filter((p) => !p.org);
+  if (fresh.length) {
+    const bases = fresh.map((p) => slugBase(p.r.displayName));
+    const taken = new Set((await c.query<{ slug: string }>(SLUGS, [bases, bases.map((b) => `${b}-%`)])).rows.map((x) => x.slug));
+    const slugs = bases.map((b) => {
+      let s = b;
+      for (let i = 2; taken.has(s); i++) s = `${b}-${i}`;
+      taken.add(s);
+      return s;
+    });
+    const ids = new Map((await c.query<{ id: string; slug: string }>(INSERT_ORGS, [slugs, fresh.map((p) => p.r.displayName), fresh.map((p) => p.r.kind)])).rows.map((x) => [x.slug, x.id]));
+    fresh.forEach((p, i) => (p.org = ids.get(slugs[i]!)!));
+  }
+
+  // Names: a DETE name first (legal, from dete), then each brand name (alias, from admin), skipping a form the company already has.
+  const nameId = new Map<string, string>(); // `${org} ${norm}` to its name row
+  for (const p of accepted) for (const h of p.hits) nameId.set(`${p.org} ${h.norm}`, h.id);
+  const added = new Map<string, [string, string, string, string, string]>();
+  for (const p of accepted)
+    for (const [list, kind, source] of [[p.r.deteNames, "legal", "dete"], [p.r.brandNames, "alias", "admin"]] as const)
+      for (const x of list) {
+        const key = `${p.org} ${norm.get(x)}`;
+        if (!nameId.has(key) && !added.has(key)) added.set(key, [p.org!, x, norm.get(x)!, kind, source]);
+      }
+  const add2 = [...added.values()];
+  if (add2.length) {
+    const r = await c.query<{ id: string; organisation_id: string; normalised_name: string }>(INSERT_NAMES, [0, 1, 2, 3, 4].map((i) => add2.map((a) => a[i])));
+    for (const x of r.rows) nameId.set(`${x.organisation_id} ${x.normalised_name}`, x.id);
+  }
+
+  const links = accepted.flatMap((p) => p.r.deteNames.filter((x) => dete.has(x)).map((x) => [nameId.get(`${p.org} ${norm.get(x)}`)!, x] as const));
+  const linked = links.length ? (await c.query(LINK, [links.map((l) => l[0]), links.map((l) => l[1])])).rowCount ?? 0 : 0;
+  const labelsChanged = (await c.query<{ changed: number }>(REFRESH)).rows[0]!.changed;
+  return { created: fresh.length, found: accepted.length - fresh.length, namesAdded: add2.length, deteRowsLinked: linked, labelsChanged, refused, deteNotFound, notes };
 }

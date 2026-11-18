@@ -101,6 +101,15 @@ jobs:
         run: |
           export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
           node packages/db/src/rules-run-cli.ts
+      # The staff reminders (step 15 Q3): one scheduled_check item per weekly, monthly, 6-monthly and quarterly check and per big-company name due
+      # for review; a key already written is skipped, so a second run writes nothing. Same admin login, given to this step only; it runs every day.
+      - name: Write scheduled reminders
+        if: ${{ !cancelled() }}
+        env:
+          SCHEDULED_ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
+        run: |
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          node packages/db/src/scheduled-checks-cli.ts
       # Job alerts (#236): one email row per candidate with new jobs since their alert last ran, sent later by the outbox command. Same admin
       # login, given to this step only; it runs every day after the jobs are fetched, closed and checked, and before retention.
       - name: Queue job alerts
