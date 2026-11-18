@@ -205,7 +205,7 @@ Each key is a row in `setting`, run by `run_retention`. A rule skips any record 
 | `fetch_run` | 12 months | #133 |
 | `expired_login_rows` | 1 day after expiry (rate-limit rows: after last request) | guess |
 | `staff_entry_grace` | 7 days after a due date, for staff to enter a reply or appeal that arrived by email or post | #136 |
-| `audit_event` | 24 months (a placeholder until the solicitor confirms it): rule 43 deletes older audit rows in batches; `audit_purge` reads the same setting; empty deletes nothing (0041, R3) | review 12, R3 |
+| `audit_event` | 24 months (a placeholder until the solicitor confirms it): rule 44 deletes older audit rows in batches; `audit_purge` reads the same setting; empty deletes nothing (0041, R3) | review 12, R3 |
 
 `approval_request` rows go after the audit period, only when no row points to them.
 
@@ -219,7 +219,7 @@ All are `SECURITY DEFINER`, owned by `portal_owner`, in schema `private`, with e
 - `erase_portal_user(id, on_request)`: the same for a portal login. Also refuses an account owner who still has other active members. Executed by `app_admin`.
 - `run_retention()`: runs one batch (up to 1,000 rows) of the first retention rule with rows due, and returns that rule's key and how many rows are left. The admin app's scheduled route calls it in a loop, one transaction per call. Rules are listed in `private.retention_rules()`. Executed by `app_admin`.
 - `audit_pseudonymise(id)`: replaces a person's id in the log with a random stand-in. Called only by the two erase functions. No app role.
-- `audit_purge()`: deletes audit rows older than the `audit_event` setting (0041; empty deletes nothing). Nothing schedules it: retention rule 43 does the same job daily. Run by the named person as `portal_owner` if needed. No app role.
+- `audit_purge()`: deletes audit rows older than the `audit_event` setting (0041; empty deletes nothing). Nothing schedules it: retention rule 44 does the same job daily. Run by the named person as `portal_owner` if needed. No app role.
 - `approval_request_due()`: returns the approval request ids that retention may delete. Used by `run_retention`.
 - `claim_organisation(portal_user_id, organisation_id)`: a verified person claims an existing organisation, in one conditional update. Executed by `app_portal`. Since migration 0016 (#203) it also refuses, with `COOL_DOWN`, the same login claiming the same company within 24 hours of a rejection (the login's removed owner membership and that company's `rejected` account_review item share the rejecting transaction's instant; a claim that lapsed unanswered is not a rejection).
 - `answer_review(portal_user_id, note)` (migration 0016, #197): the active account owner of a `needs_info` company sends a note of 1 to 1,000 characters (no control or format characters). It is stored in the company's open account_review item as `detail.answer` and `detail.answered_at` (never in the audit log, #182), the company becomes `pending_review`, and one `organisation.answer_review` audit row of codes is written. A reviewer asking for more again clears the old answer. Refusals: `REFUSED` (not the owner, or a blocked login), `NOT_WAITING` (not `needs_info`, or no open item), `BAD_REQUEST` (the note). Executed by `app_portal`; the route is `POST /api/portal/review-answer`.

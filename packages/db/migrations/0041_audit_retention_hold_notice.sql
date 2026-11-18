@@ -1,6 +1,6 @@
 -- Step 15, audit rows R3 and R4 (small wave agent 4).
 --   R3. The audit log is kept for the setting audit_event (24 months, a placeholder until the solicitor confirms it), then deleted by a new retention
---       rule 43, batched like the others. private.audit_purge (0002), never scheduled, now reads the same setting, so the two cannot disagree; an empty
+--       rule 44, batched like the others. private.audit_purge (0002), never scheduled, now reads the same setting, so the two cannot disagree; an empty
 --       setting deletes nothing. A change to the setting follows the two-person rule (0004), as every other period does.
 --   R4. Where rules 1, 5, 6 and 8 leave a candidate's rows out because of an open services case, run_retention writes one notice and one pending email
 --       (template deletion_on_hold, placeholder wording, params the rule key only) per person per rule, dedupe key deletion_on_hold:<rule>:<candidate>,
@@ -15,7 +15,7 @@ do $m$
 declare
   old_sql constant text := $o$$q$with d as (delete from staff_rate_limit where id = any($2) returning 1) select count(*)::int, '{}'::text[] from d$q$, null)$o$;
   new_sql constant text := old_sql || $o$,
-    (43, 'audit_event', null, $q$select id::text as id from audit_event where at < now() - make_interval(months => $1)$q$, null, 'sql',
+    (44, 'audit_event', null, $q$select id::text as id from audit_event where at < now() - make_interval(months => $1)$q$, null, 'sql',
      $q$with d as (delete from audit_event where id = any($2::bigint[]) returning 1) select count(*)::int, '{}'::text[] from d$q$, null)$o$;
   def text := pg_get_functiondef('private.retention_rules()'::regprocedure);
 begin
