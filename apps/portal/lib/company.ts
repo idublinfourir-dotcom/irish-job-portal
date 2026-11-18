@@ -2,7 +2,7 @@
 // body. The database functions do the real checks (ban, email confirmed, one company per login, #191); this file only refuses
 // bad requests early and turns the functions' refusals into short codes.
 import { PortalRefused, requirePortal, type PortalLogin } from "@portal/auth";
-import { getPool, withinRate } from "@portal/db";
+import { getPool, toWire, validId, withinRate } from "@portal/db";
 import { portalAuth, portalOrigin } from "./portal";
 
 export const MAX_BODY = 2048; // characters; the largest good body is about 250
@@ -13,10 +13,8 @@ export const only = (b: Record<string, unknown>, keys: string[]) => Object.keys(
 const CRO = /^\d{1,8}$/; // CRO company numbers are digits
 const WRC = /^[A-Za-z0-9-]{1,20}$/; // ponytail: loose until the WRC list is checked on its source (slice 3d)
 
-export function checkClaim(b: unknown): { organisationId: number } | null {
-  if (!isObject(b) || !only(b, ["organisationId"])) return null;
-  const id = b.organisationId;
-  return typeof id === "number" && Number.isSafeInteger(id) && id > 0 ? { organisationId: id } : null;
+export function checkClaim(b: unknown): { organisationId: string } | null {
+  return isObject(b) && only(b, ["organisationId"]) && validId(b.organisationId) ? { organisationId: b.organisationId } : null;
 }
 
 export type Register = { kind: "employer" | "agency"; displayName: string; croNumber: string | null; wrcLicenceNumber: string | null };
@@ -62,6 +60,8 @@ export function refusalFor(e: unknown): Refusal | null {
 }
 
 export const no = (status: number, code: string) => Response.json({ code }, { status });
+/** A 200 reply in the shared format (toWire): ids as strings of digits, times as ISO 8601 in UTC with Z. */
+export const ok = (body: unknown) => Response.json(toWire(body));
 
 // Counts this login's calls under one key in the pool's rate-limit table (a row per login and key, a fixed window from the first call; see
 // withinRate). Old rows are swept by the retention job (rule 41).
@@ -98,7 +98,7 @@ export async function companyPost<T>(request: Request, check: (b: unknown) => T 
   if (!(await withinLimit(`company:${login.userId}`))) return no(429, "TOO_MANY_REQUESTS");
   try {
     const r = (await getPool().query(sql, args(login.userId, body))).rows[0].r as { organisation_id: number; status: string };
-    return Response.json({ organisationId: Number(r.organisation_id), status: r.status });
+    return ok({ organisationId: r.organisation_id, status: r.status });
   } catch (e) {
     const r = refusalFor(e);
     if (r) return no(r.status, r.code);

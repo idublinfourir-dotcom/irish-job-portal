@@ -25,7 +25,7 @@ let db: TestDb, su: pg.Pool;
 let GET: Handler, POST: Handler, claimPOST: Handler, registerPOST: Handler;
 let mail: () => { pool: string; kind: string; to: string; link: string }[];
 let auth: () => ReturnType<typeof createAuth>;
-let F: { org(o?: object): Promise<number>; cro(o?: object): Promise<number>; wrc(o?: object): Promise<number>; member(org: number, user: string | null, o?: object): Promise<number> };
+let F: { org(o?: object): Promise<number>; cro(o?: object): Promise<number>; wrc(o?: object): Promise<number>; member(org: number | string, user: string | null, o?: object): Promise<number> };
 
 beforeAll(async () => {
   db = await createTestDb();
@@ -99,9 +99,9 @@ const ban = (col: "email_domain" | "cro_number", value: string) => db.pool("post
   } finally { c.release(); }
 });
 // fixtures return bigint ids as text; the routes take numbers
-const newOrg = async (o?: object) => Number(await F.org(o));
-const orgRow = (id: number) => one("select status, signup_path, claimed_at is not null claimed, verified_at is not null verified from organisation where id=$1", [id]);
-const reviews = (org: number) => count("select 1 from review_item where queue='account_review' and organisation_id=$1", [org]);
+const newOrg = async (o?: object) => String(await F.org(o));
+const orgRow = (id: string) => one("select status, signup_path, claimed_at is not null claimed, verified_at is not null verified from organisation where id=$1", [id]);
+const reviews = (org: string) => count("select 1 from review_item where queue='account_review' and organisation_id=$1", [org]);
 const memberships = (user: string) => count("select 1 from membership where portal_user_id=$1", [user]);
 
 describe("sign-up, confirmation, sign-in, resend and reset (#54, #189)", () => {
@@ -201,7 +201,7 @@ describe("requirePortal", () => {
 });
 
 describe("claiming an existing sponsor (20b path 1, #20, #37)", () => {
-  let acme: number, boss: Awaited<ReturnType<typeof login>>;
+  let acme: string, boss: Awaited<ReturnType<typeof login>>;
   beforeAll(async () => {
     acme = await newOrg({ status: "unclaimed", name: "Acme Fake" });
     await su.query("insert into organisation_domain(organisation_id, domain, source) values ($1, 'acme-fake.test', 'seed')", [acme]);
@@ -217,7 +217,7 @@ describe("claiming an existing sponsor (20b path 1, #20, #37)", () => {
     expect(await orgRow(acme)).toEqual({ status: "verified", signup_path: "dete_claim", claimed: true, verified: true });
     expect(await reviews(acme)).toBe(0);
     const me = await requirePortal(auth(), new Headers({ cookie: boss.cookie }));
-    expect(me.membership).toMatchObject({ organisationId: acme, role: "account_owner", isSigner: true, organisationStatus: "verified", organisationKind: "employer" });
+    expect(me.membership).toMatchObject({ organisationId: Number(acme), role: "account_owner", isSigner: true, organisationStatus: "verified", organisationKind: "employer" });
   });
   it("any other email gives pending_review and exactly one account_review item", async () => {
     const other = await newOrg({ status: "unclaimed" });
@@ -242,7 +242,7 @@ describe("claiming an existing sponsor (20b path 1, #20, #37)", () => {
   });
   it("an unknown or verified company is refused the same way", async () => {
     const gil = await login("gil");
-    for (const organisationId of [987654321, await newOrg({ status: "verified" })])
+    for (const organisationId of ["987654321", await newOrg({ status: "verified" })])
       expect((await company("claim", { organisationId }, { cookie: gil.cookie })).json).toEqual({ code: "ORGANISATION_NOT_AVAILABLE" });
   });
   it("a login that already has a company cannot claim or register a second (one_company_per_login)", async () => {
@@ -274,12 +274,12 @@ describe("registering a new employer or agency (20b paths 2 and 3, #21, #22, #18
     cro = (await one("select cro_number from cro_company where id=$1", [await F.cro({ number: "610001", name: "Fake Bakery Limited" })])).cro_number;
     wrc = (await one("select licence_number from wrc_licence where id=$1", [await F.wrc({ number: "EA-0101", name: "Fake Recruitment Limited" })])).licence_number;
   });
-  const detail = async (org: number) => (await one("select detail from review_item where queue='account_review' and organisation_id=$1", [org])).detail;
+  const detail = async (org: string) => (await one("select detail from review_item where queue='account_review' and organisation_id=$1", [org])).detail;
   it("an employer found in the CRO sample is pending_review with one review item saying it was found and the name matches", async () => {
     const ian = await login("ian");
     const r = await company("register", { kind: "employer", displayName: "Fake Bakery Limited", croNumber: cro }, { cookie: ian.cookie });
     expect(r.status, r.text).toBe(200);
-    expect(r.json).toEqual({ organisationId: expect.any(Number), status: "pending_review" });
+    expect(r.json).toEqual({ organisationId: expect.any(String), status: "pending_review" });
     expect(await orgRow(r.json!.organisationId)).toMatchObject({ status: "pending_review", signup_path: "first_time" });
     expect(await reviews(r.json!.organisationId)).toBe(1);
     expect(await detail(r.json!.organisationId)).toEqual({ register: "cro_company", found: true, name_matches: true, status: "Normal" });
@@ -293,7 +293,7 @@ describe("registering a new employer or agency (20b paths 2 and 3, #21, #22, #18
   });
   it("a number not in the register still goes to review, marked not found; the reply does not say so", async () => {
     const r = await company("register", { kind: "employer", displayName: "Fake Unknown Ltd", croNumber: "610999" }, { cookie: (await login("kim")).cookie });
-    expect(r.json).toEqual({ organisationId: expect.any(Number), status: "pending_review" });
+    expect(r.json).toEqual({ organisationId: expect.any(String), status: "pending_review" });
     expect((await detail(r.json!.organisationId)).found).toBe(false);
   });
   it("a CRO number another organisation holds is refused", async () => {
@@ -336,7 +336,7 @@ describe("security", () => {
     const p = person("rae");
     await call("sign-up/email", p);
     expect((await call("sign-in/email", { email: p.email, password: p.password })).status).toBe(403);
-    expect((await company("claim", { organisationId: 1 })).json).toEqual({ code: "NO_SESSION" });
+    expect((await company("claim", { organisationId: "1" })).json).toEqual({ code: "NO_SESSION" });
     // a session whose email was later marked unconfirmed (an email change, say)
     const sam = await login("sam"), org = await newOrg({ status: "unclaimed" });
     await su.query("update portal_user set email_verified=false where id=$1", [sam.id]);
@@ -418,7 +418,7 @@ describe("security", () => {
   });
   it("claim and register together are limited to 5 calls in 10 minutes per login", async () => {
     const xia = await login("xia"), seq = [];
-    for (let i = 0; i < 7; i++) seq.push((await company("claim", { organisationId: 900000 + i }, { cookie: xia.cookie })).status);
+    for (let i = 0; i < 7; i++) seq.push((await company("claim", { organisationId: String(900000 + i) }, { cookie: xia.cookie })).status);
     expect(seq).toEqual([409, 409, 409, 409, 409, 429, 429]);
     expect((await company("register", { kind: "employer", displayName: "Xia Fake", croNumber: "620006" }, { cookie: xia.cookie })).json).toEqual({ code: "TOO_MANY_REQUESTS" });
     // another login is not held back

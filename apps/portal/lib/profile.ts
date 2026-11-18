@@ -3,7 +3,7 @@
 // check the account owner under the company's lock, write the audit row and do the work; this file refuses bad requests early and maps the refusals.
 // Name, CRO number, status, verification and slug are never fields here (an unknown field is a 400), and app_portal cannot update organisation at all.
 import { getPool } from "@portal/db";
-import { isObject, no, only, portalLogin, readPost, withinLimit, type Refusal } from "./company";
+import { isObject, no, ok, only, portalLogin, readPost, withinLimit, type Refusal } from "./company";
 import { checkUrl, COUNTIES } from "./jobs";
 
 export const PROFILE_RATE = { windowMs: 10 * 60_000, max: 20 }; // edits and closes together, per login
@@ -51,7 +51,7 @@ async function call<T>(request: Request, check: (b: unknown) => T | null, sql: s
   if (!login.membership) return no(403, "NOT_OWNER");
   if (!(await withinLimit(`profile:${login.userId}`, PROFILE_RATE))) return no(429, "TOO_MANY_REQUESTS");
   try {
-    return Response.json((await getPool().query(sql, [login.userId, ...args(body)])).rows[0].r);
+    return ok((await getPool().query(sql, [login.userId, ...args(body)])).rows[0].r);
   } catch (e) {
     const r = profileRefusal(e);
     if (r) return no(r.status, r.code);
@@ -70,6 +70,6 @@ export async function profileGet(request: Request): Promise<Response> {
   const o = (await getPool().query(
     "select id, display_name, status, short_description, website, county, logo_key is not null as has_logo, member_limit from organisation where id = $1",
     [login.membership.organisationId])).rows[0];
-  return Response.json({ company: { organisationId: Number(o.id), name: o.display_name, status: o.status, description: o.short_description, website: o.website,
+  return ok({ company: { organisationId: o.id, name: o.display_name, status: o.status, description: o.short_description, website: o.website,
     county: o.county, hasLogo: o.has_logo, memberLimit: o.member_limit } });
 }

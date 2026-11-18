@@ -163,6 +163,15 @@ describe("access: every role on every action", () => {
   });
 });
 
+describe("the query string", () => {
+  it("GET takes no query keys: any key, repeated or not, is 400 bad_query", async () => {
+    for (const q of ["?x=1", "?after=a", "?id=1&id=2", "?kind=minimums"]) {
+      const res = await route.GET(new Request(`${BASE}/api/rules${q}`, { headers: { cookie: cookies.ed1! } }));
+      expect([res.status, await res.json()], q).toEqual([400, { error: "bad_query" }]);
+    }
+  });
+});
+
 describe("propose, confirm, refuse", () => {
   it("an editor proposes a list change, shown as entries added, removed and changed; a different administrator confirms and it is in force from its date", async () => {
     const before = await ineligible();

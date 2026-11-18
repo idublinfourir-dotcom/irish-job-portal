@@ -1,9 +1,9 @@
 // The team of a company or agency (#52, #103): GET lists it, POST { action, ... } changes it. The acting login always comes from the
 // session, never the body. The database functions (migration 0013) make every real check; this file refuses bad requests early,
 // makes the invite token, sends the invite email and turns the functions' refusals into short codes.
-import { getPool } from "@portal/db";
+import { getPool, validId } from "@portal/db";
 import { createHash, randomBytes } from "node:crypto";
-import { isObject, no, only, portalLogin, readPost, withinLimit, type Refusal } from "./company";
+import { isObject, no, ok, only, portalLogin, readPost, withinLimit, type Refusal } from "./company";
 import { portalOrigin, portalSend } from "./portal";
 
 export const TEAM_RATE = { windowMs: 10 * 60_000, max: 20 }; // every team action together, per login (an invite sends an email)
@@ -22,13 +22,13 @@ type Role = (typeof ROLES)[number];
 export type TeamAction =
   | { action: "invite"; email: string; role: Role; isSigner: boolean }
   | { action: "accept"; token: string }
-  | { action: "request"; organisationId: number }
-  | { action: "refuse" | "remove" | "transfer"; membershipId: number }
-  | { action: "approve"; membershipId: number; role: Role; isSigner: boolean }
+  | { action: "request"; organisationId: string }
+  | { action: "refuse" | "remove" | "transfer"; membershipId: string }
+  | { action: "approve"; membershipId: string; role: Role; isSigner: boolean }
   | { action: "leave" }
-  | { action: "role"; membershipId: number; role: Role; isSigner: boolean };
+  | { action: "role"; membershipId: string; role: Role; isSigner: boolean };
 
-const isId = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
+const isId = validId;
 const isRole = (v: unknown): v is Role => typeof v === "string" && (ROLES as readonly string[]).includes(v);
 
 // Each action takes exactly its own fields. The owner's role is never given here: it moves only by transfer.
@@ -68,7 +68,7 @@ function callFor(user: string, b: Exclude<TeamAction, { action: "invite" }>): [s
 
 const STATUS: Record<string, number> = {
   BAD_REQUEST: 400, VIEWER_NOT_SIGNER: 400, REFUSED: 403, EMAIL_NOT_VERIFIED: 403, NOT_OWNER: 403, NOT_ALLOWED_DOMAIN: 403,
-  MEMBER_NOT_FOUND: 404, INVITE_NOT_VALID: 404, NOT_A_MEMBER: 409, TEAM_FULL: 409, ALREADY_IN_TEAM: 409, ALREADY_IN_A_COMPANY: 409,
+  NOT_A_MEMBER: 403, MEMBER_NOT_FOUND: 404, INVITE_NOT_VALID: 404, TEAM_FULL: 409, ALREADY_IN_TEAM: 409, ALREADY_IN_A_COMPANY: 409,
   OWNER_MUST_TRANSFER: 409, ORGANISATION_NOT_AVAILABLE: 409,
 };
 // The functions raise 'team refused: CODE ...'. A code this file does not know is REFUSED (fail closed, no detail). A banned email
@@ -101,7 +101,7 @@ async function invite(user: string, b: Extract<TeamAction, { action: "invite" }>
       return no(502, "EMAIL_FAILED");
     }
     await c.query("commit");
-    return Response.json(r);
+    return ok(r);
   } catch (e) {
     await c.query("rollback").catch(() => {});
     const r = teamRefusal(e);
@@ -117,7 +117,7 @@ export async function teamPost(request: Request): Promise<Response> {
   if (!(await withinLimit(`team:${login.userId}`, TEAM_RATE))) return no(429, "TOO_MANY_REQUESTS");
   if (body.action === "invite") return invite(login.userId, body);
   try {
-    return Response.json((await getPool().query(...callFor(login.userId, body))).rows[0].r);
+    return ok((await getPool().query(...callFor(login.userId, body))).rows[0].r);
   } catch (e) {
     const r = teamRefusal(e);
     if (r) return no(r.status, r.code);
@@ -133,7 +133,7 @@ export async function teamGet(request: Request): Promise<Response> {
   const m = login.membership;
   if (!m) {
     const { rows } = await getPool().query("select id, organisation_id from membership where portal_user_id = $1 and status = 'join_requested'", [login.userId]);
-    return Response.json({ team: null, joinRequest: rows[0] ? { membershipId: Number(rows[0].id), organisationId: Number(rows[0].organisation_id) } : null });
+    return ok({ team: null, joinRequest: rows[0] ? { membershipId: rows[0].id, organisationId: rows[0].organisation_id } : null });
   }
   const owner = m.role === "account_owner";
   const { rows } = await getPool().query(
@@ -142,13 +142,13 @@ export async function teamGet(request: Request): Promise<Response> {
       where m.organisation_id = $1 and (m.status = 'active' or ($2 and m.status in ('invited', 'join_requested')))
       order by m.id`, [m.organisationId, owner]);
   const pick = (s: string) => rows.filter((r) => r.status === s);
-  return Response.json({
+  return ok({
     team: {
       organisationId: m.organisationId, myMembershipId: m.id, myRole: m.role,
-      members: pick("active").map((r) => ({ membershipId: Number(r.id), name: r.name, email: r.email, role: r.role, isSigner: r.is_signer, joinedAt: r.joined_at })),
+      members: pick("active").map((r) => ({ membershipId: r.id, name: r.name, email: r.email, role: r.role, isSigner: r.is_signer, joinedAt: r.joined_at })),
       ...(owner ? {
-        invites: pick("invited").map((r) => ({ membershipId: Number(r.id), email: r.email, role: r.role, isSigner: r.is_signer, expiresAt: r.invite_expires_at })),
-        requests: pick("join_requested").map((r) => ({ membershipId: Number(r.id), name: r.name, email: r.email })),
+        invites: pick("invited").map((r) => ({ membershipId: r.id, email: r.email, role: r.role, isSigner: r.is_signer, expiresAt: r.invite_expires_at })),
+        requests: pick("join_requested").map((r) => ({ membershipId: r.id, name: r.name, email: r.email })),
       } : {}),
     },
     joinRequest: null,

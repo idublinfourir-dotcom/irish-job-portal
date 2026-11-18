@@ -8,6 +8,7 @@ import { createTestDb, urlFor, type TestDb } from "./db";
 import { createAuth, requirePortal } from "../../auth/src";
 import { portalAnswers, seedSignupTerms } from "./better-auth-helper";
 import { fixtures } from "./fixtures";
+import { loadSpec, replyProblems } from "./openapi";
 
 // Statements counted on every pg.Client.query call, measured on 12 November 2026: the team list 4 (requirePortal 3, the list 1); an
 // invite 7 (requirePortal 3, rate count 1, begin, the function, commit); an accept 5 (requirePortal 3, rate count 1, the function).
@@ -23,7 +24,7 @@ let db: TestDb, su: pg.Pool;
 let authPOST: Handler, teamGET: Handler, teamPOST: Handler;
 let mail: () => { pool: string; kind: string; to: string; link: string }[];
 let auth: () => ReturnType<typeof createAuth>;
-let F: { org(o?: object): Promise<number>; member(org: number, user: string | null, o?: object): Promise<number> };
+let F: { org(o?: object): Promise<number>; member(org: number | string, user: string | null, o?: object): Promise<number> };
 
 beforeAll(async () => {
   db = await createTestDb();
@@ -76,9 +77,13 @@ const median = async (fn: () => Promise<unknown>) => {
 
 const one = async (sql: string, args: unknown[] = []) => (await su.query(sql, args)).rows[0];
 const count = async (sql: string, args: unknown[] = []) => (await one(`select count(*)::int n from (${sql}) t`, args)).n as number;
-const mem = (id: number) => one("select status, role, is_signer, portal_user_id, invited_email, invite_token_hash, organisation_id::int org from membership where id=$1", [id]);
-const audits = (action: string, id: number) => su.query("select kind, actor_portal_user_id, before, after, reason_text from audit_event where action=$1 and object_type='membership' and object_id=$2", [action, String(id)]).then((r) => r.rows);
-const me = async (cookie: string) => (await requirePortal(auth(), new Headers({ cookie }))).membership;
+const mem = (id: string) => one("select status, role, is_signer, portal_user_id, invited_email, invite_token_hash, organisation_id::text org from membership where id=$1", [id]);
+const audits = (action: string, id: string) => su.query("select kind, actor_portal_user_id, before, after, reason_text from audit_event where action=$1 and object_type='membership' and object_id=$2", [action, String(id)]).then((r) => r.rows);
+// the session's membership with its ids as the routes send them (text)
+const me = async (cookie: string) => {
+  const m = (await requirePortal(auth(), new Headers({ cookie }))).membership;
+  return m && { ...m, id: String(m.id), organisationId: String(m.organisationId) };
+};
 const tokenFor = (email: string) => new URL(mail().filter((m) => m.to === email && m.kind === "invite").at(-1)!.link).searchParams.get("token")!;
 
 let n = 0;
@@ -92,20 +97,20 @@ async function login(domain = "elsewhere.example.test"): Promise<Login> {
   expect(r.status, r.text).toBe(200);
   return { email: p.email, password: p.password, cookie: r.cookie, id: (await one("select id from portal_user where email=$1", [p.email])).id };
 }
-type Company = { org: number; domain: string; owner: Login & { mem: number } };
+type Company = { org: string; domain: string; owner: Login & { mem: string } };
 let dn = 0;
 // A company (verified unless said) with its own email domain and an owner (signer) with a session.
 async function company(status = "verified"): Promise<Company> {
   const domain = `team${++dn}.example.test`;
-  const org = Number(await F.org({ status }));
+  const org = String(await F.org({ status }));
   await su.query("insert into organisation_domain(organisation_id, domain, source) values ($1, $2, 'seed')", [org, domain]);
   const owner = await login(domain);
-  return { org, domain, owner: { ...owner, mem: Number(await F.member(org, owner.id, { role: "account_owner", signer: true })) } };
+  return { org, domain, owner: { ...owner, mem: String(await F.member(org, owner.id, { role: "account_owner", signer: true })) } };
 }
 // A member of the company with a session, put in place by the database owner.
-async function joined(c: Company, role: string, signer = false): Promise<Login & { mem: number }> {
+async function joined(c: Company, role: string, signer = false): Promise<Login & { mem: string }> {
   const l = await login(c.domain);
-  return { ...l, mem: Number(await F.member(c.org, l.id, { role, signer })) };
+  return { ...l, mem: String(await F.member(c.org, l.id, { role, signer })) };
 }
 const invite = (c: Company, email: string, role = "poster", isSigner = false) => team(c.owner.cookie, { action: "invite", email, role, isSigner });
 // Holds a row locked as the database owner (lockSql), starts act, waits until act is blocked on that lock, makes change in the same
@@ -136,7 +141,7 @@ const ban = (value: string, column: "email_domain" | "email_address" = "email_do
 });
 
 describe("invite then accept", () => {
-  let c: Company, ivy: Login, membershipId: number, token: string;
+  let c: Company, ivy: Login, membershipId: string, token: string;
   beforeAll(async () => { c = await company(); ivy = await login(c.domain); });
   it("the owner invites by email; the email goes to the fake sender with a link; only the token's hash is stored; one audit row of codes", async () => {
     await list(c.owner.cookie); // warm
@@ -188,7 +193,7 @@ describe("invite then accept", () => {
 });
 
 describe("the team list (GET): roles decide what is shown", () => {
-  let c: Company, poster: Login & { mem: number }, invited: number, request: number, asker: Login;
+  let c: Company, poster: Login & { mem: string }, invited: number, request: number, asker: Login;
   beforeAll(async () => {
     c = await company();
     poster = await joined(c, "poster");
@@ -204,7 +209,7 @@ describe("the team list (GET): roles decide what is shown", () => {
     console.log(`team budgets: list ${stmts} statements, median ${listMs.toFixed(1)} ms`);
     expect(listMs).toBeLessThan(BUDGET.listMs);
     const t = r.json!.team;
-    expect(t.members.map((m: { membershipId: number }) => m.membershipId)).toEqual([c.owner.mem, poster.mem]);
+    expect(t.members.map((m: { membershipId: string }) => m.membershipId)).toEqual([c.owner.mem, poster.mem]);
     expect(t.members[0]).toMatchObject({ email: c.owner.email, role: "account_owner", isSigner: true });
     expect(t.invites).toEqual([{ membershipId: invited, email: "fake.later@example.test", role: "viewer", isSigner: false, expiresAt: expect.any(String) }]);
     expect(t.requests).toEqual([{ membershipId: request, name: expect.any(String), email: asker.email }]);
@@ -263,11 +268,11 @@ describe("request to join, then approve or refuse", () => {
     expect((await team(off.cookie, { action: "request", organisationId: c.org })).json).toEqual({ code: "NOT_ALLOWED_DOMAIN" });
     const a = await login(c.domain);
     for (const status of ["unclaimed", "rejected", "closed", "suspended"]) {
-      const o = Number(await F.org({ status }));
+      const o = String(await F.org({ status }));
       await su.query("insert into organisation_domain(organisation_id, domain, source) values ($1, $2, 'seed')", [o, c.domain]);
       expect((await team(a.cookie, { action: "request", organisationId: o })).json, status).toEqual({ code: "ORGANISATION_NOT_AVAILABLE" });
     }
-    expect((await team(a.cookie, { action: "request", organisationId: 987654321 })).json).toEqual({ code: "ORGANISATION_NOT_AVAILABLE" });
+    expect((await team(a.cookie, { action: "request", organisationId: "987654321" })).json).toEqual({ code: "ORGANISATION_NOT_AVAILABLE" });
     // a pending request elsewhere blocks a second one (one company per login, #130)
     const twin = await company();
     await su.query("insert into organisation_domain(organisation_id, domain, source) values ($1, $2, 'seed')", [twin.org, c.domain]);
@@ -379,7 +384,7 @@ describe("owner transfer", () => {
     expect(await count("select 1 from membership where organisation_id=$1 and role='account_owner' and status='active'", [c.org])).toBe(1);
     expect((await invite(c, "fake.x@example.test")).json).toEqual({ code: "NOT_OWNER" });
     expect((await team(r.cookie, { action: "invite", email: "fake.x@example.test", role: "viewer", isSigner: false })).status).toBe(200);
-    expect((await audits("membership.transfer", r.mem))[0]).toMatchObject({ actor_portal_user_id: c.owner.id, before: { role: "poster", old_owner_membership: c.owner.mem }, after: { role: "account_owner", old_owner_role: "recruiter" } });
+    expect((await audits("membership.transfer", r.mem))[0]).toMatchObject({ actor_portal_user_id: c.owner.id, before: { role: "poster", old_owner_membership: Number(c.owner.mem) }, after: { role: "account_owner", old_owner_role: "recruiter" } });
   });
   it("refused to itself, an invite, a join request, another company's member, and a blocked or deleted member", async () => {
     const c = await company(), other = await company(), asker = await login(c.domain);
@@ -415,12 +420,12 @@ describe("the member limit (#103: 10, counting members, live invites and join re
 });
 
 describe("security", () => {
-  let c: Company, viewer: Login & { mem: number }, poster: Login & { mem: number }, recruiter: Login & { mem: number };
+  let c: Company, viewer: Login & { mem: string }, poster: Login & { mem: string }, recruiter: Login & { mem: string };
   beforeAll(async () => {
     c = await company();
     viewer = await joined(c, "viewer"); poster = await joined(c, "poster", true); recruiter = await joined(c, "recruiter", true);
   });
-  const ownerActions = (target: number) => [
+  const ownerActions = (target: string) => [
     { action: "invite", email: "fake.sneak@example.test", role: "recruiter", isSigner: true }, { action: "remove", membershipId: target },
     { action: "role", membershipId: target, role: "recruiter", isSigner: true }, { action: "transfer", membershipId: target },
     { action: "approve", membershipId: target, role: "recruiter", isSigner: true }, { action: "refuse", membershipId: target },
@@ -488,7 +493,7 @@ describe("security", () => {
     await ban("banned-team.example.test");
     for (const r of [await invite(x, "fake.other@banned-team.example.test"), await team(victim.cookie, { action: "accept", token: tokenFor(victim.email) }),
       await team((await login("banned-team.example.test")).cookie, { action: "request", organisationId: x.org }),
-      await team(x.owner.cookie, { action: "approve", membershipId: Number(reqId), role: "viewer", isSigner: false })])
+      await team(x.owner.cookie, { action: "approve", membershipId: String(reqId), role: "viewer", isSigner: false })])
       expect([r.status, r.text]).toEqual([403, JSON.stringify({ code: "REFUSED" })]);
     expect(await me(victim.cookie)).toBeNull();
     expect(await me(asker.cookie)).toBeNull();
@@ -500,7 +505,7 @@ describe("security", () => {
     const reqId = (await one("select id from membership where portal_user_id=$1", [asker.id])).id;
     for (const e of [victim.email, asker.email, later.email]) await ban(e.toLowerCase(), "email_address");
     for (const r of [await team(victim.cookie, { action: "accept", token: tokenFor(victim.email) }),
-      await team(x.owner.cookie, { action: "approve", membershipId: Number(reqId), role: "viewer", isSigner: false }),
+      await team(x.owner.cookie, { action: "approve", membershipId: String(reqId), role: "viewer", isSigner: false }),
       await team(later.cookie, { action: "request", organisationId: x.org }), await invite(x, later.email)])
       expect([r.status, r.text]).toEqual([403, JSON.stringify({ code: "REFUSED" })]);
     expect(await me(victim.cookie)).toBeNull();
@@ -658,7 +663,7 @@ describe("security", () => {
       const r = await underLock(USER_LOCK, [u.id], () => team(u.cookie, { action: "accept", token: tokenFor(u.email) }),
         async (c) => { req = (await c.query("insert into membership(organisation_id, portal_user_id, role, status) values ($1, $2, 'viewer', 'join_requested') returning id", [y.org, u.id])).rows[0].id; });
       expect(r.status).toBe(200);
-      expect((await mem(Number(req))).status).toBe("removed");
+      expect((await mem(String(req))).status).toBe("removed");
     });
   });
 
@@ -695,11 +700,30 @@ describe("security", () => {
   it("20 team calls in 10 minutes per login, then 429; another login is not held back", async () => {
     const u = await login(), seq = [];
     for (let i = 0; i < 22; i++) seq.push((await team(u.cookie, { action: "leave" })).status);
-    expect(seq).toEqual([...Array(20).fill(409), 429, 429]);
-    expect((await team((await login()).cookie, { action: "leave" })).status).toBe(409);
+    expect(seq).toEqual([...Array(20).fill(403), 429, 429]); // NOT_A_MEMBER is 403, as on the jobs and status routes
+    expect((await team((await login()).cookie, { action: "leave" })).status).toBe(403);
   });
   it("the portal login still cannot write membership directly (#184)", async () => {
     await expect(db.query("app_portal", "update membership set role='account_owner' where id=$1", [viewer.mem])).rejects.toMatchObject({ code: "42501" });
+  });
+});
+
+describe("the replies match docs/openapi/portal.yaml", () => {
+  it("the owner's team with an invite and a request, the invite reply, a leave with no company (403): ids as text, times with Z", async () => {
+    const spec = loadSpec("portal");
+    const c = await company();
+    await joined(c, "poster", true);
+    const inv = await invite(c, "fake.schema@example.test");
+    expect([inv.status, replyProblems(spec, "POST", "/api/portal/team", inv.status, inv.json)]).toEqual([200, []]);
+    expect(inv.json!.expiresAt).toMatch(/Z$/);
+    expect(typeof inv.json!.membershipId).toBe("string");
+    await team((await login(c.domain)).cookie, { action: "request", organisationId: c.org });
+    const g = await list(c.owner.cookie);
+    expect([g.status, replyProblems(spec, "GET", "/api/portal/team", g.status, g.json)]).toEqual([200, []]);
+    expect(g.json!.team.invites[0].expiresAt).toMatch(/Z$/);
+    expect(typeof g.json!.team.myMembershipId).toBe("string");
+    const leave = await team((await login()).cookie, { action: "leave" });
+    expect([leave.status, leave.json, replyProblems(spec, "POST", "/api/portal/team", leave.status, leave.json)]).toEqual([403, { code: "NOT_A_MEMBER" }, []]);
   });
 });
 

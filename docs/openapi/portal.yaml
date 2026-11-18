@@ -31,18 +31,19 @@ info:
       disabled or deleted login is refused on its next request.
     - **Paging.** Lists page by keyset, never by offset: the reply carries an opaque `next` (and sometimes `previous`) token,
       and the next page is asked for with `after=<token>` (or `before=<token>`). A token works only with the sort and filters it was
-      made for; a changed or forged token is 400. Page sizes are given on each route (job lists 20, a visitor 6, audit 50, notices
-      50, content 20, admin queues 20). Not yet uniform: three admin lists (`/api/trust-safety/cases`,
-      `/api/companies/owner-reassign`, `/api/manual-jobs`) answer `next` as a plain id, and `/api/manual-jobs` pages with `before`.
+      made for; a changed or forged token, or another list's token, is 400. Page sizes are given on each route (job lists 20, a
+      visitor 6, audit 50, notices 50, content 20, admin queues 20).
     - **Rate limits.** Limits are counted in the database (shared by every server instance). Over a limit the answer is 429; only
       the public candidate reads send `Retry-After` (seconds). Each write names its limit in `x-rate-limit` ("none" where the code
       has none, as on the admin routes, which rely on the staff sign-in limits).
-    - **Ids.** Database ids are 64-bit integers. The candidate and admin routes send and take them as strings of digits (`"123"`,
-      pattern `^[1-9][0-9]{0,18}$`), so no client loses precision. Not yet uniform: most portal routes send and take them as JSON
-      numbers (`NumId` in portal.yaml); each field says which. Login ids (Better Auth) are 32 letters and digits.
+    - **Ids.** Database ids are 64-bit integers. Every route sends and takes them as strings of digits (`"123"`, pattern
+      `^[1-9][0-9]{0,18}$`, at most 9223372036854775807), so no client loses precision. `0`, a leading zero, a JSON number or a
+      longer string is refused with the field's 400 code. Login ids (Better Auth) are 32 letters and digits.
     - **Times** are ISO 8601 strings in UTC (`2026-11-18T09:30:00.000Z`); dates without a time are `YYYY-MM-DD`. Not yet uniform:
-      some portal replies send Postgres text (`2026-11-18 09:30:00.123456+00`, `PgTime` in portal.yaml) or an ISO time with a
-      `+00:00` offset; each field says which.
+      the admin replies send Postgres text (`2026-11-18 09:30:00.123456+00`, `DbTime` in admin.yaml) in most lists; each field
+      says which. The candidate and portal replies use the `Z` form only.
+    - **Admin query strings** are strict: an unknown or repeated query key is 400 `bad_query` on every admin GET (the merge
+      preview's `id` is the one key that may repeat).
     - **Examples** are made up. No example holds a real person, company, address or secret.
 servers:
   - url: /
@@ -77,7 +78,8 @@ components:
     Timestamp:
       type: string
       format: date-time
-      description: An ISO 8601 time in UTC.
+      description: An ISO 8601 time in UTC with `Z`, to the millisecond.
+      pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$'
       example: '2026-11-18T09:30:00.000Z'
     Date:
       type: string
@@ -88,16 +90,6 @@ components:
       description: An opaque keyset paging token from a previous reply. Send it back unchanged.
       pattern: '^[A-Za-z0-9_-]{1,300}$'
       example: eyJzIjoic3BvbnNvciIsInEiOmZhbHNlfQ
-    NumId:
-      type: integer
-      description: A database id the portal sends and takes as a JSON number (not text). A whole number from 1 up to 9007199254740991.
-      minimum: 1
-      maximum: 9007199254740991
-      example: 1042
-    PgTime:
-      type: string
-      description: A time as Postgres writes it as text, in UTC (for example `2026-11-18 09:30:00.123456+00`). Not the `T` and `Z` form.
-      example: '2026-11-18 09:30:00.123456+00'
     County:
       type: string
       description: One of the 26 counties of the Republic of Ireland.
@@ -166,13 +158,13 @@ components:
       description: A job edit, the whole post again plus `jobId`. Unknown fields are refused.
       allOf:
         - { $ref: '#/components/schemas/JobPostFields' }
-        - { type: object, required: [jobId], properties: { jobId: { $ref: '#/components/schemas/NumId' } } }
+        - { type: object, required: [jobId], properties: { jobId: { $ref: '#/components/schemas/Id' } } }
       unevaluatedProperties: false
     JobResult:
       type: object
       required: [jobId, status, badge, passRoute]
       properties:
-        jobId: { $ref: '#/components/schemas/NumId' }
+        jobId: { $ref: '#/components/schemas/Id' }
         status: { type: string, enum: [draft, live, in_review, under_review, closed, hidden] }
         badge: { type: [string, 'null'], enum: [sponsor_confirmed, critical_skills_eligible, null] }
         passRoute: { type: [string, 'null'], enum: [stated_pay, public_pay, null] }
@@ -434,15 +426,15 @@ paths:
               additionalProperties: false
               required: [organisationId]
               properties:
-                organisationId: { $ref: '#/components/schemas/NumId' }
-            example: { organisationId: 1042 }
+                organisationId: { $ref: '#/components/schemas/Id' }
+            example: { organisationId: '1042' }
       responses:
         '200':
           description: Claimed.
           content:
             application/json:
-              schema: { type: object, required: [organisationId, status], properties: { organisationId: { $ref: '#/components/schemas/NumId' }, status: { type: string, enum: [verified, pending_review] } } }
-              example: { organisationId: 1042, status: pending_review }
+              schema: { type: object, required: [organisationId, status], properties: { organisationId: { $ref: '#/components/schemas/Id' }, status: { type: string, enum: [verified, pending_review] } } }
+              example: { organisationId: '1042', status: pending_review }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `EMAIL_NOT_VERIFIED`: the login's email is not confirmed. `REFUSED`: blocked or deleted login, a ban, a merged company, or any other refusal of the database function.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: REFUSED } } } }
@@ -483,8 +475,8 @@ paths:
           description: Registered, waiting for the staff check.
           content:
             application/json:
-              schema: { type: object, required: [organisationId, status], properties: { organisationId: { $ref: '#/components/schemas/NumId' }, status: { type: string, enum: [pending_review] } } }
-              example: { organisationId: 2077, status: pending_review }
+              schema: { type: object, required: [organisationId, status], properties: { organisationId: { $ref: '#/components/schemas/Id' }, status: { type: string, enum: [pending_review] } } }
+              example: { organisationId: '2077', status: pending_review }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `EMAIL_NOT_VERIFIED`: the login's email is not confirmed. `REFUSED`: blocked or deleted login, a ban, a number that belongs to a merged company, or any other refusal.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: EMAIL_NOT_VERIFIED } } } }
@@ -511,7 +503,7 @@ paths:
                     type: object
                     required: [organisationId, name, status, description, website, county, hasLogo, memberLimit]
                     properties:
-                      organisationId: { $ref: '#/components/schemas/NumId' }
+                      organisationId: { $ref: '#/components/schemas/Id' }
                       name: { type: string }
                       status: { type: string, description: "The company status, for example `pending_review`, `verified`, `verified_restricted`, `suspended`, `closed`." }
                       description: { type: [string, 'null'] }
@@ -519,7 +511,7 @@ paths:
                       county: { oneOf: [{ $ref: '#/components/schemas/County' }, { type: 'null' }] }
                       hasLogo: { type: boolean }
                       memberLimit: { type: integer }
-              example: { company: { organisationId: 1042, name: Example Software Ltd, status: verified, description: We build payment software., website: 'https://www.example.ie', county: Dublin, hasLogo: false, memberLimit: 10 } }
+              example: { company: { organisationId: '1042', name: Example Software Ltd, status: verified, description: We build payment software., website: 'https://www.example.ie', county: Dublin, hasLogo: false, memberLimit: 10 } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
         '404': { description: "`NO_COMPANY`: the login has no company.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NO_COMPANY } } } }
@@ -552,8 +544,8 @@ paths:
           description: Saved. `changed` lists the columns that changed.
           content:
             application/json:
-              schema: { type: object, required: [organisationId, changed], properties: { organisationId: { $ref: '#/components/schemas/NumId' }, changed: { type: array, items: { type: string } } } }
-              example: { organisationId: 1042, changed: [short_description] }
+              schema: { type: object, required: [organisationId, changed], properties: { organisationId: { $ref: '#/components/schemas/Id' }, changed: { type: array, items: { type: string } } } }
+              example: { organisationId: '1042', changed: [short_description] }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or an unknown refusal. `NOT_OWNER`: no company, or not its account owner.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_OWNER } } } }
@@ -591,12 +583,12 @@ paths:
                 type: object
                 required: [organisationId, jobsClosed, itemsDropped, membershipsEnded, invitesCancelled]
                 properties:
-                  organisationId: { $ref: '#/components/schemas/NumId' }
+                  organisationId: { $ref: '#/components/schemas/Id' }
                   jobsClosed: { type: integer }
                   itemsDropped: { type: integer }
                   membershipsEnded: { type: integer }
                   invitesCancelled: { type: integer }
-              example: { organisationId: 1042, jobsClosed: 3, itemsDropped: 0, membershipsEnded: 4, invitesCancelled: 1 }
+              example: { organisationId: '1042', jobsClosed: 3, itemsDropped: 0, membershipsEnded: 4, invitesCancelled: 1 }
         '400': { description: "`BAD_REQUEST`: bad JSON or body. `NAME_MISMATCH`: the name is not the company's exact name.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NAME_MISMATCH } } } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login. `NOT_OWNER`: no company, or not its account owner.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_OWNER } } } }
@@ -609,12 +601,13 @@ paths:
       summary: Upload or replace my company's logo
       description: |
         The account owner uploads a PNG, JPEG or WebP (found from the bytes) of at most 1,048,576 bytes, multipart with exactly one
-        field `file`. The owner is checked before the body is read. The old logo file is removed after the new one is saved. The
-        file is private; a public read path comes with the company page. Origin checked first.
+        field `file`. Order: Origin (403 `BAD_ORIGIN`), the 1 MiB cap by `Content-Length` (413, before the session is read), the
+        session, the upload rate limit, the owner check (before the body is read), then the body. The old logo file is removed after
+        the new one is saved. The file is private; a public read path comes with the company page.
       security: [{ portalSession: [] }]
       x-roles: [account_owner]
       x-rate-limit: 10 uploads per login per hour
-      x-body-cap: "1064960 bytes (1 MiB plus 16 KiB) by Content-Length after the owner check; 4210688 bytes before the session is read"
+      x-body-cap: "1064960 bytes (1 MiB plus 16 KiB) by Content-Length, before the session is read"
       requestBody:
         required: true
         content:
@@ -738,8 +731,8 @@ paths:
           description: Answered.
           content:
             application/json:
-              schema: { type: object, required: [organisationId, status], properties: { organisationId: { $ref: '#/components/schemas/NumId' }, status: { type: string, enum: [pending_review] } } }
-              example: { organisationId: 1042, status: pending_review }
+              schema: { type: object, required: [organisationId, status], properties: { organisationId: { $ref: '#/components/schemas/Id' }, status: { type: string, enum: [pending_review] } } }
+              example: { organisationId: '1042', status: pending_review }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, no company, or not its account owner.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: REFUSED } } } }
@@ -753,12 +746,12 @@ paths:
       description: |
         The company's employer and agency jobs (at most 200, newest first), each with its state and why it is held: `reason` is
         `restricted_company` or `staff_check` for `in_review`, `pay_check` for `under_review`, the hidden reason for `hidden`.
-        `clientCheck` is true while an agency client check is open. A login with no company gets `{ jobs: null }`. Any active member, viewers too.
+        `clientCheck` is true while an agency client check is open. A login with no company gets 404 `NO_COMPANY`, as the company GET. Any active member, viewers too.
       security: [{ portalSession: [] }]
       x-roles: [any member]
       responses:
         '200':
-          description: The jobs, or null with no company. Times inside come from the database as ISO strings with a `+00:00` offset.
+          description: The jobs.
           content:
             application/json:
               schema:
@@ -766,11 +759,11 @@ paths:
                 required: [jobs]
                 properties:
                   jobs:
-                    type: [array, 'null']
+                    type: array
                     items:
                       type: object
                       properties:
-                        id: { $ref: '#/components/schemas/NumId' }
+                        id: { $ref: '#/components/schemas/Id' }
                         title: { type: string }
                         status: { type: string }
                         badge: { type: [string, 'null'] }
@@ -781,16 +774,17 @@ paths:
                         salaryHigh: { type: [integer, 'null'] }
                         payGrade: { type: [string, 'null'] }
                         weeklyHours: { type: [integer, 'null'] }
-                        postedAt: { type: string }
-                        closesAt: { type: [string, 'null'] }
-                        closedAt: { type: [string, 'null'] }
+                        postedAt: { $ref: '#/components/schemas/Timestamp' }
+                        closesAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+                        closedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
                         closeReason: { type: [string, 'null'] }
                         hireAnswer: { type: [string, 'null'], enum: [yes, no, null] }
                         reason: { type: [string, 'null'] }
                         clientCheck: { type: boolean }
-              example: { jobs: [{ id: 5501, title: Senior Software Engineer, status: live, badge: sponsor_confirmed, passRoute: stated_pay, occupationCode: '2136', county: Dublin, salaryLow: 70000, salaryHigh: 85000, payGrade: null, weeklyHours: 39, postedAt: '2026-11-10T08:00:00.000000+00:00', closesAt: '2026-12-10T08:00:00.000000+00:00', closedAt: null, closeReason: null, hireAnswer: null, reason: null, clientCheck: false }] }
+              example: { jobs: [{ id: '5501', title: Senior Software Engineer, status: live, badge: sponsor_confirmed, passRoute: stated_pay, occupationCode: '2136', county: Dublin, salaryLow: 70000, salaryHigh: 85000, payGrade: null, weeklyHours: 39, postedAt: '2026-11-10T08:00:00.000Z', closesAt: '2026-12-10T08:00:00.000Z', closedAt: null, closeReason: null, hireAnswer: null, reason: null, clientCheck: false }] }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`REFUSED`: blocked or deleted login. `NOT_A_MEMBER`: the membership ended between the session read and the list.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: REFUSED } } } }
+        '404': { description: "`NO_COMPANY`: the login has no company.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NO_COMPANY } } } }
     post:
       operationId: portalJobCreate
       summary: Post a new job (draft or live)
@@ -815,7 +809,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/JobResult' }
-              example: { jobId: 5502, status: live, badge: sponsor_confirmed, passRoute: stated_pay }
+              example: { jobId: '5502', status: live, badge: sponsor_confirmed, passRoute: stated_pay }
         '400': { description: "`BAD_REQUEST`: bad JSON or body. `CLIENT_ONLY_FOR_AGENCIES`: `clientName` from an employer. `WRITTEN_AUTHORITY_REQUIRED`: a statement on behalf of a client without `writtenAuthority: true`.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: CLIENT_ONLY_FOR_AGENCIES } } } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or an unknown database refusal. `NOT_A_MEMBER`: no company. `NOT_A_POSTER`: a viewer, or the database's job guard refused the poster. `NOT_A_SIGNER`: this member may not sign the statement. `BADGE_RESTRICTED`: the company may not show `sponsor_confirmed`. `COMPANY_NOT_ACTIVE`: the company cannot post.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_A_POSTER } } } }
@@ -841,21 +835,21 @@ paths:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/JobEdit' }
-            example: { jobId: 5502, status: live, title: Staff Nurse, description: Ward nurse for a busy medical unit in Cork. NMBI registration needed., county: Cork, occupationCode: '2231', contractType: fixed_term, contractMonths: 24, salaryLow: 42000, ownPageUrl: 'https://jobs.example.ie/nurse-17' }
+            example: { jobId: '5502', status: live, title: Staff Nurse, description: Ward nurse for a busy medical unit in Cork. NMBI registration needed., county: Cork, occupationCode: '2231', contractType: fixed_term, contractMonths: 24, salaryLow: 42000, ownPageUrl: 'https://jobs.example.ie/nurse-17' }
       responses:
         '200':
           description: Saved.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/JobResult' }
-              example: { jobId: 5502, status: live, badge: null, passRoute: stated_pay }
+              example: { jobId: '5502', status: live, badge: null, passRoute: stated_pay }
         '400': { description: "`BAD_REQUEST`: bad JSON or body. `CLIENT_ONLY_FOR_AGENCIES`: `clientName` from an employer. `WRITTEN_AUTHORITY_REQUIRED`: a statement on behalf of a client without `writtenAuthority: true`.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`, `REFUSED`, `NOT_A_MEMBER`, `NOT_A_POSTER`, `NOT_A_SIGNER`, `BADGE_RESTRICTED`, `COMPANY_NOT_ACTIVE`: as for a new post.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_A_SIGNER } } } }
         '404': { description: "`JOB_NOT_FOUND`: no employer or agency job of this company with that id.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: JOB_NOT_FOUND } } } }
-        '409': { description: "`BAD_STATE`: the job is closed or hidden, or the guard refused the move. `NEEDS_REVIEW`: the change would send a live job to review (not allowed), or names a new client not in the DETE names. `STATEMENT_REQUIRED`: a key change on a `sponsor_confirmed` job without a fresh statement. `NO_STATEMENT_TEXT`: no statement wording is published.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: STATEMENT_REQUIRED } } } }
+        '409': { description: "`BAD_STATE`: the job is closed or hidden, or the guard refused the move. `NEEDS_REVIEW`: the change would send a live job to review (not allowed), or names a new client not in the DETE names. `NO_STATEMENT_TEXT`: no statement wording is published.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NEEDS_REVIEW } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
-        '422': { description: "The rules refused the change; codes as for a new post.", content: { application/json: { schema: { $ref: '#/components/schemas/RulesVerdict' }, example: { code: RULES_FAILED, stage: 3 not in Ireland } } } }
+        '422': { description: "The rules refused the change; codes as for a new post. `STATEMENT_REQUIRED` also when a key change on a `sponsor_confirmed` job comes without a fresh statement (the same 422 as the rule, #226).", content: { application/json: { schema: { $ref: '#/components/schemas/RulesVerdict' }, example: { code: RULES_FAILED, stage: 3 not in Ireland } } } }
         '429': { $ref: '#/components/responses/TooMany' }
   /api/portal/jobs/renew:
     post:
@@ -875,16 +869,16 @@ paths:
               additionalProperties: false
               required: [jobId]
               properties:
-                jobId: { $ref: '#/components/schemas/NumId' }
+                jobId: { $ref: '#/components/schemas/Id' }
                 hireAnswer: { type: string, enum: [yes, no] }
-            example: { jobId: 5501, hireAnswer: no }
+            example: { jobId: '5501', hireAnswer: no }
       responses:
         '200':
           description: Renewed.
           content:
             application/json:
-              schema: { type: object, required: [jobId, closesAt], properties: { jobId: { $ref: '#/components/schemas/NumId' }, closesAt: { $ref: '#/components/schemas/Timestamp' } } }
-              example: { jobId: 5501, closesAt: '2026-12-18T09:30:00.000Z' }
+              schema: { type: object, required: [jobId, closesAt], properties: { jobId: { $ref: '#/components/schemas/Id' }, closesAt: { $ref: '#/components/schemas/Timestamp' } } }
+              example: { jobId: '5501', closesAt: '2026-12-18T09:30:00.000Z' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or a database refusal. `NOT_A_MEMBER`: no company. `NOT_A_POSTER`: a viewer. `COMPANY_NOT_ACTIVE`: the company cannot post.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_A_POSTER } } } }
@@ -909,16 +903,16 @@ paths:
               additionalProperties: false
               required: [jobId, hireAnswer]
               properties:
-                jobId: { $ref: '#/components/schemas/NumId' }
+                jobId: { $ref: '#/components/schemas/Id' }
                 hireAnswer: { type: string, enum: [yes, no] }
-            example: { jobId: 5501, hireAnswer: yes }
+            example: { jobId: '5501', hireAnswer: yes }
       responses:
         '200':
           description: Closed.
           content:
             application/json:
-              schema: { type: object, required: [jobId, status], properties: { jobId: { $ref: '#/components/schemas/NumId' }, status: { const: closed } } }
-              example: { jobId: 5501, status: closed }
+              schema: { type: object, required: [jobId, status], properties: { jobId: { $ref: '#/components/schemas/Id' }, status: { const: closed } } }
+              example: { jobId: '5501', status: closed }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or a database refusal. `NOT_A_MEMBER`: no company. `NOT_A_POSTER`: a viewer.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_A_MEMBER } } } }
@@ -994,11 +988,11 @@ paths:
                         category: { type: string }
                         templateKey: { type: string }
                         params: { description: The notice's values (the company id and the like). }
-                        createdAt: { $ref: '#/components/schemas/PgTime' }
-                        readAt: { oneOf: [{ $ref: '#/components/schemas/PgTime' }, { type: 'null' }] }
+                        createdAt: { $ref: '#/components/schemas/Timestamp' }
+                        readAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
                   next: { oneOf: [{ $ref: '#/components/schemas/Cursor' }, { type: 'null' }] }
                   unread: { type: integer, maximum: 200 }
-              example: { items: [{ id: '880', category: account, templateKey: organisation_verified, params: { organisationId: 1042 }, createdAt: '2026-11-18 09:30:00.123456+00', readAt: null }], next: null, unread: 1 }
+              example: { items: [{ id: '880', category: account, templateKey: organisation_verified, params: { organisationId: '1042' }, createdAt: '2026-11-18T09:30:00.123Z', readAt: null }], next: null, unread: 1 }
         '400': { description: "`BAD_CURSOR`: the `after` token is not one this route made.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_CURSOR } } } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
@@ -1008,7 +1002,7 @@ paths:
       description: "`{ action: read, id }` marks one, `{ action: read_all }` marks all. `marked` is how many changed (0 for an unknown, already read or another login's notice). Origin checked first."
       security: [{ portalSession: [] }]
       x-roles: [any active portal login]
-      x-rate-limit: none
+      x-rate-limit: 120 marks per login per 10 minutes
       x-body-cap: 2048 characters
       requestBody:
         required: true
@@ -1030,6 +1024,7 @@ paths:
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_ORIGIN } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/TooMany' }
   /api/portal/pay-floors:
     get:
       operationId: portalPayFloorsList
@@ -1060,12 +1055,12 @@ paths:
                         roleFamily: { $ref: '#/components/schemas/SocCode' }
                         floorEur: { type: integer }
                         status: { type: string, description: "For example `pending_check`, `active`, `withdrawn`, `rejected`, `replaced`." }
-                        signedAt: { $ref: '#/components/schemas/PgTime' }
-                        validUntil: { $ref: '#/components/schemas/PgTime' }
-                        endedAt: { oneOf: [{ $ref: '#/components/schemas/PgTime' }, { type: 'null' }] }
+                        signedAt: { $ref: '#/components/schemas/Timestamp' }
+                        validUntil: { $ref: '#/components/schemas/Timestamp' }
+                        endedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
                         signerName: { type: [string, 'null'] }
                         signerTitle: { type: [string, 'null'] }
-              example: { text: { id: '12', version: '1', body: We will pay at least the stated floor for this role family for 12 months. }, floors: [{ id: '7', roleFamily: '2136', floorEur: 65000, status: pending_check, signedAt: '2026-11-18 09:30:00.123456+00', validUntil: '2027-11-18 09:30:00.123456+00', endedAt: null, signerName: Alex Example, signerTitle: Account owner }] }
+              example: { text: { id: '12', version: '1', body: We will pay at least the stated floor for this role family for 12 months. }, floors: [{ id: '7', roleFamily: '2136', floorEur: 65000, status: pending_check, signedAt: '2026-11-18T09:30:00.123Z', validUntil: '2027-11-18T09:30:00.123Z', endedAt: null, signerName: Alex Example, signerTitle: Account owner }] }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
     post:
@@ -1076,7 +1071,7 @@ paths:
         valid 12 months, against the current wording (`consentTextId` must be the `text.id` the signer saw). It starts
         `pending_check` for staff. The company must be `verified` or `verified_restricted`. `withdraw`: ends a pending or active
         floor of the company. The database decides who may sign (the account owner, or a poster or recruiter with the signer
-        switch). Note: the rules in force are read from the database before the Origin check runs; then Origin (403 `BAD_ORIGIN`).
+        switch). The Origin is checked first (403 `BAD_ORIGIN`), before the rules in force are read from the database.
       security: [{ portalSession: [] }]
       x-roles: [account_owner, signer (poster or recruiter with the signer switch)]
       x-rate-limit: signs and withdrawals together, 10 per login per 10 minutes
@@ -1100,7 +1095,7 @@ paths:
                   required: [action, floorId]
                   properties:
                     action: { const: withdraw }
-                    floorId: { $ref: '#/components/schemas/NumId' }
+                    floorId: { $ref: '#/components/schemas/Id' }
             example: { action: sign, roleFamily: '2136', floorEur: 65000, consentTextId: '12' }
       responses:
         '200':
@@ -1109,9 +1104,9 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - { type: object, required: [id, validUntil], properties: { id: { $ref: '#/components/schemas/Id' }, validUntil: { $ref: '#/components/schemas/PgTime' } } }
+                  - { type: object, required: [id, validUntil], properties: { id: { $ref: '#/components/schemas/Id' }, validUntil: { $ref: '#/components/schemas/Timestamp' } } }
                   - { $ref: '#/components/schemas/Ok' }
-              example: { id: '8', validUntil: '2027-11-18 09:30:00.123456+00' }
+              example: { id: '8', validUntil: '2027-11-18T09:30:00.123Z' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, no company, a company that is not verified (sign), or another refusal. `NOT_BIG_COMPANY`: not on the big-company list or an agency. `NOT_SIGNER`: this member may not sign or withdraw.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_SIGNER } } } }
@@ -1125,13 +1120,13 @@ paths:
       summary: My company's status page
       description: |
         The company's status, any restriction, strikes in the last 12 months and its cases (newest first), with whether the
-        owner can reply or appeal now. A login with no company gets `{ page: null }`. Any active member; `canReply` and
+        owner can reply or appeal now. A login with no company gets 404 `NO_COMPANY`, as the company GET. Any active member; `canReply` and
         `canAppeal` are true only for the account owner.
       security: [{ portalSession: [] }]
       x-roles: [any member]
       responses:
         '200':
-          description: The page. Times inside come from the database as ISO strings with a `+00:00` offset.
+          description: The page.
           content:
             application/json:
               schema:
@@ -1139,12 +1134,12 @@ paths:
                 required: [page]
                 properties:
                   page:
-                    type: [object, 'null']
+                    type: object
                     properties:
-                      organisationId: { $ref: '#/components/schemas/NumId' }
+                      organisationId: { $ref: '#/components/schemas/Id' }
                       status: { type: string }
-                      restrictedUntil: { type: [string, 'null'] }
-                      claimsRemovedAt: { type: [string, 'null'] }
+                      restrictedUntil: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+                      claimsRemovedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
                       isOwner: { type: boolean }
                       strikesLast12Months: { type: integer }
                       cases:
@@ -1152,28 +1147,29 @@ paths:
                         items:
                           type: object
                           properties:
-                            id: { $ref: '#/components/schemas/NumId' }
+                            id: { $ref: '#/components/schemas/Id' }
                             caseKind: { type: string }
                             reasonCode: { type: [string, 'null'] }
-                            jobId: { type: [integer, 'null'] }
+                            jobId: { oneOf: [{ $ref: '#/components/schemas/Id' }, { type: 'null' }] }
                             jobTitle: { type: [string, 'null'] }
                             noticeSummary: { type: [string, 'null'] }
                             stage: { type: string }
                             outcome: { type: [string, 'null'] }
                             level: { type: [string, integer, 'null'] }
-                            replyDueAt: { type: [string, 'null'] }
+                            replyDueAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
                             employerReply: { type: [string, 'null'] }
-                            repliedAt: { type: [string, 'null'] }
-                            decidedAt: { type: [string, 'null'] }
-                            appealDueAt: { type: [string, 'null'] }
+                            repliedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+                            decidedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+                            appealDueAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
                             appealText: { type: [string, 'null'] }
-                            appealedAt: { type: [string, 'null'] }
-                            appealDecidedAt: { type: [string, 'null'] }
+                            appealedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+                            appealDecidedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
                             canReply: { type: boolean }
                             canAppeal: { type: boolean }
-              example: { page: { organisationId: 1042, status: verified, restrictedUntil: null, claimsRemovedAt: null, isOwner: true, strikesLast12Months: 0, cases: [] } }
+              example: { page: { organisationId: '1042', status: verified, restrictedUntil: null, claimsRemovedAt: null, isOwner: true, strikesLast12Months: 0, cases: [] } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`REFUSED`: blocked or deleted login. `NOT_A_MEMBER`: the membership ended between the session read and the page.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: REFUSED } } } }
+        '404': { description: "`NO_COMPANY`: the login has no company.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NO_COMPANY } } } }
     post:
       operationId: portalStatusWrite
       summary: Reply to or appeal a case
@@ -1192,16 +1188,16 @@ paths:
               required: [action, caseId, text]
               properties:
                 action: { type: string, enum: [reply, appeal] }
-                caseId: { $ref: '#/components/schemas/NumId' }
+                caseId: { $ref: '#/components/schemas/Id' }
                 text: { type: string, minLength: 1, maxLength: 1800, description: "Trimmed; line breaks and tabs allowed, no other control or format characters." }
-            example: { action: reply, caseId: 31, text: The advert was updated the same day to show the salary range. }
+            example: { action: reply, caseId: '31', text: The advert was updated the same day to show the salary range. }
       responses:
         '200':
           description: Stored.
           content:
             application/json:
-              schema: { type: object, required: [caseId, kind], properties: { caseId: { $ref: '#/components/schemas/NumId' }, kind: { type: string, enum: [reply, appeal] } } }
-              example: { caseId: 31, kind: reply }
+              schema: { type: object, required: [caseId, kind], properties: { caseId: { $ref: '#/components/schemas/Id' }, kind: { type: string, enum: [reply, appeal] } } }
+              example: { caseId: '31', kind: reply }
         '400': { description: "`BAD_REQUEST`: bad JSON or body. `BAD_TEXT`: the database refused the text.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or an unknown refusal. `NOT_A_MEMBER`: no company. `NOT_OWNER`: not the account owner.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_OWNER } } } }
@@ -1230,25 +1226,25 @@ paths:
                   team:
                     type: [object, 'null']
                     properties:
-                      organisationId: { $ref: '#/components/schemas/NumId' }
-                      myMembershipId: { $ref: '#/components/schemas/NumId' }
+                      organisationId: { $ref: '#/components/schemas/Id' }
+                      myMembershipId: { $ref: '#/components/schemas/Id' }
                       myRole: { type: string, enum: [account_owner, recruiter, poster, viewer] }
                       members:
                         type: array
-                        items: { type: object, properties: { membershipId: { $ref: '#/components/schemas/NumId' }, name: { type: [string, 'null'] }, email: { type: string }, role: { type: string }, isSigner: { type: boolean }, joinedAt: { type: [string, 'null'], format: date-time } } }
+                        items: { type: object, properties: { membershipId: { $ref: '#/components/schemas/Id' }, name: { type: [string, 'null'] }, email: { type: string }, role: { type: string }, isSigner: { type: boolean }, joinedAt: { type: [string, 'null'], format: date-time } } }
                       invites:
                         description: Account owner only.
                         type: array
-                        items: { type: object, properties: { membershipId: { $ref: '#/components/schemas/NumId' }, email: { type: string }, role: { type: string }, isSigner: { type: boolean }, expiresAt: { type: string, format: date-time } } }
+                        items: { type: object, properties: { membershipId: { $ref: '#/components/schemas/Id' }, email: { type: string }, role: { type: string }, isSigner: { type: boolean }, expiresAt: { type: string, format: date-time } } }
                       requests:
                         description: Account owner only.
                         type: array
-                        items: { type: object, properties: { membershipId: { $ref: '#/components/schemas/NumId' }, name: { type: [string, 'null'] }, email: { type: string } } }
+                        items: { type: object, properties: { membershipId: { $ref: '#/components/schemas/Id' }, name: { type: [string, 'null'] }, email: { type: string } } }
                   joinRequest:
                     oneOf:
                       - { type: 'null' }
-                      - { type: object, required: [membershipId, organisationId], properties: { membershipId: { $ref: '#/components/schemas/NumId' }, organisationId: { $ref: '#/components/schemas/NumId' } } }
-              example: { team: { organisationId: 1042, myMembershipId: 11, myRole: account_owner, members: [{ membershipId: 11, name: Alex Example, email: alex@example.ie, role: account_owner, isSigner: true, joinedAt: '2026-11-01T10:00:00.000Z' }], invites: [], requests: [] }, joinRequest: null }
+                      - { type: object, required: [membershipId, organisationId], properties: { membershipId: { $ref: '#/components/schemas/Id' }, organisationId: { $ref: '#/components/schemas/Id' } } }
+              example: { team: { organisationId: '1042', myMembershipId: '11', myRole: account_owner, members: [{ membershipId: '11', name: Alex Example, email: alex@example.ie, role: account_owner, isSigner: true, joinedAt: '2026-11-01T10:00:00.000Z' }], invites: [], requests: [] }, joinRequest: null }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
     post:
@@ -1279,9 +1275,9 @@ paths:
               oneOf:
                 - { type: object, additionalProperties: false, required: [action, email, role, isSigner], properties: { action: { const: invite }, email: { type: string, maxLength: 254, description: "Trimmed and lower-cased; shaped like `a@b.c`." }, role: { $ref: '#/components/schemas/TeamRole' }, isSigner: { type: boolean } } }
                 - { type: object, additionalProperties: false, required: [action, token], properties: { action: { const: accept }, token: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' } } }
-                - { type: object, additionalProperties: false, required: [action, organisationId], properties: { action: { const: request }, organisationId: { $ref: '#/components/schemas/NumId' } } }
-                - { type: object, additionalProperties: false, required: [action, membershipId], properties: { action: { enum: [refuse, remove, transfer] }, membershipId: { $ref: '#/components/schemas/NumId' } } }
-                - { type: object, additionalProperties: false, required: [action, membershipId, role, isSigner], properties: { action: { enum: [approve, role] }, membershipId: { $ref: '#/components/schemas/NumId' }, role: { $ref: '#/components/schemas/TeamRole' }, isSigner: { type: boolean } } }
+                - { type: object, additionalProperties: false, required: [action, organisationId], properties: { action: { const: request }, organisationId: { $ref: '#/components/schemas/Id' } } }
+                - { type: object, additionalProperties: false, required: [action, membershipId], properties: { action: { enum: [refuse, remove, transfer] }, membershipId: { $ref: '#/components/schemas/Id' } } }
+                - { type: object, additionalProperties: false, required: [action, membershipId, role, isSigner], properties: { action: { enum: [approve, role] }, membershipId: { $ref: '#/components/schemas/Id' }, role: { $ref: '#/components/schemas/TeamRole' }, isSigner: { type: boolean } } }
                 - { type: object, additionalProperties: false, required: [action], properties: { action: { const: leave } } }
             example: { action: invite, email: colleague@example.ie, role: poster, isSigner: false }
       responses:
@@ -1293,15 +1289,15 @@ paths:
                 type: object
                 required: [membershipId]
                 properties:
-                  membershipId: { $ref: '#/components/schemas/NumId' }
-                  organisationId: { $ref: '#/components/schemas/NumId' }
-                  expiresAt: { type: string, description: "The invite's end (database time, ISO with offset)." }
-              example: { membershipId: 14, expiresAt: '2026-11-25T09:30:00.000000+00:00' }
+                  membershipId: { $ref: '#/components/schemas/Id' }
+                  organisationId: { $ref: '#/components/schemas/Id' }
+                  expiresAt: { $ref: '#/components/schemas/Timestamp' }
+              example: { membershipId: '14', expiresAt: '2026-11-25T09:30:00.000Z' }
         '400': { description: "`BAD_REQUEST`: bad JSON or body. `VIEWER_NOT_SIGNER`: a viewer with the signer switch on.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: VIEWER_NOT_SIGNER } } } }
         '401': { $ref: '#/components/responses/NoSession' }
-        '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, a ban, or an unknown refusal. `EMAIL_NOT_VERIFIED`: the login's email is not confirmed (accept, request). `NOT_OWNER`: not the account owner. `NOT_ALLOWED_DOMAIN`: the email is not on the company's domains (request).", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_OWNER } } } }
+        '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, a ban, or an unknown refusal. `EMAIL_NOT_VERIFIED`: the login's email is not confirmed (accept, request). `NOT_OWNER`: not the account owner. `NOT_ALLOWED_DOMAIN`: the email is not on the company's domains (request). `NOT_A_MEMBER`: leave with no membership (403 as on the jobs and status routes).", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_OWNER } } } }
         '404': { description: "`MEMBER_NOT_FOUND`: no such member, invite or request of this company. `INVITE_NOT_VALID`: no such invite, already used, expired, or for another email.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: INVITE_NOT_VALID } } } }
-        '409': { description: "`NOT_A_MEMBER` (leave with no membership), `TEAM_FULL`, `ALREADY_IN_TEAM`, `ALREADY_IN_A_COMPANY`, `OWNER_MUST_TRANSFER`, `ORGANISATION_NOT_AVAILABLE` (the company cannot take on people).", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: TEAM_FULL } } } }
+        '409': { description: "`TEAM_FULL`, `ALREADY_IN_TEAM`, `ALREADY_IN_A_COMPANY`, `OWNER_MUST_TRANSFER`, `ORGANISATION_NOT_AVAILABLE` (the company cannot take on people).", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: TEAM_FULL } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
         '429': { $ref: '#/components/responses/TooMany' }
         '502': { description: "`EMAIL_FAILED`: the invite email could not be sent; the invite was undone.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: EMAIL_FAILED } } } }

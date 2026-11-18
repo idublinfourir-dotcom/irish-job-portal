@@ -4,6 +4,7 @@ import { staffSettings } from "@portal/auth";
 import { confirmFloor, getFloorCheck, getPool, listFloorChecks, proposeFloor, rejectFloor } from "@portal/db";
 import { checkLength, checkOrigin } from "../../../lib/account-review";
 import { parseBody, refuse } from "../../../lib/pay-floors";
+import { readQuery } from "../../../lib/admin-api";
 import { requireStaff } from "../../../lib/staff";
 
 export const dynamic = "force-dynamic";
@@ -11,13 +12,13 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const staff = await requireStaff(request.headers);
-    const params = new URL(request.url).searchParams;
-    const id = params.get("id");
+    const q = readQuery(request.url, ["id", "after"]);
+    const id = q.id ?? null;
     if (id !== null) {
       const found = await getFloorCheck(getPool(), staff, id);
       return found ? Response.json({ item: found }) : Response.json({ error: "not_found" }, { status: 404 });
     }
-    return Response.json(await listFloorChecks(getPool(), staff, { after: params.get("after") ?? undefined }));
+    return Response.json(await listFloorChecks(getPool(), staff, { after: q.after }));
   } catch (e) {
     return refuse(e);
   }

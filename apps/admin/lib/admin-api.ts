@@ -1,7 +1,7 @@
 // What the step 13 staff routes share (staff, audit, content, fetched jobs): the strict POST body check, the length check and the refusal-to-status map.
 // No database, so unit tests cover them alone. The Origin check and BadRequest come from the account review route's file.
 import { StaffRefused } from "@portal/auth";
-import { QueueRefused } from "@portal/db";
+import { QueueRefused, validId } from "@portal/db";
 import { BadRequest } from "./account-review";
 
 export { BadRequest, checkOrigin } from "./account-review";
@@ -36,7 +36,7 @@ export function parseBody(text: string, max: number, actions: Record<string, Spe
   return b as Body;
 }
 
-export const id19: Field["0"] = (v) => typeof v === "string" && /^[1-9][0-9]{0,18}$/.test(v);
+export const id19: Field["0"] = validId;
 export const staffIdOk: Field["0"] = (v) => typeof v === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(v);
 export const reasonCode: Field["0"] = (v) => typeof v === "string" && /^[a-z][a-z0-9_]{0,62}$/.test(v);
 
@@ -65,12 +65,12 @@ export function refuse(e: unknown, route: string): Response {
   return Response.json({ error: why, ...(e instanceof QueueRefused && e.stage ? { stage: e.stage } : {}) }, { status });
 }
 
-/** The query string may hold only the named parameters, each once: anything else is "bad_query". Returns the values that are present. */
-export function readQuery(url: string, allowed: readonly string[]): Record<string, string> {
+/** The query string may hold only the named parameters, each once (a name in `many` may repeat): anything else is "bad_query". Returns the values that are present (the first of a repeated one). */
+export function readQuery(url: string, allowed: readonly string[], many: readonly string[] = []): Record<string, string> {
   const params = new URL(url).searchParams;
   const out: Record<string, string> = {};
   for (const k of new Set(params.keys())) {
-    if (!allowed.includes(k) || params.getAll(k).length !== 1) throw new BadRequest("bad_query");
+    if (!allowed.includes(k) || (params.getAll(k).length !== 1 && !many.includes(k))) throw new BadRequest("bad_query");
     out[k] = params.get(k)!;
   }
   return out;

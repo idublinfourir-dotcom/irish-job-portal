@@ -2,10 +2,10 @@
 // The acting login and its membership always come from the session, never the body. The rules package runs the same checks as on fetched
 // adverts, on the structured fields the employer typed; the database has the last word (job_guard, signer_check, job_org_live, the deferred
 // statement check). There is no row level security: every read and write here is filtered by the login's own company.
-import { getPool, getRules, listAnswer } from "@portal/db";
+import { getPool, getRules, listAnswer, validId } from "@portal/db";
 import { assess, chainRules, isSoc2010, minimumForHours, type RulesSnapshot } from "@portal/rules";
 import type pg from "pg";
-import { isObject, no, only, portalLogin, readPost, withinLimit, type Refusal } from "./company";
+import { isObject, no, ok, only, portalLogin, readPost, withinLimit, type Refusal } from "./company";
 
 export const JOBS_RATE = { windowMs: 10 * 60_000, max: 30 }; // posts, edits, renewals and closes together, per login
 export const MAX_JOB_BODY = 24_000; // characters: a 10,000-character advert with its JSON escaping and the other fields
@@ -87,21 +87,21 @@ export function checkPost(b: unknown, keys = POST_KEYS): Post | null {
     weeklyHours, ownPageUrl, clientName, statement, permitType, exceptionConfirmed: b.exceptionConfirmed === true };
 }
 
-const id = (v: unknown) => (typeof v === "number" && Number.isSafeInteger(v) && v > 0 ? v : null);
-export function checkEdit(b: unknown): (Post & { jobId: number }) | null {
+const id = (v: unknown) => (validId(v) ? v : null);
+export function checkEdit(b: unknown): (Post & { jobId: string }) | null {
   if (!isObject(b)) return null;
   const jobId = id(b.jobId);
   const post = checkPost(Object.fromEntries(Object.entries(b).filter(([k]) => k !== "jobId")));
   return jobId && post ? { ...post, jobId } : null;
 }
 export type Hire = "yes" | "no";
-export function checkRenew(b: unknown): { jobId: number; hireAnswer: Hire | null } | null {
+export function checkRenew(b: unknown): { jobId: string; hireAnswer: Hire | null } | null {
   if (!isObject(b) || !only(b, ["jobId", "hireAnswer"])) return null;
   const jobId = id(b.jobId), h = b.hireAnswer;
   if (!jobId || (h !== undefined && h !== "yes" && h !== "no")) return null;
   return { jobId, hireAnswer: h ?? null };
 }
-export function checkClose(b: unknown): { jobId: number; hireAnswer: Hire } | null {
+export function checkClose(b: unknown): { jobId: string; hireAnswer: Hire } | null {
   const r = checkRenew(b);
   return r && r.hireAnswer ? { jobId: r.jobId, hireAnswer: r.hireAnswer } : null; // #49: closing always asks "Did you hire someone through us?"
 }
@@ -228,7 +228,7 @@ const INSERT_STATEMENT =
   "values ($1, $2, $3, $4, $5, $6, $7, $8, $9)";
 
 /** The statement (the database's signer_check decides who may sign). Inside the caller's transaction. */
-async function sign(c: pg.PoolClient, jobId: number, who: Acting, p: Post): Promise<Response | null> {
+async function sign(c: pg.PoolClient, jobId: string, who: Acting, p: Post): Promise<Response | null> {
   const s = p.statement!;
   if (p.clientName && !s.writtenAuthority) return no(400, "WRITTEN_AUTHORITY_REQUIRED"); // on behalf of a client: the client's written authority is on file
   const text = (await c.query(TEXT)).rows[0];
@@ -239,7 +239,7 @@ async function sign(c: pg.PoolClient, jobId: number, who: Acting, p: Post): Prom
   return null;
 }
 const jobReply = (r: { id: string; status: string; badge: string | null; pass_route: string | null }) =>
-  Response.json({ jobId: Number(r.id), status: r.status, badge: r.badge, passRoute: r.pass_route });
+  ok({ jobId: r.id, status: r.status, badge: r.badge, passRoute: r.pass_route });
 
 /** POST /api/portal/jobs: a new job, as a draft (no checks) or live (the rules; a restricted company's job goes to review, #44). */
 export async function jobPost(request: Request): Promise<Response> {
@@ -259,7 +259,7 @@ export async function jobPost(request: Request): Promise<Response> {
       p.status === "live" ? v.passRoute : null, p.status === "live" ? v.status : "draft", p.description, p.ownPageUrl, p.clientName ? "client" : "self", p.clientName,
       who.membershipId, p.permitType])).rows[0];
     await c.query(UPSERT_TEXT, [r.id, p.description]);
-    if (p.statement) { const refused = await sign(c, Number(r.id), who, p); if (refused) return refused; }
+    if (p.statement) { const refused = await sign(c, String(r.id), who, p); if (refused) return refused; }
     return jobReply(r);
   });
 }
@@ -295,7 +295,7 @@ export async function jobEdit(request: Request): Promise<Response> {
       else if (v.status === "live" && j.status === "under_review" && pay) status = "live";
       passRoute = v.passRoute; sector = v.sector;
     }
-    if (j.status !== "draft" && key && j.badge === "sponsor_confirmed" && !p.statement) return no(409, "STATEMENT_REQUIRED");
+    if (j.status !== "draft" && key && j.badge === "sponsor_confirmed" && !p.statement) return no(422, "STATEMENT_REQUIRED"); // the same rule refusal as rulesFor gives a General post
     const badge = p.statement ? "sponsor_confirmed" : j.status !== "draft" && key ? null : j.badge;
     const r = (await c.query(UPDATE_JOB, [p.jobId, who.organisationId, p.title, p.county, sector, p.occupationCode, p.contractType, p.contractMonths, badge, p.salaryLow,
       p.salaryHigh, p.healthInsuranceEur, p.payGrade, p.weeklyHours, passRoute, status, p.ownPageUrl, p.clientName ? "client" : "self", p.clientName, who.membershipId,
@@ -317,7 +317,7 @@ export async function jobRenew(request: Request): Promise<Response> {
   const { who, body } = w;
   return inTx(async (c) => {
     const r = (await c.query(RENEW, [body.jobId, who.organisationId, who.membershipId, body.hireAnswer])).rows[0];
-    return r ? Response.json({ jobId: Number(r.id), closesAt: r.closes_at }) : no(404, "JOB_NOT_FOUND");
+    return r ? ok({ jobId: r.id, closesAt: r.closes_at }) : no(404, "JOB_NOT_FOUND");
   });
 }
 
@@ -331,17 +331,17 @@ export async function jobClose(request: Request): Promise<Response> {
   const { who, body } = w;
   return inTx(async (c) => {
     const r = (await c.query(CLOSE, [body.jobId, who.organisationId, who.membershipId, body.hireAnswer])).rows[0];
-    return r ? Response.json({ jobId: Number(r.id), status: "closed" }) : no(404, "JOB_NOT_FOUND");
+    return r ? ok({ jobId: r.id, status: "closed" }) : no(404, "JOB_NOT_FOUND");
   });
 }
 
-/** GET /api/portal/jobs: the company's own jobs, with each one's state and why it is held (#44). Any active member, viewers too. */
+/** GET /api/portal/jobs: the company's own jobs, with each one's state and why it is held (#44). Any active member, viewers too; no company is 404 NO_COMPANY. */
 export async function jobList(request: Request): Promise<Response> {
   const login = await portalLogin(request);
   if (login instanceof Response) return login;
-  if (!login.membership) return Response.json({ jobs: null });
+  if (!login.membership) return no(404, "NO_COMPANY"); // as the company GET
   try {
-    return Response.json({ jobs: (await getPool().query("select private.portal_jobs($1) r", [login.userId])).rows[0].r });
+    return ok({ jobs: (await getPool().query("select private.portal_jobs($1) r", [login.userId])).rows[0].r });
   } catch (e) {
     const r = jobRefusal(e);
     if (r) return no(r.status, r.code);

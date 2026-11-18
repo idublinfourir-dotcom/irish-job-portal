@@ -38,7 +38,7 @@ describe("parseBody", () => {
     for (const a of [undefined, "", "delete", "APPROVE", 1, null, ["approve"], { a: 1 }]) expect(code(() => parseBody(body({ action: a, itemId: "1" }))), String(a)).toBe("bad_action");
   });
   it("refuses an item id that is not a plain digit string", () => {
-    for (const i of [undefined, 1, null, "", "-1", "1.5", "0x10", " 1", "1 ", "1; drop table review_item", "1' or '1'='1", "١٢", "1".repeat(20), ["1"], { id: 1 }])
+    for (const i of [undefined, 1, null, "", "-1", "1.5", "0x10", " 1", "1 ", "1; drop table review_item", "1' or '1'='1", "١٢", "1".repeat(20), "0", "00", "012", "9223372036854775808", ["1"], { id: 1 }])
       expect(code(() => parseBody(body({ action: "claim", itemId: i }))), String(i)).toBe("bad_item_id");
   });
   it("refuses addDomain and reason on the wrong action or with the wrong type", () => {
@@ -78,6 +78,8 @@ describe("checkOrigin", () => {
 describe("statusFor", () => {
   it("maps refusals to 400, 401, 403, 404 or 409", () => {
     expect(statusFor("bad_body")).toBe(400);
+    expect(statusFor("bad_domain")).toBe(400); // the same status as on /api/companies/domains
+    expect(statusFor("bad_query")).toBe(400);
     expect(statusFor("no_session")).toBe(401);
     expect(statusFor("not_active")).toBe(401);
     expect(statusFor("not_reviewer")).toBe(403);

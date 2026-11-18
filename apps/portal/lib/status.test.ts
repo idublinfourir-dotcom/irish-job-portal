@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { checkStatus, statusRefusal } from "./status";
 
-const good = { action: "reply", caseId: 5, text: "We did nothing wrong." };
+const good = { action: "reply", caseId: "5", text: "We did nothing wrong." };
 describe("checkStatus", () => {
   it("accepts good bodies and trims the text", () => {
     expect(checkStatus(good)).toEqual(good);
-    expect(checkStatus({ ...good, action: "appeal", text: "  a\nb\tc\r\n " })).toEqual({ action: "appeal", caseId: 5, text: "a\nb\tc" });
+    expect(checkStatus({ ...good, action: "appeal", text: "  a\nb\tc\r\n " })).toEqual({ action: "appeal", caseId: "5", text: "a\nb\tc" });
     expect(checkStatus({ ...good, text: "x".repeat(1800) })).not.toBeNull();
   });
   it.each([
-    ["null", null], ["array", []], ["string", "x"], ["unknown field", { ...good, extra: 1 }], ["missing text", { action: "reply", caseId: 5 }],
+    ["null", null], ["array", []], ["string", "x"], ["unknown field", { ...good, extra: 1 }], ["missing text", { action: "reply", caseId: "5" }],
     ["action decide", { ...good, action: "decide" }], ["action upper", { ...good, action: "Reply" }],
-    ["caseId string", { ...good, caseId: "5" }], ["caseId 0", { ...good, caseId: 0 }], ["caseId negative", { ...good, caseId: -1 }],
+    ["caseId number", { ...good, caseId: 5 }], ["caseId 0", { ...good, caseId: "0" }], ["caseId leading zero", { ...good, caseId: "05" }], ["caseId too long", { ...good, caseId: "9".repeat(19) }], ["caseId negative", { ...good, caseId: -1 }],
     ["caseId float", { ...good, caseId: 1.5 }], ["caseId 1e30", { ...good, caseId: 1e30 }], ["caseId NaN", { ...good, caseId: NaN }],
     ["text number", { ...good, text: 5 }], ["empty", { ...good, text: "" }], ["spaces", { ...good, text: " \n\t " }],
     ["1801", { ...good, text: "x".repeat(1801) }], ["rtl override", { ...good, text: "a\u202eb" }], ["null char", { ...good, text: "a\u0000b" }],

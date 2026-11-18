@@ -4,6 +4,7 @@ import { staffSettings } from "@portal/auth";
 import { cancelOwnerReassign, completeOwnerReassign, getPool, listOwnerReassigns, requestOwnerReassign } from "@portal/db";
 import { checkOrigin } from "../../../../lib/account-review";
 import { checkLength, MAX_SMALL_BODY, parseOwner, refuse } from "../../../../lib/companies";
+import { readQuery } from "../../../../lib/admin-api";
 import { requireStaff } from "../../../../lib/staff";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const staff = await requireStaff(request.headers);
-    return Response.json(await listOwnerReassigns(getPool(), staff, { after: new URL(request.url).searchParams.get("after") ?? undefined }));
+    return Response.json(await listOwnerReassigns(getPool(), staff, { after: readQuery(request.url, ["after"]).after }));
   } catch (e) {
     return refuse(e, "companies/owner-reassign");
   }

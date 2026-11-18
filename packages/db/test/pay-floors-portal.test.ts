@@ -24,7 +24,7 @@ type Handler = (r: Request) => Promise<Response>;
 let db: TestDb, su: pg.Pool;
 let authPOST: Handler, floorGET: Handler, floorPOST: Handler;
 let mail: () => { pool: string; kind: string; to: string; link: string }[];
-let F: { org(o?: object): Promise<number>; member(org: number, user: string | null, o?: object): Promise<number>; staff(): Promise<string>; text(p?: string): Promise<number> };
+let F: { org(o?: object): Promise<number>; member(org: string, user: string | null, o?: object): Promise<number>; staff(): Promise<string>; text(p?: string): Promise<number> };
 
 beforeAll(async () => {
   db = await createTestDb();
@@ -85,24 +85,24 @@ async function login(domain = "elsewhere.example.test"): Promise<Login> {
   expect(r.status, r.text).toBe(200);
   return { email: p.email, cookie: r.cookie, id: (await one("select id from portal_user where email=$1", [p.email])).id, name: p.name };
 }
-type Member = Login & { mem: number };
-const member = async (org: number, o: { role?: string; signer?: boolean } = {}): Promise<Member> => {
+type Member = Login & { mem: string };
+const member = async (org: string, o: { role?: string; signer?: boolean } = {}): Promise<Member> => {
   const l = await login();
-  return { ...l, mem: Number(await F.member(org, l.id, { role: o.role ?? "recruiter", signer: o.signer ?? false })) };
+  return { ...l, mem: String(await F.member(org, l.id, { role: o.role ?? "recruiter", signer: o.signer ?? false })) };
 };
 /** A big-company employer: the flag needs a confirmed, unused big_company_entry request, made by two fake staff. */
 async function bigCompany(o: { status?: string; kind?: string } = {}) {
-  const org = Number(await F.org({ status: o.status ?? "verified", kind: o.kind ?? "employer" }));
+  const org = String(await F.org({ status: o.status ?? "verified", kind: o.kind ?? "employer" }));
   await makeBig(su, F.staff, org);
   return org;
 }
-type Company = { org: number; owner: Member; signer: Member; poster: Member; recruiter: Member; viewer: Member };
+type Company = { org: string; owner: Member; signer: Member; poster: Member; recruiter: Member; viewer: Member };
 async function company(): Promise<Company> {
   const org = await bigCompany();
   const owner = await login();
   return {
     org,
-    owner: { ...owner, mem: Number(await F.member(org, owner.id, { role: "account_owner", signer: true })) },
+    owner: { ...owner, mem: String(await F.member(org, owner.id, { role: "account_owner", signer: true })) },
     signer: await member(org, { role: "poster", signer: true }),
     poster: await member(org, { role: "poster" }),
     recruiter: await member(org, { role: "recruiter" }),
@@ -112,7 +112,7 @@ async function company(): Promise<Company> {
 
 let textId: string;
 const sign = (cookie: string | undefined, o: object = {}) => post(cookie, { action: "sign", roleFamily: "2134", floorEur: 45000, consentTextId: textId, ...o });
-const floors = (org: number) => su.query("select id, status, role_family, floor_eur, signer_name, signer_title, signer_membership_id, consent_text_id, valid_until > now() + interval '11 months 28 days' and valid_until < now() + interval '12 months 2 days' as year from pay_floor where organisation_id = $1 order by id", [org]).then((r) => r.rows);
+const floors = (org: string) => su.query("select id, status, role_family, floor_eur, signer_name, signer_title, signer_membership_id, consent_text_id, valid_until > now() + interval '11 months 28 days' and valid_until < now() + interval '12 months 2 days' as year from pay_floor where organisation_id = $1 order by id", [org]).then((r) => r.rows);
 
 describe("before a wording is published", () => {
   it("refuses to sign (NO_CONSENT_TEXT) and lists no wording", async () => {
@@ -169,7 +169,7 @@ describe("POST sign", () => {
     expect((await floors(c.org)).length).toBe(1);
   });
   it("refuses an agency (even flagged big), an employer off the list, and a login with no company", async () => {
-    const agency = await bigCompany({ kind: "agency" }), small = Number(await F.org({}));
+    const agency = await bigCompany({ kind: "agency" }), small = String(await F.org({}));
     for (const org of [agency, small]) {
       const o = await login();
       await F.member(org, o.id, { role: "account_owner", signer: true });
@@ -249,6 +249,9 @@ describe("POST sign", () => {
     expect((await sign(undefined)).json).toEqual({ code: "NO_SESSION" });
     expect((await post(c.owner.cookie, { action: "sign" }, { origin: "https://evil.example.test" })).json).toEqual({ code: "BAD_ORIGIN" });
     expect((await post(c.owner.cookie, {}, { origin: null })).json).toEqual({ code: "BAD_ORIGIN" });
+    // the Origin is checked first, before the rules are read: a cross-site POST costs no statement at all
+    const [cross, n] = await counted(() => post(c.owner.cookie, { action: "sign" }, { origin: "https://evil.example.test" }));
+    expect([cross.status, n]).toEqual([403, 0]);
     expect((await post(c.owner.cookie, {}, { raw: "x".repeat(5000) })).status).toBe(413);
     for (const raw of ["", "{", "null", "[]", '"sign"']) expect((await post(c.owner.cookie, {}, { raw })).status, raw).toBe(400);
   });
@@ -277,11 +280,11 @@ describe("POST sign", () => {
 });
 
 describe("POST withdraw", () => {
-  const withdraw = (cookie: string | undefined, floorId: number) => post(cookie, { action: "withdraw", floorId });
+  const withdraw = (cookie: string | undefined, floorId: string) => post(cookie, { action: "withdraw", floorId });
   it("lets a signer withdraw a pending floor, once, and stamps ended_at", async () => {
     const c = await company();
     await sign(c.owner.cookie);
-    const id = Number((await floors(c.org))[0].id);
+    const id = String((await floors(c.org))[0].id);
     const r = await withdraw(c.signer.cookie, id);
     expect([r.status, r.json]).toEqual([200, { ok: true }]);
     expect(await one("select status, ended_at is not null e from pay_floor where id=$1", [id])).toEqual({ status: "withdrawn", e: true });
@@ -293,13 +296,13 @@ describe("POST withdraw", () => {
     await sign(c.owner.cookie);
     const id = (await floors(c.org))[0].id;
     await su.query("update pay_floor set status='active', approval_request_id=$2 where id=$1", [id, await confirmedApproval(su, F.staff, "pay_floor", "pay_floor", id)]);
-    expect((await withdraw(c.owner.cookie, Number(id))).status).toBe(200);
+    expect((await withdraw(c.owner.cookie, String(id))).status).toBe(200);
     expect((await one("select status from pay_floor where id=$1", [id])).status).toBe("withdrawn");
   });
   it("refuses a member who may not sign, and the floor stays", async () => {
     const c = await company();
     await sign(c.owner.cookie);
-    const id = Number((await floors(c.org))[0].id);
+    const id = String((await floors(c.org))[0].id);
     for (const who of [c.poster, c.recruiter, c.viewer]) {
       const r = await withdraw(who.cookie, id);
       expect([r.status, r.json]).toEqual([403, { code: "NOT_SIGNER" }]);
@@ -309,12 +312,12 @@ describe("POST withdraw", () => {
   it("never touches another company's floor: NOT_FOUND, even for its own owner, and the floor stays", async () => {
     const c = await company(), other = await company();
     await sign(other.owner.cookie);
-    const id = Number((await floors(other.org))[0].id);
+    const id = String((await floors(other.org))[0].id);
     for (const who of [c.owner, c.signer]) {
       const r = await withdraw(who.cookie, id);
       expect([r.status, r.json]).toEqual([404, { code: "NOT_FOUND" }]);
     }
-    expect((await withdraw(c.owner.cookie, 987654321)).status).toBe(404);
+    expect((await withdraw(c.owner.cookie, "987654321")).status).toBe(404);
     expect((await one("select status from pay_floor where id=$1", [id])).status).toBe("pending_check");
   });
   it("cannot reinstate or change a floor staff already decided", async () => {
@@ -322,16 +325,16 @@ describe("POST withdraw", () => {
     await sign(c.owner.cookie);
     const id = (await floors(c.org))[0].id;
     await su.query("update pay_floor set status='found_false' where id=$1", [id]);
-    const r = await withdraw(c.owner.cookie, Number(id));
+    const r = await withdraw(c.owner.cookie, String(id));
     expect([r.status, r.json]).toEqual([409, { code: "NOT_WITHDRAWABLE" }]);
     expect((await one("select status from pay_floor where id=$1", [id])).status).toBe("found_false");
   });
   it("refuses a login with no company, a bad id and no session", async () => {
     const l = await login();
-    expect((await withdraw(l.cookie, 1)).json).toEqual({ code: "REFUSED" });
-    expect((await withdraw(undefined, 1)).status).toBe(401);
+    expect((await withdraw(l.cookie, "1")).json).toEqual({ code: "REFUSED" });
+    expect((await withdraw(undefined, "1")).status).toBe(401);
     const c = await company();
-    for (const floorId of [0, -1, 1.5, "1", null]) expect((await post(c.owner.cookie, { action: "withdraw", floorId })).status, String(floorId)).toBe(400);
+    for (const floorId of [0, -1, 1.5, 1, "0", "01", "9".repeat(19), "1 or 1=1", null]) expect((await post(c.owner.cookie, { action: "withdraw", floorId })).status, String(floorId)).toBe(400);
   });
 });
 
@@ -355,7 +358,7 @@ describe("performance", () => {
     const [r, signN] = await counted(() => sign(c.owner.cookie, { roleFamily: SOC[20 + i++] }));
     expect(r.status).toBe(200);
     const [, listN] = await counted(() => list(c.owner.cookie));
-    const id = Number((await floors(c.org))[0].id);
+    const id = String((await floors(c.org))[0].id);
     const [w, withdrawN] = await counted(() => post(c.owner.cookie, { action: "withdraw", floorId: id }));
     expect(w.status).toBe(200);
     expect([signN, listN, withdrawN]).toEqual([6, 5, 5]);
@@ -364,7 +367,7 @@ describe("performance", () => {
     expect(withdrawN).toBeLessThanOrEqual(BUDGET.withdraw);
     expect(await median(() => sign(c.owner.cookie, { roleFamily: SOC[40 + i++] }))).toBeLessThan(BUDGET.signMs);
     expect(await median(() => list(c.owner.cookie))).toBeLessThan(BUDGET.listMs);
-    const ids = (await floors(c.org)).filter((f) => f.status === "pending_check").map((f) => Number(f.id));
+    const ids = (await floors(c.org)).filter((f) => f.status === "pending_check").map((f) => String(f.id));
     let k = 0;
     expect(await median(() => post(c.owner.cookie, { action: "withdraw", floorId: ids[k++] }))).toBeLessThan(BUDGET.withdrawMs);
   });

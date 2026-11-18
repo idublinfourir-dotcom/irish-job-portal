@@ -22,7 +22,7 @@ let db: TestDb, su: pg.Pool;
 let authPOST: Handler, claimPOST: Handler, answerPOST: Handler;
 let authGET: Handler;
 let mail: () => { to: string; kind: string; link: string }[];
-let F: { org(o?: object): Promise<number>; member(org: number, user: string | null, o?: object): Promise<number> };
+let F: { org(o?: object): Promise<number>; member(org: number | string, user: string | null, o?: object): Promise<number> };
 let reviewer = "";
 
 beforeAll(async () => {
@@ -64,7 +64,7 @@ async function post(h: Handler, url: string, cookie: string | undefined, body: u
   return reply(await h(new Request(`${BASE}${url}`, { method: "POST", body: o.raw ?? JSON.stringify(body), headers })));
 }
 const answer = (cookie: string | undefined, body: unknown, o = {}) => post(answerPOST, "/api/portal/review-answer", cookie, body, o);
-const claim = (cookie: string, org: number) => post(claimPOST, "/api/portal/claim", cookie, { organisationId: org });
+const claim = (cookie: string, org: string) => post(claimPOST, "/api/portal/claim", cookie, { organisationId: org });
 const one = async (sql: string, args: unknown[] = []) => (await su.query(sql, args)).rows[0];
 
 let n = 0;
@@ -78,14 +78,14 @@ async function login(): Promise<Login> {
   expect(r.status).toBe(200);
   return { email: p.email, cookie: r.cookie, id: (await one("select id from portal_user where email=$1", [p.email])).id };
 }
-const orgOf = async (org: number) => (await one("select status from organisation where id=$1", [org])).status as string;
-const item = async (org: number) => (await one("select id::text, status, detail, outcome from review_item where queue='account_review' and organisation_id=$1 order by id desc limit 1", [org]));
-const answerAudits = (org: number) => su.query("select * from audit_event where action='organisation.answer_review' and object_id=$1", [String(org)]).then((r) => r.rows);
+const orgOf = async (org: string) => (await one("select status from organisation where id=$1", [org])).status as string;
+const item = async (org: string) => (await one("select id::text, status, detail, outcome from review_item where queue='account_review' and organisation_id=$1 order by id desc limit 1", [org]));
+const answerAudits = (org: string) => su.query("select * from audit_event where action='organisation.answer_review' and object_id=$1", [String(org)]).then((r) => r.rows);
 
 // An owner who claimed an existing sponsor through the real route, asked for more by the reviewer: needs_info with its item open.
 async function askedCompany() {
   const owner = await login();
-  const org = Number(await F.org({ status: "unclaimed" }));
+  const org = String(await F.org({ status: "unclaimed" }));
   expect((await claim(owner.cookie, org)).json).toMatchObject({ status: "pending_review" });
   const it = (await item(org)).id as string;
   await claimReview(admin(), reviewer, it);
@@ -153,7 +153,7 @@ describe("the answer, end to end", () => {
 describe("refusals", () => {
   it("another state: a company that is not needs_info gets NOT_WAITING_FOR_ANSWER and nothing changes", async () => {
     const owner = await login();
-    const org = Number(await F.org({ status: "unclaimed" }));
+    const org = String(await F.org({ status: "unclaimed" }));
     await claim(owner.cookie, org); // pending_review
     const before = await item(org);
     expect(await answer(owner.cookie, { note: "hello" })).toMatchObject({ status: 409, json: { code: "NOT_WAITING_FOR_ANSWER" } });
@@ -185,7 +185,7 @@ describe("refusals", () => {
     others.push(["invited", invited]);
     others.push(["no company", await login()]);
     const other = await login(); // the owner of another company that is verified
-    await F.member(Number(await F.org({ status: "verified" })), other.id, { role: "account_owner" });
+    await F.member(String(await F.org({ status: "verified" })), other.id, { role: "account_owner" });
     others.push(["other company's owner", other]);
     // another company that is also needs_info: its owner may answer only its own
     const o2 = await askedCompany();
@@ -263,7 +263,7 @@ describe("the 24 hour cool-down after a rejected claim (#203)", () => {
   // The same login claims the same company; a reviewer rejects it. Returns what a test needs.
   async function rejected() {
     const owner = await login();
-    const org = Number(await F.org({ status: "unclaimed" }));
+    const org = String(await F.org({ status: "unclaimed" }));
     expect((await claim(owner.cookie, org)).status).toBe(200);
     const it = (await item(org)).id as string;
     await claimReview(admin(), reviewer, it);
@@ -272,7 +272,7 @@ describe("the 24 hour cool-down after a rejected claim (#203)", () => {
     return { owner, org, it };
   }
   // Moves the rejection back in time: the membership's removal and the item's decision together (they share one instant).
-  const ago = (org: number, hours: number) => su.query(
+  const ago = (org: string, hours: number) => su.query(
     `with t as (select now() - make_interval(hours => $2) as at),
           m as (update membership set removed_at = (select at from t) where organisation_id = $1 and status = 'removed'),
           r as (update review_item set decided_at = (select at from t) where organisation_id = $1 and outcome = 'rejected') select 1`, [org, hours]);
@@ -291,7 +291,7 @@ describe("the 24 hour cool-down after a rejected claim (#203)", () => {
     const { owner, org } = await rejected();
     const second = await login();
     expect((await claim(second.cookie, org)).status).toBe(200); // another login, straight away
-    const elsewhere = Number(await F.org({ status: "unclaimed" }));
+    const elsewhere = String(await F.org({ status: "unclaimed" }));
     await su.query("update organisation set status = 'unclaimed' where id = $1", [org]); // (the second login's claim is undone for the next step)
     expect((await claim(owner.cookie, elsewhere)).status).toBe(200); // the rejected login, another company
     expect(await orgOf(elsewhere)).toBe("pending_review");
@@ -344,9 +344,9 @@ describe("performance", () => {
       await su.query("delete from portal_rate_limit");
       await su.query("delete from review_item where organisation_id in (select organisation_id from membership where portal_user_id = $1 and status = 'active')", [owner.id]);
       await su.query("delete from membership where portal_user_id = $1 and status = 'active'", [owner.id]);
-      target = Number(await F.org({ status: "unclaimed" }));
+      target = String(await F.org({ status: "unclaimed" }));
     };
-    let target = 0;
+    let target = "";
     await fresh();
     await claim(owner.cookie, target);
     await fresh();
@@ -359,7 +359,7 @@ describe("performance", () => {
   });
   async function rejected2() {
     const owner = await login();
-    const org = Number(await F.org({ status: "unclaimed" }));
+    const org = String(await F.org({ status: "unclaimed" }));
     await claim(owner.cookie, org);
     const it = (await item(org)).id as string;
     await claimReview(admin(), reviewer, it);

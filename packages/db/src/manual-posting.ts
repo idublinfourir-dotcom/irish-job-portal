@@ -10,10 +10,10 @@ import { QueueRefused, listAnswer } from "./admin-queue";
 import { companyRefusal } from "./merges";
 import { getRules } from "./rules-data";
 import { COUNTIES, PAGE_SIZE, validId } from "./search";
+import { decodeIdCursor, encodeIdCursor } from "./wire";
 
 type Db = Pick<pg.Pool, "query" | "connect">;
 
-export const MAX_MANUAL_BODY = 24_000; // characters: a 10,000-character advert with its JSON escaping and the other fields
 export const MAX_CLOSING_DAYS = 90; // the closing date is at most this many days ahead
 const MAX_PAY = 1_000_000;
 
@@ -201,15 +201,15 @@ export type ManualRow = {
   posted_at: string; closes_at: string; closed_at: string | null; reason: string | null;
 };
 
-/** The manual posts, newest first, a page of PAGE_SIZE; `before` is the last id of the page before. `reason` is why a draft is not listed. */
-export async function listManualPosts(db: Pick<pg.Pool, "query">, staff: string, opts: { before?: string } = {}): Promise<{ items: ManualRow[]; next: string | null }> {
-  if (opts.before !== undefined && !validId(opts.before)) throw new QueueRefused("bad_cursor");
+/** The manual posts, newest first, a page of PAGE_SIZE; `after` is the `next` of the page before. `reason` is why a draft is not listed. */
+export async function listManualPosts(db: Pick<pg.Pool, "query">, staff: string, opts: { after?: string } = {}): Promise<{ items: ManualRow[]; next: string | null }> {
+  const after = opts.after === undefined ? undefined : decodeIdCursor("manual_jobs", opts.after);
   try {
     await db.query("select private.companies_staff_check($1, $2::text[], 'NOT_MANUAL_VIEWER')", [staff, MANUAL_VIEWERS]);
   } catch (e) {
     return companyRefusal(e);
   }
-  const all = (opts.before === undefined ? await db.query<ManualRow>(MANUAL_LIST_FIRST) : await db.query<ManualRow>(MANUAL_LIST_AFTER, [opts.before])).rows;
+  const all = (after === undefined ? await db.query<ManualRow>(MANUAL_LIST_FIRST) : await db.query<ManualRow>(MANUAL_LIST_AFTER, [after])).rows;
   const rows = all.slice(0, PAGE_SIZE);
-  return { items: rows, next: all.length > PAGE_SIZE ? rows.at(-1)!.id : null };
+  return { items: rows, next: all.length > PAGE_SIZE ? encodeIdCursor("manual_jobs", rows.at(-1)!.id) : null };
 }

@@ -30,18 +30,19 @@ info:
       disabled or deleted login is refused on its next request.
     - **Paging.** Lists page by keyset, never by offset: the reply carries an opaque `next` (and sometimes `previous`) token,
       and the next page is asked for with `after=<token>` (or `before=<token>`). A token works only with the sort and filters it was
-      made for; a changed or forged token is 400. Page sizes are given on each route (job lists 20, a visitor 6, audit 50, notices
-      50, content 20, admin queues 20). Not yet uniform: three admin lists (`/api/trust-safety/cases`,
-      `/api/companies/owner-reassign`, `/api/manual-jobs`) answer `next` as a plain id, and `/api/manual-jobs` pages with `before`.
+      made for; a changed or forged token, or another list's token, is 400. Page sizes are given on each route (job lists 20, a
+      visitor 6, audit 50, notices 50, content 20, admin queues 20).
     - **Rate limits.** Limits are counted in the database (shared by every server instance). Over a limit the answer is 429; only
       the public candidate reads send `Retry-After` (seconds). Each write names its limit in `x-rate-limit` ("none" where the code
       has none, as on the admin routes, which rely on the staff sign-in limits).
-    - **Ids.** Database ids are 64-bit integers. The candidate and admin routes send and take them as strings of digits (`"123"`,
-      pattern `^[1-9][0-9]{0,18}$`), so no client loses precision. Not yet uniform: most portal routes send and take them as JSON
-      numbers (`NumId` in portal.yaml); each field says which. Login ids (Better Auth) are 32 letters and digits.
+    - **Ids.** Database ids are 64-bit integers. Every route sends and takes them as strings of digits (`"123"`, pattern
+      `^[1-9][0-9]{0,18}$`, at most 9223372036854775807), so no client loses precision. `0`, a leading zero, a JSON number or a
+      longer string is refused with the field's 400 code. Login ids (Better Auth) are 32 letters and digits.
     - **Times** are ISO 8601 strings in UTC (`2026-11-18T09:30:00.000Z`); dates without a time are `YYYY-MM-DD`. Not yet uniform:
-      some portal replies send Postgres text (`2026-11-18 09:30:00.123456+00`, `PgTime` in portal.yaml) or an ISO time with a
-      `+00:00` offset; each field says which.
+      the admin replies send Postgres text (`2026-11-18 09:30:00.123456+00`, `DbTime` in admin.yaml) in most lists; each field
+      says which. The candidate and portal replies use the `Z` form only.
+    - **Admin query strings** are strict: an unknown or repeated query key is 400 `bad_query` on every admin GET (the merge
+      preview's `id` is the one key that may repeat).
     - **Examples** are made up. No example holds a real person, company, address or secret.
 servers:
   - url: /
@@ -529,7 +530,7 @@ paths:
       description: >-
         Without `id`: the open and claimed `account_review` items (employer and agency sign-ups and claims), oldest first, 20 a page. With
         `id`: that one item, whatever its status (an id that is not an account review, or not digits, is 404). The list shows the
-        claimant's email, so only account reviewers read it. Unknown query keys are ignored.
+        claimant's email, so only account reviewers read it. An unknown or repeated query key is 400 `bad_query`.
       security: [{ staffSession: [] }]
       x-roles: [account_reviewer]
       x-rate-limit: none
@@ -557,7 +558,7 @@ paths:
                   - { id: '1042', status: open, claimedBy: null, createdAt: '2026-11-18 09:30:00.123456+00', reason: claim, detail: { found: true }, organisationId: '310', displayName: Example Care Ltd, kind: employer, organisationStatus: pending_review, signupPath: dete_claim, croNumber: '123456', wrcLicenceNumber: null, claimantEmail: owner@example.ie, emailDomain: example.ie, answer: null, answeredAt: null }
                 next: null
         '400':
-          description: "`bad_cursor`: `after` is not a token this list made."
+          description: "`bad_cursor`: `after` is not a token this list made. `bad_query`: an unknown or repeated query key."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
@@ -851,8 +852,8 @@ paths:
       operationId: previewMerge
       summary: Show two companies before a merge
       description: >-
-        The companies with the given ids (one or two `id` keys) and the counts a merge would move. No person's data. Other query keys are
-        ignored.
+        The companies with the given ids (one or two `id` keys) and the counts a merge would move. No person's data. `id` is the one key
+        that may repeat; any other key is 400 `bad_query`.
       security: [{ staffSession: [] }]
       x-roles: [account_reviewer, fetched_job_reviewer, rules_data_editor, trust_and_safety, administrator]
       x-rate-limit: none
@@ -876,7 +877,7 @@ paths:
                   companies: { type: array, items: { $ref: '#/components/schemas/CompanyPreview' } }
               example: { companies: [{ id: '310', slug: example-care, display_name: Example Care Ltd, kind: employer, status: verified, cro_number: '123456', merged_into_id: null, active_members: 2, jobs: 5, names: 1 }] }
         '400':
-          description: "`bad_input`: no id, more than two, or one that is not an id."
+          description: "`bad_input`: no id, more than two, or one that is not an id. `bad_query`: a query key other than `id`."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_input } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
@@ -943,12 +944,12 @@ paths:
       summary: List open owner reassignment requests
       description: >-
         The open requests to make another member the account owner, oldest first, 20 a page. Shows both people's emails, so account
-        reviewers only. `after` is the last request id of the page before (the `next` value, here a plain id). Other query keys are ignored.
+        reviewers only. `after` is the opaque `next` token of the page before. An unknown or repeated query key is 400 `bad_query`.
       security: [{ staffSession: [] }]
       x-roles: [account_reviewer]
       x-rate-limit: none
       parameters:
-        - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: after, in: query, required: false, description: "The `next` token of the page before.", schema: { $ref: '#/components/schemas/Cursor' } }
       responses:
         '200':
           description: One page.
@@ -965,7 +966,7 @@ paths:
                   - { id: '5', organisation_id: '310', display_name: Example Care Ltd, new_owner_membership_id: '77', new_owner_email: new.owner@example.ie, old_owner_membership_id: '70', old_owner_email: old.owner@example.ie, requested_by_staff_user_id: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', requested_at: '2026-11-11 09:30:00.123456+00', completes_after: '2026-11-18 09:30:00.123456+00', can_complete: true }
                 next: null
         '400':
-          description: "`bad_cursor`: `after` is not an id."
+          description: "`bad_cursor`: `after` is not a token of this list (a plain id, a changed token or another list's token). `bad_query`: an unknown or repeated query key."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
@@ -1487,13 +1488,13 @@ paths:
       operationId: listManualPosts
       summary: List the staff manual posts
       description: >-
-        The jobs staff posted by hand, newest first, 20 a page. The next page is asked for with `before` (the `next` value of the page
-        before, here a plain job id). `reason` says why a draft is not listed. Other query keys are ignored.
+        The jobs staff posted by hand, newest first, 20 a page. The next page is asked for with `after` (the opaque `next` token of the
+        page before). `reason` says why a draft is not listed. An unknown or repeated query key is 400 `bad_query`.
       security: [{ staffSession: [] }]
       x-roles: [account_reviewer, trust_and_safety, administrator]
       x-rate-limit: none
       parameters:
-        - { name: before, in: query, required: false, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: after, in: query, required: false, description: "The `next` token of the page before.", schema: { $ref: '#/components/schemas/Cursor' } }
       responses:
         '200':
           description: One page.
@@ -1510,7 +1511,7 @@ paths:
                   - { id: '7701', organisation_id: '310', display_name: Example Care Ltd, title: Senior Care Assistant, status: draft, pass_route: null, posted_by_staff_id: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', posted_at: '2026-11-18 09:30:00.123456+00', closes_at: '2026-12-31 23:59:59+00', closed_at: null, reason: pay_below_minimum }
                 next: null
         '400':
-          description: "`bad_cursor`: `before` is not an id."
+          description: "`bad_cursor`: `after` is not a token of this list (a plain id, a changed token or another list's token). `bad_query`: an unknown or repeated query key (`before` included)."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
@@ -1608,7 +1609,7 @@ paths:
       summary: List pay floors waiting for a check, or show one
       description: >-
         Without `id`: the signed pay floors waiting for their staff check, oldest first, 20 a page. With `id` (a floor id, not an item id):
-        that floor's check item, whatever its state. Other query keys are ignored.
+        that floor's check item, whatever its state. An unknown or repeated query key is 400 `bad_query`.
       security: [{ staffSession: [] }]
       x-roles: [rules_data_editor, administrator]
       x-rate-limit: none
@@ -1636,7 +1637,7 @@ paths:
                   - { floorId: '61', itemId: '4401', createdAt: '2026-11-18 09:30:00.123456+00', roleFamily: '2136', floorEur: 52000, signedAt: '2026-11-18 09:30:00.123456+00', validUntil: '2027-11-18 09:30:00.123456+00', signerName: Example Signer, signerTitle: Account owner, organisationId: '330', displayName: Example Global Ltd, kind: employer, isBigCompany: true, organisationStatus: verified, currentFloorEur: null, requestId: null, proposedBy: null }
                 next: null
         '400':
-          description: "`bad_cursor`: a token this list did not make."
+          description: "`bad_cursor`: a token this list did not make. `bad_query`: an unknown or repeated query key."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
@@ -1711,7 +1712,7 @@ paths:
       summary: List the rules versions
       description: >-
         The rules versions in force today, the confirmed ones still to come, and the pending proposals with their change against the
-        version in force (entries added, removed and changed). Any active staff member. Query keys are ignored.
+        version in force (entries added, removed and changed). Any active staff member. It takes no query key: any key is 400 `bad_query`.
       security: [{ staffSession: [] }]
       x-roles: [any active staff member]
       x-rate-limit: none
@@ -1744,6 +1745,9 @@ paths:
                 inForce: [{ kind: minimums, versionId: '3', effectiveFrom: '2026-01-01', data: { criticalSkills: 40000 } }]
                 upcoming: []
                 pending: [{ requestId: '90', kind: big_company_flag, organisationId: '330', displayName: Example Global Ltd, proposedBy: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', createdAt: '2026-11-18 09:30:00.123456+00' }]
+        '400':
+          description: "`bad_query`: any query key (this GET takes none)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
           description: "`not_active_staff`: the login is not active."
@@ -1944,7 +1948,7 @@ paths:
       summary: List open job reports, or show one
       description: >-
         Without `id`: the open and job_hidden reports, oldest first, 20 a page (no evidence text, no reporter). With `id`: one report with
-        its evidence, the job as reported and, until it is decided, who reported it. Other query keys are ignored.
+        its evidence, the job as reported and, until it is decided, who reported it. An unknown or repeated query key is 400 `bad_query`.
       security: [{ staffSession: [] }]
       x-roles: [trust_and_safety]
       x-rate-limit: none
@@ -1982,7 +1986,7 @@ paths:
                 items: [{ id: '801', status: open, targetKind: job, reason: asks_for_money, createdText: '2026-11-18 09:30:00.123456+00', targetJobId: '5501', jobTitle: Staff Nurse, jobStatus: live, organisationId: '312', displayName: Example Recruitment Ltd }]
                 next: null
         '400':
-          description: "`bad_cursor`: a token this list did not make."
+          description: "`bad_cursor`: a token this list did not make. `bad_query`: an unknown or repeated query key."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
@@ -2058,14 +2062,14 @@ paths:
       summary: List cases that need a step, or show one
       description: >-
         Without `id`: the cases that need a step (undecided, an appeal waiting, or a ban lift waiting for its second person), oldest first,
-        20 a page; `after` is the last case id seen (the `next` value, here a plain id). With `id`: one case with its company, pending
-        two-person requests, ban rows and whether the WRC report is ticked off. Other query keys are ignored.
+        20 a page; `after` is the opaque `next` token of the page before. With `id`: one case with its company, pending
+        two-person requests, ban rows and whether the WRC report is ticked off. An unknown or repeated query key is 400 `bad_query`.
       security: [{ staffSession: [] }]
       x-roles: [trust_and_safety]
       x-rate-limit: none
       parameters:
         - { name: id, in: query, required: false, schema: { type: string }, example: '51' }
-        - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: after, in: query, required: false, description: "The `next` token of the page before.", schema: { $ref: '#/components/schemas/Cursor' } }
       responses:
         '200':
           description: The page (no `id`), or `{ item }` with every case field (with `id`).
@@ -2101,7 +2105,7 @@ paths:
                 items: [{ id: '51', organisationId: '312', displayName: Example Recruitment Ltd, caseKind: instant_ban, reasonCode: asks_for_money, stage: case_open, outcome: null, level: null, replyDueAt: null, appealDueAt: null, createdAt: '2026-11-18T09:30:00.000Z' }]
                 next: null
         '400':
-          description: "`bad_cursor`: `after` is not an id."
+          description: "`bad_cursor`: `after` is not a token of this list (a plain id, a changed token or another list's token). `bad_query`: an unknown or repeated query key."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':

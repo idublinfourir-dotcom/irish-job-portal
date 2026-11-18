@@ -31,18 +31,19 @@ info:
       disabled or deleted login is refused on its next request.
     - **Paging.** Lists page by keyset, never by offset: the reply carries an opaque `next` (and sometimes `previous`) token,
       and the next page is asked for with `after=<token>` (or `before=<token>`). A token works only with the sort and filters it was
-      made for; a changed or forged token is 400. Page sizes are given on each route (job lists 20, a visitor 6, audit 50, notices
-      50, content 20, admin queues 20). Not yet uniform: three admin lists (`/api/trust-safety/cases`,
-      `/api/companies/owner-reassign`, `/api/manual-jobs`) answer `next` as a plain id, and `/api/manual-jobs` pages with `before`.
+      made for; a changed or forged token, or another list's token, is 400. Page sizes are given on each route (job lists 20, a
+      visitor 6, audit 50, notices 50, content 20, admin queues 20).
     - **Rate limits.** Limits are counted in the database (shared by every server instance). Over a limit the answer is 429; only
       the public candidate reads send `Retry-After` (seconds). Each write names its limit in `x-rate-limit` ("none" where the code
       has none, as on the admin routes, which rely on the staff sign-in limits).
-    - **Ids.** Database ids are 64-bit integers. The candidate and admin routes send and take them as strings of digits (`"123"`,
-      pattern `^[1-9][0-9]{0,18}$`), so no client loses precision. Not yet uniform: most portal routes send and take them as JSON
-      numbers (`NumId` in portal.yaml); each field says which. Login ids (Better Auth) are 32 letters and digits.
+    - **Ids.** Database ids are 64-bit integers. Every route sends and takes them as strings of digits (`"123"`, pattern
+      `^[1-9][0-9]{0,18}$`, at most 9223372036854775807), so no client loses precision. `0`, a leading zero, a JSON number or a
+      longer string is refused with the field's 400 code. Login ids (Better Auth) are 32 letters and digits.
     - **Times** are ISO 8601 strings in UTC (`2026-11-18T09:30:00.000Z`); dates without a time are `YYYY-MM-DD`. Not yet uniform:
-      some portal replies send Postgres text (`2026-11-18 09:30:00.123456+00`, `PgTime` in portal.yaml) or an ISO time with a
-      `+00:00` offset; each field says which.
+      the admin replies send Postgres text (`2026-11-18 09:30:00.123456+00`, `DbTime` in admin.yaml) in most lists; each field
+      says which. The candidate and portal replies use the `Z` form only.
+    - **Admin query strings** are strict: an unknown or repeated query key is 400 `bad_query` on every admin GET (the merge
+      preview's `id` is the one key that may repeat).
     - **Examples** are made up. No example holds a real person, company, address or secret.
 servers:
   - url: /
@@ -863,7 +864,7 @@ paths:
       operationId: unsubscribeInfo
       tags: [alerts]
       summary: What an unsubscribe link would stop
-      description: Changes nothing (mail scanners open links). No sign-in; the token is the only credential. An unknown token answers the same shape with `alert` null. No rate limit.
+      description: Changes nothing (mail scanners open links). No sign-in; the token is the only credential. An unknown token answers the same shape with `alert` null. A malformed link is 400 before the rate limit; then 60 calls a minute per client address.
       security: []
       x-roles: [anyone with the token]
       responses:
@@ -889,18 +890,24 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/CodeError' }
               example: { code: BAD_REQUEST }
+        '429':
+          description: '`TOO_MANY_REQUESTS`: over 60 unsubscribe calls (GET and POST together) a minute from one client address (`x-vercel-forwarded-for`, the only address header trusted). No Retry-After.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: TOO_MANY_REQUESTS }
     post:
       operationId: unsubscribe
       tags: [alerts]
       summary: Unsubscribe (also the RFC 8058 one-click POST)
       description: |
-        Sets the alert (scope `one`) or every alert of its candidate (scope `all`) to unsubscribed. No sign-in, no Origin check
-        and no rate limit: a mail provider's server sends the one-click POST (`List-Unsubscribe=One-Click`) with no cookie and no
-        Origin. The body is read only for its size. An unknown token changes nothing and answers the same.
+        Sets the alert (scope `one`) or every alert of its candidate (scope `all`) to unsubscribed. No sign-in and no Origin check:
+        a mail provider's server sends the one-click POST (`List-Unsubscribe=One-Click`) with no cookie and no Origin. The link,
+        then the body size, then the rate limit are checked. The body is read only for its size. An unknown token changes nothing and answers the same.
       security: []
       x-roles: [anyone with the token]
       x-body-cap: 200 characters
-      x-rate-limit: none (the 192-bit token is the only credential)
+      x-rate-limit: unsubscribe GET and POST together, 60 per client address per minute
       requestBody:
         required: false
         content:
@@ -926,6 +933,12 @@ paths:
               schema: { $ref: '#/components/schemas/CodeError' }
               example: { code: BAD_REQUEST }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429':
+          description: '`TOO_MANY_REQUESTS`: over 60 unsubscribe calls (GET and POST together) a minute from one client address (`x-vercel-forwarded-for`, the only address header trusted). No Retry-After.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: TOO_MANY_REQUESTS }
 
   /api/candidate/profile:
     get:

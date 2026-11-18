@@ -16,6 +16,7 @@ export * from "./bot-check";
 export * from "./report";
 export * from "./contact";
 export * from "./contact-inbox";
+export * from "./wire";
 
 type Db = NodePgDatabase<typeof schema>;
 

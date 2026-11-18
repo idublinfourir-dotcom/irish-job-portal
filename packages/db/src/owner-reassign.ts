@@ -6,6 +6,7 @@ import type pg from "pg";
 import { QueueRefused } from "./admin-queue";
 import { companyRefusal } from "./merges";
 import { PAGE_SIZE, validId } from "./search";
+import { decodeIdCursor, encodeIdCursor } from "./wire";
 
 type Q = Pick<pg.Pool, "query">;
 export const REASSIGN_WAIT_DAYS = 7;
@@ -62,13 +63,13 @@ export type OpenRequest = {
 };
 
 export async function listOwnerReassigns(db: Q, staff: string, opts: { after?: string } = {}): Promise<{ items: OpenRequest[]; next: string | null }> {
-  if (opts.after !== undefined && !validId(opts.after)) throw new QueueRefused("bad_cursor");
+  const after = opts.after === undefined ? undefined : decodeIdCursor("owner_reassign", opts.after);
   try {
     await db.query("select private.companies_staff_check($1, array['account_reviewer'], 'NOT_ACCOUNT_REVIEWER')", [staff]);
   } catch (e) {
     return companyRefusal(e);
   }
-  const all = (opts.after === undefined ? await db.query<OpenRequest>(OWNER_LIST_FIRST) : await db.query<OpenRequest>(OWNER_LIST_AFTER, [opts.after])).rows;
+  const all = (after === undefined ? await db.query<OpenRequest>(OWNER_LIST_FIRST) : await db.query<OpenRequest>(OWNER_LIST_AFTER, [after])).rows;
   const rows = all.slice(0, PAGE_SIZE);
-  return { items: rows, next: all.length > PAGE_SIZE ? rows.at(-1)!.id : null };
+  return { items: rows, next: all.length > PAGE_SIZE ? encodeIdCursor("owner_reassign", rows.at(-1)!.id) : null };
 }

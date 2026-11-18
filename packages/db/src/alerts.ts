@@ -4,7 +4,7 @@
 import { randomBytes } from "node:crypto";
 import type pg from "pg";
 import { socTitle } from "@portal/rules";
-import { inTransaction, isObject, only, Refuse } from "./candidate-route";
+import { clientAddress, inTransaction, isObject, only, Refuse, withinRate } from "./candidate-route";
 import { isStamp4 } from "./candidate";
 import { checkJobFilters, validId } from "./search";
 
@@ -102,6 +102,11 @@ export async function deleteAlert(db: pg.Pool, userId: string, b: { id: string }
 
 // ===== unsubscribe by token (no sign-in)
 export const TOKEN = /^[A-Za-z0-9_-]{32,64}$/; // checked before any query
+// GET and POST together, per client address (Vercel's header, the only one trusted). ponytail: a mail provider's one-click POSTs share its servers'
+// addresses; 60 a minute is far above this site's volume, raise it or key on the token too if real unsubscribes ever meet it.
+export const UNSUBSCRIBE_RATE = { windowMs: 60_000, max: 60 };
+/** True while this client address is under UNSUBSCRIBE_RATE. One statement; a bad link is refused before it, so junk costs no query. */
+export const withinUnsubscribeRate = (headers: Headers) => withinRate("candidate_rate_limit", `unsubscribe:${clientAddress(headers)}`, UNSUBSCRIBE_RATE);
 export type Scope = "one" | "all";
 /** The token and scope of an unsubscribe link; null means refuse (nothing is queried). */
 export function unsubscribeParams(url: URL): { token: string; scope: Scope } | null {

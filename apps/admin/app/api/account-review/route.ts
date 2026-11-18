@@ -3,6 +3,7 @@
 import { StaffRefused, staffSettings } from "@portal/auth";
 import { approveAccount, askForMoreInfo, claimReview, getAccountReview, getPool, listAccountReviews, QueueRefused, rejectAccount, releaseReview } from "@portal/db";
 import { BadRequest, checkLength, checkOrigin, parseBody, statusFor } from "../../../lib/account-review";
+import { readQuery } from "../../../lib/admin-api";
 import { requireStaff } from "../../../lib/staff";
 
 export const dynamic = "force-dynamic";
@@ -21,13 +22,13 @@ function refusal(e: unknown): Response {
 export async function GET(request: Request) {
   try {
     const staff = await requireStaff(request.headers);
-    const params = new URL(request.url).searchParams;
-    const id = params.get("id");
+    const q = readQuery(request.url, ["id", "after"]);
+    const id = q.id ?? null;
     if (id !== null) {
       const found = await getAccountReview(getPool(), staff, id);
       return found ? Response.json({ item: found }) : fail("not_found", 404);
     }
-    return Response.json(await listAccountReviews(getPool(), staff, { after: params.get("after") ?? undefined }));
+    return Response.json(await listAccountReviews(getPool(), staff, { after: q.after }));
   } catch (e) {
     return refusal(e);
   }

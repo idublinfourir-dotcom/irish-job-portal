@@ -2,7 +2,7 @@
 // The data inside a proposal is checked for its kind by cleanData in @portal/db; here only the body's shape. The Origin check and BadRequest come
 // from the account review route's file.
 import { StaffRefused } from "@portal/auth";
-import { QueueRefused } from "@portal/db";
+import { QueueRefused, validId } from "@portal/db";
 import { BadRequest } from "./account-review";
 
 // characters; the biggest real body is the whole Ineligible list, about 35,000, or the big-company names with links and dates
@@ -20,7 +20,6 @@ export type Body =
 const FIELDS: Record<string, string[]> = {
   propose: ["kind", "effectiveFrom", "data"], propose_flag: ["organisationId"], confirm: ["requestId"], refuse: ["requestId"], withdraw: ["requestId"],
 };
-const ID = /^[1-9][0-9]{0,18}$/;
 
 /** Strict check of the POST body text: a plain object, a known action and exactly that action's fields. */
 export function parseBody(text: string): Body {
@@ -36,13 +35,13 @@ export function parseBody(text: string): Body {
   if (typeof b.action !== "string" || !Object.hasOwn(FIELDS, b.action)) throw new BadRequest("bad_action");
   const need = FIELDS[b.action]!;
   if (Object.keys(b).some((k) => k !== "action" && !need.includes(k)) || need.some((k) => b[k] === undefined)) throw new BadRequest("bad_body");
-  for (const k of ["requestId", "organisationId"]) if (b[k] !== undefined && (typeof b[k] !== "string" || !ID.test(b[k]))) throw new BadRequest("bad_id");
+  for (const k of ["requestId", "organisationId"]) if (b[k] !== undefined && !validId(b[k])) throw new BadRequest("bad_id");
   if (b.action === "propose" && (typeof b.kind !== "string" || typeof b.effectiveFrom !== "string")) throw new BadRequest("bad_body");
   return b as Body;
 }
 
 const STATUS = new Map<string, number>(Object.entries({
-  bad_body: 400, bad_action: 400, bad_id: 400, bad_kind: 400, bad_date: 400, bad_data: 400,
+  bad_body: 400, bad_action: 400, bad_id: 400, bad_kind: 400, bad_date: 400, bad_data: 400, bad_query: 400,
   no_session: 401, not_active: 401,
   bad_origin: 403, not_active_staff: 403, not_rules_editor: 403, not_administrator: 403, not_proposer: 403,
   not_found: 404,

@@ -20,7 +20,7 @@ type Handler = (r: Request) => Promise<Response>;
 let db: TestDb, su: pg.Pool;
 let authPOST: Handler, listGET: Handler, postPOST: Handler, editPOST: Handler, renewPOST: Handler, closePOST: Handler;
 let mail: () => { pool: string; kind: string; to: string; link: string }[];
-let F: { org(o?: object): Promise<number>; member(org: number, user: string | null, o?: object): Promise<number> };
+let F: { org(o?: object): Promise<number>; member(org: string, user: string | null, o?: object): Promise<number> };
 
 beforeAll(async () => {
   db = await createTestDb();
@@ -78,7 +78,7 @@ const median = async (fn: () => Promise<unknown>) => {
 const one = async (sql: string, args: unknown[] = []) => (await su.query(sql, args)).rows[0];
 const job = (id: number) => one("select j.*, t.advert_text from job j left join job_text t on t.job_id = j.id where j.id = $1", [id]);
 const statements = (id: number) => su.query("select kind, signer_membership_id, signer_name, on_behalf_of_name, written_authority_on_file, superseded_at from sponsorship_statement where job_id = $1 order by id", [id]).then((r) => r.rows);
-const jobCount = async (org: number) => Number((await one("select count(*) n from job where organisation_id = $1", [org])).n);
+const jobCount = async (org: string) => Number((await one("select count(*) n from job where organisation_id = $1", [org])).n);
 
 let n = 0;
 type Login = { email: string; cookie: string; id: string };
@@ -90,11 +90,11 @@ async function login(): Promise<Login> {
   expect(r.status, r.text).toBe(200);
   return { email: p.email, cookie: r.cookie, id: (await one("select id from portal_user where email=$1", [p.email])).id };
 }
-type Member = Login & { mem: number };
-type Company = { org: number; owner: Member; recruiter: Member; poster: Member; viewer: Member };
+type Member = Login & { mem: string };
+type Company = { org: string; owner: Member; recruiter: Member; poster: Member; viewer: Member };
 async function company(o: { status?: string; kind?: string; name?: string } = {}): Promise<Company> {
-  const org = Number(await F.org({ status: o.status ?? "verified", kind: o.kind, name: o.name ?? "Fake Payments Limited", wrc: o.kind === "agency" ? `EA${++n}` : null }));
-  const m = async (role: string, signer: boolean) => { const l = await login(); return { ...l, mem: Number(await F.member(org, l.id, { role, signer })) }; };
+  const org = String(await F.org({ status: o.status ?? "verified", kind: o.kind, name: o.name ?? "Fake Payments Limited", wrc: o.kind === "agency" ? `EA${++n}` : null }));
+  const m = async (role: string, signer: boolean) => { const l = await login(); return { ...l, mem: String(await F.member(org, l.id, { role, signer })) }; };
   return { org, owner: await m("account_owner", true), recruiter: await m("recruiter", true), poster: await m("poster", false), viewer: await m("viewer", false) };
 }
 const desc = "We are hiring a software engineer to build our payments platform in Dublin. Full sponsorship offered.";
@@ -246,7 +246,7 @@ describe("edit, renew, close", () => {
     expect(await statements(id)).toHaveLength(1);
     for (const o of [{ salaryLow: 55000 }, { title: "Senior Software Engineer" }, { occupationCode: "2135" }, { weeklyHours: 40 }]) {
       const r = await edit(c.owner.cookie, { ...good, county: "Cork", jobId: id, ...o });
-      expect([r.status, r.json], JSON.stringify(o)).toEqual([409, { code: "STATEMENT_REQUIRED" }]);
+      expect([r.status, r.json], JSON.stringify(o)).toEqual([422, { code: "STATEMENT_REQUIRED" }]); // the same status as the rule refusal
     }
     const low = await edit(c.owner.cookie, { ...good, jobId: id, salaryLow: 30000, salaryHigh: null, statement: signed });
     expect(low.json).toEqual({ code: "PAY_BELOW_MINIMUM" });
@@ -280,7 +280,7 @@ describe("edit, renew, close", () => {
     const fetchedSrc = (await one("insert into job_source(kind, board) values ('board', 'jobs-route') returning id")).id;
     const fetched = (await one(`insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, status, closes_at, own_page_url, badge, search_vector)
       values ($1, 'fetched', $2, 't', 'e', 'IT', 'critical_skills', 'live', 'infinity', 'https://x.example', 'critical_skills_eligible', 'x') returning id`, [c.org, fetchedSrc])).id;
-    expect((await edit(c.owner.cookie, { ...good, jobId: Number(fetched) })).json).toEqual({ code: "JOB_NOT_FOUND" }); // a fetched job of the company is not its post
+    expect((await edit(c.owner.cookie, { ...good, jobId: String(fetched) })).json).toEqual({ code: "JOB_NOT_FOUND" }); // a fetched job of the company is not its post
     await su.query("update job set status = 'hidden', hidden_reason = 'admin' where id = $1", [id]);
     expect((await edit(c.owner.cookie, { ...good, jobId: id })).json).toEqual({ code: "BAD_STATE" });
   });
@@ -304,20 +304,23 @@ describe("edit, renew, close", () => {
 });
 
 describe("GET /api/portal/jobs", () => {
-  it("is 401 without a session, { jobs: null } with no company, and shows only the company's own jobs to every member", async () => {
+  it("is 401 without a session, 404 NO_COMPANY with no company, and shows only the company's own jobs to every member", async () => {
     expect((await list()).status).toBe(401);
-    expect((await list((await login()).cookie)).json).toEqual({ jobs: null });
+    const none = await list((await login()).cookie);
+    expect([none.status, none.json]).toEqual([404, { code: "NO_COMPANY" }]);
     const c = await company(), other = await company();
     const mine = (await post(c.owner.cookie, good)).json!.jobId, theirs = (await post(other.owner.cookie, good)).json!.jobId;
     const scam = (await post(c.owner.cookie, { ...good, description: desc + " Candidates must pay a registration fee before the interview." })).json!.jobId;
     for (const m of [c.owner, c.viewer]) {
-      const jobs = (await list(m.cookie)).json!.jobs as { id: number; status: string; reason: string | null }[];
+      const jobs = (await list(m.cookie)).json!.jobs as { id: string; status: string; reason: string | null; postedAt: string; closesAt: string }[];
+      expect(typeof mine).toBe("string");
+      for (const j of jobs) { expect(j.postedAt).toMatch(/Z$/); expect(j.closesAt).toMatch(/Z$/); } // ISO 8601 in UTC, never +00:00
       expect(jobs.map((j) => j.id)).toEqual([scam, mine]);
       expect(jobs.find((j) => j.id === scam)).toMatchObject({ status: "in_review", reason: "staff_check" });
       expect(jobs.map((j) => j.id)).not.toContain(theirs);
     }
     await su.query("update membership set status = 'removed', removed_at = now() where id = $1", [c.viewer.mem]);
-    expect((await list(c.viewer.cookie)).json).toEqual({ jobs: null });
+    expect((await list(c.viewer.cookie)).json).toEqual({ code: "NO_COMPANY" });
   });
 });
 
@@ -333,12 +336,12 @@ describe("hostile bodies", () => {
       expect((await post(c.owner.cookie, { ...good, ...extra })).status, JSON.stringify(extra)).toBe(400);
     for (const title of ["a‮b title", "zero​width", "line\nbreak"]) expect((await post(c.owner.cookie, { ...good, title })).status).toBe(400);
     expect((await post(c.owner.cookie, { ...good, ownPageUrl: "javascript:alert(1)//aaaaa" })).status).toBe(400);
-    expect((await edit(c.owner.cookie, { ...good, jobId: "1" })).status).toBe(400);
+    for (const jobId of [1, "0", "01", "-1", "9".repeat(19), "1;drop", null]) expect((await edit(c.owner.cookie, { ...good, jobId })).status, String(jobId)).toBe(400);
     expect(await jobCount(c.org)).toBe(0);
   });
   it("limits a login to 30 writes in the window", async () => {
     const codes = [];
-    for (let i = 0; i < 31; i++) codes.push((await renew(c.owner.cookie, { jobId: 999999999 })).status);
+    for (let i = 0; i < 31; i++) codes.push((await renew(c.owner.cookie, { jobId: "999999999" })).status);
     expect(codes.slice(0, 30).every((s) => s === 404)).toBe(true);
     expect(codes[30]).toBe(429);
   });
@@ -493,7 +496,7 @@ describe("General Employment Permit posts", () => {
       { exceptionConfirmed: "true" }, { exceptionConfirmed: 1 }, { exceptionConfirmed: null }, { exceptionConfirmed: { a: 1 } }, { exceptionConfirmed: "x".repeat(20_000) },
       { badge: "critical_skills_eligible" }, { permitType: "general", badge: "critical_skills_eligible" }])
       expect((await post(c.owner.cookie, { ...care, ...o })).status, JSON.stringify(o).slice(0, 60)).toBe(400);
-    expect((await edit(c.owner.cookie, { ...care, jobId: 1, permitType: "nope" })).status).toBe(400);
+    expect((await edit(c.owner.cookie, { ...care, jobId: "1", permitType: "nope" })).status).toBe(400);
     expect(await jobCount(c.org)).toBe(before);
     const id = (await post(c.owner.cookie, care)).json!.jobId;
     await expect(su.query("update job set badge = 'critical_skills_eligible' where id = $1", [id])).rejects.toMatchObject({ code: "23514" });
@@ -530,5 +533,14 @@ describe("the replies match docs/openapi/portal.yaml (decision #248)", () => {
     for (const [path, r] of checks) expect(replyProblems(spec, "POST", path, r.status, r.json), `${r.status} ${path} ${r.text.slice(0, 200)}`).toEqual([]);
     const l = await list(c.owner.cookie);
     expect([l.status, replyProblems(spec, "GET", "/api/portal/jobs", l.status, l.json)]).toEqual([200, []]);
+    // the changed shapes: ids as text, times with Z (the Timestamp pattern), no company is 404, the renewal's closesAt
+    const live = (await post(c.owner.cookie, good)).json!.jobId;
+    const rn = await renew(c.owner.cookie, { jobId: live });
+    expect([rn.status, replyProblems(spec, "POST", "/api/portal/jobs/renew", rn.status, rn.json)]).toEqual([200, []]);
+    const none = await list((await login()).cookie);
+    expect([none.status, replyProblems(spec, "GET", "/api/portal/jobs", none.status, none.json)]).toEqual([404, []]);
+    // a number id or a +00:00 time would fail the schema
+    expect(replyProblems(spec, "GET", "/api/portal/jobs", 200, { jobs: [{ ...l.json!.jobs[0], id: 5 }] })).not.toEqual([]);
+    expect(replyProblems(spec, "GET", "/api/portal/jobs", 200, { jobs: [{ ...l.json!.jobs[0], postedAt: "2026-11-10T08:00:00.000000+00:00" }] })).not.toEqual([]);
   });
 });

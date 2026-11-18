@@ -5,6 +5,7 @@ import { staffSettings } from "@portal/auth";
 import { closeManualPost, createManualPost, getPool, listManualPosts } from "@portal/db";
 import { checkOrigin } from "../../../lib/account-review";
 import { checkLength, parseManual, refuse } from "../../../lib/companies";
+import { readQuery } from "../../../lib/admin-api";
 import { requireStaff } from "../../../lib/staff";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const staff = await requireStaff(request.headers);
-    return Response.json(await listManualPosts(getPool(), staff, { before: new URL(request.url).searchParams.get("before") ?? undefined }));
+    return Response.json(await listManualPosts(getPool(), staff, { after: readQuery(request.url, ["after"]).after }));
   } catch (e) {
     return refuse(e, "manual-jobs");
   }

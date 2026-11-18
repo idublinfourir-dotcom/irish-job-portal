@@ -6,6 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { portalAnswers, seedSignupTerms } from "./better-auth-helper";
 import { fixtures } from "./fixtures";
+import { loadSpec, replyProblems } from "./openapi";
 
 // Statements counted on every pg.Client.query call, measured on 12 November 2026: the status page 4 (requirePortal 3, the page 1); a reply 5 (requirePortal 3, rate count 1, the function).
 // Times, median of 9 calls, measured warm: page 1.7 to 2.3 ms, reply 5.0 to 6.5 ms (four runs of this file). Budgets are about 4 times the slowest median, with a floor for a busy laptop. Raise these only on purpose.
@@ -18,7 +19,7 @@ type Handler = (r: Request) => Promise<Response>;
 let db: TestDb, su: pg.Pool;
 let authPOST: Handler, statusGET: Handler, statusPOST: Handler;
 let mail: () => { pool: string; kind: string; to: string; link: string }[];
-let F: { org(o?: object): Promise<number>; member(org: number, user: string | null, o?: object): Promise<number>; staff(): Promise<string> };
+let F: { org(o?: object): Promise<number>; member(org: number | string, user: string | null, o?: object): Promise<number>; staff(): Promise<string> };
 
 beforeAll(async () => {
   db = await createTestDb();
@@ -56,7 +57,7 @@ async function post(cookie: string | undefined, body: unknown, o: { origin?: str
   return reply(await statusPOST(new Request(`${BASE}/api/portal/status`, { method: "POST", body: o.raw ?? JSON.stringify(body), headers })));
 }
 const page = async (cookie?: string) => reply(await statusGET(new Request(`${BASE}/api/portal/status`, { headers: cookie ? { cookie } : {} })));
-const act = (cookie: string | undefined, action: string, caseId: number, text = "Our reply.") => post(cookie, { action, caseId, text });
+const act = (cookie: string | undefined, action: string, caseId: string, text = "Our reply.") => post(cookie, { action, caseId, text });
 async function counted<T>(fn: () => Promise<T>): Promise<[T, number]> {
   const q = pg.Client.prototype.query;
   let n = 0;
@@ -80,20 +81,20 @@ async function login(domain = "elsewhere.example.test"): Promise<Login> {
   expect(r.status, r.text).toBe(200);
   return { email: p.email, cookie: r.cookie, id: (await one("select id from portal_user where email=$1", [p.email])).id };
 }
-type Company = { org: number; owner: Login & { mem: number }; viewer: Login & { mem: number } };
+type Company = { org: string; owner: Login & { mem: string }; viewer: Login & { mem: string } };
 async function company(status = "verified"): Promise<Company> {
-  const org = Number(await F.org({ status }));
+  const org = String(await F.org({ status }));
   const owner = await login(), viewer = await login();
   return {
     org,
-    owner: { ...owner, mem: Number(await F.member(org, owner.id, { role: "account_owner", signer: true })) },
-    viewer: { ...viewer, mem: Number(await F.member(org, viewer.id, { role: "viewer" })) },
+    owner: { ...owner, mem: String(await F.member(org, owner.id, { role: "account_owner", signer: true })) },
+    viewer: { ...viewer, mem: String(await F.member(org, viewer.id, { role: "viewer" })) },
   };
 }
 const DAY = "interval '1 day'";
 type Seed = { kind?: string; reason?: string; level?: number | null; stage?: string; outcome?: string | null; reply?: string | null; decided?: string | null; appealDue?: string | null; appealed?: string | null; appealDecided?: string | null; approval?: boolean; appealStaff?: boolean };
 // A strike row. Times are SQL expressions, e.g. "now() + interval '3 days'".
-async function strike(org: number, s: Seed = {}): Promise<number> {
+async function strike(org: string, s: Seed = {}): Promise<string> {
   const c = await su.connect();
   try {
     await c.query("begin");
@@ -109,24 +110,24 @@ async function strike(org: number, s: Seed = {}): Promise<number> {
        values ($1, $2, $3, 'Fake notice', $4, $5, $6, ${s.reply ?? "null"}, ${s.decided ?? "null"}, ${s.appealDue ?? "null"}, ${s.appealed ?? "null"}, ${s.appealDecided ?? "null"}, $7, $8) returning id`,
       [org, s.kind ?? "false_claim", s.reason ?? "false_sponsorship", s.level ?? null, s.stage ?? "reply_window", s.outcome ?? null, approval, staff])).rows[0].id;
     await c.query("commit");
-    return Number(id);
+    return String(id);
   } catch (e) {
     await c.query("rollback");
     throw e;
   } finally { c.release(); }
 }
-const waiting = (org: number, o: Seed = {}) => strike(org, { reply: `now() + 3 * ${DAY}`, stage: "reply_window", ...o });
-const decided = (org: number, o: Seed = {}) => strike(org, { reply: `now() - 10 * ${DAY}`, decided: `now() - 2 * ${DAY}`, appealDue: `now() + 12 * ${DAY}`, stage: "decided", outcome: "strike", level: 1, ...o });
-const row = (id: number) => one("select stage, employer_reply, replied_at, appeal_text, appealed_at from strike where id=$1", [id]);
+const waiting = (org: string, o: Seed = {}) => strike(org, { reply: `now() + 3 * ${DAY}`, stage: "reply_window", ...o });
+const decided = (org: string, o: Seed = {}) => strike(org, { reply: `now() - 10 * ${DAY}`, decided: `now() - 2 * ${DAY}`, appealDue: `now() + 12 * ${DAY}`, stage: "decided", outcome: "strike", level: 1, ...o });
+const row = (id: string) => one("select stage, employer_reply, replied_at, appeal_text, appealed_at from strike where id=$1", [id]);
 const KEYS = ["id", "caseKind", "reasonCode", "jobId", "jobTitle", "noticeSummary", "stage", "outcome", "level", "replyDueAt", "employerReply", "repliedAt", "decidedAt", "appealDueAt", "appealText", "appealedAt", "appealDecidedAt", "canReply", "canAppeal"].sort();
-const found = (r: Reply, id: number) => r.json!.page.cases.find((c: { id: number }) => c.id === id);
+const found = (r: Reply, id: string) => r.json!.page.cases.find((c: { id: string }) => c.id === id);
 
 describe("GET", () => {
-  it("is 401 without a session and { page: null } for a login with no company", async () => {
+  it("is 401 without a session and 404 NO_COMPANY for a login with no company (as the company GET)", async () => {
     expect((await page()).status).toBe(401);
     const l = await login();
     const r = await page(l.cookie);
-    expect([r.status, r.json]).toEqual([200, { page: null }]);
+    expect([r.status, r.json]).toEqual([404, { code: "NO_COMPANY" }]);
   });
   it("shows an empty company, to the owner and to a viewer", async () => {
     const c = await company();
@@ -144,7 +145,7 @@ describe("GET", () => {
     const hidden = await strike(c.org, { stage: "case_open" });
     const foreign = await waiting(other.org);
     const r = await page(c.owner.cookie);
-    const ids = r.json!.page.cases.map((x: { id: number }) => x.id);
+    const ids = r.json!.page.cases.map((x: { id: string }) => x.id);
     expect(ids).toEqual([o, a, d, w]); // newest first
     expect(ids).not.toContain(hidden);
     expect(ids).not.toContain(foreign);
@@ -233,7 +234,7 @@ describe("security", () => {
     }
     expect(await row(w)).toMatchObject({ employer_reply: null });
     expect(await row(d)).toMatchObject({ appeal_text: null, stage: "decided" });
-    expect((await act(c.owner.cookie, "reply", 999999999)).json).toEqual({ code: "CASE_NOT_FOUND" });
+    expect((await act(c.owner.cookie, "reply", "999999999")).json).toEqual({ code: "CASE_NOT_FOUND" });
     const hidden = await strike(c.org, { stage: "case_open" });
     expect((await act(c.owner.cookie, "reply", hidden)).json).toEqual({ code: "CASE_NOT_FOUND" });
   });
@@ -245,7 +246,7 @@ describe("security", () => {
   it("a removed member can neither read nor write", async () => {
     const c = await company(), id = await waiting(c.org);
     await su.query("update membership set status='removed', removed_at=now() where id=$1", [c.owner.mem]);
-    expect([200, 403]).toContain((await page(c.owner.cookie)).status);
+    expect([403, 404]).toContain((await page(c.owner.cookie)).status); // NOT_A_MEMBER or NO_COMPANY, never the page
     const g = await page(c.owner.cookie);
     expect(g.json?.page ?? null).toBeNull();
     const r = await act(c.owner.cookie, "reply", id);
@@ -261,7 +262,7 @@ describe("security", () => {
 });
 
 describe("hostile bodies", () => {
-  let c: Company, id: number;
+  let c: Company, id: string;
   beforeAll(async () => { c = await company(); id = await waiting(c.org); });
   it("refuses a foreign or missing Origin", async () => {
     const good = { action: "reply", caseId: id, text: "x" };
@@ -273,7 +274,7 @@ describe("hostile bodies", () => {
     expect((await post(c.owner.cookie, { action: "reply", caseId: id, text: "x".repeat(2100) })).status).toBe(413);
     expect((await post(c.owner.cookie, null, { raw: "{nope" })).status).toBe(400);
     expect((await post(c.owner.cookie, { action: "reply", caseId: id, text: "x", extra: 1 })).status).toBe(400);
-    for (const caseId of ["5", -1, 0, 1e30, 1.5]) expect((await act(c.owner.cookie, "reply", caseId as number)).status, String(caseId)).toBe(400);
+    for (const caseId of [5, Number(id), -1, 0, 1e30, 1.5, "0", `0${id}`, "-1", "9".repeat(19), `${id};drop`]) expect((await act(c.owner.cookie, "reply", caseId as string)).status, String(caseId)).toBe(400);
     // the text cap (1,800) sits inside MAX_BODY (2,048), so the route itself refuses 1,801 characters
     expect((await post(c.owner.cookie, { action: "reply", caseId: id, text: "x".repeat(1801) })).status).toBe(400);
     for (const text of ["", "   ", "\n\t", "a\u202eb", "a\u0000b", "a\u200bb"]) {
@@ -288,6 +289,21 @@ describe("hostile bodies", () => {
     for (let i = 0; i < 11; i++) codes.push((await act(c.viewer.cookie, "reply", id)).status);
     expect(codes.slice(0, 10).every((s) => s === 403)).toBe(true); // NOT_OWNER: counted, then refused
     expect(codes[10]).toBe(429);
+  });
+});
+
+describe("the replies match docs/openapi/portal.yaml", () => {
+  it("the page with cases, a reply and the 404 with no company: ids as text, times with Z", async () => {
+    const spec = loadSpec("portal");
+    const c = await company(), w = await waiting(c.org);
+    await decided(c.org);
+    const g = await page(c.owner.cookie);
+    expect([g.status, replyProblems(spec, "GET", "/api/portal/status", g.status, g.json)]).toEqual([200, []]);
+    expect(found(g, w).replyDueAt).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+    const r = await act(c.owner.cookie, "reply", w);
+    expect([r.status, r.json, replyProblems(spec, "POST", "/api/portal/status", r.status, r.json)]).toEqual([200, { caseId: w, kind: "reply" }, []]);
+    const none = await page((await login()).cookie);
+    expect([none.status, replyProblems(spec, "GET", "/api/portal/status", none.status, none.json)]).toEqual([404, []]);
   });
 });
 

@@ -5,6 +5,7 @@ import { staffSettings } from "@portal/auth";
 import { getPool, mergeCompanies, previewCompanies } from "@portal/db";
 import { checkOrigin } from "../../../../lib/account-review";
 import { checkLength, MAX_SMALL_BODY, parseMerge, refuse } from "../../../../lib/companies";
+import { readQuery } from "../../../../lib/admin-api";
 import { requireStaff } from "../../../../lib/staff";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const staff = await requireStaff(request.headers);
+    readQuery(request.url, ["id"], ["id"]);
     return Response.json({ companies: await previewCompanies(getPool(), staff, new URL(request.url).searchParams.getAll("id")) });
   } catch (e) {
     return refuse(e, "companies/merge");

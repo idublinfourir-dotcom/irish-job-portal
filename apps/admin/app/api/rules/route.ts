@@ -5,6 +5,7 @@ import { staffSettings } from "@portal/auth";
 import { confirmRules, getPool, listRules, proposeBigFlag, proposeRules, refuseRules, withdrawRules } from "@portal/db";
 import { checkOrigin } from "../../../lib/account-review";
 import { checkLength, parseBody, refuse } from "../../../lib/rules";
+import { readQuery } from "../../../lib/admin-api";
 import { requireStaff } from "../../../lib/staff";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const staff = await requireStaff(request.headers);
+    readQuery(request.url, []);
     return Response.json(await listRules(getPool(), staff));
   } catch (e) {
     return refuse(e);
