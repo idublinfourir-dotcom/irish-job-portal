@@ -134,7 +134,7 @@ S("organisation", "update status unclaimed to verified (status_changed_at moves)
   const after = await one("app_admin", "select status_changed_at s from organisation where id = $1", [org1]);
   if (!(after.s > before.s)) throw new Error("status_changed_at did not move");
 });
-S("organisation", "update display_name as the portal", "app_portal", () => q("app_portal", "update organisation set display_name = 'Acme Limited' where id = $1", [org1]));
+N("organisation", "the portal may not update organisation directly (0031: profile edits go through private.company_edit)", "app_portal", /permission denied/, () => q("app_portal", "update organisation set display_name = 'Acme Limited' where id = $1", [org1]));
 S("organisation_name", "insert as the fetcher (alias from job_site only, 0029); update as admin", "app_fetcher", async () => {
   await q("app_fetcher", "insert into organisation_name(organisation_id, name, normalised_name, kind, source) values ($1,'Acme Ltd','acme ltd','alias','job_site')", [org1]);
   await q("app_admin", "update organisation_name set confirmed_at = now() where organisation_id = $1", [org1]);
