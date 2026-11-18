@@ -72,7 +72,7 @@ export function planAdvert(advert: RawAdvert, a: Assessment, m: MatchResult | nu
 }
 
 /** The close reasons the fetcher may undo. Any other reason on a closed job means staff closed it. */
-export const FETCHER_CLOSED = ["closed", "expired", "recheck_failed"];
+export const FETCHER_CLOSED = ["closed", "expired", "recheck_failed", "source_stale"];
 
 /**
  * What to do with a known advert that came back with its text (design 3.8). Pure.

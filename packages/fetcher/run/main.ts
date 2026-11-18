@@ -8,7 +8,7 @@ import { loadRules } from "@portal/db/rules-data";
 import { sslOptions } from "@portal/db/ssl";
 import { chatClient, createBatchChecker, spacedClient, rulesMatcher, type ListEntry } from "@portal/matcher";
 import { chainRules, checkSnapshot, cleanEmployerName } from "@portal/rules";
-import { atsTasks, kindFilter, runBoards, type BoardReport, type BoardsFile, type FetcherMatcher } from "../src";
+import { atsTasks, closeStale, kindFilter, runBoards, STALE_BOARD_DAYS, type BoardReport, type BoardsFile, type FetcherMatcher } from "../src";
 
 const need = (name: string) => {
   const v = process.env[name];
@@ -77,6 +77,8 @@ export async function main(deps: Deps = real()): Promise<BoardReport[]> {
       log,
     });
     console.table(reports.map(({ unsaved, ...r }) => ({ ...r, unsaved: unsaved.length })));
+    // after the boards, so a board that worked today is never stale; skipped kinds (Workday) and dropped boards close here after 7 days
+    log(`${await closeStale(db, new Date())} jobs closed: their board had no good fetch for ${STALE_BOARD_DAYS} days`);
     return reports;
   } finally {
     await db.end();
