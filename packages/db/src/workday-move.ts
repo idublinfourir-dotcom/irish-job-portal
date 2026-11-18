@@ -16,8 +16,12 @@ export const ROWS =
   "select f.id::text, f.external_id, s.board from fetched_advert f join job_source s on s.id = f.job_source_id " +
   "where s.kind = 'workday' and s.board = any($1::text[]) order by (f.gone_at is null) desc, f.id desc for update of f";
 export const TARGETS = "select id::text, kind, board from job_source where (kind, board) in (select * from unnest($1::text[], $2::text[]))";
+// The new board takes over the Workday board's last good fetch, so the 7-day stale close (fetcher store.ts CLOSE_STALE) counts from Workday's last
+// success, not from each advert's first sight: a moved job does not close the moment its new board's first run fails.
 export const ADD_TARGETS =
-  "insert into job_source(kind, board) select * from unnest($1::text[], $2::text[]) on conflict (kind, board) do update set board = excluded.board returning id::text, kind, board";
+  "insert into job_source(kind, board, last_ok_at) select t.k, t.b, (select w.last_ok_at from job_source w where w.kind = 'workday' and w.board = t.b) " +
+  "from unnest($1::text[], $2::text[]) t(k, b) on conflict (kind, board) do update set last_ok_at = greatest(job_source.last_ok_at, excluded.last_ok_at) " +
+  "returning id::text, kind, board";
 export const TAKEN = "select external_id from fetched_advert where job_source_id = any($1::bigint[])";
 // One statement: the adverts and their jobs move together. The job side joins the id list, not the CTE, so it reads job by its fetched_advert_id key.
 export const MOVE =

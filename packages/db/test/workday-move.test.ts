@@ -79,6 +79,12 @@ describe("the Workday move (W1c)", () => {
     expect(await snapshot()).toEqual(before);
   });
 
+  it("the new boards take over the Workday boards' last good fetch, so the stale close does not fire on the moved jobs at once", async () => {
+    const pairs = await su("select n.kind, n.board, n.last_ok_at = w.last_ok_at as same from job_source n join job_source w on w.board = n.board and w.kind = 'workday' where n.kind <> 'workday' order by n.board");
+    expect(pairs.length).toBe(7);
+    for (const p of pairs) expect(p.same, `${p.kind}:${p.board}`).toBe(true);
+  });
+
   it("the next fetch finds the moved jobs known: no twin, no page call for them, the same job stays live", async () => {
     const jobs = Number((await su("select count(*) from job"))[0].count);
     const { reports, calls } = await careerRun(db);
