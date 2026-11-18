@@ -3,7 +3,8 @@ import { StaffRefused } from "@portal/auth";
 import { QueueRefused } from "@portal/db";
 import { describe, expect, it, vi } from "vitest";
 import { BadRequest } from "./account-review";
-import { checkLength, MAX_BODY, MAX_SMALL_BODY, parseManual, parseMerge, parseOwner, refuse, statusFor } from "./companies";
+import { validLimit } from "@portal/db";
+import { checkLength, MAX_BODY, MAX_SMALL_BODY, parseLimit, parseManual, parseMerge, parseOwner, refuse, statusFor } from "./companies";
 
 const why = (f: () => unknown) => { try { f(); } catch (e) { return e instanceof BadRequest ? e.message : "other"; } return "ok"; };
 const j = JSON.stringify;
@@ -15,6 +16,25 @@ describe("parseMerge", () => {
     expect(why(() => parseMerge(j({ absorbedId: "1", survivorId: "2", extra: 1 })))).toBe("bad_body");
     for (const id of [1, "0", "01", "-1", "1.5", "1e3", " 1", "1 ", "1;2", "", null, "12345678901234567890"]) expect(why(() => parseMerge(j({ absorbedId: id, survivorId: "2" }))), String(id)).toBe("bad_input");
     expect(why(() => parseMerge(j({ absorbedId: "1" })))).toBe("bad_input");
+  });
+});
+describe("parseLimit and validLimit (P13)", () => {
+  it("takes the company id, a number and a reason, nothing else", () => {
+    expect(parseLimit(j({ organisationId: "7", memberLimit: 20, reason: "growing_team" }))).toEqual({ organisationId: "7", memberLimit: 20, reason: "growing_team" });
+    expect(why(() => parseLimit(j({ organisationId: "7", memberLimit: 20, reason: "x", extra: 1 })))).toBe("bad_body");
+    expect(why(() => parseLimit(j({ organisationId: "7", memberLimit: "20", reason: "x" })))).toBe("bad_body");
+    expect(why(() => parseLimit(j({ organisationId: "7", memberLimit: 20 })))).toBe("bad_body");
+    expect(why(() => parseLimit(j({ organisationId: 7, memberLimit: 20, reason: "x" })))).toBe("bad_input");
+    expect(why(() => parseLimit("x".repeat(MAX_SMALL_BODY + 1)))).toBe("bad_body");
+  });
+  it("bounds the limit from 1 to 50, whole numbers only", () => {
+    for (const n of [1, 10, 50]) expect(validLimit(n), String(n)).toBe(true);
+    for (const n of [0, -1, 51, 1.5, NaN, Infinity, "10", null]) expect(validLimit(n), String(n)).toBe(false);
+  });
+  it("maps the new codes", () => {
+    expect(statusFor("not_limit_staff")).toBe(403);
+    expect(statusFor("below_active")).toBe(409);
+    expect(statusFor("bad_limit")).toBe(400);
   });
 });
 describe("parseOwner", () => {

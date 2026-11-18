@@ -95,6 +95,8 @@ check organisation_check1 on organisation: CHECK ((merged_into_id <> id))
 check organisation_domain_domain_check on organisation_domain: CHECK ((domain = lower(domain)))
 check organisation_domain_source_check on organisation_domain: CHECK ((source = ANY (ARRAY['seed'::text, 'admin'::text])))
 check organisation_kind_check on organisation: CHECK ((kind = ANY (ARRAY['employer'::text, 'agency'::text, 'public_body'::text])))
+check organisation_logo_key_check on organisation: CHECK ((logo_key ~ '^logo/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp)$'::text))
+check organisation_member_limit_check on organisation: CHECK (((member_limit >= 1) AND (member_limit <= 50)))
 check organisation_name_kind_check on organisation_name: CHECK ((kind = ANY (ARRAY['legal'::text, 'alias'::text])))
 check organisation_name_source_check on organisation_name: CHECK ((source = ANY (ARRAY['dete'::text, 'cro'::text, 'job_site'::text, 'admin'::text, 'public_body_list'::text])))
 check organisation_permit_history_check on organisation: CHECK ((permit_history = ANY (ARRAY['has_history'::text, 'first_time'::text, 'not_linked'::text])))
@@ -421,7 +423,7 @@ rights app_portal on membership: table[select] columns[]
 rights app_portal on message: table[] columns[]
 rights app_portal on notification: table[] columns[]
 rights app_portal on notification_preference: table[] columns[]
-rights app_portal on organisation: table[select] columns[update(county,display_name,logo_url,short_description,website)]
+rights app_portal on organisation: table[select] columns[]
 rights app_portal on organisation_domain: table[] columns[]
 rights app_portal on organisation_name: table[select] columns[]
 rights app_portal on owner_reassign: table[] columns[]
@@ -454,6 +456,7 @@ rights app_portal on staff_verification: table[] columns[]
 rights app_portal on strike: table[] columns[]
 rights app_portal on tracker_entry: table[] columns[]
 rights app_portal on wrc_licence: table[] columns[]
+trigger alert_dormant_guard on alert: CREATE TRIGGER alert_dormant_guard BEFORE INSERT OR UPDATE OF pause_reason ON public.alert FOR EACH ROW WHEN ((CURRENT_USER = ANY (ARRAY['app_candidate'::name, 'app_portal'::name, 'app_admin'::name, 'app_fetcher'::name]))) EXECUTE FUNCTION private.alert_dormant_guard()
 trigger application_guard on application: CREATE TRIGGER application_guard BEFORE UPDATE ON public.application FOR EACH ROW EXECUTE FUNCTION private.application_guard()
 trigger application_job_open on application: CREATE TRIGGER application_job_open BEFORE INSERT ON public.application FOR EACH ROW EXECUTE FUNCTION private.application_job_open()
 trigger apply_click_job_check on apply_click: CREATE TRIGGER apply_click_job_check BEFORE INSERT OR UPDATE OF job_id ON public.apply_click FOR EACH ROW EXECUTE FUNCTION private.candidate_job_check()
@@ -463,6 +466,7 @@ trigger ban_approval on ban: CREATE TRIGGER ban_approval BEFORE INSERT OR DELETE
 trigger ban_closes_jobs on ban: CREATE TRIGGER ban_closes_jobs AFTER INSERT ON public.ban FOR EACH ROW EXECUTE FUNCTION private.ban_closes_jobs()
 trigger ban_matches_case on ban: CREATE TRIGGER ban_matches_case BEFORE INSERT ON public.ban FOR EACH ROW EXECUTE FUNCTION private.ban_matches_case()
 trigger candidate_user_active on candidate_user: CREATE TRIGGER candidate_user_active BEFORE UPDATE OF last_active_at ON public.candidate_user FOR EACH ROW EXECUTE FUNCTION private.candidate_user_active()
+trigger candidate_user_resume_alerts on candidate_user: CREATE TRIGGER candidate_user_resume_alerts AFTER UPDATE OF last_active_at ON public.candidate_user FOR EACH ROW WHEN (((new.last_active_at IS DISTINCT FROM old.last_active_at) AND (new.deleted_at IS NULL))) EXECUTE FUNCTION private.alert_resume_dormant()
 trigger case_document_guard on case_document: CREATE TRIGGER case_document_guard BEFORE INSERT OR UPDATE OF services_case_id, candidate_user_id, portal_user_id ON public.case_document FOR EACH ROW EXECUTE FUNCTION private.case_document_guard()
 trigger consent_record_guard on consent_record: CREATE TRIGGER consent_record_guard BEFORE UPDATE OF withdrawn_at ON public.consent_record FOR EACH ROW EXECUTE FUNCTION private.consent_record_guard()
 trigger consent_text_approval on consent_text: CREATE TRIGGER consent_text_approval BEFORE INSERT ON public.consent_text FOR EACH ROW EXECUTE FUNCTION private.approval_check()

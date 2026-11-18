@@ -1,10 +1,10 @@
 // What an uploaded file is, from its bytes only: the declared type and the name's extension are never trusted. Also the name cleaning and the
 // reading of a multipart body with a byte cap (counted while reading, so a body that lies about its length is still cut off).
-export type Kind = "pdf" | "docx" | "jpeg" | "png";
+export type Kind = "pdf" | "docx" | "jpeg" | "png" | "webp";
 export const MIME: Record<Kind, string> = {
-  pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", jpeg: "image/jpeg", png: "image/png",
+  pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", jpeg: "image/jpeg", png: "image/png", webp: "image/webp",
 };
-const EXT: Record<Kind, string> = { pdf: "pdf", docx: "docx", jpeg: "jpg", png: "png" };
+export const EXT: Record<Kind, string> = { pdf: "pdf", docx: "docx", jpeg: "jpg", png: "png", webp: "webp" };
 export const MAX_FILE = 4 * 1024 * 1024; // 4,194,304 bytes, under Vercel's 4.5 MB request limit
 export const MAX_BODY = MAX_FILE + 16 * 1024; // the multipart wrapping (boundaries, headers, a 200-character name) is far under 16 kB
 export type Refusal = "EMPTY_FILE" | "FILE_TOO_LARGE" | "WRONG_FILE_TYPE";
@@ -35,11 +35,12 @@ const SNIFF: Record<Kind, (b: Uint8Array) => boolean> = {
   docx: isDocx,
   jpeg: (b) => starts(b, [0xff, 0xd8, 0xff]),
   png: (b) => starts(b, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  webp: (b) => starts(b, ascii("RIFF")) && b.length >= 12 && ascii("WEBP").every((x, i) => b[8 + i] === x),
 };
 
-export function checkUpload(bytes: Uint8Array, allowed: readonly Kind[]): { contentType: Kind } | { refused: Refusal } {
+export function checkUpload(bytes: Uint8Array, allowed: readonly Kind[], max = MAX_FILE): { contentType: Kind } | { refused: Refusal } {
   if (bytes.length === 0) return { refused: "EMPTY_FILE" };
-  if (bytes.length > MAX_FILE) return { refused: "FILE_TOO_LARGE" };
+  if (bytes.length > max) return { refused: "FILE_TOO_LARGE" };
   const kind = allowed.find((k) => SNIFF[k](bytes));
   return kind ? { contentType: kind } : { refused: "WRONG_FILE_TYPE" };
 }

@@ -769,6 +769,7 @@ export const organisation = pgTable("organisation", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	mergedIntoId: bigint("merged_into_id", { mode: "number" }),
 	sponsorSort: integer("sponsor_sort").default(sql`'-1'`).notNull(),
+	logoKey: text("logo_key"),
 }, (table) => [
 	uniqueIndex("organisation_cro_unique").using("btree", table.croNumber.asc().nullsLast().op("text_ops")).where(sql`((cro_number IS NOT NULL) AND (status <> ALL (ARRAY['rejected'::text, 'closed'::text])) AND (merged_into_id IS NULL))`),
 	uniqueIndex("organisation_wrc_unique").using("btree", table.wrcLicenceNumber.asc().nullsLast().op("text_ops")).where(sql`((wrc_licence_number IS NOT NULL) AND (status <> ALL (ARRAY['rejected'::text, 'closed'::text])) AND (merged_into_id IS NULL))`),
@@ -785,6 +786,8 @@ export const organisation = pgTable("organisation", {
 	check("organisation_permit_history_check", sql`permit_history = ANY (ARRAY['has_history'::text, 'first_time'::text, 'not_linked'::text])`),
 	check("organisation_check", sql`(wrc_licence_number IS NULL) OR (kind = 'agency'::text)`),
 	check("organisation_check1", sql`merged_into_id <> id`),
+	check("organisation_logo_key_check", sql`logo_key ~ '^logo/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(png|jpg|webp)$'::text`),
+	check("organisation_member_limit_check", sql`(member_limit >= 1) AND (member_limit <= 50)`),
 ]);
 
 export const organisationName = pgTable("organisation_name", {

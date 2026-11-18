@@ -207,7 +207,7 @@ export async function openCase(db: Db, staff: string, input: CaseInput & { organ
 }
 
 // ===== cases: list and look =====
-const NEEDS_ACTION =
+export const NEEDS_ACTION =
   "(s.outcome is null or (s.appealed_at is not null and s.appeal_decided_at is null) or exists (select 1 from ban b join approval_request a " +
   "on a.target_table = 'ban' and a.target_id = b.id::text and a.status = 'pending' where b.strike_id = s.id))";
 export const CASES =

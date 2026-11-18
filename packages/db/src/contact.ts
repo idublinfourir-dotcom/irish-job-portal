@@ -3,7 +3,7 @@
 // The database is the guard: the app roles may insert only the columns below (0003), so a message cannot be filed as already answered.
 import { createHmac } from "node:crypto";
 import { botRefused, botResponse } from "./bot-check";
-import { hasControl, isObject, only, withinRate } from "./candidate-route";
+import { clientAddress, hasControl, isObject, only, withinRate } from "./candidate-route";
 import { getPool } from "./index";
 import type { ReportLogin } from "./report";
 
@@ -71,7 +71,7 @@ export async function handleContact(request: Request, o: { origin: string; side:
   if (!body) return no(400, "BAD_REQUEST");
   const side = SIDES[o.side];
   // A signed-in sender is counted by login. A visitor is counted by client address and by email, so neither many addresses nor many emails get through.
-  const ip = (request.headers.get("x-vercel-forwarded-for") ?? "").split(",")[0]!.trim().slice(0, 64) || "none";
+  const ip = clientAddress(request.headers);
   const keys = userId !== null ? [`contact:user:${userId}`] : [`contact:ip:${ip}`, emailKey(o.secret, body.email!)];
   for (const key of keys) if (!(await withinRate(side.limit, key, CONTACT_RATE))) return no(429, "TOO_MANY_REQUESTS");
   const db = getPool();

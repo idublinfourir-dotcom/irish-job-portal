@@ -5,7 +5,7 @@ import type pg from "pg";
 import { checkEligibility, standingLine, type RulesSnapshot } from "@portal/rules";
 import { getRules } from "./rules-data";
 import { getContent, validSlug, type ContentPage } from "./content";
-import { card, COUNT_CAP, cursorOf, decodeCursor, KEYS, CAST, LIST, LIVE, PAGE_SIZE, SOURCE, type JobCard, type ListRow, type Sort } from "./search";
+import { BadSearchInput, card, COUNT_CAP, cursorOf, decodeCursor, KEYS, CAST, LIST, LIVE, PAGE_SIZE, pageSize, SOURCE, type JobCard, type ListRow, type Sort } from "./search";
 
 type Db = Pick<pg.Pool, "query">;
 
@@ -17,11 +17,12 @@ const SCOPES = {
 export type JobsScope = keyof typeof SCOPES;
 export type ScopedJobs = { jobs: JobCard[]; next: string | null; count: { n: number; more: boolean } | null };
 
-export function scopedQuery(scope: JobsScope, value: string, after?: string): { text: string; values: unknown[] } {
+export function scopedQuery(scope: JobsScope, value: string, after?: string, size = PAGE_SIZE): { text: string; values: unknown[] } {
+  if (!pageSize(size)) throw new BadSearchInput("bad page size");
   const { where, sort } = SCOPES[scope];
   const keys = KEYS[sort].map((k) => `job.${k.col}`);
   const order = ["(not job.quota_full)", ...keys, "job.id"].map((c) => `${c} desc`).join(", ");
-  const tail = `order by ${order} limit ${PAGE_SIZE + 1}`;
+  const tail = `order by ${order} limit ${size + 1}`;
   if (after === undefined) return { text: `select ${LIST} from job ${SOURCE} where ${LIVE} and ${where} ${tail}`, values: [value] };
   const c = decodeCursor(sort, after);
   const row = ["$2::boolean", ...KEYS[sort].map((k, i) => `$${i + 3}::${CAST[k.kind]}`), `$${keys.length + 3}::bigint`].join(", ");
@@ -33,16 +34,16 @@ export function scopedQuery(scope: JobsScope, value: string, after?: string): { 
 export const scopedCount = (scope: JobsScope) =>
   `select count(*)::int as n from (select 1 from job where job.status = 'live' and job.closes_at > now() and ${SCOPES[scope].where} limit ${COUNT_CAP + 1}) c`;
 
-export async function scopedJobs(db: Db, scope: JobsScope, value: string, after?: string): Promise<ScopedJobs> {
-  const q = scopedQuery(scope, value, after); // throws BadSearchInput on a bad cursor, before any statement runs
+export async function scopedJobs(db: Db, scope: JobsScope, value: string, after?: string, size = PAGE_SIZE): Promise<ScopedJobs> {
+  const q = scopedQuery(scope, value, after, size); // throws BadSearchInput on a bad cursor, before any statement runs
   const [list, count] = await Promise.all([db.query<ListRow>(q.text, q.values), after === undefined ? db.query<{ n: number }>(scopedCount(scope), [value]) : null]);
   const rows = list.rows;
-  const shown = rows.slice(0, PAGE_SIZE);
+  const shown = rows.slice(0, size);
   const last = shown.at(-1);
   const n = count?.rows[0]!.n ?? 0;
   return {
     jobs: shown.map(card),
-    next: rows.length > PAGE_SIZE && last ? cursorOf(SCOPES[scope].sort, last) : null,
+    next: rows.length > size && last ? cursorOf(SCOPES[scope].sort, last) : null,
     count: count ? { n: Math.min(n, COUNT_CAP), more: n > COUNT_CAP } : null,
   };
 }
@@ -106,7 +107,7 @@ export function summarisePermits(rows: { year: number; month: number | null; per
 }
 
 /** The page of one company by slug. null: unknown, not a slug, or a company that was rejected or closed. `{ merged }` is the slug the page moved to. */
-export async function getCompanyPage(db: Db, slug: string, opts: { after?: string; now?: Date } = {}): Promise<CompanyResult | null> {
+export async function getCompanyPage(db: Db, slug: string, opts: { after?: string; now?: Date; limit?: number } = {}): Promise<CompanyResult | null> {
   if (!validSlug(slug)) return null;
   const o = (await db.query<OrgRow>(ORG, [slug])).rows[0];
   if (!o || HIDDEN_STATUSES.has(o.status)) return null;
@@ -114,7 +115,7 @@ export async function getCompanyPage(db: Db, slug: string, opts: { after?: strin
   const [names, permits, jobs] = await Promise.all([
     db.query<{ name: string; kind: string }>(NAMES, [o.id]),
     db.query<{ year: number; month: number | null; permits: number }>(PERMITS, [o.id]),
-    scopedJobs(db, "company", o.id, opts.after),
+    scopedJobs(db, "company", o.id, opts.after, opts.limit),
   ]);
   const labels: CompanyLabel[] = [];
   if (o.permit_history === "first_time") labels.push("First-time sponsor");
@@ -147,13 +148,13 @@ export type OccupationPage = {
 
 /** One occupation by code, or null when the code is not on either list (so there is no page for it). */
 /** `rules`: the minimums and lists in force (#229, default `getRules(db)`, the database); `lists` replaces the snapshot's lists (tests). */
-export async function getOccupationPage(db: Db, code: string, opts: { after?: string; lists?: readonly ListEntry[]; rules?: RulesSnapshot } = {}): Promise<OccupationPage | null> {
+export async function getOccupationPage(db: Db, code: string, opts: { after?: string; lists?: readonly ListEntry[]; rules?: RulesSnapshot; limit?: number } = {}): Promise<OccupationPage | null> {
   if (typeof code !== "string" || !/^[0-9]{4}$/.test(code)) return null;
   const rules = opts.rules ?? (await getRules(db)), m = rules.minimums;
   const entries = (opts.lists ?? rules.occupationLists).filter((e) => e.code === code);
   if (entries.length === 0) return null;
   const listed = entries.some((e) => e.list === "critical-skills");
-  const [jobs, text] = await Promise.all([scopedJobs(db, "occupation", code, opts.after), getContent(db, "occupation", code)]);
+  const [jobs, text] = await Promise.all([scopedJobs(db, "occupation", code, opts.after, opts.limit), getContent(db, "occupation", code)]);
   return {
     code, entries: entries.map((e) => ({ list: e.list, title: e.title })), listStatus: listed ? "critical-skills" : "ineligible",
     minimums: listed

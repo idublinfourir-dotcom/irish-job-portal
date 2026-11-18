@@ -49,7 +49,7 @@ function checkStatement(b: unknown): Statement | null {
   if (!signerName || !signerTitle || (b.writtenAuthority !== undefined && typeof b.writtenAuthority !== "boolean")) return null;
   return { signerName, signerTitle, writtenAuthority: b.writtenAuthority === true };
 }
-function checkUrl(v: unknown): string | null {
+export function checkUrl(v: unknown): string | null {
   const s = line(v, 10, 500);
   if (!s) return null;
   try {
