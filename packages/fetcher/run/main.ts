@@ -38,7 +38,7 @@ const rulesInForce = async (db: Pick<pg.Pool, "query">, day: string) => {
 
 export async function main(deps: Deps = real()): Promise<BoardReport[]> {
   const started = new Date();
-  // The kinds this run fetches (W1b: Workday on the laptop's runner, the rest on GitHub's). A bad value stops the run before anything is read.
+  // The kinds this run fetches (W1b: GitHub skips Workday). A bad value stops the run before anything is read.
   const keep = kindFilter(process.env.FETCHER_ONLY_KINDS, process.env.FETCHER_SKIP_KINDS);
   // Same DETE file and loading as packages/rules/src/chain/assess.parity.ts.
   const deteNames = new Set((json(join(need("PORTAL_PRIVATE_DATA"), "L2", "dete-2026.json")) as [string, number][]).map(([name]) => cleanEmployerName(name)));

@@ -19,7 +19,7 @@ describe("fetch guard decision", () => {
   });
 });
 
-// W1b: the boards fetched elsewhere (Workday, on the laptop) are left out of the guard's question.
+// W1b: the boards fetched elsewhere (Workday, not fetched from GitHub) are left out of the guard's question.
 describe("FETCHER_SKIP_KINDS", () => {
   it("blank is none; a comma list is trimmed, empty items dropped", () => {
     expect(skipKinds()).toEqual([]);

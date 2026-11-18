@@ -74,7 +74,7 @@ describe("fetch watch against the real fetch_run table", () => {
     expect(r).toMatchObject({ code: 0, line: "a fetch worked today (UTC) but 1 board failed; one is already running" });
     expect(r.calls).toHaveLength(1);
   });
-  // W1b: Workday is fetched on the laptop. Its failures are the laptop's business: no GitHub retry (it would be challenged too).
+  // W1b: Workday is not fetched from GitHub. Its failures start no GitHub retry (it would be challenged too).
   it("with FETCHER_SKIP_KINDS=workday, failed Workday rows only beside a good GitHub run: no retry, green, gh never called", async () => {
     const r = await go([{ at: "2026-11-13T05:20:00Z" }, { at: "2026-11-13T08:17:00Z", error: "HTTP 429 after 3 tries (cf-mitigated challenge)", wd: true }], [], "app_fetcher", "workday");
     expect(r).toMatchObject({ code: 0, line: "a fetch worked today (UTC)", calls: [] });

@@ -1,8 +1,8 @@
 // The daily fetch's "already fetched today" guard (.github/workflows/daily-fetch.yml, scheduled runs only). Run from the repo root with
 // the fetcher's login (app_fetcher, which may select from fetch_run):
 //   FETCHER_DATABASE_URL=... node packages/db/src/fetch-guard-cli.ts
-// FETCHER_SKIP_KINDS (a comma list, as the fetch's) leaves those boards' runs out: Workday is fetched on the engineer's laptop (W1b), so a laptop
-// run never makes the GitHub run skip. Prints one line. When a fetch already worked today (UTC) it also writes `skip=true` to the file named by GITHUB_OUTPUT, so the later
+// FETCHER_SKIP_KINDS (a comma list, as the fetch's) leaves those boards' runs out: Workday is not fetched from GitHub (W1b), so old Workday
+// runs never make the GitHub run skip. Prints one line. When a fetch already worked today (UTC) it also writes `skip=true` to the file named by GITHUB_OUTPUT, so the later
 // steps do not run. Exit 0 means "decided"; exit 1 means the guard could not decide, and the run must not fetch (fail closed).
 import { appendFileSync } from "node:fs";
 import pg from "pg";

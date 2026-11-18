@@ -43,7 +43,7 @@ describe("fetch guard against the real fetch_run table", () => {
     expect((await run([{ at: "2026-11-12T00:00:00Z" }])).skipped).toBe(true);
     expect((await run([{ at: "2026-11-11T23:59:59Z" }])).skipped).toBe(false);
   });
-  // W1b: the laptop fetched Workday at 05:00; the GitHub run must still fetch every other board.
+  // W1b: a Workday run at 05:00 (old, or any other source) must not make the GitHub run skip every other board.
   it("only a good Workday run today, with FETCHER_SKIP_KINDS=workday: not fetched today, fetch", async () => {
     expect(await run([{ at: "2026-11-12T05:00:00Z", wd: true }], "workday")).toMatchObject({ code: 0, skipped: false, line: "no fetch has worked yet today (UTC): fetching" });
   });

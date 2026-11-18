@@ -2,8 +2,8 @@
 // that never started. With the fetcher's login (app_fetcher) it asks the guard's question. Exit 0: a fetch worked today (UTC). Exit 1 (red run,
 // so GitHub sends its email): none did; it starts a guarded "Daily fetch" run unless one is already queued or running. Exit 2: not configured.
 // When a fetch worked but some boards' last try today failed (14 Nov 2026: Workday's Saturday maintenance), it starts one unguarded retry and
-// stays green. FETCHER_SKIP_KINDS (as the guard's) leaves out the boards fetched elsewhere (W1b: Workday on the laptop), so a laptop run
-// neither counts as today's fetch nor, when it failed or never ran, starts a GitHub retry. The two watch slots land hours after the daily fetch, so the retry usually falls after the maintenance window.
+// stays green. FETCHER_SKIP_KINDS (as the guard's) leaves out the boards not fetched from GitHub (W1b: Workday), so their
+// old runs neither count as today's fetch nor, when they failed or never ran, start a GitHub retry. The two watch slots land hours after the daily fetch, so the retry usually falls after the maintenance window.
 //   FETCHER_DATABASE_URL=... GH_TOKEN=... GH_REPO=owner/repo node packages/db/src/fetch-watch-cli.ts
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";

@@ -1,7 +1,8 @@
 name: Daily fetch
 
 # Fetches every board in packages/fetcher/data/boards.json into the live database as app_fetcher (step 6 slice 3), except the Workday boards:
-# Workday's Cloudflare answers GitHub's runners with a bot challenge, so workday-fetch.yml fetches them on the engineer's laptop (W1b).
+# Workday's Cloudflare answers every data-centre address (GitHub, Vercel Dublin) with a bot challenge (W1b, 18 Nov 2026), so Workday is left out
+# until the employers' own career sites replace it (W1c).
 # Secrets (set by the engineer): FETCHER_DATABASE_URL (app_fetcher's Supabase session pooler string), FETCHER_MODEL_KEY (OpenRouter),
 # ADMIN_DATABASE_URL (app_admin's string, given only to the admin steps after the fetch, one step at a time).
 on:
@@ -47,7 +48,7 @@ jobs:
         if: ${{ github.event_name == 'schedule' || inputs.guarded }}
         env:
           FETCHER_DATABASE_URL: ${{ secrets.FETCHER_DATABASE_URL }}
-          # A laptop Workday run never counts as today's fetch here.
+          # Old Workday runs never count as today's fetch here (W1b).
           FETCHER_SKIP_KINDS: workday
         run: |
           export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
@@ -60,8 +61,8 @@ jobs:
           FETCHER_SKIP_KINDS: workday
           FETCHER_MODEL_URL: https://openrouter.ai/api/v1
           FETCHER_MODEL_ID: "nvidia/nemotron-3-ultra-550b-a55b:free"
-          # The free key allows 50 requests a day: 30 here, 10 for the laptop's Workday run (W1b), 10 spare for score reruns (11 November 2026).
-          FETCHER_MAX_MODEL_REQUESTS: "30"
+          # The free key allows 50 requests a day: 40 here (W1b: no laptop run), 10 spare for score reruns (11 November 2026).
+          FETCHER_MAX_MODEL_REQUESTS: "40"
           FETCHER_BATCH_SIZE: "13"
           FETCHER_DEADLINE_MINUTES: "25"
           # 20 requests a minute on free models: start calls 4 s apart. A batch of 13 can take minutes: 5 minute timeout.

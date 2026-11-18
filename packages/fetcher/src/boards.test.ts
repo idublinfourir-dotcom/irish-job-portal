@@ -61,7 +61,7 @@ describe("atsTasks", () => {
   });
 });
 
-// W1b: FETCHER_ONLY_KINDS / FETCHER_SKIP_KINDS, the kinds one run fetches (Workday on the laptop, the rest on GitHub).
+// W1b: FETCHER_ONLY_KINDS / FETCHER_SKIP_KINDS, the kinds one run fetches (Workday left out on GitHub, the rest on GitHub).
 describe("kindFilter", () => {
   const kinds = (only?: string, skip?: string) => atsTasks(CONFIG, fake(() => reply(EMPTY)).fetch).filter((t) => kindFilter(only, skip)(t.kind)).map((t) => t.kind);
   it("knows exactly the kinds atsTasks makes", () => expect([...KINDS].sort()).toEqual([...new Set(kinds())].sort()));

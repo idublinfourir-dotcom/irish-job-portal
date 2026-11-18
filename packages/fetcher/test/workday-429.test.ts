@@ -78,7 +78,7 @@ describe("Workday 429 on the real database (W1)", () => {
     expect(Number((await su("select count(*) from fetch_run where error like 'HTTP 429 after 3 tries%'"))[0].count)).toBe(3);
   });
 
-  // W1b: the laptop's run (workday-fetch.yml) has FETCHER_ONLY_KINDS=workday.
+  // W1b: a run with FETCHER_ONLY_KINDS=workday (kept for a later source).
   it("day 4: a Workday-only run touches only Workday sources and closes nothing on other boards", async () => {
     const before = await su("select s.board, count(f.id)::int as runs from job_source s left join fetch_run f on f.job_source_id = s.id group by s.board order by s.board");
     const empty = server(() => false);

@@ -26,6 +26,6 @@ it("the watch's cron lines do not collide with the daily fetch's own slots", () 
   const daily = readFileSync(new URL("../../../.github/workflows/daily-fetch.yml", import.meta.url), "utf8");
   expect(daily).not.toMatch(/- cron: "(11 12|41 17) /);
 });
-it("leaves the Workday boards, fetched on the laptop, out of its questions (W1b)", () => {
+it("leaves the Workday boards, not fetched from GitHub, out of its questions (W1b)", () => {
   expect(step("Check today's fetch")).toMatch(/\n {10}FETCHER_SKIP_KINDS: workday\n/);
 });

@@ -20,7 +20,7 @@ export const KINDS: readonly string[] = [...Object.keys(SLUG_KINDS), "workday", 
 
 /**
  * The kinds one run fetches, from FETCHER_ONLY_KINDS or FETCHER_SKIP_KINDS (comma lists; blank is unset; both unset is every kind). Workday
- * runs on the engineer's laptop and the rest on GitHub (W1b). Throws, so the run never starts, on both set, an unknown kind or a list of no kinds.
+ * is left out on GitHub (W1b). Throws, so the run never starts, on both set, an unknown kind or a list of no kinds.
  */
 export function kindFilter(only = "", skip = ""): (kind: string) => boolean {
   if (only.trim() && skip.trim()) throw new Error("set FETCHER_ONLY_KINDS or FETCHER_SKIP_KINDS, not both");
