@@ -5,6 +5,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { AUDIT_PAGE_SQL } from "../src/audit-read";
 import { createTestDb, type TestDb } from "./db";
+import { loadSpec, replyProblems } from "./openapi";
 import { counted, median, ROLE_NAMES, staffHarness, type Route } from "./staff-routes-harness";
 import { assertPageBudget, measurePages } from "./perf/pages";
 
@@ -156,6 +157,16 @@ describe("filters", () => {
     await h.no(get("ad1", "?x=1"), 400, "bad_query");
     await h.no(get("ad1", "?action=a&action=b"), 400, "bad_query");
     await h.no(get("ad1", "?kind=security"), 400, "bad_query");
+  });
+});
+
+describe("the replies match docs/openapi/admin.yaml (decision #248)", () => {
+  it("a page with its cursor, the next page, and the 400 and 401 bodies", async () => {
+    const spec = loadSpec("admin");
+    const first = await get("ad1");
+    const checks = [first, await get("ad1", q({ after: first.json.next as string })), await get("only_content_editor"), await get("ad1", "?x=1"), await get(null)];
+    expect(checks.map((r) => r.status)).toEqual([200, 200, 200, 400, 401]);
+    for (const r of checks) expect(replyProblems(spec, "GET", "/api/audit", r.status, r.json), `${r.status} ${JSON.stringify(r.json).slice(0, 200)}`).toEqual([]);
   });
 });
 

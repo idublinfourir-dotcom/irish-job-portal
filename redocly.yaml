@@ -1,0 +1,12 @@
+# Lint config for the OpenAPI files in docs/openapi (decision #248). npm run lint:api.
+# No usage data is sent (the lint must not reach the network, as no test may).
+telemetry: off
+extends:
+  - recommended
+rules:
+  # The shared components (both error bodies, ids, times) are the same block in all three files; not every file uses each one.
+  no-unused-components: off
+  # A download answers 302 to a short-lived link: that redirect is its success, there is no 2xx.
+  operation-2xx-response: off
+  # The health checks have no client error; the sync test (packages/db/src/openapi-sync.test.ts) requires a 4xx unless x-no-4xx gives the reason.
+  operation-4xx-response: off

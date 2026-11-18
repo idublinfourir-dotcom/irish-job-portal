@@ -1,0 +1,1307 @@
+openapi: 3.1.0
+info:
+  title: Portal API (employers and agencies)
+  version: 0.1.0
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+  description: |
+    The routes of the employer and agency portal: signing in, claiming or registering a company, the team, job posts,
+    pay floors, the status page, notices, case documents and the contact and report forms. Every route except the
+    health check and the Better Auth sign-up and sign-in paths needs a portal session.
+
+    ## Conventions (the same text in candidate.yaml, portal.yaml and admin.yaml)
+
+    - **Origin check on writes.** Every POST, PUT and DELETE that a signed-in person sends must carry an `Origin` header equal to its
+      own app's origin (the `*_AUTH_URL` setting). Anything else is refused with 403 before the body is read. The exceptions are named
+      on the route: the alert unsubscribe (a mail provider's server sends it with no Origin) and the health checks (GET only).
+    - **Body size caps.** Every write has a cap, given on the route in `x-body-cap` (characters of the JSON text, or bytes for a
+      file upload). A `Content-Length` over the cap is refused before the body is read, and a body over the cap after reading is
+      refused too: 413 on the candidate and portal sites, 400 `bad_body` on the admin site. The Better Auth routes
+      (`/api/auth/*`) keep Better Auth's own handling; this repo sets no cap there.
+    - **Strict bodies.** A body must be one JSON object with exactly the documented fields: an unknown field, a wrong type or a
+      value outside its limits is refused with 400 (no field is dropped silently). Strings are trimmed where the route says so and
+      may not hold control characters unless the route says line breaks are allowed.
+    - **Two error formats exist today.** Most candidate and portal routes answer `{ "code": "UPPER_CASE" }` (`CodeError`); the admin
+      routes and a few others answer `{ "error": "lower_case" }` (`ErrorBody`). Each response names which. A 500 never says why
+      (`{ "error": "server_error" }` on admin, an empty or framework body elsewhere); the reason stays in the server log.
+    - **Sessions.** Each app has its own Better Auth login pool and its own cookie (`candidate.session_token`,
+      `portal.session_token`, `staff.session_token`; `__Secure-` in front of the name over HTTPS). A route that needs a session
+      answers 401 without one. Sessions are read from the database on every request (no cookie cache), so a suspended, blocked,
+      disabled or deleted login is refused on its next request.
+    - **Paging.** Lists page by keyset, never by offset: the reply carries an opaque `next` (and sometimes `previous`) token,
+      and the next page is asked for with `after=<token>` (or `before=<token>`). A token works only with the sort and filters it was
+      made for; a changed or forged token is 400. Page sizes are given on each route (job lists 20, a visitor 6, audit 50, notices
+      50, content 20, admin queues 20). Not yet uniform: three admin lists (`/api/trust-safety/cases`,
+      `/api/companies/owner-reassign`, `/api/manual-jobs`) answer `next` as a plain id, and `/api/manual-jobs` pages with `before`.
+    - **Rate limits.** Limits are counted in the database (shared by every server instance). Over a limit the answer is 429; only
+      the public candidate reads send `Retry-After` (seconds). Each write names its limit in `x-rate-limit` ("none" where the code
+      has none, as on the admin routes, which rely on the staff sign-in limits).
+    - **Ids.** Database ids are 64-bit integers. The candidate and admin routes send and take them as strings of digits (`"123"`,
+      pattern `^[1-9][0-9]{0,18}$`), so no client loses precision. Not yet uniform: most portal routes send and take them as JSON
+      numbers (`NumId` in portal.yaml); each field says which. Login ids (Better Auth) are 32 letters and digits.
+    - **Times** are ISO 8601 strings in UTC (`2026-11-18T09:30:00.000Z`); dates without a time are `YYYY-MM-DD`. Not yet uniform:
+      some portal replies send Postgres text (`2026-11-18 09:30:00.123456+00`, `PgTime` in portal.yaml) or an ISO time with a
+      `+00:00` offset; each field says which.
+    - **Examples** are made up. No example holds a real person, company, address or secret.
+servers:
+  - url: /
+    description: The app's own origin (relative; each app is deployed on its own host).
+components:
+  schemas:
+    CodeError:
+      type: object
+      description: The error body of most candidate and portal routes.
+      required: [code]
+      properties:
+        code: { type: string, pattern: '^[A-Z][A-Z0-9_]*$' }
+      example: { code: BAD_REQUEST }
+    ErrorBody:
+      type: object
+      description: The error body of the admin routes and some portal and candidate routes. `stage` is set only when a rules check failed.
+      required: [error]
+      properties:
+        error: { type: string }
+        stage: { type: string }
+      example: { error: bad_body }
+    Id:
+      type: string
+      description: A database id as text.
+      pattern: '^[1-9][0-9]{0,18}$'
+      example: '1042'
+    LoginId:
+      type: string
+      description: A Better Auth login id.
+      pattern: '^[A-Za-z0-9_-]{1,64}$'
+      example: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP'
+    Timestamp:
+      type: string
+      format: date-time
+      description: An ISO 8601 time in UTC.
+      example: '2026-11-18T09:30:00.000Z'
+    Date:
+      type: string
+      format: date
+      example: '2026-11-18'
+    Cursor:
+      type: string
+      description: An opaque keyset paging token from a previous reply. Send it back unchanged.
+      pattern: '^[A-Za-z0-9_-]{1,300}$'
+      example: eyJzIjoic3BvbnNvciIsInEiOmZhbHNlfQ
+    NumId:
+      type: integer
+      description: A database id the portal sends and takes as a JSON number (not text). A whole number from 1 up to 9007199254740991.
+      minimum: 1
+      maximum: 9007199254740991
+      example: 1042
+    PgTime:
+      type: string
+      description: A time as Postgres writes it as text, in UTC (for example `2026-11-18 09:30:00.123456+00`). Not the `T` and `Z` form.
+      example: '2026-11-18 09:30:00.123456+00'
+    County:
+      type: string
+      description: One of the 26 counties of the Republic of Ireland.
+      enum: [Carlow, Cavan, Clare, Cork, Donegal, Dublin, Galway, Kerry, Kildare, Kilkenny, Laois, Leitrim, Limerick, Longford, Louth, Mayo, Meath, Monaghan, Offaly, Roscommon, Sligo, Tipperary, Waterford, Westmeath, Wexford, Wicklow]
+    SocCode:
+      type: string
+      description: A SOC 2010 four-digit occupation code that is on the rules package's code list (any other four digits are refused).
+      pattern: '^[0-9]{4}$'
+      example: '2136'
+    TeamRole:
+      type: string
+      enum: [viewer, poster, recruiter]
+      description: A team role the owner can give. `account_owner` is never given here; it moves only by transfer.
+    JobPostFields:
+      type: object
+      description: |
+        A job post. Pay rule: `salaryLow` or a `payGrade` must be given; `salaryHigh` needs `salaryLow` and may not be below it.
+        `contractMonths` is required for `fixed_term` and must be absent or null for `permanent`. Single-line texts are trimmed and
+        may hold no control or format characters; `description` may hold line breaks and tabs.
+      required: [status, title, description, county, occupationCode, contractType, ownPageUrl]
+      properties:
+        status: { type: string, enum: [draft, live], description: "`draft` skips the rules; `live` runs them." }
+        title: { type: string, minLength: 2, maxLength: 200 }
+        description: { type: string, minLength: 20, maxLength: 10000, description: The advert text (length counted after trimming). }
+        county: { $ref: '#/components/schemas/County' }
+        occupationCode: { $ref: '#/components/schemas/SocCode' }
+        contractType: { type: string, enum: [permanent, fixed_term] }
+        contractMonths: { type: [integer, 'null'], minimum: 1, maximum: 600 }
+        salaryLow: { type: [integer, 'null'], minimum: 1, maximum: 1000000, description: Whole euros a year. }
+        salaryHigh: { type: [integer, 'null'], minimum: 1, maximum: 1000000 }
+        payGrade: { type: [string, 'null'], minLength: 1, maxLength: 100, description: "A public pay grade, shown when no salary is stated." }
+        healthInsuranceEur: { type: [integer, 'null'], minimum: 0, maximum: 50000, description: "Employer-paid health insurance a year, counted towards the pay minimum." }
+        weeklyHours: { type: integer, minimum: 1, maximum: 60, default: 39 }
+        ownPageUrl: { type: string, minLength: 10, maxLength: 500, format: uri, description: "An https address with a dotted host name and no user name or password: where candidates apply." }
+        clientName: { type: [string, 'null'], minLength: 2, maxLength: 160, description: Agencies only; the client the job is posted for. }
+        statement:
+          description: The signed sponsorship statement. Gives the job the `sponsor_confirmed` badge. The database decides who may sign.
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [signerName, signerTitle]
+              properties:
+                signerName: { type: string, minLength: 2, maxLength: 120 }
+                signerTitle: { type: string, minLength: 2, maxLength: 120 }
+                writtenAuthority: { type: boolean, description: Required true when `clientName` is set (the client's written authority is on file). }
+        permitType: { type: string, enum: [critical_skills, general], default: critical_skills }
+        exceptionConfirmed: { type: boolean, description: "The employer meets the exception named on an Ineligible list entry. Not stored." }
+      example:
+        status: live
+        title: Senior Software Engineer
+        description: Build and run payment services for a growing team in Dublin. Five years of backend experience needed.
+        county: Dublin
+        occupationCode: '2136'
+        contractType: permanent
+        salaryLow: 70000
+        salaryHigh: 85000
+        weeklyHours: 39
+        ownPageUrl: https://careers.example.ie/jobs/101
+        statement: { signerName: Alex Example, signerTitle: HR Manager }
+    JobPost:
+      description: A new job post. Unknown fields are refused.
+      allOf: [{ $ref: '#/components/schemas/JobPostFields' }]
+      unevaluatedProperties: false
+    JobEdit:
+      description: A job edit, the whole post again plus `jobId`. Unknown fields are refused.
+      allOf:
+        - { $ref: '#/components/schemas/JobPostFields' }
+        - { type: object, required: [jobId], properties: { jobId: { $ref: '#/components/schemas/NumId' } } }
+      unevaluatedProperties: false
+    JobResult:
+      type: object
+      required: [jobId, status, badge, passRoute]
+      properties:
+        jobId: { $ref: '#/components/schemas/NumId' }
+        status: { type: string, enum: [draft, live, in_review, under_review, closed, hidden] }
+        badge: { type: [string, 'null'], enum: [sponsor_confirmed, critical_skills_eligible, null] }
+        passRoute: { type: [string, 'null'], enum: [stated_pay, public_pay, null] }
+    RulesVerdict:
+      type: object
+      description: The rules refused a live post. `stage` names the failed stage for `RULES_FAILED`; `exception` carries the Ineligible entry's wording when it names an exception the employer may confirm.
+      required: [code]
+      properties:
+        code: { type: string, enum: [GENERAL_RULES_NOT_SET, OCCUPATION_INELIGIBLE, QUOTA_FULL, OCCUPATION_NOT_ON_LIST, CONTRACT_TOO_SHORT, RULES_FAILED, PAY_REQUIRED, PAY_BELOW_MINIMUM, STATEMENT_REQUIRED] }
+        stage: { type: string }
+        exception: { type: string }
+    CaseDocument:
+      type: object
+      required: [id, fileName, contentType, sizeBytes, uploadedAt, copyDeleted]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        fileName: { type: string, maxLength: 200 }
+        contentType: { type: string, enum: [pdf, jpeg, png], description: The kind found from the file's bytes. }
+        sizeBytes: { type: integer }
+        uploadedAt: { $ref: '#/components/schemas/Timestamp' }
+        copyDeleted: { type: boolean, description: The stored copy was removed (retention); the row stays. }
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok: { const: true }
+  headers:
+    RetryAfter:
+      description: Seconds until the limit that was hit has a new window.
+      schema: { type: integer, minimum: 1 }
+      example: 42
+  securitySchemes:
+    portalSession:
+      type: apiKey
+      in: cookie
+      name: portal.session_token
+      description: The portal's Better Auth session cookie (`__Secure-portal.session_token` over HTTPS). Set by sign-in under `/api/auth/portal/`.
+  responses:
+    BadRequest:
+      description: "`BAD_REQUEST`: the body is not JSON, or a field is missing, unknown, of the wrong type or outside its limits."
+      content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } }
+    NoSession:
+      description: "`NO_SESSION`: no valid portal session cookie."
+      content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NO_SESSION } } }
+    ReadForbidden:
+      description: "`REFUSED`: the login is blocked or deleted."
+      content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: REFUSED } } }
+    BodyTooLarge:
+      description: "`BODY_TOO_LARGE`: the `Content-Length` header or the body read is over the route's cap."
+      content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BODY_TOO_LARGE } } }
+    TooMany:
+      description: "`TOO_MANY_REQUESTS`: over the route's rate limit (see `x-rate-limit`). No `Retry-After` header is sent."
+      content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: TOO_MANY_REQUESTS } } }
+paths:
+  /api/auth/portal/{path}:
+    parameters:
+      - name: path
+        in: path
+        required: true
+        description: "The Better Auth endpoint under `/api/auth/portal/`; it may hold slashes (a Next.js catch-all), for example `sign-in/email`."
+        schema: { type: string, example: sign-in/email }
+    get:
+      operationId: portalAuthGet
+      summary: Better Auth read endpoints of the portal pool
+      description: |
+        Hands the request to Better Auth (pool `portal`, base path `/api/auth/portal`). The portal uses `get-session` (the signed-in
+        login, or null) and `verify-email` (the confirmation link from the sign-up email). Shapes are Better Auth's own; this file
+        does not restate them. Email and password only, no Google sign-in. Sessions are read from the database each time.
+      security: []
+      x-roles: [anyone]
+      responses:
+        '200':
+          description: Better Auth's answer (for `get-session`, the session and user, or null with no session).
+          content:
+            application/json:
+              schema: { type: [object, 'null'] }
+              example: null
+        '302':
+          description: "`verify-email` redirects to its callback address after confirming the email."
+          headers:
+            Location: { schema: { type: string }, example: /signed-in }
+        '4XX':
+          description: Better Auth's own error, for example an expired or bad confirmation token, or a rate limit (429).
+          content:
+            application/json:
+              schema: { type: object }
+              example: { code: INVALID_TOKEN, message: Invalid token }
+    post:
+      operationId: portalAuthPost
+      summary: Better Auth write endpoints of the portal pool
+      description: |
+        Hands the request to Better Auth after a bot check. The portal uses:
+
+        - `sign-up/email`: body `{ name, email, password, acceptsTerms: true }`. Only the JSON value `true` passes for
+          `acceptsTerms` (else 400 `SIGNUP_ANSWERS_REFUSED`); `name` must be 1 to 100 characters (else 400 `SIGNUP_NAME_REFUSED`).
+          The consent row is written in the sign-up transaction. The email must be confirmed before sign-in works.
+        - `sign-in/email`: body `{ email, password }`. Sets the `portal.session_token` cookie. A blocked or deleted login is refused (403).
+        - `sign-out`.
+        - `request-password-reset` and `reset-password`: a reset ends every other session.
+        - `send-verification-email`: sends the confirmation link again.
+
+        Bot check: when `BOT_CHECK=on`, a POST to `sign-up/email`, `sign-in/email`, `request-password-reset` or
+        `send-verification-email` is checked by Vercel BotID before Better Auth reads the body; a bot gets 403 `{ "code": "BOT_SUSPECTED" }`.
+
+        Rate limits (Better Auth, in the database, per client address from `x-vercel-forwarded-for`): `sign-in/email` and
+        `sign-up/email` 5 a minute; `request-password-reset` and `send-verification-email` 3 in 5 minutes. On top, those last two
+        allow 3 an hour per email address (counted under a keyed hash of the address, before it is looked up, so the reply is the
+        same whether an account exists). An address over 254 characters is refused with 400 `INVALID_EMAIL`. Other paths use Better
+        Auth's default limit. Better Auth's own Origin check is on (trusted origin: the portal's own).
+      security: []
+      x-roles: [anyone]
+      x-rate-limit: "sign-in/email and sign-up/email 5 per 60 s per address; request-password-reset and send-verification-email 3 per 300 s per address and 3 per hour per email"
+      x-body-cap: none set by this repo (Better Auth's own handling)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object }
+            example: { email: owner@example.ie, password: correct-horse-battery-staple }
+      responses:
+        '200':
+          description: Better Auth's answer (for sign-in, the user and token; the cookie is set).
+          content:
+            application/json:
+              schema: { type: object }
+              example: { redirect: false, token: made-up-token, user: { id: q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP, email: owner@example.ie, name: Alex Example } }
+        '400':
+          description: "Better Auth's own body check, or `SIGNUP_ANSWERS_REFUSED`, `SIGNUP_NAME_REFUSED`, `INVALID_EMAIL`."
+          content:
+            application/json:
+              schema: { type: object, properties: { code: { type: string }, message: { type: string } } }
+              example: { code: SIGNUP_ANSWERS_REFUSED, message: You must accept the terms. }
+        '403':
+          description: "`BOT_SUSPECTED` (body `{ code }` only) from the bot check; or Better Auth's 403 (email not confirmed, login blocked or deleted, `SIGNUP_CONSENT_MISSING`, bad origin)."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: BOT_SUSPECTED }
+        '429':
+          description: Over a Better Auth limit or the per-email limit.
+          content:
+            application/json:
+              schema: { type: object }
+              example: { message: Too many requests. Please try again later. }
+  /api/health:
+    get:
+      operationId: portalHealth
+      summary: Health check
+      description: Answers whether the database answers `select 1`. The result is cached for a short time. No session, no Origin check.
+      security: []
+      x-roles: [anyone]
+      x-no-4xx: Takes no input and needs no session, so no client error is possible.
+      responses:
+        '200':
+          description: The database answers.
+          content:
+            application/json:
+              schema: { type: object, required: [ok, database], properties: { ok: { type: boolean }, database: { type: boolean } } }
+              example: { ok: true, database: true }
+        '503':
+          description: The database does not answer.
+          content:
+            application/json:
+              schema: { type: object, required: [ok, database], properties: { ok: { type: boolean }, database: { type: boolean } } }
+              example: { ok: false, database: false }
+  /api/portal/cases/{id}/documents:
+    parameters:
+      - { name: id, in: path, required: true, description: The services case id. Not an id is 400., schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      operationId: portalCaseDocumentsList
+      summary: List the documents of one of my services cases
+      description: Cases are personal (the case's portal user), not shared with teammates. Any active portal login, with or without a company. Another person's case is 404.
+      security: [{ portalSession: [] }]
+      x-roles: [any active portal login]
+      responses:
+        '200':
+          description: The case's documents, oldest first.
+          content:
+            application/json:
+              schema: { type: object, required: [documents], properties: { documents: { type: array, items: { $ref: '#/components/schemas/CaseDocument' } } } }
+              example: { documents: [{ id: '31', fileName: contract.pdf, contentType: pdf, sizeBytes: 182044, uploadedAt: '2026-11-18T09:30:00.000Z', copyDeleted: false }] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+        '404': { description: "`CASE_NOT_FOUND`: no such case of this login.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: CASE_NOT_FOUND } } } }
+    post:
+      operationId: portalCaseDocumentsUpload
+      summary: Upload a document to one of my services cases
+      description: |
+        Multipart body with exactly one field, `file` (PDF, JPEG or PNG, found from the bytes; the declared type and the name are not
+        trusted). At most 4,194,304 bytes of file. Order: Origin check (403 `BAD_ORIGIN`), the `Content-Length` cap, the session, the
+        upload limit, then the case (open, at most 20 stored documents) and the file. The name is kept as a label only.
+      security: [{ portalSession: [] }]
+      x-roles: [any active portal login]
+      x-rate-limit: 10 uploads per login per hour (portal side has no other write limit here)
+      x-body-cap: 4210688 bytes (4 MiB file plus 16 KiB of multipart wrapping), counted while reading
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, additionalProperties: false, required: [file], properties: { file: { type: string, format: binary } } }
+      responses:
+        '200':
+          description: The document was stored.
+          content:
+            application/json:
+              schema: { type: object, required: [document], properties: { document: { $ref: '#/components/schemas/CaseDocument' } } }
+              example: { document: { id: '32', fileName: payslip.png, contentType: png, sizeBytes: 90211, uploadedAt: '2026-11-18T09:31:00.000Z', copyDeleted: false } }
+        '400': { description: "`BAD_REQUEST`: not multipart, not exactly one `file` field, or a bad case id. `EMPTY_FILE`: the file has no bytes.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: EMPTY_FILE } } } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: the Origin header is not the portal's. `REFUSED`: the login is blocked or deleted, or a database rule refused.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_ORIGIN } } } }
+        '404': { description: "`CASE_NOT_FOUND`: no such case of this login.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: CASE_NOT_FOUND } } } }
+        '409': { description: "`CASE_CLOSED`: the case is at decision or closed. `DOCUMENT_LIMIT`: the case already holds 20 stored documents.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: DOCUMENT_LIMIT } } } }
+        '413': { description: "`FILE_TOO_LARGE`: over the cap by header or while reading.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILE_TOO_LARGE } } } }
+        '415': { description: "`WRONG_FILE_TYPE`: the bytes are not a PDF, JPEG or PNG.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: WRONG_FILE_TYPE } } } }
+        '429': { $ref: '#/components/responses/TooMany' }
+        '503': { description: "`FILES_UNAVAILABLE`: file storage is not set up.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILES_UNAVAILABLE } } } }
+  /api/portal/cases/{id}/documents/{docId}:
+    parameters:
+      - { name: id, in: path, required: true, description: The services case id., schema: { $ref: '#/components/schemas/Id' } }
+      - { name: docId, in: path, required: true, description: The document id., schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      operationId: portalCaseDocumentDownload
+      summary: Download one document of one of my services cases
+      description: A 302 to a download link that works for 60 seconds, while the stored copy is kept. `Cache-Control` is `no-store` and `Referrer-Policy` is `no-referrer`.
+      security: [{ portalSession: [] }]
+      x-roles: [any active portal login]
+      responses:
+        '302':
+          description: Redirect to the short-lived download link.
+          headers:
+            Location: { schema: { type: string, format: uri }, example: 'https://files.example.com/case/made-up-key?signature=made-up' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+        '404': { description: "`DOCUMENT_NOT_FOUND`: no such document of this login's case, or its copy was removed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: DOCUMENT_NOT_FOUND } } } }
+        '503': { description: "`FILES_UNAVAILABLE`: file storage is not set up.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILES_UNAVAILABLE } } } }
+  /api/portal/claim:
+    post:
+      operationId: portalClaim
+      summary: Claim an existing sponsor company
+      description: |
+        The signed-in login becomes the account owner of an unclaimed company (one the site already lists from the permit data).
+        Checks in order: Origin (403 `BAD_ORIGIN`), body cap, JSON and body, session, the login must have no company yet, the rate
+        limit, then the database function: email confirmed, no ban on the email domain, address or company number, not merged, not
+        rejected for this login within 24 hours, still unclaimed. A banned domain or number gets the same `REFUSED` as a blocked
+        login, so the reply never says what is banned. The company is `verified` at once when the login's email domain is the
+        company's own domain and no other company's; otherwise `pending_review` (staff check).
+      security: [{ portalSession: [] }]
+      x-roles: [no company yet]
+      x-rate-limit: claim and register together, 5 per login per 10 minutes
+      x-body-cap: 2048 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [organisationId]
+              properties:
+                organisationId: { $ref: '#/components/schemas/NumId' }
+            example: { organisationId: 1042 }
+      responses:
+        '200':
+          description: Claimed.
+          content:
+            application/json:
+              schema: { type: object, required: [organisationId, status], properties: { organisationId: { $ref: '#/components/schemas/NumId' }, status: { type: string, enum: [verified, pending_review] } } }
+              example: { organisationId: 1042, status: pending_review }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: wrong Origin. `EMAIL_NOT_VERIFIED`: the login's email is not confirmed. `REFUSED`: blocked or deleted login, a ban, a merged company, or any other refusal of the database function.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: REFUSED } } } }
+        '409': { description: "`ALREADY_IN_A_COMPANY`: the login already has a company. `ORGANISATION_NOT_AVAILABLE`: the company is not unclaimed (or already has an owner). `NUMBER_ALREADY_REGISTERED`: a unique company number clash.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: ORGANISATION_NOT_AVAILABLE } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { description: "`TOO_MANY_REQUESTS`: over the rate limit. `CLAIM_COOL_DOWN`: this login's claim of this company was rejected less than 24 hours ago. No `Retry-After` header.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: CLAIM_COOL_DOWN } } } }
+  /api/portal/register:
+    post:
+      operationId: portalRegister
+      summary: Register a new employer or agency
+      description: |
+        The signed-in login registers a company it is not yet in and becomes its account owner; the company starts `pending_review`.
+        An employer gives `croNumber` and no `wrcLicenceNumber`. An agency gives `wrcLicenceNumber` and may give `croNumber`.
+        Numbers are cleaned before any check: spaces and a leading `IE` removed and leading zeros dropped from the CRO number (then
+        1 to 8 digits); spaces removed, upper case, and `EA` put in front of bare digits for the licence (then 1 to 20 letters,
+        digits or hyphens). Same order of checks as the claim (Origin first, then the body cap, JSON, the body check, the
+        session and the rate limit); a banned domain, address or number is `REFUSED`.
+      security: [{ portalSession: [] }]
+      x-roles: [no company yet]
+      x-rate-limit: claim and register together, 5 per login per 10 minutes
+      x-body-cap: 2048 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [kind, displayName]
+              properties:
+                kind: { type: string, enum: [employer, agency] }
+                displayName: { type: string, minLength: 2, maxLength: 160, description: "Trimmed; at least one plain letter or digit; no control or format characters." }
+                croNumber: { type: string, description: "Required for an employer. Digits after cleaning (1 to 8)." }
+                wrcLicenceNumber: { type: string, description: "Required for an agency; must be absent for an employer." }
+            example: { kind: employer, displayName: Example Software Ltd, croNumber: '654321' }
+      responses:
+        '200':
+          description: Registered, waiting for the staff check.
+          content:
+            application/json:
+              schema: { type: object, required: [organisationId, status], properties: { organisationId: { $ref: '#/components/schemas/NumId' }, status: { type: string, enum: [pending_review] } } }
+              example: { organisationId: 2077, status: pending_review }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: wrong Origin. `EMAIL_NOT_VERIFIED`: the login's email is not confirmed. `REFUSED`: blocked or deleted login, a ban, a number that belongs to a merged company, or any other refusal.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: EMAIL_NOT_VERIFIED } } } }
+        '409': { description: "`ALREADY_IN_A_COMPANY`: the login already has a company. `NUMBER_ALREADY_REGISTERED`: the CRO number or licence is already registered. `ORGANISATION_NOT_AVAILABLE`: an owner clash.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NUMBER_ALREADY_REGISTERED } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/company:
+    get:
+      operationId: portalCompanyGet
+      summary: Read my company's profile
+      description: Any active member reads its own company's profile, the name and status included (read only here).
+      security: [{ portalSession: [] }]
+      x-roles: [any member]
+      responses:
+        '200':
+          description: The profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [company]
+                properties:
+                  company:
+                    type: object
+                    required: [organisationId, name, status, description, website, county, hasLogo, memberLimit]
+                    properties:
+                      organisationId: { $ref: '#/components/schemas/NumId' }
+                      name: { type: string }
+                      status: { type: string, description: "The company status, for example `pending_review`, `verified`, `verified_restricted`, `suspended`, `closed`." }
+                      description: { type: [string, 'null'] }
+                      website: { type: [string, 'null'] }
+                      county: { oneOf: [{ $ref: '#/components/schemas/County' }, { type: 'null' }] }
+                      hasLogo: { type: boolean }
+                      memberLimit: { type: integer }
+              example: { company: { organisationId: 1042, name: Example Software Ltd, status: verified, description: We build payment software., website: 'https://www.example.ie', county: Dublin, hasLogo: false, memberLimit: 10 } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+        '404': { description: "`NO_COMPANY`: the login has no company.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NO_COMPANY } } } }
+    post:
+      operationId: portalCompanyEdit
+      summary: Edit my company's profile
+      description: |
+        The account owner sets the description, website and county. All three keys must be present; null clears a field. Name, CRO
+        number, status and slug are not fields here (an unknown field is 400). The company must be one that can take on people
+        (`pending_review`, `needs_info`, `verified`, `verified_restricted`), else 409. Origin checked first (403 `BAD_ORIGIN`).
+      security: [{ portalSession: [] }]
+      x-roles: [account_owner]
+      x-rate-limit: profile edits and company close together, 20 per login per 10 minutes
+      x-body-cap: 8000 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [description, website, county]
+              properties:
+                description: { type: [string, 'null'], maxLength: 2000, description: "Plain text, trimmed; line breaks and tabs allowed. Empty after trimming is stored as null." }
+                website: { type: [string, 'null'], minLength: 10, maxLength: 500, description: "An https address with a dotted host and no user name or password." }
+                county: { oneOf: [{ $ref: '#/components/schemas/County' }, { type: 'null' }] }
+            example: { description: We build payment software., website: 'https://www.example.ie', county: Dublin }
+      responses:
+        '200':
+          description: Saved. `changed` lists the columns that changed.
+          content:
+            application/json:
+              schema: { type: object, required: [organisationId, changed], properties: { organisationId: { $ref: '#/components/schemas/NumId' }, changed: { type: array, items: { type: string } } } }
+              example: { organisationId: 1042, changed: [short_description] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or an unknown refusal. `NOT_OWNER`: no company, or not its account owner.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_OWNER } } } }
+        '409': { description: "`ORGANISATION_NOT_AVAILABLE`: the company is suspended, rejected, banned or closed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: ORGANISATION_NOT_AVAILABLE } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/company/close:
+    post:
+      operationId: portalCompanyClose
+      summary: Close my company
+      description: |
+        The account owner closes the company, typing its exact name back. In one transaction the database closes its jobs, drops
+        its open review items, ends every membership, cancels invites and tells every member. Final. Origin checked first.
+      security: [{ portalSession: [] }]
+      x-roles: [account_owner]
+      x-rate-limit: profile edits and company close together, 20 per login per 10 minutes
+      x-body-cap: 8000 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [confirmName]
+              properties:
+                confirmName: { type: string, minLength: 1, maxLength: 160, description: "The company's exact name (trimmed; no control or format characters)." }
+            example: { confirmName: Example Software Ltd }
+      responses:
+        '200':
+          description: Closed, with what was ended.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [organisationId, jobsClosed, itemsDropped, membershipsEnded, invitesCancelled]
+                properties:
+                  organisationId: { $ref: '#/components/schemas/NumId' }
+                  jobsClosed: { type: integer }
+                  itemsDropped: { type: integer }
+                  membershipsEnded: { type: integer }
+                  invitesCancelled: { type: integer }
+              example: { organisationId: 1042, jobsClosed: 3, itemsDropped: 0, membershipsEnded: 4, invitesCancelled: 1 }
+        '400': { description: "`BAD_REQUEST`: bad JSON or body. `NAME_MISMATCH`: the name is not the company's exact name.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NAME_MISMATCH } } } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login. `NOT_OWNER`: no company, or not its account owner.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_OWNER } } } }
+        '409': { description: "`ORGANISATION_NOT_AVAILABLE`: the company is already suspended, rejected, banned or closed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: ORGANISATION_NOT_AVAILABLE } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/company/logo:
+    put:
+      operationId: portalCompanyLogo
+      summary: Upload or replace my company's logo
+      description: |
+        The account owner uploads a PNG, JPEG or WebP (found from the bytes) of at most 1,048,576 bytes, multipart with exactly one
+        field `file`. The owner is checked before the body is read. The old logo file is removed after the new one is saved. The
+        file is private; a public read path comes with the company page. Origin checked first.
+      security: [{ portalSession: [] }]
+      x-roles: [account_owner]
+      x-rate-limit: 10 uploads per login per hour
+      x-body-cap: "1064960 bytes (1 MiB plus 16 KiB) by Content-Length after the owner check; 4210688 bytes before the session is read"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, additionalProperties: false, required: [file], properties: { file: { type: string, format: binary } } }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { type: object, required: [logo], properties: { logo: { type: object, required: [contentType, sizeBytes], properties: { contentType: { type: string, enum: [image/png, image/jpeg, image/webp] }, sizeBytes: { type: integer } } } } }
+              example: { logo: { contentType: image/png, sizeBytes: 20480 } }
+        '400': { description: "`BAD_REQUEST`: not multipart or not exactly one `file` field. `EMPTY_FILE`: the file has no bytes.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or another refusal. `NOT_OWNER`: not the active account owner.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_OWNER } } } }
+        '409': { description: "`ORGANISATION_NOT_AVAILABLE`: the company is suspended, rejected, banned or closed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: ORGANISATION_NOT_AVAILABLE } } } }
+        '413': { description: "`FILE_TOO_LARGE`: over the cap by header, while reading, or a file over 1 MiB.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILE_TOO_LARGE } } } }
+        '415': { description: "`WRONG_FILE_TYPE`: the bytes are not a PNG, JPEG or WebP.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: WRONG_FILE_TYPE } } } }
+        '429': { $ref: '#/components/responses/TooMany' }
+        '503': { description: "`FILES_UNAVAILABLE`: file storage is not set up.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILES_UNAVAILABLE } } } }
+  /api/portal/contact:
+    post:
+      operationId: portalContact
+      summary: Send a message to the site's staff
+      description: |
+        Any active portal login, with or without a company. The sender comes from the session; `name` and `email` may be left out
+        (the login's own are used). The reply never says more than `{ ok: true }`. Order: bot check (when `BOT_CHECK=on`; 403
+        `BOT_SUSPECTED`), Origin (403 `BAD_ORIGIN`), body cap, JSON, session, body check, rate limit.
+      security: [{ portalSession: [] }]
+      x-roles: [any active portal login]
+      x-rate-limit: 5 messages per login per hour
+      x-body-cap: 24000 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [topic, body]
+              properties:
+                topic: { type: string, enum: [general, account, data_request, other] }
+                name: { type: string, minLength: 1, maxLength: 120, description: "Not blank; no control characters. Counted in code points." }
+                email: { type: string, maxLength: 254, description: "An address shaped like `a@b.c`; no control characters." }
+                body: { type: string, minLength: 1, maxLength: 5000, description: "Not blank; line breaks and tabs allowed, no other control or format characters. Counted in code points." }
+            example: { topic: account, body: How do I add a second admin to our team? }
+      responses:
+        '200':
+          description: Stored for staff.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+              example: { ok: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BOT_SUSPECTED`: the bot check refused. `BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or the login row is gone.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_ORIGIN } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/report:
+    post:
+      operationId: portalReport
+      summary: Report a live job
+      description: |
+        Any active portal login, with or without a company. The reporter is never shown to the employer. Order: bot check (403
+        `BOT_SUSPECTED`), Origin (403 `BAD_ORIGIN`), body cap, JSON and body, session, rate limit, then the job must be live.
+      security: [{ portalSession: [] }]
+      x-roles: [any active portal login]
+      x-rate-limit: 10 reports per login per hour
+      x-body-cap: 4000 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [jobId, reason]
+              properties:
+                jobId: { $ref: '#/components/schemas/Id' }
+                reason: { type: string, enum: [asks_for_money, no_sponsorship, job_closed, wrong_details, other] }
+                evidence: { type: string, minLength: 1, maxLength: 2000, description: "Line breaks and tabs allowed, no other control or format characters." }
+            example: { jobId: '5501', reason: asks_for_money, evidence: The advert asks candidates to pay a visa fee up front. }
+      responses:
+        '200':
+          description: Filed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+              example: { ok: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BOT_SUSPECTED`: the bot check refused. `BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_ORIGIN } } } }
+        '404': { description: "`JOB_NOT_FOUND`: no live job with that id.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: JOB_NOT_FOUND } } } }
+        '409': { description: "`ALREADY_REPORTED`: this login already has an open report on this job.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: ALREADY_REPORTED } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/review-answer:
+    post:
+      operationId: portalReviewAnswer
+      summary: Answer the staff's request for more information
+      description: |
+        The account owner answers "ask for more" on the company's account review; the company goes back to `pending_review`.
+        Origin checked first. Not the owner, no company or a blocked login all get the same `REFUSED`, so nothing about the company leaks.
+      security: [{ portalSession: [] }]
+      x-roles: [account_owner]
+      x-rate-limit: 5 answers per login per 10 minutes
+      x-body-cap: 2048 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [note]
+              properties:
+                note: { type: string, minLength: 1, maxLength: 1000, description: "Trimmed; one line: no control, format, line or paragraph separator characters. Counted in code points." }
+            example: { note: Our CRO number is on the attached letterhead; the domain example.ie is ours. }
+      responses:
+        '200':
+          description: Answered.
+          content:
+            application/json:
+              schema: { type: object, required: [organisationId, status], properties: { organisationId: { $ref: '#/components/schemas/NumId' }, status: { type: string, enum: [pending_review] } } }
+              example: { organisationId: 1042, status: pending_review }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, no company, or not its account owner.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: REFUSED } } } }
+        '409': { description: "`NOT_WAITING_FOR_ANSWER`: the company is not waiting for an answer.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_WAITING_FOR_ANSWER } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/jobs:
+    get:
+      operationId: portalJobsList
+      summary: List my company's own jobs
+      description: |
+        The company's employer and agency jobs (at most 200, newest first), each with its state and why it is held: `reason` is
+        `restricted_company` or `staff_check` for `in_review`, `pay_check` for `under_review`, the hidden reason for `hidden`.
+        `clientCheck` is true while an agency client check is open. A login with no company gets `{ jobs: null }`. Any active member, viewers too.
+      security: [{ portalSession: [] }]
+      x-roles: [any member]
+      responses:
+        '200':
+          description: The jobs, or null with no company. Times inside come from the database as ISO strings with a `+00:00` offset.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobs]
+                properties:
+                  jobs:
+                    type: [array, 'null']
+                    items:
+                      type: object
+                      properties:
+                        id: { $ref: '#/components/schemas/NumId' }
+                        title: { type: string }
+                        status: { type: string }
+                        badge: { type: [string, 'null'] }
+                        passRoute: { type: [string, 'null'] }
+                        occupationCode: { type: [string, 'null'] }
+                        county: { type: [string, 'null'] }
+                        salaryLow: { type: [integer, 'null'] }
+                        salaryHigh: { type: [integer, 'null'] }
+                        payGrade: { type: [string, 'null'] }
+                        weeklyHours: { type: [integer, 'null'] }
+                        postedAt: { type: string }
+                        closesAt: { type: [string, 'null'] }
+                        closedAt: { type: [string, 'null'] }
+                        closeReason: { type: [string, 'null'] }
+                        hireAnswer: { type: [string, 'null'], enum: [yes, no, null] }
+                        reason: { type: [string, 'null'] }
+                        clientCheck: { type: boolean }
+              example: { jobs: [{ id: 5501, title: Senior Software Engineer, status: live, badge: sponsor_confirmed, passRoute: stated_pay, occupationCode: '2136', county: Dublin, salaryLow: 70000, salaryHigh: 85000, payGrade: null, weeklyHours: 39, postedAt: '2026-11-10T08:00:00.000000+00:00', closesAt: '2026-12-10T08:00:00.000000+00:00', closedAt: null, closeReason: null, hireAnswer: null, reason: null, clientCheck: false }] }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`REFUSED`: blocked or deleted login. `NOT_A_MEMBER`: the membership ended between the session read and the list.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: REFUSED } } } }
+    post:
+      operationId: portalJobCreate
+      summary: Post a new job (draft or live)
+      description: |
+        A draft is saved with no rules check. A live post runs the rules on the typed fields (occupation list, contract length,
+        the rules chain on the text, the pay minimum for the stated hours); a refusal is 422 with the rule's code. A post that
+        passes goes `live`, or `in_review` when the company is restricted or the text needs a staff look. A `statement` signs
+        the sponsorship statement in the same transaction (the database decides who may sign). Origin checked first.
+      security: [{ portalSession: [] }]
+      x-roles: [account_owner, recruiter, poster]
+      x-rate-limit: posts, edits, renewals and closes together, 30 per login per 10 minutes
+      x-body-cap: 24000 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JobPost' }
+            example: { status: draft, title: Staff Nurse, description: Ward nurse for a busy medical unit in Cork. NMBI registration needed., county: Cork, occupationCode: '2231', contractType: fixed_term, contractMonths: 24, salaryLow: 40000, ownPageUrl: 'https://jobs.example.ie/nurse-17' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobResult' }
+              example: { jobId: 5502, status: live, badge: sponsor_confirmed, passRoute: stated_pay }
+        '400': { description: "`BAD_REQUEST`: bad JSON or body. `CLIENT_ONLY_FOR_AGENCIES`: `clientName` from an employer. `WRITTEN_AUTHORITY_REQUIRED`: a statement on behalf of a client without `writtenAuthority: true`.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: CLIENT_ONLY_FOR_AGENCIES } } } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or an unknown database refusal. `NOT_A_MEMBER`: no company. `NOT_A_POSTER`: a viewer, or the database's job guard refused the poster. `NOT_A_SIGNER`: this member may not sign the statement. `BADGE_RESTRICTED`: the company may not show `sponsor_confirmed`. `COMPANY_NOT_ACTIVE`: the company cannot post.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_A_POSTER } } } }
+        '409': { description: "`NO_STATEMENT_TEXT`: no sponsorship statement wording is published. `BAD_STATE`: the job guard refused the status. `NEEDS_REVIEW`: a live job names a client not in the DETE names.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NO_STATEMENT_TEXT } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '422': { description: "The rules refused the live post: `GENERAL_RULES_NOT_SET`, `OCCUPATION_INELIGIBLE`, `QUOTA_FULL`, `OCCUPATION_NOT_ON_LIST`, `CONTRACT_TOO_SHORT`, `RULES_FAILED` (with `stage`), `PAY_REQUIRED`, `PAY_BELOW_MINIMUM`, `STATEMENT_REQUIRED` (a General permit job needs the statement).", content: { application/json: { schema: { $ref: '#/components/schemas/RulesVerdict' }, example: { code: PAY_BELOW_MINIMUM } } } }
+        '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/jobs/edit:
+    post:
+      operationId: portalJobEdit
+      summary: Edit one of my company's jobs
+      description: |
+        The whole post again plus `jobId`. A draft stays a draft, or goes live with the rules (`status: live`). On a job past draft
+        the `status` field does not move it; a change to the pay (salary, grade, health insurance, hours), the title, the occupation
+        or the permit type runs the rules again and, on a `sponsor_confirmed` job, needs a fresh `statement`. A job under review
+        goes live again when a pay change passes. A closed or hidden job cannot be edited. Another company's job is 404. Origin checked first.
+      security: [{ portalSession: [] }]
+      x-roles: [account_owner, recruiter, poster]
+      x-rate-limit: posts, edits, renewals and closes together, 30 per login per 10 minutes
+      x-body-cap: 24000 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JobEdit' }
+            example: { jobId: 5502, status: live, title: Staff Nurse, description: Ward nurse for a busy medical unit in Cork. NMBI registration needed., county: Cork, occupationCode: '2231', contractType: fixed_term, contractMonths: 24, salaryLow: 42000, ownPageUrl: 'https://jobs.example.ie/nurse-17' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobResult' }
+              example: { jobId: 5502, status: live, badge: null, passRoute: stated_pay }
+        '400': { description: "`BAD_REQUEST`: bad JSON or body. `CLIENT_ONLY_FOR_AGENCIES`: `clientName` from an employer. `WRITTEN_AUTHORITY_REQUIRED`: a statement on behalf of a client without `writtenAuthority: true`.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`, `REFUSED`, `NOT_A_MEMBER`, `NOT_A_POSTER`, `NOT_A_SIGNER`, `BADGE_RESTRICTED`, `COMPANY_NOT_ACTIVE`: as for a new post.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_A_SIGNER } } } }
+        '404': { description: "`JOB_NOT_FOUND`: no employer or agency job of this company with that id.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: JOB_NOT_FOUND } } } }
+        '409': { description: "`BAD_STATE`: the job is closed or hidden, or the guard refused the move. `NEEDS_REVIEW`: the change would send a live job to review (not allowed), or names a new client not in the DETE names. `STATEMENT_REQUIRED`: a key change on a `sponsor_confirmed` job without a fresh statement. `NO_STATEMENT_TEXT`: no statement wording is published.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: STATEMENT_REQUIRED } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '422': { description: "The rules refused the change; codes as for a new post.", content: { application/json: { schema: { $ref: '#/components/schemas/RulesVerdict' }, example: { code: RULES_FAILED, stage: 3 not in Ireland } } } }
+        '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/jobs/renew:
+    post:
+      operationId: portalJobRenew
+      summary: Renew a live job for 30 more days
+      description: A live job of the company gets a new end 30 days from now, with the optional answer to "Did you hire someone through us?". Origin checked first.
+      security: [{ portalSession: [] }]
+      x-roles: [account_owner, recruiter, poster]
+      x-rate-limit: posts, edits, renewals and closes together, 30 per login per 10 minutes
+      x-body-cap: 2048 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [jobId]
+              properties:
+                jobId: { $ref: '#/components/schemas/NumId' }
+                hireAnswer: { type: string, enum: [yes, no] }
+            example: { jobId: 5501, hireAnswer: no }
+      responses:
+        '200':
+          description: Renewed.
+          content:
+            application/json:
+              schema: { type: object, required: [jobId, closesAt], properties: { jobId: { $ref: '#/components/schemas/NumId' }, closesAt: { $ref: '#/components/schemas/Timestamp' } } }
+              example: { jobId: 5501, closesAt: '2026-12-18T09:30:00.000Z' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or a database refusal. `NOT_A_MEMBER`: no company. `NOT_A_POSTER`: a viewer. `COMPANY_NOT_ACTIVE`: the company cannot post.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_A_POSTER } } } }
+        '404': { description: "`JOB_NOT_FOUND`: no live employer or agency job of this company with that id.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: JOB_NOT_FOUND } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/jobs/close:
+    post:
+      operationId: portalJobClose
+      summary: Close one of my company's jobs
+      description: Closes a draft, live, in-review or under-review job with the required answer to "Did you hire someone through us?". A closed job never reopens. Origin checked first.
+      security: [{ portalSession: [] }]
+      x-roles: [account_owner, recruiter, poster]
+      x-rate-limit: posts, edits, renewals and closes together, 30 per login per 10 minutes
+      x-body-cap: 2048 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [jobId, hireAnswer]
+              properties:
+                jobId: { $ref: '#/components/schemas/NumId' }
+                hireAnswer: { type: string, enum: [yes, no] }
+            example: { jobId: 5501, hireAnswer: yes }
+      responses:
+        '200':
+          description: Closed.
+          content:
+            application/json:
+              schema: { type: object, required: [jobId, status], properties: { jobId: { $ref: '#/components/schemas/NumId' }, status: { const: closed } } }
+              example: { jobId: 5501, status: closed }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or a database refusal. `NOT_A_MEMBER`: no company. `NOT_A_POSTER`: a viewer.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_A_MEMBER } } } }
+        '404': { description: "`JOB_NOT_FOUND`: no open employer or agency job of this company with that id.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: JOB_NOT_FOUND } } } }
+        '409': { description: "`BAD_STATE`: the database's job guard refused the move.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_STATE } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/job-stats:
+    get:
+      operationId: portalJobStats
+      summary: Views and apply clicks by day for my company's jobs
+      description: |
+        The company's own jobs' views and apply clicks over the last `days` days (Dublin days, today included), newest day first,
+        at most 5,000 rows. Only `days` and `jobId` are allowed, each once; any other key is 400. A login with no company gets an
+        empty list. Any active member, viewers too.
+      security: [{ portalSession: [] }]
+      x-roles: [any member]
+      parameters:
+        - { name: days, in: query, required: false, description: "1 to 90; default 30.", schema: { type: integer, minimum: 1, maximum: 90, default: 30 } }
+        - { name: jobId, in: query, required: false, description: "Narrows to one job of the company (another company's job gives an empty list).", schema: { type: string, pattern: '^[1-9][0-9]{0,17}$' } }
+      responses:
+        '200':
+          description: The stats.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [days, stats]
+                properties:
+                  days: { type: integer }
+                  stats:
+                    type: array
+                    items:
+                      type: object
+                      required: [jobId, title, source, status, day, views, applyClicks]
+                      properties:
+                        jobId: { $ref: '#/components/schemas/Id' }
+                        title: { type: string }
+                        source: { type: string }
+                        status: { type: string }
+                        day: { $ref: '#/components/schemas/Date' }
+                        views: { type: integer }
+                        applyClicks: { type: integer }
+              example: { days: 30, stats: [{ jobId: '5501', title: Senior Software Engineer, source: employer, status: live, day: '2026-11-18', views: 42, applyClicks: 5 }] }
+        '400': { description: "`BAD_REQUEST`: `days` or `jobId` out of range, or an unknown or repeated query key.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+  /api/portal/notices:
+    get:
+      operationId: portalNoticesList
+      summary: List my notices
+      description: The signed-in login's own in-app notices, newest first, 50 a page, with the unread count (capped at 200; 200 means 200 or more). Any active portal login.
+      security: [{ portalSession: [] }]
+      x-roles: [any active portal login]
+      parameters:
+        - { name: after, in: query, required: false, description: "The `next` token of the previous page (at most 200 characters).", schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next, unread]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, category, templateKey, params, createdAt, readAt]
+                      properties:
+                        id: { $ref: '#/components/schemas/Id' }
+                        category: { type: string }
+                        templateKey: { type: string }
+                        params: { description: The notice's values (the company id and the like). }
+                        createdAt: { $ref: '#/components/schemas/PgTime' }
+                        readAt: { oneOf: [{ $ref: '#/components/schemas/PgTime' }, { type: 'null' }] }
+                  next: { oneOf: [{ $ref: '#/components/schemas/Cursor' }, { type: 'null' }] }
+                  unread: { type: integer, maximum: 200 }
+              example: { items: [{ id: '880', category: account, templateKey: organisation_verified, params: { organisationId: 1042 }, createdAt: '2026-11-18 09:30:00.123456+00', readAt: null }], next: null, unread: 1 }
+        '400': { description: "`BAD_CURSOR`: the `after` token is not one this route made.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_CURSOR } } } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+    post:
+      operationId: portalNoticesMarkRead
+      summary: Mark one or all of my notices read
+      description: "`{ action: read, id }` marks one, `{ action: read_all }` marks all. `marked` is how many changed (0 for an unknown, already read or another login's notice). Origin checked first."
+      security: [{ portalSession: [] }]
+      x-roles: [any active portal login]
+      x-rate-limit: none
+      x-body-cap: 2048 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - { type: object, additionalProperties: false, required: [action, id], properties: { action: { const: read }, id: { $ref: '#/components/schemas/Id' } } }
+                - { type: object, additionalProperties: false, required: [action], properties: { action: { const: read_all } } }
+            example: { action: read, id: '880' }
+      responses:
+        '200':
+          description: Marked.
+          content:
+            application/json:
+              schema: { type: object, required: [marked], properties: { marked: { type: integer } } }
+              example: { marked: 1 }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_ORIGIN } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+  /api/portal/pay-floors:
+    get:
+      operationId: portalPayFloorsList
+      summary: List my company's pay floors and the wording to sign
+      description: "The company's own floors (newest first, at most 200) and the current pay floor wording (`text`, null when none is published). A login with no company gets `{ text: null, floors: [] }`. Any active member, viewers too."
+      security: [{ portalSession: [] }]
+      x-roles: [any member]
+      responses:
+        '200':
+          description: The floors.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text, floors]
+                properties:
+                  text:
+                    oneOf:
+                      - { type: 'null' }
+                      - { type: object, required: [id, version, body], properties: { id: { $ref: '#/components/schemas/Id' }, version: { type: string }, body: { type: string } } }
+                  floors:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, roleFamily, floorEur, status, signedAt, validUntil, endedAt, signerName, signerTitle]
+                      properties:
+                        id: { $ref: '#/components/schemas/Id' }
+                        roleFamily: { $ref: '#/components/schemas/SocCode' }
+                        floorEur: { type: integer }
+                        status: { type: string, description: "For example `pending_check`, `active`, `withdrawn`, `rejected`, `replaced`." }
+                        signedAt: { $ref: '#/components/schemas/PgTime' }
+                        validUntil: { $ref: '#/components/schemas/PgTime' }
+                        endedAt: { oneOf: [{ $ref: '#/components/schemas/PgTime' }, { type: 'null' }] }
+                        signerName: { type: [string, 'null'] }
+                        signerTitle: { type: [string, 'null'] }
+              example: { text: { id: '12', version: '1', body: We will pay at least the stated floor for this role family for 12 months. }, floors: [{ id: '7', roleFamily: '2136', floorEur: 65000, status: pending_check, signedAt: '2026-11-18 09:30:00.123456+00', validUntil: '2027-11-18 09:30:00.123456+00', endedAt: null, signerName: Alex Example, signerTitle: Account owner }] }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+    post:
+      operationId: portalPayFloorsWrite
+      summary: Sign or withdraw a pay floor
+      description: |
+        `sign`: a signer of a big-company employer signs a floor for a role family (a SOC 2010 code not on the Ineligible list),
+        valid 12 months, against the current wording (`consentTextId` must be the `text.id` the signer saw). It starts
+        `pending_check` for staff. The company must be `verified` or `verified_restricted`. `withdraw`: ends a pending or active
+        floor of the company. The database decides who may sign (the account owner, or a poster or recruiter with the signer
+        switch). Note: the rules in force are read from the database before the Origin check runs; then Origin (403 `BAD_ORIGIN`).
+      security: [{ portalSession: [] }]
+      x-roles: [account_owner, signer (poster or recruiter with the signer switch)]
+      x-rate-limit: signs and withdrawals together, 10 per login per 10 minutes
+      x-body-cap: 2048 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, roleFamily, floorEur, consentTextId]
+                  properties:
+                    action: { const: sign }
+                    roleFamily: { $ref: '#/components/schemas/SocCode' }
+                    floorEur: { type: integer, minimum: 1, maximum: 1000000 }
+                    consentTextId: { type: string, pattern: '^[1-9][0-9]{0,17}$' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, floorId]
+                  properties:
+                    action: { const: withdraw }
+                    floorId: { $ref: '#/components/schemas/NumId' }
+            example: { action: sign, roleFamily: '2136', floorEur: 65000, consentTextId: '12' }
+      responses:
+        '200':
+          description: "Signed (`{ id, validUntil }`) or withdrawn (`{ ok: true }`)."
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { type: object, required: [id, validUntil], properties: { id: { $ref: '#/components/schemas/Id' }, validUntil: { $ref: '#/components/schemas/PgTime' } } }
+                  - { $ref: '#/components/schemas/Ok' }
+              example: { id: '8', validUntil: '2027-11-18 09:30:00.123456+00' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, no company, a company that is not verified (sign), or another refusal. `NOT_BIG_COMPANY`: not on the big-company list or an agency. `NOT_SIGNER`: this member may not sign or withdraw.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_SIGNER } } } }
+        '404': { description: "`NOT_FOUND`: no floor of this company with that id.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_FOUND } } } }
+        '409': { description: "`NO_CONSENT_TEXT`: no pay floor wording is published. `TEXT_CHANGED`: the wording changed since the page loaded. `ALREADY_PENDING`: a floor for this role family is already waiting for its check. `NOT_WITHDRAWABLE`: the floor is not pending or active.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: TEXT_CHANGED } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/status:
+    get:
+      operationId: portalStatusGet
+      summary: My company's status page
+      description: |
+        The company's status, any restriction, strikes in the last 12 months and its cases (newest first), with whether the
+        owner can reply or appeal now. A login with no company gets `{ page: null }`. Any active member; `canReply` and
+        `canAppeal` are true only for the account owner.
+      security: [{ portalSession: [] }]
+      x-roles: [any member]
+      responses:
+        '200':
+          description: The page. Times inside come from the database as ISO strings with a `+00:00` offset.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [page]
+                properties:
+                  page:
+                    type: [object, 'null']
+                    properties:
+                      organisationId: { $ref: '#/components/schemas/NumId' }
+                      status: { type: string }
+                      restrictedUntil: { type: [string, 'null'] }
+                      claimsRemovedAt: { type: [string, 'null'] }
+                      isOwner: { type: boolean }
+                      strikesLast12Months: { type: integer }
+                      cases:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { $ref: '#/components/schemas/NumId' }
+                            caseKind: { type: string }
+                            reasonCode: { type: [string, 'null'] }
+                            jobId: { type: [integer, 'null'] }
+                            jobTitle: { type: [string, 'null'] }
+                            noticeSummary: { type: [string, 'null'] }
+                            stage: { type: string }
+                            outcome: { type: [string, 'null'] }
+                            level: { type: [string, integer, 'null'] }
+                            replyDueAt: { type: [string, 'null'] }
+                            employerReply: { type: [string, 'null'] }
+                            repliedAt: { type: [string, 'null'] }
+                            decidedAt: { type: [string, 'null'] }
+                            appealDueAt: { type: [string, 'null'] }
+                            appealText: { type: [string, 'null'] }
+                            appealedAt: { type: [string, 'null'] }
+                            appealDecidedAt: { type: [string, 'null'] }
+                            canReply: { type: boolean }
+                            canAppeal: { type: boolean }
+              example: { page: { organisationId: 1042, status: verified, restrictedUntil: null, claimsRemovedAt: null, isOwner: true, strikesLast12Months: 0, cases: [] } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`REFUSED`: blocked or deleted login. `NOT_A_MEMBER`: the membership ended between the session read and the page.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: REFUSED } } } }
+    post:
+      operationId: portalStatusWrite
+      summary: Reply to or appeal a case
+      description: The account owner replies to a case within its reply window, or appeals a decision within its appeal window. One of each per case. Origin checked first.
+      security: [{ portalSession: [] }]
+      x-roles: [account_owner]
+      x-rate-limit: replies and appeals together, 10 per login per 10 minutes
+      x-body-cap: 2048 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, caseId, text]
+              properties:
+                action: { type: string, enum: [reply, appeal] }
+                caseId: { $ref: '#/components/schemas/NumId' }
+                text: { type: string, minLength: 1, maxLength: 1800, description: "Trimmed; line breaks and tabs allowed, no other control or format characters." }
+            example: { action: reply, caseId: 31, text: The advert was updated the same day to show the salary range. }
+      responses:
+        '200':
+          description: Stored.
+          content:
+            application/json:
+              schema: { type: object, required: [caseId, kind], properties: { caseId: { $ref: '#/components/schemas/NumId' }, kind: { type: string, enum: [reply, appeal] } } }
+              example: { caseId: 31, kind: reply }
+        '400': { description: "`BAD_REQUEST`: bad JSON or body. `BAD_TEXT`: the database refused the text.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or an unknown refusal. `NOT_A_MEMBER`: no company. `NOT_OWNER`: not the account owner.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_OWNER } } } }
+        '404': { description: "`CASE_NOT_FOUND`: no such case of this company.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: CASE_NOT_FOUND } } } }
+        '409': { description: "`ALREADY_REPLIED`, `REPLY_CLOSED` (the reply window is closed or not open), `ALREADY_APPEALED`, `APPEAL_CLOSED` (the appeal window is closed or not open).", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: REPLY_CLOSED } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/team:
+    get:
+      operationId: portalTeamGet
+      summary: My team
+      description: |
+        Every active member sees the members (name, email, role, signer switch). Only the account owner also sees open invites
+        and join requests. A login with no company sees only its own open join request, if any (`team: null`).
+      security: [{ portalSession: [] }]
+      x-roles: [any active portal login]
+      responses:
+        '200':
+          description: The team.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [team, joinRequest]
+                properties:
+                  team:
+                    type: [object, 'null']
+                    properties:
+                      organisationId: { $ref: '#/components/schemas/NumId' }
+                      myMembershipId: { $ref: '#/components/schemas/NumId' }
+                      myRole: { type: string, enum: [account_owner, recruiter, poster, viewer] }
+                      members:
+                        type: array
+                        items: { type: object, properties: { membershipId: { $ref: '#/components/schemas/NumId' }, name: { type: [string, 'null'] }, email: { type: string }, role: { type: string }, isSigner: { type: boolean }, joinedAt: { type: [string, 'null'], format: date-time } } }
+                      invites:
+                        description: Account owner only.
+                        type: array
+                        items: { type: object, properties: { membershipId: { $ref: '#/components/schemas/NumId' }, email: { type: string }, role: { type: string }, isSigner: { type: boolean }, expiresAt: { type: string, format: date-time } } }
+                      requests:
+                        description: Account owner only.
+                        type: array
+                        items: { type: object, properties: { membershipId: { $ref: '#/components/schemas/NumId' }, name: { type: [string, 'null'] }, email: { type: string } } }
+                  joinRequest:
+                    oneOf:
+                      - { type: 'null' }
+                      - { type: object, required: [membershipId, organisationId], properties: { membershipId: { $ref: '#/components/schemas/NumId' }, organisationId: { $ref: '#/components/schemas/NumId' } } }
+              example: { team: { organisationId: 1042, myMembershipId: 11, myRole: account_owner, members: [{ membershipId: 11, name: Alex Example, email: alex@example.ie, role: account_owner, isSigner: true, joinedAt: '2026-11-01T10:00:00.000Z' }], invites: [], requests: [] }, joinRequest: null }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+    post:
+      operationId: portalTeamWrite
+      summary: Change the team
+      description: |
+        One action per call, each with exactly its own fields. The database functions make every real check:
+
+        - `invite` (owner): emails an invite link (`/team/accept?token=...`) to a colleague as viewer, poster or recruiter. If
+          the email cannot be sent the invite is undone (502). Needs room on the team (`member_limit`).
+        - `accept` (a login with no company): takes an invite by its token; the login's email must match the invite.
+        - `request` (a login with no company): asks to join a company; the email domain must be one of the company's.
+        - `approve` and `refuse` (owner): answers a join request.
+        - `remove` (owner): ends a member or an invite. `role` (owner): changes a member's role and signer switch.
+        - `transfer` (owner): makes another active member the account owner; the old owner becomes a recruiter.
+        - `leave` (any member, or a pending request): ends one's own membership; the owner must transfer first.
+
+        A viewer can never be a signer. A banned email domain is `REFUSED`, the same as a blocked login. Origin checked first.
+      security: [{ portalSession: [] }]
+      x-roles: ["invite, approve, refuse, remove, role, transfer: account_owner", "accept, request: no company yet", "leave: any member"]
+      x-rate-limit: every team action together, 20 per login per 10 minutes
+      x-body-cap: 2048 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - { type: object, additionalProperties: false, required: [action, email, role, isSigner], properties: { action: { const: invite }, email: { type: string, maxLength: 254, description: "Trimmed and lower-cased; shaped like `a@b.c`." }, role: { $ref: '#/components/schemas/TeamRole' }, isSigner: { type: boolean } } }
+                - { type: object, additionalProperties: false, required: [action, token], properties: { action: { const: accept }, token: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' } } }
+                - { type: object, additionalProperties: false, required: [action, organisationId], properties: { action: { const: request }, organisationId: { $ref: '#/components/schemas/NumId' } } }
+                - { type: object, additionalProperties: false, required: [action, membershipId], properties: { action: { enum: [refuse, remove, transfer] }, membershipId: { $ref: '#/components/schemas/NumId' } } }
+                - { type: object, additionalProperties: false, required: [action, membershipId, role, isSigner], properties: { action: { enum: [approve, role] }, membershipId: { $ref: '#/components/schemas/NumId' }, role: { $ref: '#/components/schemas/TeamRole' }, isSigner: { type: boolean } } }
+                - { type: object, additionalProperties: false, required: [action], properties: { action: { const: leave } } }
+            example: { action: invite, email: colleague@example.ie, role: poster, isSigner: false }
+      responses:
+        '200':
+          description: "Done. `invite` answers `{ membershipId, expiresAt }`, `accept` answers `{ organisationId, membershipId }`, every other action `{ membershipId }`."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [membershipId]
+                properties:
+                  membershipId: { $ref: '#/components/schemas/NumId' }
+                  organisationId: { $ref: '#/components/schemas/NumId' }
+                  expiresAt: { type: string, description: "The invite's end (database time, ISO with offset)." }
+              example: { membershipId: 14, expiresAt: '2026-11-25T09:30:00.000000+00:00' }
+        '400': { description: "`BAD_REQUEST`: bad JSON or body. `VIEWER_NOT_SIGNER`: a viewer with the signer switch on.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: VIEWER_NOT_SIGNER } } } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, a ban, or an unknown refusal. `EMAIL_NOT_VERIFIED`: the login's email is not confirmed (accept, request). `NOT_OWNER`: not the account owner. `NOT_ALLOWED_DOMAIN`: the email is not on the company's domains (request).", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_OWNER } } } }
+        '404': { description: "`MEMBER_NOT_FOUND`: no such member, invite or request of this company. `INVITE_NOT_VALID`: no such invite, already used, expired, or for another email.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: INVITE_NOT_VALID } } } }
+        '409': { description: "`NOT_A_MEMBER` (leave with no membership), `TEAM_FULL`, `ALREADY_IN_TEAM`, `ALREADY_IN_A_COMPANY`, `OWNER_MUST_TRANSFER`, `ORGANISATION_NOT_AVAILABLE` (the company cannot take on people).", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: TEAM_FULL } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/TooMany' }
+        '502': { description: "`EMAIL_FAILED`: the invite email could not be sent; the invite was undone.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: EMAIL_FAILED } } } }
