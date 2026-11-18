@@ -8,6 +8,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { answers, seedSignupTerms } from "./better-auth-helper";
 import { createTestDb, urlFor, type TestDb } from "./db";
+import { loadSpec, replyProblems } from "./openapi";
 
 const BUDGET = { visitor: 3, candidate: 4, medianMs: 15 };
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
@@ -136,6 +137,25 @@ describe("a visitor (S3)", () => {
       expect([g.jobs.length, g.signInForMore], cookie).toEqual([6, true]);
     }
     expect(list(await get(JOBS, "/api/jobs", { cookie: live.cookie })).jobs).toHaveLength(20); // the same token, under the right name
+  });
+});
+
+describe("the replies match docs/openapi/candidate.yaml (decision #248)", () => {
+  it("the four public reads, a visitor's and a candidate's, and their error bodies", async () => {
+    const spec = loadSpec("candidate");
+    const { cookie } = await login();
+    const cursor = list(await get(JOBS, "/api/jobs", { cookie })).next;
+    const cases: [Handler, string, string, { cookie?: string }][] = [
+      [JOBS, "/api/jobs", "/api/jobs?sort=newest", {}], [JOBS, "/api/jobs", "/api/jobs?sort=newest", { cookie }],
+      [JOB, "/api/job", `/api/job?id=${jobIds[0]}`, {}], [COMPANY, "/api/company", `/api/company?slug=${slug}`, {}],
+      [OCCUPATION, "/api/occupation", "/api/occupation?code=1122", { cookie }],
+      [JOBS, "/api/jobs", `/api/jobs?after=${cursor}`, {}], // a visitor's cursor: 401 SIGN_IN_FOR_MORE
+      [JOBS, "/api/jobs", "/api/jobs?sort=best", {}], [JOB, "/api/job", "/api/job?id=999999999", {}],
+    ];
+    for (const [route, doc, path, o] of cases) {
+      const g = await get(route, path, o);
+      expect(replyProblems(spec, "GET", doc, g.status, g.body), `${g.status} ${path}`).toEqual([]);
+    }
   });
 });
 

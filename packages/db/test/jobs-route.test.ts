@@ -4,6 +4,7 @@ import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { savePostingTexts } from "../src/posting-texts-cli";
 import { createTestDb, urlFor, type TestDb } from "./db";
+import { loadSpec, replyProblems } from "./openapi";
 import { portalAnswers, seedSignupTerms } from "./better-auth-helper";
 import { fixtures } from "./fixtures";
 
@@ -511,5 +512,23 @@ describe("General Employment Permit posts", () => {
     const ms = await median(async () => { expect((await post(c.owner.cookie, care)).status).toBe(200); });
     expect(ms).toBeLessThan(BUDGET.postMs);
     console.log(`General post budget: ${sg} statements (signed Critical Skills budget ${BUDGET.signed}), median ${ms.toFixed(1)} ms`);
+  });
+});
+
+describe("the replies match docs/openapi/portal.yaml (decision #248)", () => {
+  it("post, list and close a job, and the refusals on the way", async () => {
+    const spec = loadSpec("portal");
+    const c = await company();
+    const posted = await post(c.owner.cookie, good);
+    const id = posted.json!.jobId;
+    const checks: [string, Reply][] = [
+      ["/api/portal/jobs", posted], ["/api/portal/jobs", await post(c.viewer.cookie, good)], ["/api/portal/jobs", await post(undefined, good)],
+      ["/api/portal/jobs", await post(c.owner.cookie, good, { origin: "https://elsewhere.example.com" })], ["/api/portal/jobs", await post(c.owner.cookie, { ...good, title: 5 })],
+      ["/api/portal/jobs/close", await close(c.owner.cookie, { jobId: id, hireAnswer: "no" })], ["/api/portal/jobs/close", await close(c.owner.cookie, { jobId: id })],
+    ];
+    expect(checks.map(([, r]) => r.status)).toEqual([200, 403, 401, 403, 400, 200, 400]);
+    for (const [path, r] of checks) expect(replyProblems(spec, "POST", path, r.status, r.json), `${r.status} ${path} ${r.text.slice(0, 200)}`).toEqual([]);
+    const l = await list(c.owner.cookie);
+    expect([l.status, replyProblems(spec, "GET", "/api/portal/jobs", l.status, l.json)]).toEqual([200, []]);
   });
 });

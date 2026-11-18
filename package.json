@@ -11,20 +11,23 @@
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint . --max-warnings 0",
+    "lint:api": "REDOCLY_TELEMETRY=off REDOCLY_SUPPRESS_UPDATE_NOTICE=true redocly lint docs/openapi/candidate.yaml docs/openapi/portal.yaml docs/openapi/admin.yaml",
     "db:pull": "npm run db:pull -w @portal/db",
     "db:test:up": "npm run db:test:up -w @portal/db",
     "db:test:down": "npm run db:test:down -w @portal/db",
     "test": "vitest run",
     "test:perf": "vitest run --config packages/db/test/perf/vitest.config.ts --reporter=verbose",
     "test:mutation": "node packages/db/test/mutation/run.mjs",
-    "check": "npm run typecheck && npm run lint && npm run test && npm run build"
+    "check": "npm run typecheck && npm run lint && npm run lint:api && npm run test && npm run build"
   },
   "devDependencies": {
+    "@redocly/cli": "2.75.0",
     "@types/node": "24.19.2",
     "eslint": "9.39.5",
     "eslint-config-next": "16.4.5",
     "typescript": "5.9.3",
-    "vitest": "5.1.0"
+    "vitest": "5.1.0",
+    "yaml": "2.9.1"
   },
   "overrides": {
     "@typescript-eslint/typescript-estree": { "minimatch": "^11.0.1" }

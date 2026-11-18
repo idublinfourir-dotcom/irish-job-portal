@@ -1,0 +1,2221 @@
+openapi: 3.1.0
+info:
+  title: Admin API (staff)
+  version: 0.1.0
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+  description: |
+    The routes of the admin app, used by staff only. Every route but the health check needs a staff session, and each
+    route checks the staff roles it needs inside the database call, reads included. Nothing here is open to the public.
+
+    ## Conventions (the same text in candidate.yaml, portal.yaml and admin.yaml)
+
+    - **Origin check on writes.** Every POST, PUT and DELETE that a signed-in person sends must carry an `Origin` header equal to its
+      own app's origin (the `*_AUTH_URL` setting). Anything else is refused with 403 before the body is read. The exceptions are named
+      on the route: the alert unsubscribe (a mail provider's server sends it with no Origin) and the health checks (GET only).
+    - **Body size caps.** Every write has a cap, given on the route in `x-body-cap` (characters of the JSON text, or bytes for a
+      file upload). A `Content-Length` over the cap is refused before the body is read, and a body over the cap after reading is
+      refused too: 413 on the candidate and portal sites, 400 `bad_body` on the admin site. The Better Auth routes
+      (`/api/auth/*`) keep Better Auth's own handling; this repo sets no cap there.
+    - **Strict bodies.** A body must be one JSON object with exactly the documented fields: an unknown field, a wrong type or a
+      value outside its limits is refused with 400 (no field is dropped silently). Strings are trimmed where the route says so and
+      may not hold control characters unless the route says line breaks are allowed.
+    - **Two error formats exist today.** Most candidate and portal routes answer `{ "code": "UPPER_CASE" }` (`CodeError`); the admin
+      routes and a few others answer `{ "error": "lower_case" }` (`ErrorBody`). Each response names which. A 500 never says why
+      (`{ "error": "server_error" }` on admin, an empty or framework body elsewhere); the reason stays in the server log.
+    - **Sessions.** Each app has its own Better Auth login pool and its own cookie (`candidate.session_token`,
+      `portal.session_token`, `staff.session_token`; `__Secure-` in front of the name over HTTPS). A route that needs a session
+      answers 401 without one. Sessions are read from the database on every request (no cookie cache), so a suspended, blocked,
+      disabled or deleted login is refused on its next request.
+    - **Paging.** Lists page by keyset, never by offset: the reply carries an opaque `next` (and sometimes `previous`) token,
+      and the next page is asked for with `after=<token>` (or `before=<token>`). A token works only with the sort and filters it was
+      made for; a changed or forged token is 400. Page sizes are given on each route (job lists 20, a visitor 6, audit 50, notices
+      50, content 20, admin queues 20). Not yet uniform: three admin lists (`/api/trust-safety/cases`,
+      `/api/companies/owner-reassign`, `/api/manual-jobs`) answer `next` as a plain id, and `/api/manual-jobs` pages with `before`.
+    - **Rate limits.** Limits are counted in the database (shared by every server instance). Over a limit the answer is 429; only
+      the public candidate reads send `Retry-After` (seconds). Each write names its limit in `x-rate-limit` ("none" where the code
+      has none, as on the admin routes, which rely on the staff sign-in limits).
+    - **Ids.** Database ids are 64-bit integers. The candidate and admin routes send and take them as strings of digits (`"123"`,
+      pattern `^[1-9][0-9]{0,18}$`), so no client loses precision. Not yet uniform: most portal routes send and take them as JSON
+      numbers (`NumId` in portal.yaml); each field says which. Login ids (Better Auth) are 32 letters and digits.
+    - **Times** are ISO 8601 strings in UTC (`2026-11-18T09:30:00.000Z`); dates without a time are `YYYY-MM-DD`. Not yet uniform:
+      some portal replies send Postgres text (`2026-11-18 09:30:00.123456+00`, `PgTime` in portal.yaml) or an ISO time with a
+      `+00:00` offset; each field says which.
+    - **Examples** are made up. No example holds a real person, company, address or secret.
+servers:
+  - url: /
+    description: The app's own origin (relative; each app is deployed on its own host).
+components:
+  schemas:
+    CodeError:
+      type: object
+      description: The error body of most candidate and portal routes.
+      required: [code]
+      properties:
+        code: { type: string, pattern: '^[A-Z][A-Z0-9_]*$' }
+      example: { code: BAD_REQUEST }
+    ErrorBody:
+      type: object
+      description: The error body of the admin routes and some portal and candidate routes. `stage` is set only when a rules check failed.
+      required: [error]
+      properties:
+        error: { type: string }
+        stage: { type: string }
+      example: { error: bad_body }
+    Id:
+      type: string
+      description: A database id as text.
+      pattern: '^[1-9][0-9]{0,18}$'
+      example: '1042'
+    LoginId:
+      type: string
+      description: A Better Auth login id.
+      pattern: '^[A-Za-z0-9_-]{1,64}$'
+      example: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP'
+    Timestamp:
+      type: string
+      format: date-time
+      description: An ISO 8601 time in UTC.
+      example: '2026-11-18T09:30:00.000Z'
+    Date:
+      type: string
+      format: date
+      example: '2026-11-18'
+    Cursor:
+      type: string
+      description: An opaque keyset paging token from a previous reply. Send it back unchanged.
+      pattern: '^[A-Za-z0-9_-]{1,300}$'
+      example: eyJzIjoic3BvbnNvciIsInEiOmZhbHNlfQ
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean, const: true }
+    ReasonCode:
+      type: string
+      description: A reason code, never free text (the audit log holds no free text).
+      pattern: '^[a-z][a-z0-9_]{0,62}$'
+      example: duplicate_listing
+    NullableText:
+      type: [string, 'null']
+    NullableTimestamp:
+      type: [string, 'null']
+      description: An ISO 8601 time, or null. Times read as text from the database keep the database's form (`2026-11-18 09:30:00.123456+00`).
+    DbTime:
+      type: string
+      description: A time as the database writes it as text (`2026-11-18 09:30:00.123456+00`), kept as text so the microseconds survive.
+      example: '2026-11-18 09:30:00.123456+00'
+    StaffRole:
+      type: string
+      enum: [account_reviewer, fetched_job_reviewer, rules_data_editor, trust_and_safety, services_case_handler, content_editor, administrator]
+    DomainTakenError:
+      type: object
+      description: The 409 of a domain another company already holds; names that company.
+      required: [error, owner]
+      properties:
+        error: { type: string, const: domain_owned_by_other }
+        owner:
+          type: object
+          required: [organisationId, displayName]
+          properties:
+            organisationId: { $ref: '#/components/schemas/Id' }
+            displayName: { type: string }
+    RulesDataError:
+      type: object
+      description: "A 400 of the rules route: `bad_data` also says which entry is wrong in `detail`."
+      required: [error]
+      properties:
+        error: { type: string }
+        detail: { type: string }
+    AccountReviewItem:
+      type: object
+      required: [id, status, claimedBy, createdAt, organisationId, displayName, kind, organisationStatus]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        status: { type: string, enum: [open, claimed, done] }
+        claimedBy: { type: [string, 'null'], description: The staff id holding the claim. }
+        createdAt: { $ref: '#/components/schemas/DbTime' }
+        reason: { type: [string, 'null'], description: 'Why the item was made: "claim" or "new organisation".' }
+        detail: { description: "What the register check found, as the sign-up function wrote it (any JSON)." }
+        organisationId: { $ref: '#/components/schemas/Id' }
+        displayName: { type: string }
+        kind: { type: string, enum: [employer, agency] }
+        organisationStatus: { type: string }
+        signupPath: { type: [string, 'null'], enum: [dete_claim, first_time, agency, null] }
+        croNumber: { type: [string, 'null'] }
+        wrcLicenceNumber: { type: [string, 'null'] }
+        claimantEmail: { type: [string, 'null'] }
+        emailDomain: { type: [string, 'null'] }
+        answer: { type: [string, 'null'], description: "The owner's latest answer to \"ask for more\". Plain text; show it as text, never as HTML." }
+        answeredAt: { type: [string, 'null'] }
+    AuditEvent:
+      type: object
+      required: [id, at, kind, actor, action]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        at: { $ref: '#/components/schemas/DbTime' }
+        kind: { type: string }
+        actor:
+          type: object
+          properties:
+            staff: { type: [string, 'null'] }
+            candidate: { type: [string, 'null'] }
+            portal: { type: [string, 'null'] }
+            system: { type: [string, 'null'] }
+        roleInForce: { type: [string, 'null'] }
+        action: { type: string }
+        objectType: { type: [string, 'null'] }
+        objectId: { type: [string, 'null'] }
+        changedColumns: { type: [array, 'null'], items: { type: string } }
+        before: { description: "Any JSON, or null." }
+        after: { description: "Any JSON, or null." }
+        reasonCode: { type: [string, 'null'] }
+        secondStaff: { type: [string, 'null'] }
+        relatedCase: { type: [string, 'null'] }
+        source: { type: [string, 'null'] }
+    DomainRow:
+      type: object
+      required: [id, domain, source, addedBy, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        domain: { type: string }
+        source: { type: string }
+        addedBy: { type: [string, 'null'] }
+        createdAt: { $ref: '#/components/schemas/DbTime' }
+    CompanyPreview:
+      type: object
+      description: Database column names (snake case), as the database returns them.
+      required: [id, slug, display_name, kind, status, active_members, jobs, names]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        slug: { type: string }
+        display_name: { type: string }
+        kind: { type: string }
+        status: { type: string }
+        cro_number: { type: [string, 'null'] }
+        merged_into_id: { type: [string, 'null'] }
+        active_members: { type: integer }
+        jobs: { type: integer }
+        names: { type: integer }
+    OwnerRequest:
+      type: object
+      description: Database column names (snake case), as the database returns them.
+      required: [id, organisation_id, display_name, new_owner_membership_id, new_owner_email, old_owner_membership_id, requested_by_staff_user_id, requested_at, completes_after, can_complete]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        organisation_id: { $ref: '#/components/schemas/Id' }
+        display_name: { type: string }
+        new_owner_membership_id: { $ref: '#/components/schemas/Id' }
+        new_owner_email: { type: string }
+        old_owner_membership_id: { $ref: '#/components/schemas/Id' }
+        old_owner_email: { type: [string, 'null'] }
+        requested_by_staff_user_id: { type: string }
+        requested_at: { $ref: '#/components/schemas/DbTime' }
+        completes_after: { $ref: '#/components/schemas/DbTime' }
+        can_complete: { type: boolean }
+    ContactSummary:
+      type: object
+      required: [id, status, topic, createdText]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        status: { type: string, enum: [new, claimed] }
+        topic: { type: string }
+        surface: { type: [string, 'null'] }
+        createdText: { $ref: '#/components/schemas/DbTime' }
+        claimedByStaffUserId: { type: [string, 'null'] }
+        claimedText: { type: [string, 'null'] }
+    ContactMessage:
+      allOf:
+        - $ref: '#/components/schemas/ContactSummary'
+        - type: object
+          properties:
+            status: { type: string, enum: [new, claimed, answered, closed, spam] }
+            fromName: { type: [string, 'null'] }
+            fromEmail: { type: [string, 'null'] }
+            body: { type: string, description: "The message as sent. Plain text; show it as text, never as HTML." }
+            candidateUserId: { type: [string, 'null'] }
+            portalUserId: { type: [string, 'null'] }
+            closedText: { type: [string, 'null'] }
+    ContentSummary:
+      type: object
+      required: [id, kind, slug, title, status, updatedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        kind: { type: string, enum: [guide, update, help, occupation] }
+        slug: { type: string }
+        title: { type: string }
+        status: { type: string, enum: [draft, published, withdrawn] }
+        sourceUrl: { type: [string, 'null'] }
+        checkedOn: { type: [string, 'null'] }
+        publishedAt: { type: [string, 'null'] }
+        updatedBy: { type: [string, 'null'] }
+        updatedAt: { $ref: '#/components/schemas/DbTime' }
+    JobQueueItem:
+      type: object
+      required: [id, queue, status, jobId, jobStatus, title, organisationId, company]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        queue: { type: string, enum: [scam_flag, post_strike_job_review, agency_client_check] }
+        status: { type: string }
+        claimedBy: { type: [string, 'null'] }
+        reason: { type: [string, 'null'] }
+        jobId: { $ref: '#/components/schemas/Id' }
+        jobStatus: { type: string }
+        source: { type: string, enum: [employer, agency] }
+        title: { type: string }
+        employerName: { type: string }
+        county: { type: [string, 'null'] }
+        occupationCode: { type: [string, 'null'] }
+        permitType: { type: string }
+        salaryLow: { type: [integer, 'null'] }
+        salaryHigh: { type: [integer, 'null'] }
+        payGrade: { type: [string, 'null'] }
+        badge: { type: [string, 'null'] }
+        closesAt: { description: "An ISO time, or the text \"infinity\" for no closing date." }
+        organisationId: { $ref: '#/components/schemas/Id' }
+        company: { type: string }
+        companyStatus: { type: string }
+        restricted: { type: boolean }
+        clientName: { type: [string, 'null'] }
+        clientCheck: { type: string }
+        advertText: { type: [string, 'null'], description: Only on the one-item read. }
+    FetchedQueueItem:
+      type: object
+      required: [id, status, jobId, organisationId, title, employerName, permitHistory]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        status: { type: string }
+        claimedBy: { type: [string, 'null'] }
+        jobId: { $ref: '#/components/schemas/Id' }
+        organisationId: { $ref: '#/components/schemas/Id' }
+        title: { type: string }
+        employerName: { type: string }
+        advertUrl: { type: [string, 'null'] }
+        occupationCode: { type: [string, 'null'] }
+        permitHistory: { type: string }
+        sponsorPermits: { type: [integer, 'null'] }
+        stage: { type: [string, 'null'] }
+        reason: { type: [string, 'null'] }
+        advertText: { type: [string, 'null'], description: Only on the one-item read. }
+    ManualRow:
+      type: object
+      description: Database column names (snake case), as the database returns them. `reason` is why a draft is not listed.
+      required: [id, organisation_id, display_name, title, status, posted_at, closes_at]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        organisation_id: { $ref: '#/components/schemas/Id' }
+        display_name: { type: string }
+        title: { type: string }
+        status: { type: string }
+        pass_route: { type: [string, 'null'] }
+        posted_by_staff_id: { type: [string, 'null'] }
+        posted_at: { $ref: '#/components/schemas/DbTime' }
+        closes_at: { type: string }
+        closed_at: { type: [string, 'null'] }
+        reason: { type: [string, 'null'] }
+    FloorCheck:
+      type: object
+      required: [floorId, itemId, createdAt, roleFamily, floorEur, organisationId, displayName]
+      properties:
+        floorId: { $ref: '#/components/schemas/Id' }
+        itemId: { $ref: '#/components/schemas/Id' }
+        createdAt: { $ref: '#/components/schemas/DbTime' }
+        roleFamily: { type: string, pattern: '^[0-9]{4}$' }
+        floorEur: { type: integer }
+        signedAt: { type: string }
+        validUntil: { type: string }
+        signerName: { type: [string, 'null'] }
+        signerTitle: { type: [string, 'null'] }
+        organisationId: { $ref: '#/components/schemas/Id' }
+        displayName: { type: string }
+        kind: { type: string }
+        isBigCompany: { type: boolean }
+        organisationStatus: { type: string }
+        currentFloorEur: { type: [integer, 'null'] }
+        requestId: { type: [string, 'null'] }
+        proposedBy: { type: [string, 'null'] }
+    RulesKind:
+      type: string
+      enum: [minimums, critical_skills_list, ineligible_list, public_pay_employers, big_company_names]
+    RulesChange:
+      type: object
+      properties:
+        added: { type: object }
+        removed: { type: object }
+        changed: { type: object }
+    RulesVersion:
+      type: object
+      required: [kind, versionId, effectiveFrom, data]
+      properties:
+        kind: { $ref: '#/components/schemas/RulesKind' }
+        versionId: { $ref: '#/components/schemas/Id' }
+        effectiveFrom: { $ref: '#/components/schemas/Date' }
+        data: { description: The whole version for its kind (see packages/db/src/rules-data.ts). }
+    StaffRow:
+      type: object
+      required: [id, name, email, status, createdAt, roles]
+      properties:
+        id: { $ref: '#/components/schemas/LoginId' }
+        name: { type: string }
+        email: { type: string }
+        status: { type: string, enum: [active, disabled] }
+        createdAt: { $ref: '#/components/schemas/DbTime' }
+        roles: { type: array, items: { $ref: '#/components/schemas/StaffRole' } }
+    ReportSummary:
+      type: object
+      description: The list shows no evidence text and no reporter.
+      required: [id, status, targetKind, reason, createdText]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        status: { type: string }
+        targetKind: { type: string }
+        reason: { type: string }
+        createdText: { $ref: '#/components/schemas/DbTime' }
+        targetJobId: { type: [string, 'null'] }
+        jobTitle: { type: [string, 'null'] }
+        jobStatus: { type: [string, 'null'] }
+        organisationId: { type: [string, 'null'] }
+        displayName: { type: [string, 'null'] }
+    CaseSummary:
+      type: object
+      required: [id, organisationId, displayName, caseKind, reasonCode, stage]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        organisationId: { $ref: '#/components/schemas/Id' }
+        displayName: { type: string }
+        caseKind: { type: string, enum: [false_claim, false_pay_floor, instant_ban] }
+        reasonCode: { type: string }
+        stage: { type: string }
+        outcome: { type: [string, 'null'] }
+        level: { type: [integer, 'null'] }
+        replyDueAt: { $ref: '#/components/schemas/NullableTimestamp' }
+        appealDueAt: { $ref: '#/components/schemas/NullableTimestamp' }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+  headers:
+    RetryAfter:
+      description: Seconds until the limit that was hit has a new window.
+      schema: { type: integer, minimum: 1 }
+      example: 42
+  securitySchemes:
+    staffSession:
+      type: apiKey
+      in: cookie
+      name: staff.session_token
+      description: >-
+        The staff Better Auth session cookie (`__Secure-staff.session_token` over HTTPS), set by `POST /api/auth/staff/sign-in/email`.
+        A staff session ends after 8 hours without use (`expiresIn` 8 h, refreshed at most every 5 minutes), and a disabled login is
+        refused on its next request.
+  responses:
+    NoStaffSession:
+      description: "`no_session`: no staff session cookie, or it has ended. `not_active`: the login behind the session is not active."
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorBody' }
+          example: { error: no_session }
+    ServerError:
+      description: "`server_error`: anything the route does not expect. The reason stays in the server log."
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorBody' }
+          example: { error: server_error }
+paths:
+  /api/health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      description: Answers whether the app can reach its database. No session, no Origin check, no rate limit; it reads no data.
+      security: []
+      x-roles: [anyone]
+      x-rate-limit: none
+      x-no-4xx: The route reads no input, needs no session and has no refusal; it only answers 200 or 503.
+      responses:
+        '200':
+          description: The database answered.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, database]
+                properties:
+                  ok: { type: boolean }
+                  database: { type: boolean }
+              example: { ok: true, database: true }
+        '503':
+          description: The database did not answer.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  database: { type: boolean }
+              example: { ok: false, database: false }
+  /api/auth/staff/{path}:
+    parameters:
+      - name: path
+        in: path
+        required: true
+        description: >-
+          The Better Auth endpoint under `/api/auth/staff/` (it may hold slashes, for example `sign-in/email`). The route is a Next.js
+          catch-all (`[...all]`) that hands every request to Better Auth's own handler.
+        schema: { type: string }
+        example: sign-in/email
+    get:
+      operationId: staffAuthGet
+      summary: Better Auth, staff pool (GET)
+      description: >-
+        Better Auth's own GET endpoints for the staff login pool. The admin pages use `get-session` (200 with the session and user, or
+        200 with an empty body when there is no session). Shapes are Better Auth's own (better-auth 1.x); only what the repo's tests show
+        is described here.
+      security: []
+      x-roles: [anyone]
+      x-rate-limit: "Better Auth's own limits, counted in the database (staff_rate_limit)."
+      responses:
+        '200':
+          description: Better Auth's answer.
+          content:
+            application/json:
+              schema: {}
+              example: { session: { id: 'Zx81LmQp0aB7cD9eF1gH3iJ5kL7mN9oP', userId: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP' }, user: { id: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', email: 'reviewer@example.com', name: 'Example Reviewer' } }
+        '404':
+          description: An endpoint Better Auth does not have.
+    post:
+      operationId: staffAuthPost
+      summary: Better Auth, staff pool (POST)
+      description: >-
+        Better Auth's own POST endpoints for the staff login pool. Used by the admin app: `sign-in/email` (`{ email, password }`; 200 sets
+        the `staff.session_token` cookie) and `sign-out`. Settings: sign-up is off (`sign-up/email` answers 400), email verification is not
+        required for staff, a password reset ends every other session, the session ends after 8 hours without use (STAFF_IDLE_SECONDS,
+        refreshed every 5 minutes; a "remember me: false" sign-in is capped at the same limit), the cookie cache is off, a disabled login
+        cannot sign in (403) and Better Auth's own Origin check is on (trusted origin: STAFF_AUTH_URL). The client address for limits is
+        `x-vercel-forwarded-for` only. Staff email is not set up yet, so `request-password-reset` sends nothing. There is no bot check on
+        the staff pool. Shapes are Better Auth's own; only what the repo's tests show is described here.
+      security: []
+      x-roles: [anyone]
+      x-body-cap: none set by this repo (Better Auth's own handling)
+      x-rate-limit: >-
+        Per client address, counted in the database: sign-in/email 5 a minute; sign-up/email 5 a minute; request-password-reset 3 in 5
+        minutes; send-verification-email 3 in 5 minutes. Other paths keep Better Auth's default.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {}
+            example: { email: reviewer@example.com, password: an-example-password }
+      responses:
+        '200':
+          description: Signed in (the `Set-Cookie` header carries the session cookie) or signed out.
+          headers:
+            Set-Cookie:
+              description: The session cookie on sign-in.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: {}
+              example: { redirect: false, token: 'Zx81LmQp0aB7cD9eF1gH3iJ5kL7mN9oP', user: { id: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', email: 'reviewer@example.com', name: 'Example Reviewer' } }
+        '400':
+          description: A walk-in `sign-up/email` (sign-up is off), or a body Better Auth refuses.
+        '401':
+          description: Wrong email or password.
+        '403':
+          description: A disabled staff login signing in ("This account cannot sign in."), or an Origin Better Auth does not trust.
+        '429':
+          description: Over one of the per-address limits above.
+  /api/account-review:
+    get:
+      operationId: listAccountReviews
+      summary: List open account reviews, or show one
+      description: >-
+        Without `id`: the open and claimed `account_review` items (employer and agency sign-ups and claims), oldest first, 20 a page. With
+        `id`: that one item, whatever its status (an id that is not an account review, or not digits, is 404). The list shows the
+        claimant's email, so only account reviewers read it. Unknown query keys are ignored.
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer]
+      x-rate-limit: none
+      parameters:
+        - { name: id, in: query, required: false, description: "One item's id.", schema: { type: string }, example: '1042' }
+        - { name: after, in: query, required: false, description: "The `next` token of the page before.", schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: The page (no `id`), or `{ item }` (with `id`).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [items, next]
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/AccountReviewItem' } }
+                      next: { type: [string, 'null'] }
+                  - type: object
+                    required: [item]
+                    properties:
+                      item: { $ref: '#/components/schemas/AccountReviewItem' }
+              example:
+                items:
+                  - { id: '1042', status: open, claimedBy: null, createdAt: '2026-11-18 09:30:00.123456+00', reason: claim, detail: { found: true }, organisationId: '310', displayName: Example Care Ltd, kind: employer, organisationStatus: pending_review, signupPath: dete_claim, croNumber: '123456', wrcLicenceNumber: null, claimantEmail: owner@example.ie, emailDomain: example.ie, answer: null, answeredAt: null }
+                next: null
+        '400':
+          description: "`bad_cursor`: `after` is not a token this list made."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the staff login is not active. `not_reviewer`: no account_reviewer role (no other role stands in)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_reviewer } } }
+        '404':
+          description: "`not_found`: `id` is not an account review item."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: actOnAccountReview
+      summary: Claim, release, approve, ask for more, or reject an account review
+      description: >-
+        One action on one item. The Origin header must be the admin app's origin. Only the claimer approves, asks for more or rejects.
+        `approve` verifies the company; with `addDomain: true` it also saves the claimant's email domain for the company (refused for a free
+        email provider or a domain another company holds). `ask_more` sets the company to needs_info, sends the optional `question` (1 to
+        1,000 characters after trimming, no control characters) to the owner and puts the item back to open; `reason` defaults to
+        `needs_info`. `reject` needs `reason`; a DETE claim goes back to unclaimed, a new registration becomes rejected. A stale claim
+        (over 24 hours, or held by a login no longer active) can be taken over by `claim`.
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer]
+      x-rate-limit: none
+      x-body-cap: 4500
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, itemId]
+                  properties:
+                    action: { type: string, enum: [claim, release] }
+                    itemId: { type: string, pattern: '^[0-9]{1,19}$' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, itemId]
+                  properties:
+                    action: { const: approve }
+                    itemId: { type: string, pattern: '^[0-9]{1,19}$' }
+                    addDomain: { type: boolean }
+                - type: object
+                  additionalProperties: false
+                  required: [action, itemId]
+                  properties:
+                    action: { const: ask_more }
+                    itemId: { type: string, pattern: '^[0-9]{1,19}$' }
+                    reason: { $ref: '#/components/schemas/ReasonCode' }
+                    question: { type: string, maxLength: 1000 }
+                - type: object
+                  additionalProperties: false
+                  required: [action, itemId, reason]
+                  properties:
+                    action: { const: reject }
+                    itemId: { type: string, pattern: '^[0-9]{1,19}$' }
+                    reason: { $ref: '#/components/schemas/ReasonCode' }
+            example: { action: approve, itemId: '1042', addDomain: true }
+      responses:
+        '200':
+          description: "`claim` and `release`: `{ ok: true }`. The three decisions also give the company's new status and the domain added."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { const: true }
+                  organisationId: { $ref: '#/components/schemas/Id' }
+                  organisationStatus: { type: string, enum: [verified, needs_info, rejected, unclaimed] }
+                  domainAdded: { type: [string, 'null'] }
+              example: { ok: true, organisationId: '310', organisationStatus: verified, domainAdded: example.ie }
+        '400':
+          description: >-
+            `bad_body`: not one JSON object, an unknown field, a field on the wrong action, a wrong type, or over 4,500 characters.
+            `bad_action`: unknown action. `bad_item_id`: itemId not 1 to 19 digits. `bad_reason`: reject with no reason, or a reason that is
+            not a code. `bad_question`: the question is empty, over 1,000 characters or holds control characters. `bad_input`: addDomain not
+            a boolean.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_body } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`, `not_reviewer`: as on GET."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_origin } } }
+        '404':
+          description: "`not_found`: no such account review item (also an itemId that is not a valid id)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: >-
+            `already_decided`, `not_claimed`, `not_claimer`, `claimed_by_other` (a fresh claim of someone else): the item's state does not
+            allow it. `organisation_not_pending`: the company is no longer pending_review or needs_info. `no_claimant`: the company has no
+            active owner. `claimant_not_active`: the owner was blocked, erased or banned since the claim. `has_permit_history`: a first-time
+            employer turns out to have a DETE permit record. `free_email_domain`, `bad_domain`, `domain_owned_by_other`: addDomain refused.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_claimer } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/audit:
+    get:
+      operationId: listAudit
+      summary: Read the audit log
+      description: >-
+        Newest first, 50 a page. An administrator reads every row and may filter by any staff member; any other active staff member reads
+        only the rows where they are the actor (and is refused another member's id). Dates are UTC days, both ends inclusive. Only the
+        listed query keys, each at most once (anything else is `bad_query`). Nothing here writes.
+      security: [{ staffSession: [] }]
+      x-roles: [any active staff member (own rows), administrator (every row)]
+      x-rate-limit: none
+      parameters:
+        - { name: staff, in: query, required: false, description: "The acting staff id.", schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,64}$' } }
+        - { name: action, in: query, required: false, schema: { type: string, pattern: '^[a-z][a-z0-9_.]{0,80}$' }, example: account_review.approved }
+        - { name: objectType, in: query, required: false, schema: { type: string, pattern: '^[a-z][a-z0-9_]{0,40}$' }, example: organisation }
+        - { name: objectId, in: query, required: false, schema: { type: string, pattern: '^[A-Za-z0-9_.:-]{1,100}$' }, example: '310' }
+        - { name: from, in: query, required: false, description: "First UTC day (inclusive).", schema: { $ref: '#/components/schemas/Date' } }
+        - { name: to, in: query, required: false, description: "Last UTC day (inclusive).", schema: { $ref: '#/components/schemas/Date' } }
+        - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events, next]
+                properties:
+                  events: { type: array, items: { $ref: '#/components/schemas/AuditEvent' } }
+                  next: { type: [string, 'null'] }
+              example:
+                events:
+                  - { id: '88001', at: '2026-11-18 09:30:00.123456+00', kind: admin_action, actor: { staff: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', candidate: null, portal: null, system: null }, roleInForce: null, action: account_review.approved, objectType: organisation, objectId: '310', changedColumns: [status], before: { status: pending_review }, after: { status: verified }, reasonCode: approved, secondStaff: null, relatedCase: null, source: panel }
+                next: null
+        '400':
+          description: >-
+            `bad_query`: an unknown or repeated query key. `bad_staff_id`, `bad_action`, `bad_object_type`, `bad_object_id`: a filter of the
+            wrong shape. `bad_from`, `bad_to`: not a real YYYY-MM-DD day. `bad_range`: from after to. `bad_cursor`: a token this list did not make.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_range } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_administrator`: a non-administrator filtered by another member's id."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/companies/domains:
+    get:
+      operationId: listCompanyDomains
+      summary: List a company's email domains
+      description: >-
+        The domains saved for one company, by name. A claimant on one of these domains is verified with no review, so only account
+        reviewers and administrators see and change them. Only `organisationId`, at most once (anything else is `bad_query`).
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer, administrator]
+      x-rate-limit: none
+      parameters:
+        - { name: organisationId, in: query, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: The domains.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [domains]
+                properties:
+                  domains: { type: array, items: { $ref: '#/components/schemas/DomainRow' } }
+              example: { domains: [{ id: '17', domain: example.ie, source: admin, addedBy: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', createdAt: '2026-11-18 09:30:00.123456+00' }] }
+        '400':
+          description: "`bad_query`: an unknown or repeated key. `bad_organisation_id`: missing or not an id."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_organisation_id } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_domain_staff`: neither account_reviewer nor administrator."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_domain_staff } } }
+        '404':
+          description: "`not_found`: no such company."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: changeCompanyDomain
+      summary: Add or remove a company's email domain
+      description: >-
+        `add` saves a domain (source admin) for the company; `remove` deletes one. The Origin header must be the admin app's origin. A
+        domain is a plain lower-case host name of two or more labels (no scheme, port, IP address, punycode label or free email provider)
+        for add; remove takes any saved string up to 253 characters, so an old row stays removable. One audit row with the reason code.
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer, administrator]
+      x-rate-limit: none
+      x-body-cap: 1000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, organisationId, domain, reason]
+              properties:
+                action: { type: string, enum: [add, remove] }
+                organisationId: { $ref: '#/components/schemas/Id' }
+                domain: { type: string, maxLength: 253 }
+                reason: { $ref: '#/components/schemas/ReasonCode' }
+            example: { action: add, organisationId: '310', domain: example.ie, reason: owner_confirmed }
+      responses:
+        '200':
+          description: Done.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, domain]
+                properties:
+                  ok: { const: true }
+                  domain: { type: string }
+              example: { ok: true, domain: example.ie }
+        '400':
+          description: >-
+            `bad_body`: not one JSON object, an unknown field, a missing field or over 1,000 characters. `bad_action`: not add or remove.
+            `bad_organisation_id`, `bad_domain`, `bad_reason`: a field of the wrong shape.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_domain } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`, `not_domain_staff`: as on GET."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_origin } } }
+        '404':
+          description: "`not_found`: no such company. `domain_not_found`: remove of a domain the company does not have."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: domain_not_found } } }
+        '409':
+          description: >-
+            `domain_owned_by_other`: another company has the domain (the body names it, `DomainTakenError`). `free_email_domain`: a free
+            email provider. `already_added`: the company has it already. `company_merged`: the company was merged into another.
+            `open_ban_case`: an open trust and safety case would ban this domain, so it cannot be removed now.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/DomainTakenError'
+                  - $ref: '#/components/schemas/ErrorBody'
+              example: { error: domain_owned_by_other, owner: { organisationId: '311', displayName: Example Holdings Ltd } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/companies/member-limit:
+    post:
+      operationId: setMemberLimit
+      summary: Set a company's member limit
+      description: >-
+        Sets how many active members a company may have, from 1 to 50, never below its active members now. The Origin header must be the
+        admin app's origin. One audit row with the old and new limit and the reason code.
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer, administrator]
+      x-rate-limit: none
+      x-body-cap: 1000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [organisationId, memberLimit, reason]
+              properties:
+                organisationId: { $ref: '#/components/schemas/Id' }
+                memberLimit: { type: integer, minimum: 1, maximum: 50 }
+                reason: { $ref: '#/components/schemas/ReasonCode' }
+            example: { organisationId: '310', memberLimit: 12, reason: larger_team }
+      responses:
+        '200':
+          description: The new limit and the active members counted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, organisationId, memberLimit, activeMembers]
+                properties:
+                  ok: { const: true }
+                  organisationId: { $ref: '#/components/schemas/Id' }
+                  memberLimit: { type: integer }
+                  activeMembers: { type: integer }
+              example: { ok: true, organisationId: '310', memberLimit: 12, activeMembers: 4 }
+        '400':
+          description: >-
+            `bad_body`: not one JSON object, an unknown field, reason not a string, memberLimit not a number, or over 1,000 characters.
+            `bad_input`: organisationId not an id. `bad_limit`: not a whole number from 1 to 50. `bad_reason`: not a reason code.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_limit } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_limit_staff`: neither account_reviewer nor administrator."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_limit_staff } } }
+        '404':
+          description: "`not_found`: no such company."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`below_active`: the limit is lower than the company's active members."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: below_active } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/companies/merge:
+    get:
+      operationId: previewMerge
+      summary: Show two companies before a merge
+      description: >-
+        The companies with the given ids (one or two `id` keys) and the counts a merge would move. No person's data. Other query keys are
+        ignored.
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer, fetched_job_reviewer, rules_data_editor, trust_and_safety, administrator]
+      x-rate-limit: none
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: One or two company ids (`?id=1&id=2`).
+          style: form
+          explode: true
+          schema: { type: array, minItems: 1, maxItems: 2, items: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: The companies found (an unknown id is simply missing).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [companies]
+                properties:
+                  companies: { type: array, items: { $ref: '#/components/schemas/CompanyPreview' } }
+              example: { companies: [{ id: '310', slug: example-care, display_name: Example Care Ltd, kind: employer, status: verified, cro_number: '123456', merged_into_id: null, active_members: 2, jobs: 5, names: 1 }] }
+        '400':
+          description: "`bad_input`: no id, more than two, or one that is not an id."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_input } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_company_viewer`: none of the roles listed."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_company_viewer } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: mergeCompanies
+      summary: Merge one company into another
+      description: >-
+        Moves the absorbed company's names (with their DETE links) and jobs to the survivor and marks it merged. No undo route (the audit
+        row lists every moved id, so a merge can be reversed by hand). The Origin header must be the admin app's origin.
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer, fetched_job_reviewer]
+      x-rate-limit: none
+      x-body-cap: 1000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [absorbedId, survivorId]
+              properties:
+                absorbedId: { $ref: '#/components/schemas/Id' }
+                survivorId: { $ref: '#/components/schemas/Id' }
+            example: { absorbedId: '311', survivorId: '310' }
+      responses:
+        '200':
+          description: Merged, with what moved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, absorbed, survivor, names, jobs]
+                properties:
+                  ok: { const: true }
+                  absorbed: { $ref: '#/components/schemas/Id' }
+                  survivor: { $ref: '#/components/schemas/Id' }
+                  names: { type: integer }
+                  jobs: { type: integer }
+              example: { ok: true, absorbed: '311', survivor: '310', names: 1, jobs: 3 }
+        '400':
+          description: "`bad_body`: not one JSON object, an unknown field, or over 1,000 characters. `bad_input`: an id missing or not an id. `same_company`: both ids the same."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: same_company } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_company_staff`: neither account_reviewer nor fetched_job_reviewer."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_company_staff } } }
+        '404':
+          description: "`not_found`: one of the companies does not exist."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: >-
+            `already_merged`: the absorbed company was merged already. `target_merged`: the survivor was merged into another.
+            `not_mergeable`: one is rejected, closed, banned or suspended. `kind_mismatch`: not the same kind. `active_members`: the absorbed
+            company still has active members. `has_applications`: the absorbed company has applications.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: kind_mismatch } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/companies/owner-reassign:
+    get:
+      operationId: listOwnerReassigns
+      summary: List open owner reassignment requests
+      description: >-
+        The open requests to make another member the account owner, oldest first, 20 a page. Shows both people's emails, so account
+        reviewers only. `after` is the last request id of the page before (the `next` value, here a plain id). Other query keys are ignored.
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer]
+      x-rate-limit: none
+      parameters:
+        - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/OwnerRequest' } }
+                  next: { type: [string, 'null'] }
+              example:
+                items:
+                  - { id: '5', organisation_id: '310', display_name: Example Care Ltd, new_owner_membership_id: '77', new_owner_email: new.owner@example.ie, old_owner_membership_id: '70', old_owner_email: old.owner@example.ie, requested_by_staff_user_id: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', requested_at: '2026-11-11 09:30:00.123456+00', completes_after: '2026-11-18 09:30:00.123456+00', can_complete: true }
+                next: null
+        '400':
+          description: "`bad_cursor`: `after` is not an id."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_account_reviewer`: no account_reviewer role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_account_reviewer } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: actOnOwnerReassign
+      summary: Request, complete or cancel an owner reassignment
+      description: >-
+        `request` records a member's request to become the account owner, after the reviewer checked the company domain and the CRO number
+        (both ticks must be true); the old owner gets a notice. `complete` finishes it once its 7 days have passed (the old owner becomes a
+        recruiter). `cancel` ends an open request. One open request per company. The Origin header must be the admin app's origin.
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer]
+      x-rate-limit: none
+      x-body-cap: 1000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, membershipId, domainChecked, croChecked]
+                  properties:
+                    action: { const: request }
+                    membershipId: { $ref: '#/components/schemas/Id' }
+                    domainChecked: { type: boolean }
+                    croChecked: { type: boolean }
+                - type: object
+                  additionalProperties: false
+                  required: [action, requestId]
+                  properties:
+                    action: { type: string, enum: [complete, cancel] }
+                    requestId: { $ref: '#/components/schemas/Id' }
+            example: { action: request, membershipId: '77', domainChecked: true, croChecked: true }
+      responses:
+        '200':
+          description: "`request`: the request id, company and when it may complete. `complete`: the new owner membership. `cancel`: the request id."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, requestId]
+                properties:
+                  ok: { const: true }
+                  requestId: { $ref: '#/components/schemas/Id' }
+                  organisationId: { $ref: '#/components/schemas/Id' }
+                  completesAfter: { type: string }
+                  ownerMembershipId: { $ref: '#/components/schemas/Id' }
+              example: { ok: true, requestId: '5', organisationId: '310', completesAfter: '2026-11-25T09:30:00.123456+00:00' }
+        '400':
+          description: >-
+            `bad_body`: not one JSON object, a field that does not belong to the action, a tick that is not a boolean, or over 1,000
+            characters. `bad_action`: not request, complete or cancel. `bad_input`: an id that is not an id. `not_checked`: a tick is false.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_checked } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_account_reviewer`: no account_reviewer role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_origin } } }
+        '404':
+          description: "`member_not_found`: no such membership (request). `not_found`: no such request (complete, cancel)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: member_not_found } } }
+        '409':
+          description: >-
+            `already_owner`: the member is the owner. `company_not_open`: the company is not open for this. `no_owner`: the company has no
+            owner. `user_not_active`: the member's login is not active. `request_open`: the company has an open request already.
+            `not_open`: the request is not open. `too_early`: the 7 days have not passed. `owner_changed`: the owner is no longer the one the
+            request named. `member_gone`: the member left.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: too_early } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/contact:
+    get:
+      operationId: listContactMessages
+      summary: List contact messages, or read one
+      description: >-
+        Without `id`: the new and claimed contact form messages, oldest first, 20 a page (no name, email or text in the list). With `id`:
+        that one message in full, whatever its status; the read is logged (an audit row of kind data_access, with the candidate as
+        subject). Only `id` and `after`, each at most once (anything else is `bad_query`).
+      security: [{ staffSession: [] }]
+      x-roles: [services_case_handler, content_editor, administrator]
+      x-rate-limit: none
+      parameters:
+        - { name: id, in: query, required: false, schema: { type: string }, example: '901' }
+        - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: The page (no `id`), or `{ item }` (with `id`).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [items, next]
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/ContactSummary' } }
+                      next: { type: [string, 'null'] }
+                  - type: object
+                    required: [item]
+                    properties:
+                      item: { $ref: '#/components/schemas/ContactMessage' }
+              example:
+                items: [{ id: '901', status: new, topic: general, surface: candidate, createdText: '2026-11-18 09:30:00.123456+00', claimedByStaffUserId: null, claimedText: null }]
+                next: null
+        '400':
+          description: "`bad_query`: an unknown or repeated key. `bad_cursor`: a token this list did not make."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_contact_reader`: none of the three roles."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_contact_reader } } }
+        '404':
+          description: "`not_found`: no such message (also an id that is not an id)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: actOnContactMessage
+      summary: Claim a contact message, or mark it answered, closed or spam
+      description: >-
+        `claim` takes a new message (or a stale claim: over 24 hours, or held by a login no longer active); claiming one's own is fine.
+        `answer`, `close` and `spam` are for the claimer only. Each step writes one audit row (ids and the new status, never the text).
+        Nothing is sent from here: staff reply from the support mailbox. The Origin header must be the admin app's origin. An administrator
+        may read but not act.
+      security: [{ staffSession: [] }]
+      x-roles: [services_case_handler, content_editor]
+      x-rate-limit: none
+      x-body-cap: 200
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, messageId]
+              properties:
+                action: { type: string, enum: [claim, answer, close, spam] }
+                messageId: { $ref: '#/components/schemas/Id' }
+            example: { action: claim, messageId: '901' }
+      responses:
+        '200':
+          description: Done.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+              example: { ok: true }
+        '400':
+          description: "`bad_body`: not one JSON object, an unknown or missing field, or over 200 characters. `bad_action`: unknown action. `bad_message_id`: not an id."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_message_id } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_contact_staff`: neither services_case_handler nor content_editor."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_contact_staff } } }
+        '404':
+          description: "`not_found`: no such message."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`already_decided`: answered, closed or spam already. `claimed_by_other`: a fresh claim of someone else. `not_claimed`: answer, close or spam on a new message. `not_claimer`: someone else holds the claim."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_claimer } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/content:
+    get:
+      operationId: listContentPages
+      summary: List content pages, or show one
+      description: >-
+        Without `id`: pages of every state, newest change first, 20 a page, filtered by `kind` and `status`. With `id`: one page with its
+        body. Only `id`, `kind`, `status` and `after`, each at most once (anything else is `bad_query`).
+      security: [{ staffSession: [] }]
+      x-roles: [content_editor, rules_data_editor, administrator]
+      x-rate-limit: none
+      parameters:
+        - { name: id, in: query, required: false, schema: { type: string }, example: '41' }
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [guide, update, help, occupation] } }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [draft, published, withdrawn] } }
+        - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: The page (no `id`), or `{ item }` with `body` (with `id`).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [items, next]
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/ContentSummary' } }
+                      next: { type: [string, 'null'] }
+                  - type: object
+                    required: [item]
+                    properties:
+                      item:
+                        allOf:
+                          - $ref: '#/components/schemas/ContentSummary'
+                          - { type: object, required: [body], properties: { body: { type: string } } }
+              example:
+                items: [{ id: '41', kind: help, slug: how-to-apply, title: How to apply, status: draft, sourceUrl: null, checkedOn: null, publishedAt: null, updatedBy: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', updatedAt: '2026-11-18 09:30:00.123456+00' }]
+                next: null
+        '400':
+          description: "`bad_query`: an unknown or repeated key. `bad_kind`, `bad_status`: not one of the values. `bad_cursor`: a token this list did not make."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_kind } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_content_staff`: none of the three roles."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_content_staff } } }
+        '404':
+          description: "`not_found`: no such page (also an id that is not an id)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: actOnContentPage
+      summary: Create or edit a draft, publish or withdraw a page
+      description: >-
+        `create` (content_editor) writes a new draft; an occupation page's slug is its SOC 2010 code. `edit` (content_editor) changes a
+        draft or a withdrawn page; kind and slug never change and a published page is withdrawn first. `publish`: a content_editor
+        publishes help and update pages, a rules_data_editor guides and occupation texts; anything but help needs a source and a
+        checked-on date. `withdraw` (content_editor) takes any published page down. Title 1 to 200 characters, body 1 to 50,000
+        characters (line breaks and tabs allowed, no other control characters), sourceUrl an http or https address up to 500 characters,
+        checkedOn a real day not in the future. The Origin header must be the admin app's origin.
+      security: [{ staffSession: [] }]
+      x-roles: [content_editor, rules_data_editor]
+      x-rate-limit: none
+      x-body-cap: 110000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, kind, slug, title, body]
+                  properties:
+                    action: { const: create }
+                    kind: { type: string, enum: [guide, update, help, occupation] }
+                    slug: { type: string }
+                    title: { type: string, maxLength: 200 }
+                    body: { type: string, maxLength: 50000 }
+                    sourceUrl: { type: string, maxLength: 500 }
+                    checkedOn: { $ref: '#/components/schemas/Date' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, id]
+                  properties:
+                    action: { const: edit }
+                    id: { $ref: '#/components/schemas/Id' }
+                    title: { type: string, maxLength: 200 }
+                    body: { type: string, maxLength: 50000 }
+                    sourceUrl: { type: string, maxLength: 500 }
+                    checkedOn: { $ref: '#/components/schemas/Date' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, id]
+                  properties:
+                    action: { type: string, enum: [publish, withdraw] }
+                    id: { $ref: '#/components/schemas/Id' }
+            example: { action: create, kind: help, slug: how-to-apply, title: How to apply, body: Pick a job and follow the link to the employer's own page. }
+      responses:
+        '200':
+          description: "`create` answers the new id; the rest `{ ok: true }`."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { const: true }
+                  id: { $ref: '#/components/schemas/Id' }
+              example: { ok: true, id: '41' }
+        '400':
+          description: >-
+            `bad_body`: not one JSON object, an unknown or missing field, or over 110,000 characters. `bad_action`: unknown action.
+            `bad_id`, `bad_kind`, `bad_slug`, `bad_title`, `bad_body_text`, `bad_source_url`, `bad_checked_on`: a field of the wrong type or
+            outside its rules. `nothing_to_change`: an edit with no field.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_slug } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: >-
+            `bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_content_editor`: create,
+            edit or withdraw without content_editor, or publish of help or update without it. `not_rules_data_editor`: publish of a guide or
+            occupation text without rules_data_editor. `not_publisher`: publish with neither role.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_content_editor } } }
+        '404':
+          description: "`not_found`: no such page."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`slug_taken`: a page with this kind and slug exists. `not_editable`: edit of a published page. `already_published`: publish of a published page. `not_published`: withdraw of a page that is not published. `needs_source_and_checked_on`: publish of a non-help page without both."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: needs_source_and_checked_on } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/employer-jobs:
+    get:
+      operationId: listEmployerJobQueue
+      summary: List a held employer or agency job queue, or show one item
+      description: >-
+        Without `id`: the open and claimed items of one queue (`queue` required), oldest first, 20 a page. With `id`: one item of the three
+        queues with its advert text, whatever its status. scam_flag is for trust_and_safety, post_strike_job_review and agency_client_check
+        for account_reviewer; an administrator may read and act on all three. Only `id`, `queue` and `after`, each at most once (anything
+        else is `bad_query`).
+      security: [{ staffSession: [] }]
+      x-roles: [trust_and_safety (scam_flag), account_reviewer (post_strike_job_review, agency_client_check), administrator (all three)]
+      x-rate-limit: none
+      parameters:
+        - { name: queue, in: query, required: false, description: "Required without `id`.", schema: { type: string, enum: [scam_flag, post_strike_job_review, agency_client_check] } }
+        - { name: id, in: query, required: false, schema: { type: string }, example: '2201' }
+        - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: The page (no `id`), or `{ item }` with `advertText` (with `id`).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [items, next]
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/JobQueueItem' } }
+                      next: { type: [string, 'null'] }
+                  - type: object
+                    required: [item]
+                    properties:
+                      item: { $ref: '#/components/schemas/JobQueueItem' }
+              example:
+                items:
+                  - { id: '2201', queue: agency_client_check, status: open, claimedBy: null, reason: client_not_found, jobId: '5501', jobStatus: in_review, source: agency, title: Staff Nurse, employerName: Example Recruitment Ltd, county: Dublin, occupationCode: '2231', permitType: critical_skills, salaryLow: 38000, salaryHigh: 45000, payGrade: null, badge: null, closesAt: '2026-12-31T23:59:59.000Z', organisationId: '312', company: Example Recruitment Ltd, companyStatus: verified, restricted: false, clientName: Example Hospital, clientCheck: not_found }
+                next: null
+        '400':
+          description: "`bad_query`: an unknown or repeated key. `bad_queue`: no `queue` (without `id`) or an unknown one. `bad_cursor`: a token this list did not make."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_queue } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_reviewer`: no role for any of the queues, or not for this queue or this item's queue."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_reviewer } } }
+        '404':
+          description: "`not_found`: no such item (also an id that is not an id)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: actOnEmployerJobItem
+      summary: Claim, release, approve or reject a held employer or agency job
+      description: >-
+        `claim` takes an open item (or a stale claim of someone else). Only the claimer releases, approves or rejects. `approve` closes the
+        item; the job goes live only when no other open item of the three queues holds it and the company may go live. `reject` closes the
+        item and closes the job as removed (it never comes back), dropping its other items. The Origin header must be the admin app's origin.
+      security: [{ staffSession: [] }]
+      x-roles: [trust_and_safety (scam_flag), account_reviewer (post_strike_job_review, agency_client_check), administrator (all three)]
+      x-rate-limit: none
+      x-body-cap: 300
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, itemId]
+                  properties:
+                    action: { type: string, enum: [claim, release, approve] }
+                    itemId: { $ref: '#/components/schemas/Id' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, itemId, reason]
+                  properties:
+                    action: { const: reject }
+                    itemId: { $ref: '#/components/schemas/Id' }
+                    reason: { $ref: '#/components/schemas/ReasonCode' }
+            example: { action: approve, itemId: '2201' }
+      responses:
+        '200':
+          description: "`approve` also gives the job's status after it (live, or still in_review while another item holds it); the rest `{ ok: true }`."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { const: true }
+                  jobId: { $ref: '#/components/schemas/Id' }
+                  jobStatus: { type: string, enum: [live, in_review] }
+              example: { ok: true, jobId: '5501', jobStatus: live }
+        '400':
+          description: "`bad_body`: not one JSON object, an unknown or missing field, or over 300 characters. `bad_action`: unknown action. `bad_item_id`: not an id. `bad_reason`: not a reason code."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_reason } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_reviewer`: no role for this item's queue."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_reviewer } } }
+        '404':
+          description: "`not_found`: no such item."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`already_decided`, `claimed_by_other`, `not_claimed`, `not_claimer`: the item's state does not allow it. `job_not_in_review`: the job is no longer in review. `company_not_active`: approve of a job whose company may not go live (not verified, or suspended, banned or closed)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_claimer } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/fetched-jobs:
+    get:
+      operationId: listFetchedJobQueue
+      summary: List the fetched-job queue, or show one item
+      description: >-
+        Without `id`: the open and claimed fetched-job review items, oldest first, 20 a page. With `id`: one item with the saved advert text,
+        whatever its status. Only `id` and `after`, each at most once (anything else is `bad_query`). No role stands in for
+        fetched_job_reviewer, not even administrator.
+      security: [{ staffSession: [] }]
+      x-roles: [fetched_job_reviewer]
+      x-rate-limit: none
+      parameters:
+        - { name: id, in: query, required: false, schema: { type: string }, example: '3301' }
+        - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: The page (no `id`), or `{ item }` with `advertText` (with `id`).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [items, next]
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/FetchedQueueItem' } }
+                      next: { type: [string, 'null'] }
+                  - type: object
+                    required: [item]
+                    properties:
+                      item: { $ref: '#/components/schemas/FetchedQueueItem' }
+              example:
+                items:
+                  - { id: '3301', status: open, claimedBy: null, jobId: '6601', organisationId: '320', title: Software Engineer, employerName: Example Software Ltd, advertUrl: 'https://jobs.example.com/12345', occupationCode: null, permitHistory: has_history, sponsorPermits: 14, stage: 4 occupation, reason: occupation unclear }
+                next: null
+        '400':
+          description: "`bad_query`: an unknown or repeated key. `bad_cursor`: a token this list did not make."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_reviewer`: no fetched_job_reviewer role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_reviewer } } }
+        '404':
+          description: "`not_found`: no such item (also an id that is not an id)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: actOnFetchedJobItem
+      summary: Claim, release, approve or reject a fetched job
+      description: >-
+        `claim` takes an open item (or a stale claim). Only the claimer releases, approves or rejects. `approve` re-runs the rules chain on
+        the saved advert with the claimer's occupation code (four digits, on the Critical Skills or Ineligible list) and, if given, the pay
+        (whole euros a year, 1 to 1,000,000; a top needs a bottom and may not be below it) and the contract; only a pass the fetcher would
+        make live goes live, otherwise `rules_failed` with the stage and the item stays claimed. `reject` closes the job as removed. The
+        Origin header must be the admin app's origin.
+      security: [{ staffSession: [] }]
+      x-roles: [fetched_job_reviewer]
+      x-rate-limit: none
+      x-body-cap: 600
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, itemId]
+                  properties:
+                    action: { type: string, enum: [claim, release] }
+                    itemId: { $ref: '#/components/schemas/Id' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, itemId, occupationCode]
+                  properties:
+                    action: { const: approve }
+                    itemId: { $ref: '#/components/schemas/Id' }
+                    occupationCode: { type: string, pattern: '^[0-9]{4}$' }
+                    salaryLow: { type: integer, minimum: 1, maximum: 1000000 }
+                    salaryHigh: { type: integer, minimum: 1, maximum: 1000000 }
+                    contractConfirmed: { type: boolean }
+                - type: object
+                  additionalProperties: false
+                  required: [action, itemId, reason]
+                  properties:
+                    action: { const: reject }
+                    itemId: { $ref: '#/components/schemas/Id' }
+                    reason: { $ref: '#/components/schemas/ReasonCode' }
+            example: { action: approve, itemId: '3301', occupationCode: '2136', salaryLow: 45000, salaryHigh: 60000, contractConfirmed: true }
+      responses:
+        '200':
+          description: "`approve` also gives the job and its pass route; the rest `{ ok: true }`."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { const: true }
+                  jobId: { $ref: '#/components/schemas/Id' }
+                  passRoute: { type: string, enum: [stated_pay, big_company] }
+              example: { ok: true, jobId: '6601', passRoute: stated_pay }
+        '400':
+          description: >-
+            `bad_body`: not one JSON object, an unknown or missing field, or over 600 characters. `bad_action`: unknown action.
+            `bad_item_id`: not an id. `bad_occupation_code`: not four digits, or on neither list. `bad_salary`: out of range, a top with no
+            bottom, or a top below the bottom. `bad_input`: contractConfirmed not a boolean. `bad_reason`: not a reason code.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_salary } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_reviewer`: no fetched_job_reviewer role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_origin } } }
+        '404':
+          description: "`not_found`: no such item."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: >-
+            `already_decided`, `claimed_by_other`, `not_claimed`, `not_claimer`: the item's state does not allow it. `job_not_in_review`: the
+            job left review. `no_advert_text`: no saved advert to re-run the rules on. `rules_failed`: the rules did not pass; `stage` names
+            the stage that failed.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: rules_failed, stage: 5 pay } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/manual-jobs:
+    get:
+      operationId: listManualPosts
+      summary: List the staff manual posts
+      description: >-
+        The jobs staff posted by hand, newest first, 20 a page. The next page is asked for with `before` (the `next` value of the page
+        before, here a plain job id). `reason` says why a draft is not listed. Other query keys are ignored.
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer, trust_and_safety, administrator]
+      x-rate-limit: none
+      parameters:
+        - { name: before, in: query, required: false, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/ManualRow' } }
+                  next: { type: [string, 'null'] }
+              example:
+                items:
+                  - { id: '7701', organisation_id: '310', display_name: Example Care Ltd, title: Senior Care Assistant, status: draft, pass_route: null, posted_by_staff_id: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', posted_at: '2026-11-18 09:30:00.123456+00', closes_at: '2026-12-31 23:59:59+00', closed_at: null, reason: pay_below_minimum }
+                next: null
+        '400':
+          description: "`bad_cursor`: `before` is not an id."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_manual_viewer`: none of the three roles."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_manual_viewer } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: actOnManualPost
+      summary: Post a job by hand, or close one's own manual post
+      description: >-
+        `create` posts a job for an existing employer or agency. It is listed (live, "Critical Skills eligible") only when it passes the
+        checks an employer post runs (the occupation list, the contract, the rules chain, then the pay against the minimum for the stated
+        hours); otherwise it stays a draft and `reason` says why. Never "Sponsor confirmed". `close` closes a manual post the same staff
+        member posted. The Origin header must be the admin app's origin. Field rules for create: title 2 to 200 characters on one line;
+        description 20 to 10,000 characters (line breaks and tabs allowed); county one of the 26 counties; occupationCode a SOC 2010 code;
+        contractMonths 1 to 600 or null (null means permanent); salaryLow and salaryHigh 1 to 1,000,000 or null (pay or a public pay grade
+        is needed; a top needs a bottom and may not be below it); payGrade 1 to 100 characters or null; healthInsuranceEur 0 to 50,000 or
+        null; weeklyHours 1 to 60; closesOn a real day, after now and at most 90 days ahead; applyUrl an https address of 10 to 500
+        characters with no user name or password.
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer]
+      x-rate-limit: none
+      x-body-cap: 30000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, organisationId, title, description, county, occupationCode, weeklyHours, closesOn, applyUrl]
+                  properties:
+                    action: { const: create }
+                    organisationId: { $ref: '#/components/schemas/Id' }
+                    title: { type: string, minLength: 2, maxLength: 200 }
+                    description: { type: string, minLength: 20, maxLength: 10000 }
+                    county: { type: string, enum: [Carlow, Cavan, Clare, Cork, Donegal, Dublin, Galway, Kerry, Kildare, Kilkenny, Laois, Leitrim, Limerick, Longford, Louth, Mayo, Meath, Monaghan, Offaly, Roscommon, Sligo, Tipperary, Waterford, Westmeath, Wexford, Wicklow] }
+                    occupationCode: { type: string, pattern: '^[0-9]{4}$' }
+                    contractMonths: { type: [integer, 'null'], minimum: 1, maximum: 600 }
+                    salaryLow: { type: [integer, 'null'], minimum: 1, maximum: 1000000 }
+                    salaryHigh: { type: [integer, 'null'], minimum: 1, maximum: 1000000 }
+                    payGrade: { type: [string, 'null'], minLength: 1, maxLength: 100 }
+                    healthInsuranceEur: { type: [integer, 'null'], minimum: 0, maximum: 50000 }
+                    weeklyHours: { type: integer, minimum: 1, maximum: 60 }
+                    closesOn: { $ref: '#/components/schemas/Date' }
+                    applyUrl: { type: string, format: uri, minLength: 10, maxLength: 500 }
+                - type: object
+                  additionalProperties: false
+                  required: [action, jobId]
+                  properties:
+                    action: { const: close }
+                    jobId: { $ref: '#/components/schemas/Id' }
+            example: { action: close, jobId: '7701' }
+      responses:
+        '200':
+          description: "`create`: the job, its status and why it is a draft. `close`: the job id."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, jobId]
+                properties:
+                  ok: { const: true }
+                  jobId: { $ref: '#/components/schemas/Id' }
+                  status: { type: string, enum: [live, draft] }
+                  passRoute: { type: [string, 'null'], enum: [stated_pay, public_pay, null] }
+                  reason:
+                    type: [object, 'null']
+                    properties:
+                      code: { type: string }
+                      stage: { type: string }
+              example: { ok: true, jobId: '7701', status: draft, passRoute: null, reason: { code: pay_below_minimum } }
+        '400':
+          description: >-
+            `bad_body`: not one JSON object, an unknown field, or over 30,000 characters. `bad_action`: not create or close. `bad_input`:
+            close with a jobId that is not an id. Create: `bad_organisation_id`, `bad_title`, `bad_apply_url`, `bad_description`,
+            `bad_county`, `bad_occupation_code`, `bad_contract_months`, `bad_salary`, `bad_pay_grade`, `bad_health_insurance`,
+            `bad_weekly_hours`, `bad_closes_on` (not a real day), `bad_closing_date` (in the past or over 90 days ahead).
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_closing_date } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_account_reviewer`: no account_reviewer role. `not_poster`: close of a manual post somebody else posted."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_poster } } }
+        '404':
+          description: "`company_not_found`: no such company (create). `not_found`: no such manual post (close)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: company_not_found } } }
+        '409':
+          description: "`company_not_postable`: not an employer or agency, merged, or rejected, closed, banned or suspended. `bad_state`: close of a post already closed or hidden."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: company_not_postable } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/pay-floors:
+    get:
+      operationId: listFloorChecks
+      summary: List pay floors waiting for a check, or show one
+      description: >-
+        Without `id`: the signed pay floors waiting for their staff check, oldest first, 20 a page. With `id` (a floor id, not an item id):
+        that floor's check item, whatever its state. Other query keys are ignored.
+      security: [{ staffSession: [] }]
+      x-roles: [rules_data_editor, administrator]
+      x-rate-limit: none
+      parameters:
+        - { name: id, in: query, required: false, description: "A pay floor id.", schema: { type: string }, example: '61' }
+        - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: The page (no `id`), or `{ item }` (with `id`).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [items, next]
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/FloorCheck' } }
+                      next: { type: [string, 'null'] }
+                  - type: object
+                    required: [item]
+                    properties:
+                      item: { $ref: '#/components/schemas/FloorCheck' }
+              example:
+                items:
+                  - { floorId: '61', itemId: '4401', createdAt: '2026-11-18 09:30:00.123456+00', roleFamily: '2136', floorEur: 52000, signedAt: '2026-11-18 09:30:00.123456+00', validUntil: '2027-11-18 09:30:00.123456+00', signerName: Example Signer, signerTitle: Account owner, organisationId: '330', displayName: Example Global Ltd, kind: employer, isBigCompany: true, organisationStatus: verified, currentFloorEur: null, requestId: null, proposedBy: null }
+                next: null
+        '400':
+          description: "`bad_cursor`: a token this list did not make."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_floor_staff`: neither rules_data_editor nor administrator."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_floor_staff } } }
+        '404':
+          description: "`not_found`: the floor has no check item (also an id that is not an id)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: actOnPayFloor
+      summary: Propose, confirm or reject a pay floor
+      description: >-
+        Two people: a rules_data_editor checks the floor and `propose`s it; an administrator who did not propose `confirm`s, and the floor
+        becomes active at once (an active floor of the same role family is replaced). `reject` (either role, a reason code) ends the floor
+        and drops a pending proposal. The Origin header must be the admin app's origin.
+      security: [{ staffSession: [] }]
+      x-roles: [rules_data_editor (propose), administrator (confirm), rules_data_editor or administrator (reject)]
+      x-rate-limit: none
+      x-body-cap: 500
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, floorId]
+                  properties:
+                    action: { type: string, enum: [propose, confirm] }
+                    floorId: { $ref: '#/components/schemas/Id' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, floorId, reason]
+                  properties:
+                    action: { const: reject }
+                    floorId: { $ref: '#/components/schemas/Id' }
+                    reason: { $ref: '#/components/schemas/ReasonCode' }
+            example: { action: propose, floorId: '61' }
+      responses:
+        '200':
+          description: "`propose`: the approval request. `confirm`: the floor and the floor it replaced. `reject`: `{ ok: true }`."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { const: true }
+                  requestId: { $ref: '#/components/schemas/Id' }
+                  floorId: { $ref: '#/components/schemas/Id' }
+                  replacedId: { type: [string, 'null'] }
+              example: { ok: true, floorId: '61', replacedId: null }
+        '400':
+          description: "`bad_body`: not one JSON object, an unknown field, or over 500 characters. `bad_action`: unknown action. `bad_floor_id`: not an id. `bad_reason`: reject without a reason code, or a reason on propose or confirm."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_reason } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_rules_editor`: propose without rules_data_editor. `not_administrator`: confirm without administrator. `not_floor_staff`: reject with neither role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
+        '404':
+          description: "`not_found`: no such floor."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`floor_not_pending`: the floor is not waiting for its check. `floor_expired`, `not_big_company`, `organisation_not_active`: the floor can no longer be made active. `decision_pending`: propose when a proposal waits. `nothing_pending`: confirm with no proposal. `same_person`: the proposer confirming."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: same_person } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/rules:
+    get:
+      operationId: listRules
+      summary: List the rules versions
+      description: >-
+        The rules versions in force today, the confirmed ones still to come, and the pending proposals with their change against the
+        version in force (entries added, removed and changed). Any active staff member. Query keys are ignored.
+      security: [{ staffSession: [] }]
+      x-roles: [any active staff member]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The versions and proposals.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [inForce, upcoming, pending]
+                properties:
+                  inForce: { type: array, items: { $ref: '#/components/schemas/RulesVersion' } }
+                  upcoming: { type: array, items: { $ref: '#/components/schemas/RulesVersion' } }
+                  pending:
+                    type: array
+                    items:
+                      type: object
+                      required: [requestId, kind, proposedBy, createdAt]
+                      properties:
+                        requestId: { $ref: '#/components/schemas/Id' }
+                        kind: { type: string, description: "A rules kind, or `big_company_flag` for the flag on one company." }
+                        effectiveFrom: { type: string }
+                        organisationId: { $ref: '#/components/schemas/Id' }
+                        displayName: { type: [string, 'null'] }
+                        proposedBy: { type: string }
+                        createdAt: { type: string }
+                        change: { $ref: '#/components/schemas/RulesChange' }
+              example:
+                inForce: [{ kind: minimums, versionId: '3', effectiveFrom: '2026-01-01', data: { criticalSkills: 40000 } }]
+                upcoming: []
+                pending: [{ requestId: '90', kind: big_company_flag, organisationId: '330', displayName: Example Global Ltd, proposedBy: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', createdAt: '2026-11-18 09:30:00.123456+00' }]
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_active_staff } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: actOnRules
+      summary: Propose, confirm, refuse or withdraw a rules change
+      description: >-
+        `propose` (rules_data_editor): a whole new version of one kind, in force from `effectiveFrom` (today or later); `data` is checked
+        for its kind (packages/db/src/rules-data.ts), and a new or changed big-company name needs its link, date read and next review date.
+        One pending proposal per kind. `propose_flag` (rules_data_editor): set the big-company flag on one company, refused unless one of
+        its names matches a big-company name in force. `confirm` and `refuse` (an administrator who did not propose): confirm writes the
+        version or sets the flag in the same transaction; confirming new minimums queues one email and portal notice per company with a
+        live or draft job. `withdraw`: the proposer withdraws their own proposal. The Origin header must be the admin app's origin.
+      security: [{ staffSession: [] }]
+      x-roles: [rules_data_editor (propose, propose_flag), administrator (confirm, refuse), the proposer (withdraw)]
+      x-rate-limit: none
+      x-body-cap: 300000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, kind, effectiveFrom, data]
+                  properties:
+                    action: { const: propose }
+                    kind: { $ref: '#/components/schemas/RulesKind' }
+                    effectiveFrom: { $ref: '#/components/schemas/Date' }
+                    data: { description: The whole version for its kind. }
+                - type: object
+                  additionalProperties: false
+                  required: [action, organisationId]
+                  properties:
+                    action: { const: propose_flag }
+                    organisationId: { $ref: '#/components/schemas/Id' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, requestId]
+                  properties:
+                    action: { type: string, enum: [confirm, refuse, withdraw] }
+                    requestId: { $ref: '#/components/schemas/Id' }
+            example: { action: propose_flag, organisationId: '330' }
+      responses:
+        '200':
+          description: "`propose`: the request and the change. `propose_flag`: the request. `confirm`: the version written (null for a flag) and the emails queued. `refuse`, `withdraw`: `{ ok: true }`."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { const: true }
+                  requestId: { $ref: '#/components/schemas/Id' }
+                  change: { $ref: '#/components/schemas/RulesChange' }
+                  versionId: { type: [string, 'null'] }
+                  notices: { type: integer }
+              example: { ok: true, versionId: '4', notices: 12 }
+        '400':
+          description: >-
+            `bad_body`: not one JSON object, a field that does not belong to the action, a missing field, kind or effectiveFrom not a
+            string, or over 300,000 characters. `bad_action`: unknown action. `bad_id`: requestId or organisationId not an id. `bad_kind`:
+            not a rules kind. `bad_date`: not a real day. `bad_data`: the data does not fit its kind; `detail` names the first problem
+            (`RulesDataError`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RulesDataError' }
+              example: { error: bad_data, detail: 'minimums: checkedOn is not a date' }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_rules_editor`: propose without rules_data_editor. `not_administrator`: confirm or refuse without administrator. `not_proposer`: withdraw of someone else's proposal."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_proposer } } }
+        '404':
+          description: "`not_found`: no such company (propose_flag) or no such rules request (confirm, refuse, withdraw)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`date_in_past`: effectiveFrom before today. `no_change`: the data equals the version in force. `decision_pending`: a proposal for this kind or company waits already. `already_big`: the company has the flag. `no_name_match`: none of the company's names is a big-company name in force. `not_pending`: the request is not pending. `same_person`: the proposer confirming or refusing. `date_passed`: confirm after the proposed date."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: no_change } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/staff:
+    get:
+      operationId: listStaff
+      summary: List staff logins and pending role grants
+      description: >-
+        Every staff login with its roles and status (at most 200; `truncated` says more exist), and the role grants waiting for a second
+        administrator. No query key is allowed (`bad_query`).
+      security: [{ staffSession: [] }]
+      x-roles: [administrator]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The team.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [staff, truncated, pending]
+                properties:
+                  staff: { type: array, items: { $ref: '#/components/schemas/StaffRow' } }
+                  truncated: { type: boolean }
+                  pending:
+                    type: array
+                    items:
+                      type: object
+                      required: [requestId, staffId, role, proposedBy, createdAt]
+                      properties:
+                        requestId: { $ref: '#/components/schemas/Id' }
+                        staffId: { $ref: '#/components/schemas/LoginId' }
+                        role: { $ref: '#/components/schemas/StaffRole' }
+                        proposedBy: { $ref: '#/components/schemas/LoginId' }
+                        createdAt: { $ref: '#/components/schemas/DbTime' }
+              example:
+                staff: [{ id: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', name: Example Reviewer, email: reviewer@example.com, status: active, createdAt: '2026-11-01 09:30:00.123456+00', roles: [account_reviewer] }]
+                truncated: false
+                pending: []
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_administrator`: no administrator role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: actOnStaff
+      summary: Grant, remove or confirm roles; disable or enable a login
+      description: >-
+        `propose_role`: an administrator proposes a role for a login (one pending grant per login and kind). `confirm_role`: a different
+        administrator confirms and the role is written. `refuse_role`: a different administrator refuses, or the proposer withdraws.
+        `remove_role`: one administrator removes a role at once. `disable`: the login is disabled and its sessions end in the same
+        transaction. `enable`: a disabled login with no roles is turned back on. Nothing here makes a login (the owner's command does). The
+        last active administrator cannot lose the role or be disabled. The Origin header must be the admin app's origin.
+      security: [{ staffSession: [] }]
+      x-roles: [administrator]
+      x-rate-limit: none
+      x-body-cap: 500
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, staffId, role]
+                  properties:
+                    action: { type: string, enum: [propose_role, remove_role] }
+                    staffId: { $ref: '#/components/schemas/LoginId' }
+                    role: { $ref: '#/components/schemas/StaffRole' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, requestId]
+                  properties:
+                    action: { type: string, enum: [confirm_role, refuse_role] }
+                    requestId: { $ref: '#/components/schemas/Id' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, staffId]
+                  properties:
+                    action: { type: string, enum: [disable, enable] }
+                    staffId: { $ref: '#/components/schemas/LoginId' }
+            example: { action: propose_role, staffId: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', role: content_editor }
+      responses:
+        '200':
+          description: "`propose_role`: the request id. `confirm_role`: the login and role written. `disable`: the sessions ended. The rest `{ ok: true }`."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { const: true }
+                  requestId: { $ref: '#/components/schemas/Id' }
+                  staffId: { $ref: '#/components/schemas/LoginId' }
+                  role: { $ref: '#/components/schemas/StaffRole' }
+                  sessionsEnded: { type: integer }
+              example: { ok: true, requestId: '120' }
+        '400':
+          description: "`bad_body`: not one JSON object, an unknown or missing field, or over 500 characters. `bad_action`: unknown action. `bad_staff_id`: not a login id. `bad_request_id`: not an id. `bad_role`: not one of the seven roles."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_role } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_administrator`: no administrator role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
+        '404':
+          description: "`not_found`: no such login, request, or role on that login."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`target_not_active`: the login is disabled. `already_holds`: it has the role. `grant_pending`: a grant of that kind waits already. `request_not_pending`: the request is not pending. `same_person`: the proposer confirming. `last_administrator`: it would leave no active administrator. `already_disabled`, `not_disabled`: the login's status. `holds_roles`: enable of a login that still holds roles."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: last_administrator } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/trust-safety/reports:
+    get:
+      operationId: listReports
+      summary: List open job reports, or show one
+      description: >-
+        Without `id`: the open and job_hidden reports, oldest first, 20 a page (no evidence text, no reporter). With `id`: one report with
+        its evidence, the job as reported and, until it is decided, who reported it. Other query keys are ignored.
+      security: [{ staffSession: [] }]
+      x-roles: [trust_and_safety]
+      x-rate-limit: none
+      parameters:
+        - { name: id, in: query, required: false, schema: { type: string }, example: '801' }
+        - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: The page (no `id`), or `{ item }` (with `id`; adds evidenceText, targetSnapshot, reporterCandidateUserId, reporterPortalUserId, decidedByStaffUserId, decidedAt and caseId).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [items, next]
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/ReportSummary' } }
+                      next: { type: [string, 'null'] }
+                  - type: object
+                    required: [item]
+                    properties:
+                      item:
+                        allOf:
+                          - $ref: '#/components/schemas/ReportSummary'
+                          - type: object
+                            properties:
+                              evidenceText: { type: [string, 'null'] }
+                              targetSnapshot: { description: The job as it was when reported (any JSON). }
+                              reporterCandidateUserId: { type: [string, 'null'] }
+                              reporterPortalUserId: { type: [string, 'null'] }
+                              decidedByStaffUserId: { type: [string, 'null'] }
+                              decidedAt: { $ref: '#/components/schemas/NullableTimestamp' }
+                              caseId: { type: [string, 'null'] }
+              example:
+                items: [{ id: '801', status: open, targetKind: job, reason: asks_for_money, createdText: '2026-11-18 09:30:00.123456+00', targetJobId: '5501', jobTitle: Staff Nurse, jobStatus: live, organisationId: '312', displayName: Example Recruitment Ltd }]
+                next: null
+        '400':
+          description: "`bad_cursor`: a token this list did not make."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_trust_and_safety`: no trust_and_safety role (no other role stands in)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_trust_and_safety } } }
+        '404':
+          description: "`not_found`: no such report (also an id that is not an id)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: actOnReport
+      summary: Hide the reported job, clear the report, or uphold it
+      description: >-
+        `hide` hides the live job at once. `clear` closes the report and the job comes back. `uphold` closes the report, the database closes
+        a hidden job, and a case opens on the job's company (`caseKind` and `reasonCode` must pair: false_claim with false_sponsorship,
+        false_pay_floor with false_pay_floor, instant_ban with asks_for_money, fake_company or fake_job). `noticeSummary` 1 to 1,000
+        characters (line breaks and tabs allowed). The Origin header must be the admin app's origin.
+      security: [{ staffSession: [] }]
+      x-roles: [trust_and_safety]
+      x-rate-limit: none
+      x-body-cap: 12000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, reportId]
+                  properties:
+                    action: { type: string, enum: [hide, clear] }
+                    reportId: { $ref: '#/components/schemas/Id' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, reportId, caseKind, reasonCode]
+                  properties:
+                    action: { const: uphold }
+                    reportId: { $ref: '#/components/schemas/Id' }
+                    caseKind: { type: string, enum: [false_claim, false_pay_floor, instant_ban] }
+                    reasonCode: { type: string, enum: [false_sponsorship, false_pay_floor, asks_for_money, fake_company, fake_job] }
+                    noticeSummary: { type: string, maxLength: 1000 }
+            example: { action: uphold, reportId: '801', caseKind: instant_ban, reasonCode: asks_for_money }
+      responses:
+        '200':
+          description: "`uphold` answers the new case id; the rest `{ ok: true }`."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { const: true }
+                  caseId: { $ref: '#/components/schemas/Id' }
+              example: { ok: true, caseId: '51' }
+        '400':
+          description: "`bad_body`: not one JSON object, an unknown or missing field, or over 12,000 characters. `bad_action`: unknown action. `bad_id`, `bad_kind`, `bad_reason`, `bad_summary`: a field of the wrong shape; `bad_reason` also when caseKind and reasonCode do not pair."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_reason } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`, `not_trust_and_safety`: as on GET."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_origin } } }
+        '404':
+          description: "`not_found`: no such report."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`already_decided`: the report was cleared or upheld. `already_hidden`: hide of a job hidden already. `job_not_live`: hide of a job that is not live."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: already_hidden } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/trust-safety/cases:
+    get:
+      operationId: listCases
+      summary: List cases that need a step, or show one
+      description: >-
+        Without `id`: the cases that need a step (undecided, an appeal waiting, or a ban lift waiting for its second person), oldest first,
+        20 a page; `after` is the last case id seen (the `next` value, here a plain id). With `id`: one case with its company, pending
+        two-person requests, ban rows and whether the WRC report is ticked off. Other query keys are ignored.
+      security: [{ staffSession: [] }]
+      x-roles: [trust_and_safety]
+      x-rate-limit: none
+      parameters:
+        - { name: id, in: query, required: false, schema: { type: string }, example: '51' }
+        - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: The page (no `id`), or `{ item }` with every case field (with `id`).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [items, next]
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/CaseSummary' } }
+                      next: { type: [string, 'null'] }
+                  - type: object
+                    required: [item]
+                    properties:
+                      item:
+                        type: object
+                        description: >-
+                          The case row in camel case (id, organisationId, caseKind, jobId, reportId, reasonCode, noticeSummary, level, stage,
+                          outcome, the reply and appeal fields and who entered them, decidedBy and decidedAt, banLiftedAt, createdAt), the
+                          company (displayName, organisationKind, organisationStatus, restrictedUntil, claimsRemovedAt), `pending` (the
+                          two-person requests), `bans` and `wrcReported`.
+                        required: [id, organisationId, caseKind, stage, pending, bans, wrcReported]
+                        properties:
+                          id: { $ref: '#/components/schemas/Id' }
+                          organisationId: { $ref: '#/components/schemas/Id' }
+                          caseKind: { type: string }
+                          stage: { type: string }
+                          pending: { type: array, items: { type: object } }
+                          bans: { type: array, items: { type: object } }
+                          wrcReported: { type: boolean }
+              example:
+                items: [{ id: '51', organisationId: '312', displayName: Example Recruitment Ltd, caseKind: instant_ban, reasonCode: asks_for_money, stage: case_open, outcome: null, level: null, replyDueAt: null, appealDueAt: null, createdAt: '2026-11-18T09:30:00.000Z' }]
+                next: null
+        '400':
+          description: "`bad_cursor`: `after` is not an id."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_trust_and_safety`: no trust_and_safety role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_trust_and_safety } } }
+        '404':
+          description: "`not_found`: no such case (also an id that is not an id)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: actOnCase
+      summary: One step of a trust and safety case
+      description: >-
+        `open`: a case on a company (optionally about one of its jobs); an instant_ban case suspends a verified company and hides its live
+        jobs at once. `notify`: tell the employer, starting the 7-day reply window. `record_reply`, `record_appeal`: a reply or appeal that
+        came by email or post, with when it arrived (text 1 to 5,000 characters, line breaks and tabs allowed). `decide`: cleared, strike or
+        (instant_ban cases only) ban; clearing and strike 1 apply at once, strike 2, strike 3 and a ban wait for a second officer;
+        `conclusive` only with ban. `confirm`, `refuse`: the second officer on what waits (never the proposer or whoever entered the
+        reply). `decide_appeal`: upheld or overturned (not by whoever entered the appeal or decided the case). `propose_ban_lift`: propose
+        lifting the case's bans. `mark_wrc`: tick off that an agency's instant-ban case was reported to the WRC. The Origin header must be
+        the admin app's origin.
+      security: [{ staffSession: [] }]
+      x-roles: [trust_and_safety]
+      x-rate-limit: none
+      x-body-cap: 12000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, organisationId, caseKind, reasonCode]
+                  properties:
+                    action: { const: open }
+                    organisationId: { $ref: '#/components/schemas/Id' }
+                    jobId: { $ref: '#/components/schemas/Id' }
+                    caseKind: { type: string, enum: [false_claim, false_pay_floor, instant_ban] }
+                    reasonCode: { type: string, enum: [false_sponsorship, false_pay_floor, asks_for_money, fake_company, fake_job] }
+                    noticeSummary: { type: string, maxLength: 1000 }
+                - type: object
+                  additionalProperties: false
+                  required: [action, caseId]
+                  properties:
+                    action: { type: string, enum: [notify, confirm, refuse, propose_ban_lift, mark_wrc] }
+                    caseId: { $ref: '#/components/schemas/Id' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, caseId, text, receivedAt]
+                  properties:
+                    action: { type: string, enum: [record_reply, record_appeal] }
+                    caseId: { $ref: '#/components/schemas/Id' }
+                    text: { type: string, maxLength: 5000 }
+                    receivedAt: { type: string, description: 'An ISO date and time with a zone, for example 2026-11-17T14:05:00Z.', pattern: '^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d{1,3})?)?(Z|[+-]\d\d:\d\d)$' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, caseId, outcome]
+                  properties:
+                    action: { const: decide }
+                    caseId: { $ref: '#/components/schemas/Id' }
+                    outcome: { type: string, enum: [cleared, strike, ban] }
+                    conclusive: { type: boolean }
+                - type: object
+                  additionalProperties: false
+                  required: [action, caseId, result]
+                  properties:
+                    action: { const: decide_appeal }
+                    caseId: { $ref: '#/components/schemas/Id' }
+                    result: { type: string, enum: [upheld, overturned] }
+            example: { action: decide, caseId: '51', outcome: strike }
+      responses:
+        '200':
+          description: >-
+            `open`: `caseId`. `notify`: `notices` queued. `decide`: `outcome`, `level`, whether it was `applied` and the `requestId` waiting
+            for a second officer. `confirm`: what was `applied` (strike_2, strike_3, ban or ban_lift). `decide_appeal`: `result` and
+            `liftsProposed`. `propose_ban_lift`: `requests`. The rest `{ ok: true }`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { const: true }
+                  caseId: { $ref: '#/components/schemas/Id' }
+                  notices: { type: integer }
+                  outcome: { type: string }
+                  level: { type: integer }
+                  applied: { type: [boolean, string] }
+                  requestId: { $ref: '#/components/schemas/Id' }
+                  result: { type: string }
+                  liftsProposed: { type: integer }
+                  requests: { type: integer }
+              example: { ok: true, outcome: strike, level: 1, applied: true }
+        '400':
+          description: >-
+            `bad_body`: not one JSON object, an unknown or missing field, `conclusive` without outcome ban, or over 12,000 characters.
+            `bad_action`: unknown action. `bad_id`, `bad_kind`, `bad_reason`, `bad_summary`, `bad_text`, `bad_time`, `bad_outcome`,
+            `bad_flag`, `bad_result`: a field of the wrong shape; `bad_reason` also when caseKind and reasonCode do not pair; `bad_outcome`
+            also for ban on a case that is not instant_ban or strike on one that is.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_time } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_trust_and_safety`: no trust_and_safety role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_trust_and_safety } } }
+        '404':
+          description: "`not_found`: no such case, company or job."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: >-
+            `job_not_in_organisation`: open with a job of another company. `already_notified`, `not_notified`, `reply_window_open`: the reply
+            window does not allow it yet. `already_decided`, `decision_pending`, `other_case_pending` (another case of the company waits for
+            its second person), `nothing_pending`, `nothing_to_ban`, `no_ban`: the case's state. `same_person`, `entered_reply`,
+            `entered_appeal`, `decided_case`: the two-person rules. `no_appeal_window`, `already_appealed`, `no_appeal`, `appeal_decided`,
+            `window_closed`: the appeal's state. `not_agency_ban`, `already_marked`: mark_wrc on a case it does not apply to, or twice.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: reply_window_open } } }
+        '500': { $ref: '#/components/responses/ServerError' }

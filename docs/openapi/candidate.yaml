@@ -1,0 +1,1871 @@
+openapi: 3.1.0
+info:
+  title: Candidate API (job seekers and visitors)
+  version: 0.1.0
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+  description: |
+    The routes of the candidate site: the public job list, job, company and occupation reads, the contact and report forms,
+    the alert unsubscribe link, and the signed-in candidate's own data (profile, saved jobs, tracker, alerts, CV, case
+    documents, notification settings, export and account deletion).
+
+    ## Conventions (the same text in candidate.yaml, portal.yaml and admin.yaml)
+
+    - **Origin check on writes.** Every POST, PUT and DELETE that a signed-in person sends must carry an `Origin` header equal to its
+      own app's origin (the `*_AUTH_URL` setting). Anything else is refused with 403 before the body is read. The exceptions are named
+      on the route: the alert unsubscribe (a mail provider's server sends it with no Origin) and the health checks (GET only).
+    - **Body size caps.** Every write has a cap, given on the route in `x-body-cap` (characters of the JSON text, or bytes for a
+      file upload). A `Content-Length` over the cap is refused before the body is read, and a body over the cap after reading is
+      refused too: 413 on the candidate and portal sites, 400 `bad_body` on the admin site. The Better Auth routes
+      (`/api/auth/*`) keep Better Auth's own handling; this repo sets no cap there.
+    - **Strict bodies.** A body must be one JSON object with exactly the documented fields: an unknown field, a wrong type or a
+      value outside its limits is refused with 400 (no field is dropped silently). Strings are trimmed where the route says so and
+      may not hold control characters unless the route says line breaks are allowed.
+    - **Two error formats exist today.** Most candidate and portal routes answer `{ "code": "UPPER_CASE" }` (`CodeError`); the admin
+      routes and a few others answer `{ "error": "lower_case" }` (`ErrorBody`). Each response names which. A 500 never says why
+      (`{ "error": "server_error" }` on admin, an empty or framework body elsewhere); the reason stays in the server log.
+    - **Sessions.** Each app has its own Better Auth login pool and its own cookie (`candidate.session_token`,
+      `portal.session_token`, `staff.session_token`; `__Secure-` in front of the name over HTTPS). A route that needs a session
+      answers 401 without one. Sessions are read from the database on every request (no cookie cache), so a suspended, blocked,
+      disabled or deleted login is refused on its next request.
+    - **Paging.** Lists page by keyset, never by offset: the reply carries an opaque `next` (and sometimes `previous`) token,
+      and the next page is asked for with `after=<token>` (or `before=<token>`). A token works only with the sort and filters it was
+      made for; a changed or forged token is 400. Page sizes are given on each route (job lists 20, a visitor 6, audit 50, notices
+      50, content 20, admin queues 20). Not yet uniform: three admin lists (`/api/trust-safety/cases`,
+      `/api/companies/owner-reassign`, `/api/manual-jobs`) answer `next` as a plain id, and `/api/manual-jobs` pages with `before`.
+    - **Rate limits.** Limits are counted in the database (shared by every server instance). Over a limit the answer is 429; only
+      the public candidate reads send `Retry-After` (seconds). Each write names its limit in `x-rate-limit` ("none" where the code
+      has none, as on the admin routes, which rely on the staff sign-in limits).
+    - **Ids.** Database ids are 64-bit integers. The candidate and admin routes send and take them as strings of digits (`"123"`,
+      pattern `^[1-9][0-9]{0,18}$`), so no client loses precision. Not yet uniform: most portal routes send and take them as JSON
+      numbers (`NumId` in portal.yaml); each field says which. Login ids (Better Auth) are 32 letters and digits.
+    - **Times** are ISO 8601 strings in UTC (`2026-11-18T09:30:00.000Z`); dates without a time are `YYYY-MM-DD`. Not yet uniform:
+      some portal replies send Postgres text (`2026-11-18 09:30:00.123456+00`, `PgTime` in portal.yaml) or an ISO time with a
+      `+00:00` offset; each field says which.
+    - **Examples** are made up. No example holds a real person, company, address or secret.
+servers:
+  - url: /
+    description: The app's own origin (relative; each app is deployed on its own host).
+components:
+  schemas:
+    CodeError:
+      type: object
+      description: The error body of most candidate and portal routes.
+      required: [code]
+      properties:
+        code: { type: string, pattern: '^[A-Z][A-Z0-9_]*$' }
+      example: { code: BAD_REQUEST }
+    ErrorBody:
+      type: object
+      description: The error body of the admin routes and some portal and candidate routes. `stage` is set only when a rules check failed.
+      required: [error]
+      properties:
+        error: { type: string }
+        stage: { type: string }
+      example: { error: bad_body }
+    Id:
+      type: string
+      description: A database id as text.
+      pattern: '^[1-9][0-9]{0,18}$'
+      example: '1042'
+    LoginId:
+      type: string
+      description: A Better Auth login id.
+      pattern: '^[A-Za-z0-9_-]{1,64}$'
+      example: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP'
+    Timestamp:
+      type: string
+      format: date-time
+      description: An ISO 8601 time in UTC.
+      example: '2026-11-18T09:30:00.000Z'
+    Date:
+      type: string
+      format: date
+      example: '2026-11-18'
+    Cursor:
+      type: string
+      description: An opaque keyset paging token from a previous reply. Send it back unchanged.
+      pattern: '^[A-Za-z0-9_-]{1,300}$'
+      example: eyJzIjoic3BvbnNvciIsInEiOmZhbHNlfQ
+    OccupationCode:
+      type: string
+      description: A SOC 2010 unit group code (4 digits) that is on the site's list of codes.
+      pattern: '^[0-9]{4}$'
+      example: '2136'
+    Sector:
+      type: string
+      enum: [health, IT, construction and engineering, finance, pharma and science, other]
+    County:
+      type: string
+      description: One of the 26 counties of the Republic of Ireland.
+      enum: [Carlow, Cavan, Clare, Cork, Donegal, Dublin, Galway, Kerry, Kildare, Kilkenny, Laois, Leitrim, Limerick, Longford, Louth, Mayo, Meath, Monaghan, Offaly, Roscommon, Sligo, Tipperary, Waterford, Westmeath, Wexford, Wicklow]
+    Count:
+      type: [object, 'null']
+      description: The capped count of matching jobs, first page only (null on later pages). `n` stops at 200; `more` true means over 200.
+      required: [n, more]
+      properties:
+        n: { type: integer, minimum: 0, maximum: 200 }
+        more: { type: boolean }
+    JobCard:
+      type: object
+      description: One job as a list shows it.
+      required: [id, title, employerName, county, salaryLow, salaryHigh, salaryLine, payGrade, passRoute, badge, quotaFull, postedAt, sponsorPermits, lastCheckedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        title: { type: string }
+        employerName: { type: string }
+        county: { type: [string, 'null'] }
+        salaryLow: { type: [integer, 'null'], description: Whole euros a year. }
+        salaryHigh: { type: [integer, 'null'] }
+        salaryLine: { type: [string, 'null'], description: 'The salary text without "a year", or the pay grade when no salary is stated.' }
+        payGrade: { type: [string, 'null'] }
+        passRoute: { enum: [stated_pay, big_company, pay_floor, public_pay, null], description: How the job passes the pay rule. }
+        badge: { type: [string, 'null'], description: '`critical_skills_eligible`, `sponsor_confirmed` or null.' }
+        quotaFull: { type: boolean }
+        postedAt: { $ref: '#/components/schemas/Timestamp' }
+        sponsorPermits: { type: [integer, 'null'], description: DETE permits of the last 5 years when the employer has any. }
+        lastCheckedAt: { type: [string, 'null'], format: date-time, description: When the job's source last fetched without error. }
+    PublicJobList:
+      type: object
+      required: [jobs, next, previous, count, signInForMore]
+      properties:
+        jobs: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/JobCard' } }
+        next: { type: [string, 'null'], description: Token for the next page (always null for a visitor). }
+        previous: { type: [string, 'null'], description: Token for the page before (with `before=`). }
+        count: { $ref: '#/components/schemas/Count' }
+        signInForMore: { type: boolean, description: True when a visitor was shown 6 jobs and more exist. }
+    PublicScopedJobs:
+      type: object
+      required: [jobs, next, count, signInForMore]
+      properties:
+        jobs: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/JobCard' } }
+        next: { type: [string, 'null'] }
+        count: { $ref: '#/components/schemas/Count' }
+        signInForMore: { type: boolean }
+    SmallJobCard:
+      type: object
+      description: The card of a saved, tracked or similar job.
+      required: [jobId, title, employerName]
+      properties:
+        jobId: { $ref: '#/components/schemas/Id' }
+        title: { type: string }
+        employerName: { type: string }
+        county: { type: [string, 'null'] }
+        salaryLow: { type: [integer, 'null'] }
+        salaryHigh: { type: [integer, 'null'] }
+        payGrade: { type: [string, 'null'] }
+        badge: { type: [string, 'null'] }
+    Profile:
+      type: object
+      description: The candidate profile. Every field may be null (not given).
+      properties:
+        fullName: { type: [string, 'null'], minLength: 1, maxLength: 120 }
+        phone: { type: [string, 'null'], pattern: '^\+?[0-9 ()-]{5,30}$' }
+        occupationCode: { oneOf: [{ $ref: '#/components/schemas/OccupationCode' }, { type: 'null' }] }
+        yearsExperience: { type: [integer, 'null'], minimum: 0, maximum: 60 }
+        hasRelevantDegree: { type: [boolean, 'null'] }
+        degreeField: { type: [string, 'null'], minLength: 1, maxLength: 120 }
+        degreeAwardedMonth: { type: [string, 'null'], pattern: '^(19[5-9][0-9]|20[0-9][0-9])-(0[1-9]|1[0-2])-01$', description: The first day of the month. Needs `hasRelevantDegree` true. }
+        registrationBody: { type: [string, 'null'], minLength: 1, maxLength: 120 }
+        registrationNumber: { type: [string, 'null'], minLength: 1, maxLength: 60 }
+        registrationStatus: { enum: [none, in_progress, registered, null] }
+        locationKind: { enum: [abroad, ireland, null] }
+        currentStamp: { enum: ['0', '1', '1A', '1G', '1H', '2', '2A', '3', '4', 4EUFAM, 4D, 4S, '5', '6', null], description: Needs `locationKind` ireland. }
+    Alert:
+      type: object
+      required: [id, occupationCode, sector, county, salaryMin, badge, frequency, status, pauseReason, lastSentAt]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        occupationCode: { type: [string, 'null'] }
+        sector: { type: [string, 'null'] }
+        county: { type: [string, 'null'] }
+        salaryMin: { type: [integer, 'null'] }
+        badge: { type: [string, 'null'] }
+        frequency: { enum: [daily, weekly] }
+        status: { enum: [active, paused, unsubscribed] }
+        pauseReason: { type: [string, 'null'], description: '`candidate`, `stamp_4` or null.' }
+        lastSentAt: { type: [string, 'null'], format: date-time }
+    AlertFilters:
+      type: object
+      description: Filters only, no free text. A filter left out or null means "any".
+      properties:
+        occupationCode: { oneOf: [{ $ref: '#/components/schemas/OccupationCode' }, { type: 'null' }] }
+        sector: { oneOf: [{ $ref: '#/components/schemas/Sector' }, { type: 'null' }] }
+        county: { oneOf: [{ $ref: '#/components/schemas/County' }, { type: 'null' }] }
+        salaryMin: { type: [integer, 'null'], minimum: 0, maximum: 1000000 }
+        badge: { enum: [sponsor_confirmed, null] }
+        frequency: { enum: [daily, weekly] }
+    AlertReply:
+      type: object
+      required: [alert]
+      properties:
+        alert: { $ref: '#/components/schemas/Alert' }
+    CaseDocument:
+      type: object
+      required: [id, fileName, contentType, sizeBytes, uploadedAt, copyDeleted]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        fileName: { type: string, maxLength: 200 }
+        contentType: { enum: [pdf, jpeg, png] }
+        sizeBytes: { type: integer }
+        uploadedAt: { $ref: '#/components/schemas/Timestamp' }
+        copyDeleted: { type: boolean, description: True when the stored copy was removed (the row stays). }
+    Cv:
+      type: object
+      required: [fileName, contentType, sizeBytes, uploadedAt]
+      properties:
+        fileName: { type: string, maxLength: 200 }
+        contentType: { enum: [pdf, docx] }
+        sizeBytes: { type: integer, maximum: 4194304 }
+        uploadedAt: { $ref: '#/components/schemas/Timestamp' }
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok: { const: true }
+    Upload:
+      type: object
+      description: 'A multipart/form-data body with exactly one part, named `file`. The type is read from the bytes; the declared type and the name are not trusted.'
+      required: [file]
+      additionalProperties: false
+      properties:
+        file: { type: string, contentMediaType: application/octet-stream, description: At most 4194304 bytes. }
+  headers:
+    RetryAfter:
+      description: Seconds until the limit that was hit has a new window.
+      schema: { type: integer, minimum: 1 }
+      example: 42
+  securitySchemes:
+    candidateSession:
+      type: apiKey
+      in: cookie
+      name: candidate.session_token
+      description: The candidate pool's Better Auth session cookie (`__Secure-candidate.session_token` over HTTPS).
+  responses:
+    BadRequest:
+      description: '`BAD_REQUEST`: the body is not JSON, or a field is unknown, missing, of the wrong type or outside its limits.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: BAD_REQUEST }
+    NoSession:
+      description: '`NO_SESSION`: no candidate session cookie, or it is expired or forged.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: NO_SESSION }
+    ReadForbidden:
+      description: '`REFUSED`: the candidate is suspended or deleted.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: REFUSED }
+    WriteForbidden:
+      description: '`BAD_ORIGIN`: the Origin header is not the candidate site. `REFUSED`: the candidate is suspended or deleted, or a database rule refused the change.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: BAD_ORIGIN }
+    BodyTooLarge:
+      description: '`BODY_TOO_LARGE`: the Content-Length or the body is over the cap.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: BODY_TOO_LARGE }
+    WriteTooMany:
+      description: '`TOO_MANY_REQUESTS`: over 60 writes in 10 minutes by this login (every candidate write counts together). No Retry-After.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: TOO_MANY_REQUESTS }
+    PublicTooMany:
+      description: '`TOO_MANY_REQUESTS`: a visitor over 60 reads a minute or 600 an hour from one address, or a candidate over 300 reads a minute.'
+      headers:
+        Retry-After: { $ref: '#/components/headers/RetryAfter' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: TOO_MANY_REQUESTS }
+    PublicBadRequest:
+      description: '`BAD_REQUEST`: a bad id, slug, code, sort, filter or paging token, a filter given twice, or `after` and `before` together.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: BAD_REQUEST }
+    SignInForMore:
+      description: '`SIGN_IN_FOR_MORE`: a visitor sent `after` or `before`. Visitors see the first 6 jobs only.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: SIGN_IN_FOR_MORE }
+    PublicNotFound:
+      description: '`NOT_FOUND`: no live item with that id, slug or code.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: NOT_FOUND }
+    UploadBadRequest:
+      description: '`BAD_REQUEST`: not multipart/form-data, not exactly one part named `file`, or a bad case id. `EMPTY_FILE`: the file has no bytes.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: EMPTY_FILE }
+    FileTooLarge:
+      description: '`FILE_TOO_LARGE`: the Content-Length or the bytes read are over 4210688 (4 MiB file plus 16 KiB of multipart wrapping), or the file is over 4194304 bytes.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: FILE_TOO_LARGE }
+    WrongFileType:
+      description: '`WRONG_FILE_TYPE`: the bytes are not one of the allowed types.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: WRONG_FILE_TYPE }
+    UploadTooMany:
+      description: '`TOO_MANY_REQUESTS`: over 60 candidate writes in 10 minutes, or over 10 uploads in an hour, by this login.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: TOO_MANY_REQUESTS }
+    FilesUnavailable:
+      description: '`FILES_UNAVAILABLE`: file storage is not set up on this deployment.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: FILES_UNAVAILABLE }
+tags:
+  - name: public
+    description: Open to visitors; a signed-in candidate gets more.
+  - name: account
+    description: The signed-in candidate's own data.
+  - name: alerts
+    description: Job alerts and the unsubscribe link.
+  - name: files
+    description: The CV and services case documents.
+  - name: auth
+    description: Better Auth's own routes.
+  - name: ops
+    description: Health check.
+paths:
+  /api/health:
+    get:
+      operationId: candidateHealth
+      tags: [ops]
+      summary: Health check
+      description: Answers whether the database answers `select 1`. The result is cached for a short time. No session, no rate limit.
+      security: []
+      x-roles: [anyone]
+      x-no-4xx: The route reads nothing from the request, so it has no client error.
+      responses:
+        '200':
+          description: The database answers.
+          content:
+            application/json:
+              schema: &health
+                type: object
+                required: [ok, database]
+                properties:
+                  ok: { type: boolean }
+                  database: { type: boolean }
+              example: { ok: true, database: true }
+        '503':
+          description: The database does not answer (same body, both false).
+          content:
+            application/json:
+              schema: *health
+              example: { ok: false, database: false }
+
+  /api/auth/candidate/{path}:
+    parameters:
+      - name: path
+        in: path
+        required: true
+        description: The Better Auth endpoint path (it may hold slashes), for example `sign-in/email`.
+        schema: { type: string }
+        example: sign-in/email
+    get:
+      operationId: candidateAuthGet
+      tags: [auth]
+      summary: Better Auth GET endpoints (candidate pool)
+      description: |
+        Handed to Better Auth unchanged (basePath `/api/auth/candidate`). The GET endpoints the site uses: `get-session`,
+        `verify-email?token=` (the link in the confirmation email), `callback/google` (Google sign-in, on only when
+        GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set) and `error`. Request and reply shapes are Better Auth's own; see its docs.
+        The session cookie is `candidate.session_token` (`__Secure-` over HTTPS); sessions are read from the database every time.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      responses:
+        '200':
+          description: Better Auth's reply (for `get-session`, the session and user, or null).
+          content:
+            application/json:
+              schema: { type: [object, 'null'] }
+              example: null
+        '302':
+          description: A redirect (email confirmation and Google callback).
+          headers:
+            Location:
+              schema: { type: string }
+              example: /
+        '400':
+          description: Better Auth refused the request (its own `{ code, message }` body).
+          content:
+            application/json:
+              schema: { type: object }
+              example: { code: INVALID_TOKEN, message: invalid token }
+    post:
+      operationId: candidateAuthPost
+      tags: [auth]
+      summary: Better Auth POST endpoints (candidate pool)
+      description: |
+        Handed to Better Auth after the bot check. The POST endpoints the site uses: `sign-up/email`, `sign-in/email`,
+        `sign-in/social` (Google), `sign-out`, `send-verification-email`, `request-password-reset` and `reset-password`.
+
+        - Bot check first (only when BOT_CHECK=on) on `sign-up/email`, `sign-in/email`, `request-password-reset` and
+          `send-verification-email`: 403 `{ "code": "BOT_SUSPECTED" }` before Better Auth reads the body.
+        - Better Auth's origin check is on (trusted origin: CANDIDATE_AUTH_URL).
+        - Rate limits per client address (`x-vercel-forwarded-for`), stored in the database: `sign-in/email` and `sign-up/email`
+          5 a minute; `request-password-reset` and `send-verification-email` 3 in 5 minutes. On top, those two are limited to 3 an
+          hour per email address (keyed hash, counted before the address is looked up; an address over 254 characters is 400
+          `INVALID_EMAIL`).
+        - `sign-up/email` takes Better Auth's `name`, `email`, `password` plus the three answers `needsPermit`, `over18` and
+          `acceptsTerms`, each the JSON value `true`; otherwise 400 `SIGNUP_ANSWERS_REFUSED`. A name must be 1 to 100 characters
+          (`SIGNUP_NAME_REFUSED`). Email must be confirmed before sign-in works.
+        - A suspended or deleted candidate cannot start a session (403).
+        - A password reset ends every other session.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: sign-in and sign-up 5 a minute per address; reset and resend 3 in 5 minutes per address and 3 an hour per email
+      x-body-cap: none set by this repo (Better Auth's own handling)
+      responses:
+        '200':
+          description: Better Auth's reply.
+          content:
+            application/json:
+              schema: { type: object }
+              example: { status: true }
+        '400':
+          description: Better Auth or the sign-up check refused the body (`SIGNUP_ANSWERS_REFUSED`, `SIGNUP_NAME_REFUSED`, `INVALID_EMAIL` and Better Auth's own codes).
+          content:
+            application/json:
+              schema: { type: object }
+              example: { code: SIGNUP_ANSWERS_REFUSED, message: You must accept the terms. }
+        '401':
+          description: Wrong email or password (Better Auth's own body).
+          content:
+            application/json:
+              schema: { type: object }
+              example: { code: INVALID_EMAIL_OR_PASSWORD, message: Invalid email or password }
+        '403':
+          description: '`BOT_SUSPECTED` (`{ code }` from the bot check), an unconfirmed email, a refused origin, or a suspended or deleted account (Better Auth''s own body).'
+          content:
+            application/json:
+              schema: { type: object }
+              example: { code: BOT_SUSPECTED }
+        '429':
+          description: Over a Better Auth rate limit or the per-email limit.
+          content:
+            application/json:
+              schema: { type: object }
+              example: { message: Too many requests. Please try again later. }
+
+  /api/jobs:
+    get:
+      operationId: listJobs
+      tags: [public]
+      summary: Job list and search
+      description: |
+        Live jobs, sponsor history first by default; full-quota jobs sort last. A visitor (no candidate session, or a refused one)
+        gets the first 6 jobs, no paging tokens, and `signInForMore`. A signed-in candidate gets 20 a page and `next` and `previous`.
+        Each filter may be given once; an empty value means "any". Other query keys are ignored. A token works only with the
+        sort and filters it was made with.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      parameters:
+        - { name: sort, in: query, schema: { enum: [sponsor, newest, salary], default: sponsor } }
+        - { name: after, in: query, description: Signed in only. Not with `before`., schema: { $ref: '#/components/schemas/Cursor' } }
+        - { name: before, in: query, description: Signed in only. Not with `after`., schema: { $ref: '#/components/schemas/Cursor' } }
+        - { name: q, in: query, description: 'Keyword text, trimmed, no control characters.', schema: { type: string, maxLength: 200 } }
+        - { name: occupationCode, in: query, schema: { $ref: '#/components/schemas/OccupationCode' } }
+        - { name: sector, in: query, schema: { $ref: '#/components/schemas/Sector' } }
+        - { name: county, in: query, schema: { $ref: '#/components/schemas/County' } }
+        - { name: salaryMin, in: query, description: Whole euros a year; only jobs that state a salary., schema: { type: integer, minimum: 0, maximum: 1000000 } }
+        - { name: badge, in: query, schema: { enum: [sponsor_confirmed] } }
+        - { name: postedWithin, in: query, description: Days., schema: { type: integer, enum: [1, 3, 7, 30] } }
+        - { name: salaryStated, in: query, schema: { enum: ['true'] } }
+      responses:
+        '200':
+          description: One page of jobs.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicJobList' }
+              example:
+                jobs:
+                  - { id: '1042', title: Staff Nurse, employerName: Example Care Ltd, county: Dublin, salaryLow: 38000, salaryHigh: 45000, salaryLine: '€38,000 to €45,000', payGrade: null, passRoute: stated_pay, badge: critical_skills_eligible, quotaFull: false, postedAt: '2026-11-17T08:00:00.000Z', sponsorPermits: 12, lastCheckedAt: '2026-11-18T06:00:00.000Z' }
+                next: null
+                previous: null
+                count: { n: 1, more: false }
+                signInForMore: false
+        '400': { $ref: '#/components/responses/PublicBadRequest' }
+        '401': { $ref: '#/components/responses/SignInForMore' }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
+  /api/job:
+    get:
+      operationId: getJob
+      tags: [public]
+      summary: One live job
+      description: The page of one live job (queued, closed, expired, hidden and unknown jobs are all 404). Open to visitors.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      parameters:
+        - { name: id, in: query, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: The job.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, title, employerName, employer, badge, sponsored, rulesCheckedOn]
+                properties:
+                  id: { $ref: '#/components/schemas/Id' }
+                  source: { enum: [fetched, employer, agency, admin_manual] }
+                  title: { type: string }
+                  employerName: { type: string }
+                  county: { type: [string, 'null'] }
+                  sector: { type: [string, 'null'] }
+                  occupationCode: { type: [string, 'null'] }
+                  contractType: { type: [string, 'null'] }
+                  contractMonths: { type: [integer, 'null'] }
+                  permitType: { enum: [critical_skills, general] }
+                  applicationRoute: { enum: [own_page, on_site] }
+                  ownPageUrl: { type: [string, 'null'] }
+                  permitEmployerKind: { type: [string, 'null'] }
+                  permitEmployerName: { type: [string, 'null'] }
+                  salaryLow: { type: [integer, 'null'] }
+                  salaryHigh: { type: [integer, 'null'] }
+                  salaryLine: { type: [string, 'null'] }
+                  healthInsuranceEur: { type: [integer, 'null'] }
+                  payGrade: { type: [string, 'null'] }
+                  passRoute: { enum: [stated_pay, big_company, pay_floor, public_pay, null], description: How the job passes the pay rule. }
+                  postedAt: { $ref: '#/components/schemas/Timestamp' }
+                  closesAt: { type: [string, 'null'], format: date-time, description: Null for a fetched job (no life limit). }
+                  advertText: { type: [string, 'null'] }
+                  employer:
+                    type: object
+                    required: [id, slug, name, kind]
+                    properties:
+                      id: { $ref: '#/components/schemas/Id' }
+                      slug: { type: string }
+                      name: { type: string }
+                      website: { type: [string, 'null'] }
+                      logoUrl: { type: [string, 'null'] }
+                      shortDescription: { type: [string, 'null'] }
+                      kind: { type: string }
+                  badge: { type: [string, 'null'] }
+                  sponsored:
+                    type: [object, 'null']
+                    properties:
+                      permits: { type: integer }
+                      since: { type: integer }
+                  permitHistory: { enum: [has_history, first_time, not_linked] }
+                  lastCheckedAt: { type: [string, 'null'], format: date-time }
+                  rulesCheckedOn: { type: string }
+              example:
+                id: '1042'
+                source: fetched
+                title: Staff Nurse
+                employerName: Example Care Ltd
+                county: Dublin
+                sector: health
+                occupationCode: '2231'
+                contractType: permanent
+                contractMonths: null
+                permitType: critical_skills
+                applicationRoute: own_page
+                ownPageUrl: https://jobs.example.com/nurse
+                permitEmployerKind: null
+                permitEmployerName: null
+                salaryLow: 38000
+                salaryHigh: 45000
+                salaryLine: '€38,000 to €45,000'
+                healthInsuranceEur: null
+                payGrade: null
+                passRoute: stated_pay
+                postedAt: '2026-11-17T08:00:00.000Z'
+                closesAt: null
+                advertText: Made-up advert text.
+                employer: { id: '77', slug: example-care, name: Example Care Ltd, website: https://example.com, logoUrl: null, shortDescription: null, kind: employer }
+                badge: critical_skills_eligible
+                sponsored: { permits: 12, since: 2022 }
+                permitHistory: has_history
+                lastCheckedAt: '2026-11-18T06:00:00.000Z'
+                rulesCheckedOn: '2026-11-01'
+        '400': { $ref: '#/components/responses/PublicBadRequest' }
+        '404': { $ref: '#/components/responses/PublicNotFound' }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
+  /api/company:
+    get:
+      operationId: getCompanyPage
+      tags: [public]
+      summary: A company page with its live jobs
+      description: |
+        A company by slug, its names, its DETE permit figures and its live jobs, newest first. A visitor gets 6 jobs and no token;
+        a candidate pages with `after` (20 a page). A merged company answers `{ merged: <slug of the page it moved to> }`. A
+        rejected or closed company, or an unknown slug, is 404.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      parameters:
+        - { name: slug, in: query, required: true, schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,99}$' } }
+        - { name: after, in: query, description: Signed in only., schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: The page, or where a merged company moved to.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [merged]
+                    additionalProperties: false
+                    properties:
+                      merged: { type: string }
+                  - type: object
+                    required: [id, slug, name, kind, claimed, labels, names, permits, jobs]
+                    properties:
+                      id: { $ref: '#/components/schemas/Id' }
+                      slug: { type: string }
+                      name: { type: string }
+                      kind: { type: string }
+                      website: { type: [string, 'null'] }
+                      logoUrl: { type: [string, 'null'] }
+                      shortDescription: { type: [string, 'null'] }
+                      county: { type: [string, 'null'] }
+                      claimed: { type: boolean, description: The employer has claimed and verified the page. }
+                      labels: { type: array, items: { enum: [First-time sponsor, Permit history not linked yet, Sponsorship claims removed] } }
+                      names: { type: array, maxItems: 200, items: { type: object, required: [name, kind], properties: { name: { type: string }, kind: { type: string } } } }
+                      permits:
+                        type: [object, 'null']
+                        description: Null when no DETE name is linked (not zero).
+                        properties:
+                          byYear: { type: array, items: { type: object, properties: { year: { type: integer }, permits: { type: integer } } } }
+                          peakYear: { type: [integer, 'null'] }
+                          trend: { enum: [up, down, flat, null] }
+                          latestMonth: { type: [object, 'null'], properties: { year: { type: integer }, month: { type: integer }, permits: { type: integer } } }
+                      jobs: { $ref: '#/components/schemas/PublicScopedJobs' }
+              example:
+                id: '77'
+                slug: example-care
+                name: Example Care Ltd
+                kind: employer
+                website: https://example.com
+                logoUrl: null
+                shortDescription: null
+                county: Dublin
+                claimed: false
+                labels: []
+                names: [{ name: Example Care Limited, kind: legal }]
+                permits: { byYear: [{ year: 2025, permits: 4 }], peakYear: 2025, trend: up, latestMonth: { year: 2026, month: 9, permits: 1 } }
+                jobs: { jobs: [], next: null, count: { n: 0, more: false }, signInForMore: false }
+        '400': { $ref: '#/components/responses/PublicBadRequest' }
+        '401': { $ref: '#/components/responses/SignInForMore' }
+        '404': { $ref: '#/components/responses/PublicNotFound' }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
+  /api/occupation:
+    get:
+      operationId: getOccupationPage
+      tags: [public]
+      summary: An occupation page with its live jobs
+      description: |
+        One occupation code on the Critical Skills or ineligible list, with the minimums in force (null for an ineligible
+        code), the optional published text, and its live jobs (sponsor history first). A code on neither list is 404. Paging as
+        on the company page.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string, pattern: '^[0-9]{4}$' } }
+        - { name: after, in: query, description: Signed in only., schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: The occupation page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, entries, listStatus, minimums, jobs, text, standingLine, rulesCheckedOn]
+                properties:
+                  code: { type: string }
+                  entries: { type: array, items: { type: object, required: [list, title], properties: { list: { type: string }, title: { type: string } } } }
+                  listStatus: { enum: [critical-skills, ineligible] }
+                  minimums:
+                    type: [object, 'null']
+                    properties:
+                      withDegree: { type: integer }
+                      recentGraduate: { type: integer }
+                      graduateMonths: { type: integer }
+                      withoutDegreeOrNotListed: { type: [integer, 'null'] }
+                      minContractMonths: { type: integer }
+                      basedOnWeekHours: { type: number }
+                  jobs: { $ref: '#/components/schemas/PublicScopedJobs' }
+                  text:
+                    type: [object, 'null']
+                    properties:
+                      id: { $ref: '#/components/schemas/Id' }
+                      kind: { type: string }
+                      slug: { type: string }
+                      title: { type: string }
+                      body: { type: string }
+                      sourceUrl: { type: [string, 'null'] }
+                      checkedOn: { type: [string, 'null'] }
+                      publishedAt: { $ref: '#/components/schemas/Timestamp' }
+                      updatedAt: { $ref: '#/components/schemas/Timestamp' }
+                  standingLine: { type: string }
+                  rulesCheckedOn: { type: string }
+              example:
+                code: '2136'
+                entries: [{ list: critical-skills, title: Programmers and software development professionals }]
+                listStatus: critical-skills
+                minimums: { withDegree: 38000, recentGraduate: 34000, graduateMonths: 12, withoutDegreeOrNotListed: null, minContractMonths: 24, basedOnWeekHours: 39 }
+                jobs: { jobs: [], next: null, count: { n: 0, more: false }, signInForMore: true }
+                text: null
+                standingLine: Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 1 November 2026.
+                rulesCheckedOn: '2026-11-01'
+        '400': { $ref: '#/components/responses/PublicBadRequest' }
+        '401': { $ref: '#/components/responses/SignInForMore' }
+        '404': { $ref: '#/components/responses/PublicNotFound' }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
+  /api/contact:
+    post:
+      operationId: sendContactMessage
+      tags: [public]
+      summary: The contact form
+      description: |
+        Files one message for staff. Open to visitors, who must give `name` and `email`; a signed-in candidate may leave them out
+        (the account's are used) and the sender id comes from the session. A suspended or deleted candidate is treated as a
+        visitor. The reply is only `{ ok: true }`: it never says whether an email has an account. Order: bot check, Origin, body
+        cap, JSON, session, field checks, rate limits. `body` may hold line breaks and tabs, no other control characters.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-body-cap: 24000 characters
+      x-rate-limit: 5 an hour per login; a visitor 5 an hour per address and 5 an hour per email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [topic, body]
+              properties:
+                topic: { enum: [general, account, data_request, other] }
+                name: { type: string, minLength: 1, maxLength: 120, description: 'Required for a visitor. Not blank, no control characters.' }
+                email: { type: string, maxLength: 254, pattern: '^[^\s@]+@[^\s@]+\.[^\s@]+$', description: Required for a visitor. }
+                body: { type: string, minLength: 1, maxLength: 5000, description: Not blank. Counted in characters (code points). }
+            example: { topic: general, name: Alex Example, email: alex@example.com, body: A made-up question. }
+      responses:
+        '200':
+          description: Filed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+              example: { ok: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403':
+          description: '`BOT_SUSPECTED`: the bot check refused it. `BAD_ORIGIN`: the Origin is not the candidate site. `REFUSED`: a signed-in login whose row is gone.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: BAD_ORIGIN }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429':
+          description: '`TOO_MANY_REQUESTS`: over 5 messages in an hour for the login, the address or the email. No Retry-After.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: TOO_MANY_REQUESTS }
+
+  /api/report:
+    post:
+      operationId: reportJob
+      tags: [public]
+      summary: Report a live job
+      description: |
+        Files a report on one live job for trust and safety. Signed in only; the reporter is never shown to the employer. Order:
+        bot check, Origin, body cap, JSON, field checks, session, rate limit (so a bad body is 400 even without a session).
+        `evidence` may hold line breaks and tabs, no other control characters.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      x-body-cap: 4000 characters
+      x-rate-limit: 10 reports an hour per login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [jobId, reason]
+              properties:
+                jobId: { $ref: '#/components/schemas/Id' }
+                reason: { enum: [asks_for_money, no_sponsorship, job_closed, wrong_details, other] }
+                evidence: { type: string, minLength: 1, maxLength: 2000 }
+            example: { jobId: '1042', reason: asks_for_money, evidence: The advert asks for a made-up fee. }
+      responses:
+        '200':
+          description: Filed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+              example: { ok: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403':
+          description: '`BOT_SUSPECTED`: the bot check refused it. `BAD_ORIGIN`: the Origin is not the candidate site. `REFUSED`: the candidate is suspended or deleted.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: BAD_ORIGIN }
+        '404':
+          description: '`JOB_NOT_FOUND`: the job is not live.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: JOB_NOT_FOUND }
+        '409':
+          description: '`ALREADY_REPORTED`: this login already has an open report on this job.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: ALREADY_REPORTED }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429':
+          description: '`TOO_MANY_REQUESTS`: over 10 reports in an hour by this login.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: TOO_MANY_REQUESTS }
+
+  /api/alerts/unsubscribe:
+    parameters:
+      - { name: token, in: query, required: true, description: The token from the alert email (checked before any query)., schema: { type: string, pattern: '^[A-Za-z0-9_-]{32,64}$' } }
+      - { name: scope, in: query, required: true, description: '`one`: this alert. `all`: every alert of the same candidate.', schema: { enum: [one, all] } }
+    get:
+      operationId: unsubscribeInfo
+      tags: [alerts]
+      summary: What an unsubscribe link would stop
+      description: Changes nothing (mail scanners open links). No sign-in; the token is the only credential. An unknown token answers the same shape with `alert` null. No rate limit.
+      security: []
+      x-roles: [anyone with the token]
+      responses:
+        '200':
+          description: The alert's filters in words.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [scope, alert]
+                properties:
+                  scope: { enum: [one, all] }
+                  alert:
+                    type: [object, 'null']
+                    properties:
+                      filters: { type: array, items: { type: string } }
+                      frequency: { enum: [daily, weekly] }
+                      status: { enum: [active, paused, unsubscribed] }
+              example: { scope: one, alert: { filters: ['County: Dublin'], frequency: weekly, status: active } }
+        '400':
+          description: '`BAD_REQUEST`: the token or scope is missing or malformed.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: BAD_REQUEST }
+    post:
+      operationId: unsubscribe
+      tags: [alerts]
+      summary: Unsubscribe (also the RFC 8058 one-click POST)
+      description: |
+        Sets the alert (scope `one`) or every alert of its candidate (scope `all`) to unsubscribed. No sign-in, no Origin check
+        and no rate limit: a mail provider's server sends the one-click POST (`List-Unsubscribe=One-Click`) with no cookie and no
+        Origin. The body is read only for its size. An unknown token changes nothing and answers the same.
+      security: []
+      x-roles: [anyone with the token]
+      x-body-cap: 200 characters
+      x-rate-limit: none (the 192-bit token is the only credential)
+      requestBody:
+        required: false
+        content:
+          application/x-www-form-urlencoded:
+            schema: { type: string, maxLength: 200 }
+            example: List-Unsubscribe=One-Click
+      responses:
+        '200':
+          description: Done (or nothing to do).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, scope]
+                properties:
+                  ok: { const: true }
+                  scope: { enum: [one, all] }
+              example: { ok: true, scope: all }
+        '400':
+          description: '`BAD_REQUEST`: the token or scope is missing or malformed.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: BAD_REQUEST }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+
+  /api/candidate/profile:
+    get:
+      operationId: getProfile
+      tags: [account]
+      summary: The candidate's profile
+      description: The profile, or null before the first save.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      responses:
+        '200':
+          description: The profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profile]
+                properties:
+                  profile: { oneOf: [{ $ref: '#/components/schemas/Profile' }, { type: 'null' }] }
+              example: { profile: { fullName: Alex Example, phone: '+353 1 555 0100', occupationCode: '2136', yearsExperience: 4, hasRelevantDegree: true, degreeField: Computing, degreeAwardedMonth: '2020-06-01', registrationBody: null, registrationNumber: null, registrationStatus: none, locationKind: abroad, currentStamp: null } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+    put:
+      operationId: putProfile
+      tags: [account]
+      summary: Replace the profile
+      description: |
+        Replaces the whole profile: a field left out or null is stored empty. Unknown fields are refused. Strings are trimmed and
+        may not hold control characters. `degreeAwardedMonth` needs `hasRelevantDegree` true; `currentStamp` needs `locationKind`
+        ireland. A Stamp 4 (any stamp starting with 4) pauses every active alert in the same transaction and offers deletion.
+        Origin checked; the body check runs before the session check.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      x-body-cap: 2048 characters
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf: [{ $ref: '#/components/schemas/Profile' }]
+              unevaluatedProperties: false
+            example: { fullName: Alex Example, occupationCode: '2136', yearsExperience: 4, hasRelevantDegree: true, locationKind: ireland, currentStamp: 1G }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, deletionOffered, alertsPaused]
+                properties:
+                  ok: { const: true }
+                  deletionOffered: { type: boolean, description: True after a Stamp 4. }
+                  alertsPaused: { type: integer, minimum: 0 }
+              example: { ok: true, deletionOffered: false, alertsPaused: 0 }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/WriteForbidden' }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/WriteTooMany' }
+
+  /api/candidate/saved:
+    get:
+      operationId: listSaved
+      tags: [account]
+      summary: Saved jobs
+      description: Newest first, at most 200 (the cap, so no paging). A job that is no longer live shows only its id, title and employer, with `live` false.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      responses:
+        '200':
+          description: The saved jobs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [saved]
+                properties:
+                  saved:
+                    type: array
+                    maxItems: 200
+                    items:
+                      allOf: [{ $ref: '#/components/schemas/SmallJobCard' }]
+                      required: [live, savedAt]
+                      properties:
+                        live: { type: boolean }
+                        savedAt: { $ref: '#/components/schemas/Timestamp' }
+              example: { saved: [{ jobId: '1042', title: Staff Nurse, employerName: Example Care Ltd, county: Dublin, salaryLow: 38000, salaryHigh: 45000, payGrade: null, badge: null, live: true, savedAt: '2026-11-17T10:00:00.000Z' }] }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+    post:
+      operationId: saveJob
+      tags: [account]
+      summary: Save a job
+      description: Saving again is not an error. Origin checked; body check before the session check.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      x-body-cap: 2048 characters
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      requestBody: &jobIdBody
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [jobId]
+              properties:
+                jobId: { $ref: '#/components/schemas/Id' }
+            example: { jobId: '1042' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+              example: { ok: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/WriteForbidden' }
+        '404':
+          description: '`JOB_NOT_FOUND`: no such job, or it was never live.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: JOB_NOT_FOUND }
+        '409':
+          description: '`SAVED_LIMIT`: 200 jobs are saved already.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: SAVED_LIMIT }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/WriteTooMany' }
+    delete:
+      operationId: unsaveJob
+      tags: [account]
+      summary: Remove a saved job
+      description: Removing a job that is not saved answers `removed` 0. Origin checked.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      x-body-cap: 2048 characters
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      requestBody: *jobIdBody
+      responses:
+        '200':
+          description: Removed (or was not saved).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, removed]
+                properties:
+                  ok: { const: true }
+                  removed: { type: integer, minimum: 0, maximum: 1 }
+              example: { ok: true, removed: 1 }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/WriteForbidden' }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/WriteTooMany' }
+
+  /api/candidate/apply-click:
+    post:
+      operationId: applyClick
+      tags: [account]
+      summary: The click on Apply
+      description: For a live job whose application route is the employer's own page. Records the click (it starts the "Did you apply?" asks again) and answers the page address to send the candidate to. Origin checked.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      x-body-cap: 2048 characters
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      requestBody: *jobIdBody
+      responses:
+        '200':
+          description: The employer's page address.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, url]
+                properties:
+                  ok: { const: true }
+                  url: { type: string }
+              example: { ok: true, url: https://jobs.example.com/nurse }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/WriteForbidden' }
+        '404':
+          description: '`JOB_NOT_FOUND`: not a live job with an own-page application route.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: JOB_NOT_FOUND }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/WriteTooMany' }
+
+  /api/candidate/did-you-apply:
+    get:
+      operationId: didYouApplyPrompts
+      tags: [account]
+      summary: The "Did you apply?" prompts
+      description: Open clicks asked fewer than twice and made within 14 days, newest first, at most 5. Reading changes nothing.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      responses:
+        '200':
+          description: The prompts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [prompts]
+                properties:
+                  prompts:
+                    type: array
+                    maxItems: 5
+                    items:
+                      allOf: [{ $ref: '#/components/schemas/SmallJobCard' }]
+                      required: [clickId, clickedAt]
+                      properties:
+                        clickId: { $ref: '#/components/schemas/Id' }
+                        clickedAt: { $ref: '#/components/schemas/Timestamp' }
+              example: { prompts: [{ clickId: '501', jobId: '1042', title: Staff Nurse, employerName: Example Care Ltd, county: Dublin, salaryLow: 38000, salaryHigh: 45000, payGrade: null, badge: null, clickedAt: '2026-11-16T12:00:00.000Z' }] }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+    post:
+      operationId: answerDidYouApply
+      tags: [account]
+      summary: Answer a "Did you apply?" prompt
+      description: Each answer counts as one ask. `yes` also writes the tracker row at applied; a second `not_yet` ends the asking. Origin checked.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      x-body-cap: 2048 characters
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [clickId, answer]
+              properties:
+                clickId: { $ref: '#/components/schemas/Id' }
+                answer: { enum: ['yes', not_yet, 'no'] }
+            example: { clickId: '501', answer: 'yes' }
+      responses:
+        '200':
+          description: Recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+              example: { ok: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/WriteForbidden' }
+        '404':
+          description: '`CLICK_NOT_FOUND`: not this candidate''s click, or it is already answered.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: CLICK_NOT_FOUND }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/WriteTooMany' }
+
+  /api/candidate/tracker:
+    post:
+      operationId: markApplied
+      tags: [account]
+      summary: Mark a job applied
+      description: Adds a tracker row at applied and closes any open "Did you apply?" for the job as yes. Marking twice changes nothing (`created` false). Origin checked.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      x-body-cap: 2048 characters
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      requestBody: *jobIdBody
+      responses:
+        '200':
+          description: Marked.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, created]
+                properties:
+                  ok: { const: true }
+                  created: { type: boolean }
+              example: { ok: true, created: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/WriteForbidden' }
+        '404':
+          description: '`JOB_NOT_FOUND`: no such job, or it was never live.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: JOB_NOT_FOUND }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/WriteTooMany' }
+    put:
+      operationId: setTrackerStage
+      tags: [account]
+      summary: Change a tracked job's stage
+      description: |
+        A redirect row may move to applied, interview, offer, rejected or withdrawn; an on-site row only to withdrawn. Another
+        stage is refused by the database's tracker guard (403 `REFUSED`). `offerHint` is true for offer. Origin checked.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      x-body-cap: 2048 characters
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [jobId, stage]
+              properties:
+                jobId: { $ref: '#/components/schemas/Id' }
+                stage: { enum: [applied, interview, viewed, shortlisted, offer, hired, rejected, withdrawn] }
+            example: { jobId: '1042', stage: interview }
+      responses:
+        '200':
+          description: Changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, offerHint]
+                properties:
+                  ok: { const: true }
+                  offerHint: { type: boolean }
+              example: { ok: true, offerHint: false }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/WriteForbidden' }
+        '404':
+          description: '`NOT_TRACKED`: the job is not in this candidate''s tracker.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: NOT_TRACKED }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/WriteTooMany' }
+
+  /api/candidate/job:
+    get:
+      operationId: getOwnJob
+      tags: [account]
+      summary: One saved or tracked job, closed or not
+      description: A live job comes with its page address, saved flag and stage. A closed job shows only its id, title and employer, with up to 5 similar live jobs (same occupation, else same sector).
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      parameters:
+        - { name: id, in: query, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: The job.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [job]
+                properties:
+                  job:
+                    allOf: [{ $ref: '#/components/schemas/SmallJobCard' }]
+                    required: [live, saved, stage]
+                    properties:
+                      live: { type: boolean }
+                      ownPageUrl: { type: [string, 'null'], description: Live jobs only. }
+                      closedAt: { type: [string, 'null'], format: date-time, description: Closed jobs only. }
+                      saved: { type: boolean }
+                      stage: { type: [string, 'null'] }
+                  similar: { type: array, maxItems: 5, items: { $ref: '#/components/schemas/SmallJobCard' }, description: Closed jobs only. }
+              example: { job: { jobId: '1042', title: Staff Nurse, employerName: Example Care Ltd, live: false, closedAt: '2026-11-10T00:00:00.000Z', saved: true, stage: null }, similar: [] }
+        '400':
+          description: '`BAD_REQUEST`: `id` is missing or not an id.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: BAD_REQUEST }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+        '404':
+          description: '`JOB_NOT_FOUND`: not saved or tracked by this candidate.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: JOB_NOT_FOUND }
+
+  /api/candidate/notifications:
+    get:
+      operationId: getNotificationSettings
+      tags: [account]
+      summary: Notification settings
+      description: One email switch per category. A category never set is on; `account` is always on.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      responses:
+        '200':
+          description: The settings.
+          content:
+            application/json:
+              schema: &settings
+                type: object
+                required: [settings]
+                properties:
+                  settings:
+                    type: object
+                    required: [job_alerts, apply_reminders, account]
+                    properties:
+                      job_alerts: { type: boolean }
+                      apply_reminders: { type: boolean }
+                      account: { const: true }
+              example: { settings: { job_alerts: true, apply_reminders: false, account: true } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+    put:
+      operationId: putNotificationSettings
+      tags: [account]
+      summary: Change notification settings
+      description: At least one key; a key left out keeps its value. `account` may be sent only as true. Origin checked.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      x-body-cap: 2048 characters
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                job_alerts: { type: boolean }
+                apply_reminders: { type: boolean }
+                account: { const: true }
+            example: { apply_reminders: false }
+      responses:
+        '200':
+          description: The settings after the change.
+          content:
+            application/json:
+              schema: *settings
+              example: { settings: { job_alerts: true, apply_reminders: false, account: true } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/WriteForbidden' }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/WriteTooMany' }
+
+  /api/candidate/export:
+    get:
+      operationId: exportData
+      tags: [account]
+      summary: Download my data
+      description: |
+        One JSON file (`Content-Disposition: attachment; filename="my-data-YYYY-MM-DD.json"`, `Cache-Control: no-store`) with
+        everything held about the candidate: account, profile, CV details, saved jobs, tracker, "Did you apply?", alerts,
+        consents, notification settings and notifications, plus their emails, own actions and who accessed their data. Never
+        tokens, password hashes, storage keys or staff notes. Writes one audit row. Query parameters are ignored.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      responses:
+        '200':
+          description: The file.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              example: attachment; filename="my-data-2026-11-18.json"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [exportedAt, account, profile, cv, savedJobs, tracker, didYouApply, alerts, consents, notificationSettings, notifications, applications, contactRequests, notIncluded]
+                properties:
+                  exportedAt: { $ref: '#/components/schemas/Timestamp' }
+                  account: { type: [object, 'null'] }
+                  profile: { type: [object, 'null'] }
+                  cv: { type: array }
+                  savedJobs: { type: array }
+                  tracker: { type: array }
+                  didYouApply: { type: array }
+                  alerts: { type: array }
+                  consents: { type: array }
+                  notificationSettings: { type: array }
+                  notifications: { type: array }
+                  applications: { type: array, maxItems: 0 }
+                  contactRequests: { type: array, maxItems: 0 }
+                  notIncluded: { type: array, items: { type: object, properties: { section: { type: string }, reason: { type: string } } } }
+                additionalProperties: true
+              example:
+                exportedAt: '2026-11-18T09:30:00.000Z'
+                account: { name: Alex Example, email: alex@example.com, emailConfirmed: true, createdAt: '2026-10-01T09:00:00.000Z', lastActiveAt: '2026-11-18T09:00:00.000Z', signInMethods: [credential] }
+                profile: null
+                cv: []
+                savedJobs: []
+                tracker: []
+                didYouApply: []
+                alerts: []
+                consents: []
+                notificationSettings: []
+                notifications: []
+                applications: []
+                contactRequests: []
+                notIncluded: [{ section: contactFormMessages, reason: 'not available in this file yet; ask for it through the contact form (topic: data request)' }]
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+
+  /api/candidate/account:
+    delete:
+      operationId: deleteAccount
+      tags: [account]
+      summary: Delete the account
+      description: Final at once. The login is refused from now on, every session ends and one confirmation email is queued. The data goes with the 30-day retention rule. Origin checked.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      x-body-cap: 2048 characters
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [confirm]
+              properties:
+                confirm: { const: true }
+            example: { confirm: true }
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+              example: { ok: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/WriteForbidden' }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/WriteTooMany' }
+
+  /api/candidate/alerts:
+    get:
+      operationId: listAlerts
+      tags: [alerts]
+      summary: The candidate's job alerts
+      description: Newest first, at most 10. The unsubscribe token is never returned.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      responses:
+        '200':
+          description: The alerts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [alerts]
+                properties:
+                  alerts: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/Alert' } }
+              example: { alerts: [{ id: '31', occupationCode: null, sector: health, county: Dublin, salaryMin: null, badge: null, frequency: weekly, status: active, pauseReason: null, lastSentAt: null }] }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+    post:
+      operationId: createAlert
+      tags: [alerts]
+      summary: Create a job alert
+      description: Needs a confirmed email and no Stamp 4. At most 10 alerts per candidate (every status counts). Origin checked.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate with a confirmed email]
+      x-body-cap: 2048 characters
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf: [{ $ref: '#/components/schemas/AlertFilters' }]
+              required: [frequency]
+              unevaluatedProperties: false
+            example: { sector: health, county: Dublin, frequency: weekly }
+      responses:
+        '200':
+          description: The new alert.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertReply' }
+              example: { alert: { id: '31', occupationCode: null, sector: health, county: Dublin, salaryMin: null, badge: null, frequency: weekly, status: active, pauseReason: null, lastSentAt: null } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': &alertGate
+          description: '`BAD_ORIGIN`: the Origin is not the candidate site. `REFUSED`: the candidate is suspended or deleted. `EMAIL_NOT_VERIFIED`: the email is not confirmed yet.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: EMAIL_NOT_VERIFIED }
+        '409':
+          description: '`ALERT_LIMIT`: 10 alerts already. `STAMP_4`: the profile''s stamp is a Stamp 4.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: ALERT_LIMIT }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/WriteTooMany' }
+    put:
+      operationId: editAlert
+      tags: [alerts]
+      summary: Edit a job alert
+      description: Replaces every filter (a filter left out becomes "any"). Origin checked.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      x-body-cap: 2048 characters
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf: [{ $ref: '#/components/schemas/AlertFilters' }]
+              required: [id, frequency]
+              properties:
+                id: { $ref: '#/components/schemas/Id' }
+              unevaluatedProperties: false
+            example: { id: '31', county: Cork, frequency: daily }
+      responses:
+        '200':
+          description: The alert after the edit.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertReply' }
+              example: { alert: { id: '31', occupationCode: null, sector: null, county: Cork, salaryMin: null, badge: null, frequency: daily, status: active, pauseReason: null, lastSentAt: null } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/WriteForbidden' }
+        '404': &alertNotFound
+          description: '`ALERT_NOT_FOUND`: not this candidate''s alert.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: ALERT_NOT_FOUND }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/WriteTooMany' }
+    delete:
+      operationId: deleteAlert
+      tags: [alerts]
+      summary: Delete a job alert
+      description: Origin checked.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      x-body-cap: 2048 characters
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      requestBody: &alertIdBody
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [id]
+              properties:
+                id: { $ref: '#/components/schemas/Id' }
+            example: { id: '31' }
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+              example: { ok: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/WriteForbidden' }
+        '404': *alertNotFound
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/WriteTooMany' }
+
+  /api/candidate/alerts/pause:
+    post:
+      operationId: pauseAlert
+      tags: [alerts]
+      summary: Pause a job alert
+      description: Only an active alert is paused (reason `candidate`); any other alert is answered unchanged. Origin checked.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      x-body-cap: 2048 characters
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      requestBody: *alertIdBody
+      responses:
+        '200':
+          description: The alert.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertReply' }
+              example: { alert: { id: '31', occupationCode: null, sector: health, county: Dublin, salaryMin: null, badge: null, frequency: weekly, status: paused, pauseReason: candidate, lastSentAt: null } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/WriteForbidden' }
+        '404': *alertNotFound
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/WriteTooMany' }
+
+  /api/candidate/alerts/resume:
+    post:
+      operationId: resumeAlert
+      tags: [alerts]
+      summary: Resume a job alert
+      description: Back to active from paused or unsubscribed; "new jobs" count from now, so no backlog is sent. Needs a confirmed email and no Stamp 4. Origin checked.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate with a confirmed email]
+      x-body-cap: 2048 characters
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      requestBody: *alertIdBody
+      responses:
+        '200':
+          description: The alert.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertReply' }
+              example: { alert: { id: '31', occupationCode: null, sector: health, county: Dublin, salaryMin: null, badge: null, frequency: weekly, status: active, pauseReason: null, lastSentAt: '2026-11-18T09:30:00.000Z' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': *alertGate
+        '404': *alertNotFound
+        '409':
+          description: '`STAMP_4`: the profile''s stamp is a Stamp 4.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: STAMP_4 }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/WriteTooMany' }
+
+  /api/candidate/cv:
+    get:
+      operationId: getCv
+      tags: [files]
+      summary: The CV's details
+      description: File name, type, size and upload time. Never the storage key.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      responses:
+        '200':
+          description: The CV.
+          content:
+            application/json:
+              schema: &cvReply
+                type: object
+                required: [cv]
+                properties:
+                  cv: { $ref: '#/components/schemas/Cv' }
+              example: { cv: { fileName: alex-example-cv.pdf, contentType: pdf, sizeBytes: 182044, uploadedAt: '2026-11-15T14:00:00.000Z' } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+        '404': &cvNotFound
+          description: '`CV_NOT_FOUND`: no CV uploaded.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: CV_NOT_FOUND }
+    put:
+      operationId: putCv
+      tags: [files]
+      summary: Upload or replace the CV
+      description: |
+        A PDF or DOCX (read from the bytes), at most 4194304 bytes. The name is kept as a label only (last path part, at most
+        200 characters, the type's extension). Order: Origin, size header, session, rate limits, then the body. Origin checked.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      x-body-cap: 4210688 bytes
+      x-rate-limit: 60 candidate writes in 10 minutes and 10 uploads an hour per login
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/Upload' }
+      responses:
+        '200':
+          description: The stored CV.
+          content:
+            application/json:
+              schema: *cvReply
+              example: { cv: { fileName: alex-example-cv.pdf, contentType: pdf, sizeBytes: 182044, uploadedAt: '2026-11-18T09:30:00.000Z' } }
+        '400': { $ref: '#/components/responses/UploadBadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/WriteForbidden' }
+        '409':
+          description: '`TRY_AGAIN`: two first uploads raced and this one lost.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: TRY_AGAIN }
+        '413': { $ref: '#/components/responses/FileTooLarge' }
+        '415': { $ref: '#/components/responses/WrongFileType' }
+        '429': { $ref: '#/components/responses/UploadTooMany' }
+        '503': { $ref: '#/components/responses/FilesUnavailable' }
+    delete:
+      operationId: deleteCv
+      tags: [files]
+      summary: Remove the CV
+      description: Removes the stored file, then its row. The body is not read (no body cap applies). Origin checked.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      x-body-cap: none (the body is not read)
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      responses:
+        '200':
+          description: Removed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+              example: { ok: true }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/WriteForbidden' }
+        '404': *cvNotFound
+        '429': { $ref: '#/components/responses/WriteTooMany' }
+        '503': { $ref: '#/components/responses/FilesUnavailable' }
+
+  /api/candidate/cv/download:
+    get:
+      operationId: downloadCv
+      tags: [files]
+      summary: Download the CV
+      description: 'A 302 to a download link that works for 60 seconds (`Cache-Control: no-store`, `Referrer-Policy: no-referrer`).'
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      responses:
+        '302':
+          description: To the short-lived link.
+          headers: &downloadHeaders
+            Location:
+              description: A presigned storage link, valid 60 seconds.
+              schema: { type: string }
+              example: https://files.example.com/signed-link
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+        '404': *cvNotFound
+        '503': { $ref: '#/components/responses/FilesUnavailable' }
+
+  /api/candidate/cases/{id}/documents:
+    parameters:
+      - { name: id, in: path, required: true, description: The services case id., schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      operationId: listCaseDocuments
+      tags: [files]
+      summary: Documents of one's own services case
+      description: The documents this candidate uploaded to the case, oldest first. A case that is not this candidate's is 404.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate who owns the case]
+      responses:
+        '200':
+          description: The documents.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [documents]
+                properties:
+                  documents: { type: array, items: { $ref: '#/components/schemas/CaseDocument' } }
+              example: { documents: [{ id: '9', fileName: passport.pdf, contentType: pdf, sizeBytes: 90211, uploadedAt: '2026-11-12T10:00:00.000Z', copyDeleted: false }] }
+        '400': &badCaseId
+          description: '`BAD_REQUEST`: the case or document id is not an id.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: BAD_REQUEST }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+        '404': &caseNotFound
+          description: '`CASE_NOT_FOUND`: not this candidate''s case.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: CASE_NOT_FOUND }
+    post:
+      operationId: uploadCaseDocument
+      tags: [files]
+      summary: Upload a document to one's own services case
+      description: A PDF, JPEG or PNG (read from the bytes), at most 4194304 bytes. At most 20 stored copies per case from this side; not while the case is at decision or closed. Origin checked.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate who owns the case]
+      x-body-cap: 4210688 bytes
+      x-rate-limit: 60 candidate writes in 10 minutes and 10 uploads an hour per login
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/Upload' }
+      responses:
+        '200':
+          description: The stored document.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [document]
+                properties:
+                  document: { $ref: '#/components/schemas/CaseDocument' }
+              example: { document: { id: '10', fileName: payslip.png, contentType: png, sizeBytes: 50112, uploadedAt: '2026-11-18T09:30:00.000Z', copyDeleted: false } }
+        '400': { $ref: '#/components/responses/UploadBadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/WriteForbidden' }
+        '404': *caseNotFound
+        '409':
+          description: '`CASE_CLOSED`: the case is at decision or closed. `DOCUMENT_LIMIT`: 20 stored copies already.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: DOCUMENT_LIMIT }
+        '413': { $ref: '#/components/responses/FileTooLarge' }
+        '415': { $ref: '#/components/responses/WrongFileType' }
+        '429': { $ref: '#/components/responses/UploadTooMany' }
+        '503': { $ref: '#/components/responses/FilesUnavailable' }
+
+  /api/candidate/cases/{id}/documents/{docId}:
+    parameters:
+      - { name: id, in: path, required: true, description: The services case id., schema: { $ref: '#/components/schemas/Id' } }
+      - { name: docId, in: path, required: true, description: The document id., schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      operationId: downloadCaseDocument
+      tags: [files]
+      summary: Download one document of one's own case
+      description: A 302 to a download link that works for 60 seconds, while the stored copy is kept.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate who uploaded it]
+      responses:
+        '302':
+          description: To the short-lived link.
+          headers: *downloadHeaders
+        '400': *badCaseId
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+        '404':
+          description: '`DOCUMENT_NOT_FOUND`: not this candidate''s document in this case, or its copy was removed.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: DOCUMENT_NOT_FOUND }
+        '503': { $ref: '#/components/responses/FilesUnavailable' }
