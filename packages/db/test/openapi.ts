@@ -75,6 +75,20 @@ export function syncProblems(routes: Record<string, string[]>, spec: Spec): stri
   return problems;
 }
 
+/** The `GET /api` index of one app (decision #265): its title and every operation as "METHOD /path (who may call it)", keyed by
+ *  operationId; "(anyone)" is left out. Written to apps/<app>/lib/api-index.json, which the sync test keeps equal to this. */
+export function apiIndex(spec: Spec & { info?: { title?: string } }) {
+  const routes: Record<string, string> = {};
+  for (const [path, item] of Object.entries(spec.paths ?? {}))
+    for (const [key, op] of Object.entries(item)) {
+      if (!(METHODS as readonly string[]).includes(key.toUpperCase())) continue;
+      const o = op as { operationId?: string; "x-roles"?: string[] }, who = o["x-roles"]?.join(", ");
+      if (!o.operationId || o.operationId in routes) throw new Error(`no or repeated operationId: ${key.toUpperCase()} ${path}`);
+      routes[o.operationId] = `${key.toUpperCase()} ${path}${who && who !== "anyone" ? ` (${who})` : ""}`;
+    }
+  return { name: spec.info?.title ?? "", routes };
+}
+
 // ===== a small JSON schema check for the integration tests (the subset the files use; no schema library) =====
 const typeOf = (v: unknown) => (v === null ? "null" : Array.isArray(v) ? "array" : Number.isInteger(v) ? "integer" : typeof v);
 

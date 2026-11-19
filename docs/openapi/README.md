@@ -17,6 +17,17 @@ or an exported method is missing from its app's file, when a file describes a pa
 has no summary, no 4xx (or no `x-no-4xx` reason) or no success example. Some integration tests also check real replies against
 the schemas (`replyProblems` in `packages/db/test/openapi.ts`).
 
+## The index route
+
+Each app answers `GET /api` with its name, the deployed commit, the environment, the time and every route as `METHOD /path (who may
+call it)` (decision #265). The list is `apps/<app>/lib/api-index.json`, made from the app's file here; the sync test fails when they
+differ. After changing a file here, rewrite the three lists with:
+
+    API_INDEX_WRITE=1 npx vitest run packages/db/src/openapi-sync.test.ts
+
+The candidate and employer indexes answer anyone; the admin index answers only a signed-in active staff member. The commit comes from
+`APP_VERSION`, which the Deploy workflow passes to each deploy (`local` on a developer machine).
+
 ## Lint
 
     npm run lint:api
