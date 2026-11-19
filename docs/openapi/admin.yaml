@@ -967,6 +967,131 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '500': { $ref: '#/components/responses/ServerError' }
+  /api/companies/dete-links:
+    get:
+      operationId: listDeteLinkSuggestions
+      summary: Suggested links from DETE names to companies
+      description: >-
+        DETE employer names none of whose rows is linked yet, each matched to a company by the R23 name matcher run on the company's names
+        (its display name included), best first (score, then permits over every year), 50 a page. A pair staff rejected or unlinked is left
+        out. Companies merged away, rejected or closed are left out. Only `page` (1 to 1000), at most once (anything else is `bad_query`).
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer, trust_and_safety, administrator]
+      x-rate-limit: none
+      parameters:
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 1000, default: 1 } }
+      responses:
+        '200':
+          description: One page of suggestions and how many there are in all.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [suggestions, page, total]
+                properties:
+                  page: { type: integer, minimum: 1 }
+                  total: { type: integer, minimum: 0 }
+                  suggestions:
+                    type: array
+                    maxItems: 50
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [deteName, permits, organisationId, organisation, matchedName, score, kind]
+                      properties:
+                        deteName: { type: string }
+                        permits: { type: integer, minimum: 0 }
+                        organisationId: { $ref: '#/components/schemas/Id' }
+                        organisation: { type: string }
+                        matchedName: { type: string, description: The company name the matcher used. }
+                        score: { type: number, minimum: 0, maximum: 1 }
+                        kind: { type: string, enum: [exact, suggested] }
+              example: { page: 1, total: 1, suggestions: [{ deteName: 'Example Software Ireland Ltd', permits: 120, organisationId: '310', organisation: Example, matchedName: Example Software, score: 1, kind: exact }] }
+        '400':
+          description: "`bad_query`: an unknown or repeated key. `bad_page`: page not a whole number from 1 to 1000."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_page } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_dete_link_viewer`: none of the three roles."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_dete_link_viewer } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: changeDeteLink
+      summary: Link, unlink or reject a DETE name for a company
+      description: >-
+        `link` adds the DETE name to the company as a legal name from DETE (or uses the company's name of the same normalised form), points
+        every DETE row of the name at it and refreshes the permit history labels, so the company's permit history and sponsor sort change at
+        once. `unlink` takes the link off every row of the name, removes the name a link added when nothing else uses it, and remembers the pair
+        as rejected. `reject` turns a suggestion down so it is not suggested again. The Origin header must be the admin app's origin. One
+        audit row each. `deteName` is the stored DETE name exactly (no leading or trailing space).
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer]
+      x-rate-limit: none
+      x-body-cap: 2000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, deteName]
+              properties:
+                action: { type: string, enum: [link, unlink, reject] }
+                deteName: { type: string, minLength: 1, maxLength: 300 }
+                organisationId: { $ref: '#/components/schemas/Id' }
+            example: { action: link, deteName: 'Example Software Ireland Ltd', organisationId: '310' }
+      responses:
+        '200':
+          description: Done.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: object
+                    required: [ok, organisationId, organisationNameId, nameAdded, rowsLinked, labelsChanged, permitHistory]
+                    properties:
+                      ok: { const: true }
+                      organisationId: { $ref: '#/components/schemas/Id' }
+                      organisationNameId: { $ref: '#/components/schemas/Id' }
+                      nameAdded: { type: boolean }
+                      rowsLinked: { type: integer, minimum: 0 }
+                      labelsChanged: { type: integer, minimum: 0 }
+                      permitHistory: { type: string, enum: [has_history, first_time, not_linked] }
+                  - type: object
+                    required: [ok, rowsUnlinked, namesRemoved, labelsChanged, organisationIds]
+                    properties:
+                      ok: { const: true }
+                      rowsUnlinked: { type: integer, minimum: 0 }
+                      namesRemoved: { type: array, items: { type: integer } }
+                      labelsChanged: { type: integer, minimum: 0 }
+                      organisationIds: { type: array, items: { $ref: '#/components/schemas/Id' } }
+                  - type: object
+                    required: [ok, organisationId, rejected]
+                    properties:
+                      ok: { const: true }
+                      organisationId: { $ref: '#/components/schemas/Id' }
+                      rejected: { const: true }
+              example: { ok: true, organisationId: '310', organisationNameId: '5521', nameAdded: true, rowsLinked: 6, labelsChanged: 1, permitHistory: has_history }
+        '400':
+          description: >-
+            `bad_body`: not one JSON object, an unknown field or over 2,000 characters. `bad_action`: not link, unlink or reject. `bad_name`:
+            deteName missing, not a string, empty, over 300 characters, with control characters or with leading or trailing space.
+            `bad_organisation_id`: missing (link, reject) or not an id.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_name } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_dete_link_staff`: not an account reviewer."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_dete_link_staff } } }
+        '404':
+          description: "`not_found`: no such company. `name_not_found`: no DETE row has this name."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: name_not_found } } }
+        '409':
+          description: >-
+            `linked_elsewhere`: the name is linked to another company (unlink first). `name_taken`: another company has a name of the same
+            normalised form (merge first). `company_merged`: the company was merged into another. `not_linked`: unlink of a name not linked.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: linked_elsewhere } } }
+        '500': { $ref: '#/components/responses/ServerError' }
   /api/companies/domains:
     get:
       operationId: listCompanyDomains
@@ -1937,6 +2062,139 @@ paths:
           description: "`company_not_postable`: not an employer or agency, merged, or rejected, closed, banned or suspended. `bad_state`: close of a post already closed or hidden."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: company_not_postable } } }
         '500': { $ref: '#/components/responses/ServerError' }
+  /api/manual-jobs/sponsor-confirmation:
+    get:
+      operationId: listSponsorConfirmations
+      summary: List the Sponsor confirmed requests waiting, or open one confirmation file
+      description: >-
+        Q6 (#16). Without `requestId`: the employer confirmations uploaded on manual posts that wait for an administrator (oldest first, at most
+        200). With `requestId`: 302 to a 60-second download link of that confirmation (a pending request, or a confirmed one whose statement
+        still holds the file) and one `data_access` audit row (`job.sponsor_confirmation_open`, the request id, the role in force). For the
+        manual posting viewers: account_reviewer, trust_and_safety, administrator. Only `requestId`, at most once.
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer, trust_and_safety, administrator]
+      x-rate-limit: none
+      parameters:
+        - { name: requestId, in: query, required: false, schema: { type: string }, example: '9001' }
+      responses:
+        '200':
+          description: The requests waiting (without `requestId`).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pending]
+                properties:
+                  pending:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [requestId, jobId, fileName, contentType, sizeBytes, proposedBy, createdAt]
+                      properties:
+                        requestId: { $ref: '#/components/schemas/Id' }
+                        jobId: { $ref: '#/components/schemas/Id' }
+                        fileName: { type: string }
+                        contentType: { type: string, enum: [pdf, jpeg, png] }
+                        sizeBytes: { type: integer }
+                        proposedBy: { $ref: '#/components/schemas/LoginId' }
+                        createdAt: { $ref: '#/components/schemas/DbTime' }
+              example: { pending: [{ requestId: '9001', jobId: '5501', fileName: sponsor-letter.pdf, contentType: pdf, sizeBytes: 182044, proposedBy: made-up-staff-id, createdAt: '2026-11-19 10:00:00.123456+00' }] }
+        '302':
+          description: "The download link (with `requestId`), valid 60 seconds; not cached, no referrer."
+          headers:
+            Location: { schema: { type: string, format: uri }, example: 'https://files.example.com/sponsor/made-up-key.pdf?signature=made-up' }
+        '400':
+          description: "`bad_query`: an unknown or repeated query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_manual_viewer`: none of the three roles."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_manual_viewer } } }
+        '404':
+          description: "`not_found`: no such request with a file (refused and withdrawn ones have none; also an id that is not an id)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503':
+          description: "`files_unavailable`: file storage is not set up. No audit row is written."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: files_unavailable } } }
+    post:
+      operationId: sponsorConfirmation
+      summary: Upload the employer's written confirmation on a manual post, or confirm or refuse it
+      description: |
+        Q6 (#16, 20c "Manual posting": the account reviewer edits, the administrator approves). Two bodies:
+        - `multipart/form-data` with `?jobId=` and exactly one field `file` (PDF, JPEG or PNG, found from the bytes; at most 4,194,304 bytes):
+          an account reviewer uploads the employer's written confirmation on a live manual post whose company is not restricted. It makes a
+          two-person request (`manual_post_sponsor_confirmed`); one at a time per post. Order: Origin, the `Content-Length` cap (before the
+          session), the session, the role and the post (before the body is read), then the file. A row write that fails removes the stored file.
+        - `application/json` `{ action: "confirm" | "refuse", requestId }`: a different administrator confirms (the `admin_on_behalf`
+          sponsorship statement is written with the file and the post shows Sponsor confirmed, in one transaction) or refuses; the proposer
+          may withdraw with `refuse`. A refused or withdrawn request's file is removed. Staff never sign for the employer (no signer).
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer (upload, withdraw own), administrator (confirm, refuse)]
+      x-rate-limit: none (one pending request per post)
+      x-body-cap: 4210688 bytes for the upload (4 MiB file plus 16 KiB of multipart wrapping), counted while reading; 1000 characters for the JSON body
+      parameters:
+        - { name: jobId, in: query, required: false, description: The manual post (the upload only)., schema: { type: string }, example: '5501' }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, additionalProperties: false, required: [file], properties: { file: { type: string, format: binary } } }
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, requestId]
+              properties:
+                action: { type: string, enum: [confirm, refuse] }
+                requestId: { $ref: '#/components/schemas/Id' }
+            example: { action: confirm, requestId: '9001' }
+      responses:
+        '200':
+          description: "Upload: `{ ok, requestId }`. Confirm: `{ ok, jobId, badge }`. Refuse: `{ ok }`."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean, const: true }
+                  requestId: { $ref: '#/components/schemas/Id' }
+                  jobId: { $ref: '#/components/schemas/Id' }
+                  badge: { type: string, const: sponsor_confirmed }
+              example: { ok: true, jobId: '5501', badge: sponsor_confirmed }
+        '400':
+          description: >-
+            `bad_input`: no `jobId` or one that is not an id. `bad_query`: an unknown or repeated query key. `bad_file`: not exactly one `file`
+            field. `empty_file`: the file has no bytes. `bad_body`, `bad_action`, `bad_request_id`: the JSON body.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_file } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: >-
+            `bad_origin`: not the admin site's Origin. `not_active_staff`. `not_account_reviewer`: the upload without that role.
+            `not_administrator`: confirm without the role, or refuse of another person's request without it. `not_sponsor_staff`: refuse
+            with neither role.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
+        '404':
+          description: "`not_found`: no manual post with that id, or no such request."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: >-
+            `job_not_live`: the post is a draft or closed. `already_confirmed`: it shows Sponsor confirmed already. `company_restricted`: its
+            company is restricted (strike 2). `decision_pending`: a request is already waiting. `request_not_pending`: decided already.
+            `same_person`: the proposer cannot confirm. `no_statement_text`: no sponsorship statement wording is saved yet.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: same_person } } }
+        '413':
+          description: "`file_too_large`: over the cap by header or while reading."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: file_too_large } } }
+        '415':
+          description: "`wrong_file_type`: the bytes are not a PDF, JPEG or PNG."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: wrong_file_type } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503':
+          description: "`files_unavailable`: file storage is not set up. Nothing is written."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: files_unavailable } } }
   /api/pay-floors:
     get:
       operationId: listFloorChecks
@@ -2210,17 +2468,22 @@ paths:
         '500': { $ref: '#/components/responses/ServerError' }
     post:
       operationId: actOnStaff
-      summary: Grant, remove or confirm roles; disable or enable a login
+      summary: Invite a login; grant, remove or confirm roles; disable or enable a login
       description: >-
         `propose_role`: an administrator proposes a role for a login (one pending grant per login and kind). `confirm_role`: a different
         administrator confirms and the role is written. `refuse_role`: a different administrator refuses, or the proposer withdraws.
         `remove_role`: one administrator removes a role at once. `disable`: the login is disabled and its sessions end in the same
-        transaction. `enable`: a disabled login with no roles is turned back on. Nothing here makes a login (the owner's command does). The
-        last active administrator cannot lose the role or be disabled. The Origin header must be the admin app's origin.
+        transaction. `enable`: a disabled login with no roles is turned back on. `invite` (step 15 Q15): makes an active login with no
+        password and no role for the email (stored lowercased), proposes `role` for it as `propose_role` does (a different administrator
+        confirms), then sends the set-password email through the staff reset (the security@ sender; the link works for 1 hour, and the
+        invitee can ask for a new one through the reset). If the sender refuses the email the answer is 502 `email_not_sent` with the
+        new login and its grant request, both kept. `resend_invite`: a new set-password email for a login that has not set a password yet, at
+        most 3 an hour per login (429 `too_many_resends`), 502 `email_not_sent` when the sender refuses it. The last active
+        administrator cannot lose the role or be disabled. The Origin header must be the admin app's origin.
       security: [{ staffSession: [] }]
       x-roles: [administrator]
       x-rate-limit: none
-      x-body-cap: 500
+      x-body-cap: 1000
       requestBody:
         required: true
         content:
@@ -2244,12 +2507,20 @@ paths:
                   additionalProperties: false
                   required: [action, staffId]
                   properties:
-                    action: { type: string, enum: [disable, enable] }
+                    action: { type: string, enum: [disable, enable, resend_invite] }
                     staffId: { $ref: '#/components/schemas/LoginId' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, email, name, role]
+                  properties:
+                    action: { const: invite }
+                    email: { type: string, format: email, maxLength: 254 }
+                    name: { type: string, minLength: 1, maxLength: 100 }
+                    role: { $ref: '#/components/schemas/StaffRole' }
             example: { action: propose_role, staffId: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', role: content_editor }
       responses:
         '200':
-          description: "`propose_role`: the request id. `confirm_role`: the login and role written. `disable`: the sessions ended. The rest `{ ok: true }`."
+          description: "`propose_role`: the request id. `confirm_role`: the login and role written. `disable`: the sessions ended. `invite`: the new login and its grant request. The rest `{ ok: true }`."
           content:
             application/json:
               schema:
@@ -2263,7 +2534,7 @@ paths:
                   sessionsEnded: { type: integer }
               example: { ok: true, requestId: '120' }
         '400':
-          description: "`bad_body`: not one JSON object, an unknown or missing field, or over 500 characters. `bad_action`: unknown action. `bad_staff_id`: not a login id. `bad_request_id`: not an id. `bad_role`: not one of the seven roles."
+          description: "`bad_body`: not one JSON object, an unknown or missing field, or over 1,000 characters. `bad_action`: unknown action. `bad_staff_id`: not a login id. `bad_request_id`: not an id. `bad_role`: not one of the seven roles. `bad_email`: not a plain address. `bad_name`: empty, over 100 characters or with control characters."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_role } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
@@ -2273,9 +2544,24 @@ paths:
           description: "`not_found`: no such login, request, or role on that login."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
         '409':
-          description: "`target_not_active`: the login is disabled. `already_holds`: it has the role. `grant_pending`: a grant of that kind waits already. `request_not_pending`: the request is not pending. `same_person`: the proposer confirming. `last_administrator`: it would leave no active administrator. `already_disabled`, `not_disabled`: the login's status. `holds_roles`: enable of a login that still holds roles."
+          description: "`target_not_active`: the login is disabled. `already_holds`: it has the role. `grant_pending`: a grant of that kind waits already. `request_not_pending`: the request is not pending. `same_person`: the proposer confirming. `last_administrator`: it would leave no active administrator. `already_disabled`, `not_disabled`: the login's status. `holds_roles`: enable of a login that still holds roles. `email_taken`: a staff login with this email exists. `password_set`: resend_invite for a login that has set its password."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: last_administrator } } }
+        '429':
+          description: "`too_many_resends`: 3 resends of this login in the last hour."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: too_many_resends } } }
         '500': { $ref: '#/components/responses/ServerError' }
+        '502':
+          description: "`email_not_sent`: invite or resend_invite, the sender refused the set-password email. The login (and, for invite, its grant request) is kept; try resend_invite."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, staffId]
+                properties:
+                  error: { const: email_not_sent }
+                  staffId: { $ref: '#/components/schemas/LoginId' }
+                  requestId: { $ref: '#/components/schemas/Id' }
+              example: { error: email_not_sent, staffId: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', requestId: '121' }
   /api/trust-safety/reports:
     get:
       operationId: listReports
@@ -2316,6 +2602,7 @@ paths:
                               decidedByStaffUserId: { type: [string, 'null'] }
                               decidedAt: { $ref: '#/components/schemas/NullableTimestamp' }
                               caseId: { type: [string, 'null'] }
+                              evidenceFile: { type: boolean, description: "Q7: an evidence file is attached (GET /api/trust-safety/evidence?reportId=)." }
               example:
                 items: [{ id: '801', status: open, targetKind: job, reason: asks_for_money, createdText: '2026-11-18 09:30:00.123456+00', targetJobId: '5501', jobTitle: Staff Nurse, jobStatus: live, organisationId: '312', displayName: Example Recruitment Ltd }]
                 next: null
@@ -2425,7 +2712,7 @@ paths:
                           The case row in camel case (id, organisationId, caseKind, jobId, reportId, reasonCode, noticeSummary, level, stage,
                           outcome, the reply and appeal fields and who entered them, decidedBy and decidedAt, banLiftedAt, createdAt), the
                           company (displayName, organisationKind, organisationStatus, restrictedUntil, claimsRemovedAt), `pending` (the
-                          two-person requests), `bans` and `wrcReported`.
+                          two-person requests), `bans`, `wrcReported` and `evidenceFile`.
                         required: [id, organisationId, caseKind, stage, pending, bans, wrcReported]
                         properties:
                           id: { $ref: '#/components/schemas/Id' }
@@ -2435,6 +2722,7 @@ paths:
                           pending: { type: array, items: { type: object } }
                           bans: { type: array, items: { type: object } }
                           wrcReported: { type: boolean }
+                          evidenceFile: { type: boolean, description: "Q7: an evidence file is attached (GET /api/trust-safety/evidence?caseId=)." }
               example:
                 items: [{ id: '51', organisationId: '312', displayName: Example Recruitment Ltd, caseKind: instant_ban, reasonCode: asks_for_money, stage: case_open, outcome: null, level: null, replyDueAt: null, appealDueAt: null, createdAt: '2026-11-18T09:30:00.000Z' }]
                 next: null
@@ -2557,6 +2845,99 @@ paths:
             `window_closed`: the appeal's state. `not_agency_ban`, `already_marked`: mark_wrc on a case it does not apply to, or twice.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: reply_window_open } } }
         '500': { $ref: '#/components/responses/ServerError' }
+  /api/trust-safety/evidence:
+    get:
+      operationId: openTrustSafetyEvidence
+      summary: Open the evidence file of a report or a case
+      description: >-
+        Q7 (#91, #99). Exactly one of `reportId` and `caseId`: 302 to a 60-second download link of its evidence file and one `data_access`
+        audit row (`trust_safety.evidence_open`, object `report` or `strike`). trust_and_safety only. Whether a report or case has a file is
+        `evidenceFile` on `GET /api/trust-safety/reports?id=` and `GET /api/trust-safety/cases?id=`.
+      security: [{ staffSession: [] }]
+      x-roles: [trust_and_safety]
+      x-rate-limit: none
+      parameters:
+        - { name: reportId, in: query, required: false, schema: { type: string }, example: '801' }
+        - { name: caseId, in: query, required: false, schema: { type: string }, example: '51' }
+      responses:
+        '302':
+          description: "The download link, valid 60 seconds; not cached, no referrer."
+          headers:
+            Location: { schema: { type: string, format: uri }, example: 'https://files.example.com/evidence/made-up-key.png?signature=made-up' }
+          content: { application/json: { schema: { type: object }, example: {} } }
+        '400':
+          description: "`bad_query`: not exactly one of `reportId` and `caseId`, or an unknown or repeated key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_trust_and_safety`: the role is missing."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_trust_and_safety } } }
+        '404':
+          description: "`not_found`: no such report or case, or it has no evidence file (also an id that is not an id)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503':
+          description: "`files_unavailable`: file storage is not set up. No audit row is written."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: files_unavailable } } }
+    post:
+      operationId: attachTrustSafetyEvidence
+      summary: Attach the one evidence file to a report or a case
+      description: |
+        Q7 (#91, #99). `multipart/form-data` with exactly one of `?reportId=` and `?caseId=` and exactly one field `file` (PDF, JPEG or PNG, found
+        from the bytes; at most 4,194,304 bytes). trust_and_safety only. One file per report or case, never replaced; a report only while open or
+        job_hidden, a case until its appeal is decided. The file follows the row's retention (rules 21 to 23 delete it with the row). One
+        `trust_safety.evidence_attach` audit row (type and size only). Order: Origin, the `Content-Length` cap (before the session), the session,
+        the role and the target (before the body is read), then the file. A row write that fails (two at once) removes the stored file.
+        The reporter cannot attach a file: the report routes take a small JSON body (`POST /api/report`), not a file.
+      security: [{ staffSession: [] }]
+      x-roles: [trust_and_safety]
+      x-rate-limit: none (one file per report or case)
+      x-body-cap: 4210688 bytes (4 MiB file plus 16 KiB of multipart wrapping), counted while reading
+      parameters:
+        - { name: reportId, in: query, required: false, schema: { type: string }, example: '801' }
+        - { name: caseId, in: query, required: false, schema: { type: string }, example: '51' }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, additionalProperties: false, required: [file], properties: { file: { type: string, format: binary } } }
+      responses:
+        '200':
+          description: The file was stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ok, contentType, sizeBytes]
+                properties:
+                  ok: { type: boolean, const: true }
+                  contentType: { type: string, enum: [pdf, jpeg, png] }
+                  sizeBytes: { type: integer }
+              example: { ok: true, contentType: png, sizeBytes: 90211 }
+        '400':
+          description: "`bad_query`: not exactly one of `reportId` and `caseId`. `bad_file`: not multipart or not exactly one `file` field. `empty_file`: no bytes."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_file } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: not the admin site's Origin. `not_active_staff`. `not_trust_and_safety`: the role is missing."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_trust_and_safety } } }
+        '404':
+          description: "`not_found`: no such report or case (also an id that is not an id)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`already_attached`: it has its file already. `already_decided`: the report is decided, or the case's appeal is."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: already_attached } } }
+        '413':
+          description: "`file_too_large`: over the cap by header or while reading."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: file_too_large } } }
+        '415':
+          description: "`wrong_file_type`: the bytes are not a PDF, JPEG or PNG."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: wrong_file_type } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503':
+          description: "`files_unavailable`: file storage is not set up. Nothing is written."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: files_unavailable } } }
   /api/staff/me/export:
     get:
       operationId: exportMyStaffData
@@ -2619,7 +3000,8 @@ paths:
       description: >-
         The open scheduled_check items (step 15 Q3) the daily command writes: a weekly DETE notice check, a monthly hand check of 100 jobs,
         a 6-monthly big-company review and one per big-company name due for review (rules_data_editor), and a quarterly role review
-        (administrator; the hand check is fetched_job_reviewer). Each member sees the items of the roles they hold; an administrator sees
+        (administrator; the hand check is fetched_job_reviewer); the daily retention run adds a monthly sole_owner_retention reminder
+        (administrator) per open company whose only active owner it leaves out (0050). Each member sees the items of the roles they hold; an administrator sees
         them all. Oldest first, at most 100 (`truncated` says more exist). No query key is allowed.
       security: [{ staffSession: [] }]
       x-roles: [rules_data_editor, fetched_job_reviewer, administrator]
@@ -2640,16 +3022,17 @@ paths:
                       required: [id, reason, detail, status, created_at]
                       properties:
                         id: { $ref: '#/components/schemas/Id' }
-                        reason: { type: string, enum: [dete_notice_check, hand_check_100, big_company_review, role_review, big_company_name_review] }
+                        reason: { type: string, enum: [dete_notice_check, hand_check_100, big_company_review, role_review, big_company_name_review, sole_owner_retention] }
                         detail:
                           type: object
-                          description: "`key` names the reminder and its period; `role` works it; a big-company name review also has `name` and `reviewOn`."
+                          description: "`key` names the reminder and its period; `role` works it; a big-company name review also has `name` and `reviewOn`. A sole_owner_retention reminder (0050, administrator) has `organisationId`: retention would erase that company's only active owner, so it waits until the company is closed or has another owner."
                           required: [key, role]
                           properties:
                             key: { type: string }
                             role: { type: string }
                             name: { type: string }
                             reviewOn: { $ref: '#/components/schemas/Date' }
+                            organisationId: { $ref: '#/components/schemas/Id' }
                         status: { type: string, enum: [open, claimed] }
                         created_at: { $ref: '#/components/schemas/DbTime' }
                   truncated: { type: boolean }
@@ -2764,6 +3147,201 @@ paths:
         '403':
           description: "`not_active_staff`: the login is not active. `not_administrator`: no administrator role."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/staff/me/counts:
+    get:
+      operationId: getMyStaffCounts
+      summary: Count the work waiting for my roles
+      description: >-
+        The signed-in member's notices (step 15 Q11): open and claimed items of each review queue their roles may work (a queue with none is
+        left out), and for the roles that work them: open reports and those of the last 24 hours (trust_and_safety), strike appeals waiting
+        (trust_and_safety, administrator), new and claimed contact messages (services_case_handler, content_editor, administrator) and
+        two-person requests someone else proposed (administrator). A count the roles do not cover is null. Any active staff login. No query
+        key is allowed. The same numbers go out in the daily digest email.
+      security: [{ staffSession: [] }]
+      x-roles: [any active staff]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The counts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [queues, reportsOpen, reportsNew, appeals, contact, approvals]
+                properties:
+                  queues: { type: object, additionalProperties: { type: integer, minimum: 1 } }
+                  reportsOpen: { type: [integer, 'null'] }
+                  reportsNew: { type: [integer, 'null'] }
+                  appeals: { type: [integer, 'null'] }
+                  contact: { type: [integer, 'null'] }
+                  approvals: { type: [integer, 'null'] }
+              example: { queues: { scam_flag: 2, scheduled_check: 1 }, reportsOpen: 3, reportsNew: 1, appeals: 0, contact: null, approvals: null }
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_active_staff } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/accuracy-sample:
+    get:
+      operationId: getAccuracySample
+      summary: Read this month's sample of live jobs for the hand check
+      description: >-
+        This month's (Irish time) sample of up to 100 random live jobs for the badge hand check (#74, step 15 Q8), made on the first read of
+        the month and stored on that month's `hand_check_100` reminder, so a reload shows the same jobs in the same order. Each job as it is
+        now, with the source link, the badge and permit type, the pass route and the fetcher's stage, reason, quoted evidence and model.
+        `approvedByYou`: the reader approved it in the fetched-job queue (20c section 3: someone else should check it). With no live job
+        nothing is made: `key` and `createdAt` are null and `jobs` is empty. No query key is allowed.
+      security: [{ staffSession: [] }]
+      x-roles: [fetched_job_reviewer, rules_data_editor, trust_and_safety, administrator]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The sample.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [key, createdAt, jobs]
+                properties:
+                  key: { type: [string, 'null'] }
+                  createdAt: { oneOf: [{ $ref: '#/components/schemas/DbTime' }, { type: 'null' }] }
+                  jobs:
+                    type: array
+                    maxItems: 100
+                    items:
+                      type: object
+                      required: [id, title, employerName, sourceUrl, source, status, badge, permitType, passRoute, occupationCode, salaryLow, salaryHigh, stage, reason, quotedEvidence, matcherModel, approvedByYou]
+                      properties:
+                        id: { $ref: '#/components/schemas/Id' }
+                        title: { type: string }
+                        employerName: { type: string }
+                        sourceUrl: { type: [string, 'null'] }
+                        source: { type: string, enum: [fetched, employer, agency, admin_manual] }
+                        status: { type: string }
+                        badge: { type: [string, 'null'] }
+                        permitType: { type: string, enum: [critical_skills, general] }
+                        passRoute: { type: [string, 'null'] }
+                        occupationCode: { type: [string, 'null'] }
+                        salaryLow: { type: [integer, 'null'] }
+                        salaryHigh: { type: [integer, 'null'] }
+                        stage: { type: [string, 'null'] }
+                        reason: { type: [string, 'null'] }
+                        quotedEvidence: { type: [string, 'null'] }
+                        matcherModel: { type: [string, 'null'] }
+                        approvedByYou: { type: boolean }
+              example:
+                key: 'hand_check_100:2026-11'
+                createdAt: '2026-11-19 09:00:00.123456+00'
+                jobs: [{ id: '501', title: Example Software Engineer, employerName: Example Ltd, sourceUrl: 'https://jobs.example.com/1', source: fetched, status: live, badge: critical_skills_eligible, permitType: critical_skills, passRoute: stated_pay, occupationCode: '2136', salaryLow: 45000, salaryHigh: 55000, stage: '7 passed', reason: null, quotedEvidence: null, matcherModel: null, approvedByYou: false }]
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_sample_staff`: none of the four roles."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_sample_staff } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/fetched-jobs/decisions:
+    get:
+      operationId: listFetchedDecisions
+      summary: Export the fetched-job queue decisions as labelled rows
+      description: >-
+        The decided items of the fetched-job queue as labelled rows for the matcher test set (#120, step 15 Q8): `label` approved or rejected,
+        the decision's reason code, the advert text and link, the job's occupation code after the decision, and the fetcher's stage, reason,
+        quoted evidence and model. Oldest first by item id, 50 a page; `next` is the `after` of the next page (null on the last). Only `after`
+        is allowed in the query.
+      security: [{ staffSession: [] }]
+      x-roles: [fetched_job_reviewer, rules_data_editor, administrator]
+      x-rate-limit: none
+      parameters:
+        - name: after
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/Id' }
+      responses:
+        '200':
+          description: One page of decisions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next]
+                properties:
+                  next: { oneOf: [{ $ref: '#/components/schemas/Id' }, { type: 'null' }] }
+                  items:
+                    type: array
+                    maxItems: 50
+                    items:
+                      type: object
+                      required: [itemId, label, reasonCode, decidedAt, jobId, title, employerName, sourceUrl, occupationCode, county, stage, reason, quotedEvidence, matcherModel, advertText]
+                      properties:
+                        itemId: { $ref: '#/components/schemas/Id' }
+                        label: { type: string, enum: [approved, rejected] }
+                        reasonCode: { type: [string, 'null'] }
+                        decidedAt: { $ref: '#/components/schemas/DbTime' }
+                        jobId: { $ref: '#/components/schemas/Id' }
+                        title: { type: string }
+                        employerName: { type: string }
+                        sourceUrl: { type: [string, 'null'] }
+                        occupationCode: { type: [string, 'null'] }
+                        county: { type: [string, 'null'] }
+                        stage: { type: [string, 'null'] }
+                        reason: { type: [string, 'null'] }
+                        quotedEvidence: { type: [string, 'null'] }
+                        matcherModel: { type: [string, 'null'] }
+                        advertText: { type: [string, 'null'] }
+              example:
+                next: null
+                items: [{ itemId: '88', label: rejected, reasonCode: not_in_ireland, decidedAt: '2026-11-16 10:40:00.123456+00', jobId: '501', title: Example Nurse, employerName: Example Clinic, sourceUrl: 'https://jobs.example.com/2', occupationCode: '2231', county: Dublin, stage: '4 low confidence', reason: matcher unsure, quotedEvidence: null, matcherModel: null, advertText: Example advert text. }]
+        '400':
+          description: "`bad_query`: any query key but `after`, or it twice. `bad_cursor`: `after` is not an id."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_decision_staff`: none of the three roles."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_decision_staff } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/targets:
+    get:
+      operationId: getTargetCounts
+      summary: Read the counts behind the launch targets
+      description: >-
+        Aggregates for the #74 targets (step 15 Q8): candidates active in the last 7 days, "Yes, I applied" and "Mark applied" taps (tracker
+        entries by origin), jobs whose employer answered yes to "did you hire", on-site applications marked hired, live jobs now, reports of
+        the last 30 days and those per 1,000 live jobs (one decimal; null with no live job). Counts only, never a person or a job. Any staff
+        login holding a role. No query key is allowed.
+      security: [{ staffSession: [] }]
+      x-roles: [any staff role]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The counts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [weeklyActiveCandidates, yesIApplied, markApplied, hires, hiredOnSite, liveJobs, reports30Days, reportsPer1000LiveJobs]
+                properties:
+                  weeklyActiveCandidates: { type: integer, minimum: 0 }
+                  yesIApplied: { type: integer, minimum: 0 }
+                  markApplied: { type: integer, minimum: 0 }
+                  hires: { type: integer, minimum: 0 }
+                  hiredOnSite: { type: integer, minimum: 0 }
+                  liveJobs: { type: integer, minimum: 0 }
+                  reports30Days: { type: integer, minimum: 0 }
+                  reportsPer1000LiveJobs: { type: [number, 'null'], minimum: 0 }
+              example: { weeklyActiveCandidates: 420, yesIApplied: 75, markApplied: 30, hires: 4, hiredOnSite: 0, liveJobs: 1200, reports30Days: 6, reportsPer1000LiveJobs: 5 }
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `no_role`: the login holds no role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: no_role } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/settings:
     get:
@@ -2993,4 +3571,168 @@ paths:
         '409':
           description: "`decision_pending`: an import waits already. `request_not_pending`: the request is not pending. `same_person`: the proposer confirming."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: decision_pending } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/data-requests:
+    get:
+      operationId: listDataRequests
+      summary: List the open data requests and the erasures waiting for a second administrator
+      description: >-
+        The open and claimed `data_request` items (step 15 Q2), oldest first, at most 100 (`truncated` says more wait), each with the
+        requester's email from its contact message, whether that message came from a signed-in login, and the state of the owner's
+        confirmation (decision #271: the purpose sent, when, and when the owner confirmed); and the pending `data_request_erase` requests with
+        the account each names. No query key is allowed.
+      security: [{ staffSession: [] }]
+      x-roles: [administrator]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The open items and the pending erasures.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, truncated, pending]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [itemId, status, createdAt, surface, email, signedIn, confirmPurpose, confirmSentAt, confirmedAt]
+                      properties:
+                        itemId: { $ref: '#/components/schemas/Id' }
+                        status: { type: string, enum: [open, claimed] }
+                        createdAt: { $ref: '#/components/schemas/DbTime' }
+                        surface: { type: string, enum: [candidate_site, portal] }
+                        email: { type: [string, 'null'] }
+                        signedIn: { type: boolean }
+                        confirmPurpose: { type: [string, 'null'], enum: [export, erase, null] }
+                        confirmSentAt: { type: [string, 'null'] }
+                        confirmedAt: { type: [string, 'null'] }
+                  truncated: { type: boolean }
+                  pending:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [requestId, itemId, kind, userId, proposedBy, createdAt]
+                      properties:
+                        requestId: { $ref: '#/components/schemas/Id' }
+                        itemId: { $ref: '#/components/schemas/Id' }
+                        kind: { type: string, enum: [candidate, portal] }
+                        userId: { $ref: '#/components/schemas/LoginId' }
+                        proposedBy: { $ref: '#/components/schemas/LoginId' }
+                        createdAt: { $ref: '#/components/schemas/DbTime' }
+              example:
+                items: [{ itemId: '52', status: open, createdAt: '2026-11-19 09:30:00.123456+00', surface: candidate_site, email: person@example.com, signedIn: false, confirmPurpose: erase, confirmSentAt: '2026-11-19T09:35:00.123456+00:00', confirmedAt: null }]
+                truncated: false
+                pending: [{ requestId: '160', itemId: '52', kind: candidate, userId: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', proposedBy: 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6', createdAt: '2026-11-19 09:40:00.123456+00' }]
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_administrator`: no administrator role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: actOnDataRequest
+      summary: Ask the account owner to confirm, erase the account a data request names, or close the request
+      description: >-
+        The account is the one candidate or portal login whose email is the requester's email on the item's contact message (compared in
+        lower case). Refused when none matches (`no_account`), when a candidate and a portal login share the address (`several_accounts`), or
+        when a signed-in sender typed another login's address (`sender_not_account`). Staff never receive anyone's data (decision #271).
+        `send_confirm` (`purpose` export or erase): queues one email, placeholder wording, to that login's own confirmed address (never the
+        address typed on the form) with a one-time link to its own site (`GET` and `POST /api/data-request` on the candidate or employer site),
+        made when the outbox sends it and valid for 7 days; only its hash is kept. A new send ends an older link and an older confirmation.
+        Refused `email_not_confirmed` and `account_deleted`. For an export the owner downloads it from the link. `close`: ends an open item
+        (its link stops working), with an audit row. `erase_propose`: refused `not_confirmed` unless the request is proved (sent by that login
+        while signed in, or its owner confirmed an erase from the link); one pending erase per item. `erase_confirm`: a different administrator
+        confirms and the erase runs at once, as the retention erase does: refused, and the request left pending, while the person has an open
+        services case or is the target of an open report (or, for a portal login, is an account owner with other active members, or the only
+        active owner of an open company), when the item is no longer open (`not_open`), or when the match or the proof has changed. The stored
+        files are removed, every visitor message from the requester's address (the request's own among them) is emptied and the open items
+        pointing to them close, the item closes and one audit row names both administrators. `erase_refuse`: a different administrator refuses,
+        or the proposer withdraws. The Origin header must be the admin app's origin.
+      security: [{ staffSession: [] }]
+      x-roles: [administrator]
+      x-rate-limit: none
+      x-body-cap: 200
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, itemId, purpose]
+                  properties:
+                    action: { const: send_confirm }
+                    itemId: { $ref: '#/components/schemas/Id' }
+                    purpose: { type: string, enum: [export, erase] }
+                - type: object
+                  additionalProperties: false
+                  required: [action, itemId]
+                  properties:
+                    action: { type: string, enum: [close, erase_propose] }
+                    itemId: { $ref: '#/components/schemas/Id' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, requestId]
+                  properties:
+                    action: { type: string, enum: [erase_confirm, erase_refuse] }
+                    requestId: { $ref: '#/components/schemas/Id' }
+            example: { action: send_confirm, itemId: '52', purpose: erase }
+      responses:
+        '200':
+          description: "`send_confirm`: the account and the purpose. `erase_propose`: the account and the request id. `erase_confirm`: the account and the stored files removed. `close` and `erase_refuse`: `{ ok: true }`."
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    additionalProperties: false
+                    required: [ok, kind, userId, purpose]
+                    properties:
+                      ok: { const: true }
+                      kind: { type: string, enum: [candidate, portal] }
+                      userId: { $ref: '#/components/schemas/LoginId' }
+                      purpose: { type: string, enum: [export, erase] }
+                  - type: object
+                    additionalProperties: false
+                    required: [ok, kind, userId, requestId]
+                    properties:
+                      ok: { const: true }
+                      kind: { type: string, enum: [candidate, portal] }
+                      userId: { $ref: '#/components/schemas/LoginId' }
+                      requestId: { $ref: '#/components/schemas/Id' }
+                  - type: object
+                    additionalProperties: false
+                    required: [ok, kind, userId, filesRemoved]
+                    properties:
+                      ok: { const: true }
+                      kind: { type: string, enum: [candidate, portal] }
+                      userId: { $ref: '#/components/schemas/LoginId' }
+                      filesRemoved: { type: integer }
+                  - type: object
+                    additionalProperties: false
+                    required: [ok]
+                    properties:
+                      ok: { const: true }
+              example: { ok: true, kind: candidate, userId: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', purpose: erase }
+        '400':
+          description: "`bad_body`: not one JSON object, an unknown or missing field, or over the cap. `bad_action`: unknown action. `bad_item_id`, `bad_request_id`: not an id. `bad_purpose`: not export or erase."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_item_id } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_administrator`: no administrator role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
+        '404':
+          description: "`not_found`: no open data request item with this id, or no such erase request."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`no_account`, `several_accounts`, `sender_not_account`: see above. `email_not_confirmed`, `account_deleted`: no confirm email can go. `not_confirmed`: the owner has not confirmed an erase. `open_services_case`, `open_report`, `owner_with_members`, `not_open`, `account_changed`: the erase is refused for now. `close_company_first`: the login is the only active owner of an open company; close the company first, or a member joins and takes the owner role (`/api/companies/owner-reassign`). `decision_pending`: an erase of this item waits already. `request_not_pending`: the request is not pending. `same_person`: the proposer confirming."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_confirmed } } }
         '500': { $ref: '#/components/responses/ServerError' }

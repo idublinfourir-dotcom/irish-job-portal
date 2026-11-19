@@ -337,6 +337,34 @@
       "when": 1794300044000,
       "tag": "0049_k_fixes",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1794300045000,
+      "tag": "0050_data_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1794300046000,
+      "tag": "0051_dete_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1794300047000,
+      "tag": "0052_staff_uploads",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1794300053000,
+      "tag": "0053_staff_notices",
+      "breakpoints": true
     }
   ]
 }

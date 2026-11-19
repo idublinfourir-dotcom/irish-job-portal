@@ -95,6 +95,7 @@ export const REPORTS_FIRST = `select ${REPORT_COLS} where ${INBOX} order by r.cr
 export const REPORTS_AFTER = `select ${REPORT_COLS} where ${INBOX} and (r.created_at, r.id) > ($1::timestamptz, $2::bigint) order by r.created_at, r.id limit ${PAGE_SIZE + 1}`;
 export const REPORT_ITEM =
   `select ${REPORT_COLS.replace(" from ", ", r.evidence_text, r.target_snapshot, r.reporter_candidate_user_id, r.reporter_portal_user_id, r.decided_by_staff_user_id, r.decided_at, " +
+    "r.evidence_storage_key is not null as evidence_file, " +
     "(select min(s.id) from strike s where s.report_id = r.id) as case_id from ")} where r.id = $1::bigint`;
 
 type ReportRow = Record<string, unknown> & { id: string; created_text: string };
@@ -238,7 +239,7 @@ export const CASE_ITEM =
   "select s.id, s.organisation_id, s.case_kind, s.job_id, s.report_id, s.reason_code, s.notice_summary, s.level, s.stage, s.outcome, s.reply_due_at, s.employer_reply, " +
   "s.replied_at, s.reply_received_at, s.reply_entered_by_staff_user_id, s.decided_by_staff_user_id, s.decided_at, s.approval_request_id, s.appeal_due_at, s.appeal_text, " +
   "s.appealed_at, s.appeal_received_at, s.appeal_entered_by_staff_user_id, s.appeal_decided_by_staff_user_id, s.appeal_decided_at, s.ban_lifted_at, s.created_at, " +
-  "o.display_name, o.kind as organisation_kind, o.status as organisation_status, o.restricted_until, o.claims_removed_at, " +
+  "s.evidence_storage_key is not null as evidence_file, o.display_name, o.kind as organisation_kind, o.status as organisation_status, o.restricted_until, o.claims_removed_at, " +
   "(select coalesce(jsonb_agg(jsonb_build_object('id', a.id, 'kind', a.kind, 'change', a.change, 'proposedBy', a.proposed_by_staff_user_id) order by a.id), '[]') " +
   " from approval_request a where a.status = 'pending' and ((a.target_table = 'strike' and a.target_id = s.id::text) " +
   " or (a.target_table = 'ban' and a.target_id in (select b.id::text from ban b where b.strike_id = s.id)))) as pending, " +

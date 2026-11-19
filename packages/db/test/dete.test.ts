@@ -1,6 +1,6 @@
 // Integration: DETE permit counts against the real test database. Fake names only. See src/dete.ts and src/dete-cli.ts.
 import { execFile } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -202,6 +202,39 @@ describe("hostile content", () => {
 
   it("an organisation id that is not a number is a database error, not a guess", async () => {
     await expect(permitsLast5Years(admin(), "1; drop table organisation", NOW)).rejects.toMatchObject({ code: "22P02" });
+  });
+});
+
+describe("a new year of a linked name (step 15 Q5 gap)", () => {
+  const label = async (org: string) => (await su("select permit_history, sponsor_sort from organisation where id = $1", [org])).rows[0];
+  it("the next year's import gives the new row the name's link and refreshes the label and sponsor key; an unlinked name stays unlinked", async () => {
+    const p = id("ny");
+    const { org, names } = await orgWithNames(1);
+    await importPermits(admin(), [row(`${p} A`, 2018, 4), row(`${p} B`, 2018, 2)]);
+    await linkNames(admin(), [{ organisationNameId: names[0]!, deteName: `${p} A` }]);
+    expect(await label(org)).toEqual({ permit_history: "not_linked", sponsor_sort: 0 }); // linked, nothing since 2019, nothing in the last 5 years
+    const r = await importPermits(admin(), [row(`${p} A`, 2026, 9), row(`${p} B`, 2026, 3)]); // the same upsert as the monthly replace import
+    expect(r).toMatchObject({ inserted: 2, labelsChanged: 1 });
+    expect((await dump(p)).map((x) => [x.dete_name.slice(-1), x.year, x.organisation_name_id])).toEqual([["A", 2018, names[0]], ["B", 2018, null], ["A", 2026, names[0]], ["B", 2026, null]]);
+    expect(await label(org)).toEqual({ permit_history: "has_history", sponsor_sort: 9 });
+    expect(await permitsLast5Years(admin(), org, NOW)).toEqual({ permits: 9, firstYear: 2018 });
+  });
+  it("migration 0051's backfill links the rows an older import left unlinked, refreshes the labels, and a second run changes nothing", async () => {
+    const p = id("bf");
+    const { org, names } = await orgWithNames(1);
+    await importPermits(admin(), [row(`${p} A`, 2018, 4), row(`${p} A`, 2025, 6), row(`${p} C`, 2025, 1)]);
+    await linkNames(admin(), [{ organisationNameId: names[0]!, deteName: `${p} A` }]);
+    await su("update dete_permit_count set organisation_name_id = null where dete_name = $1 and year = 2025", [`${p} A`]); // the state the old import left
+    await admin().query("select private.refresh_permit_history()");
+    expect(await label(org)).toEqual({ permit_history: "not_linked", sponsor_sort: 0 });
+    const sql = readFileSync(new URL("../migrations/0051_dete_links.sql", import.meta.url), "utf8").split("-- ===== 5. backfill")[1]!.split("-- ===== end of backfill")[0]!;
+    const run = () => su(`set role portal_owner; ${sql.slice(sql.indexOf("\n"))} reset role;`);
+    await run();
+    expect((await dump(p)).map((x) => [x.dete_name.slice(-1), x.year, x.organisation_name_id])).toEqual([["A", 2018, names[0]], ["A", 2025, names[0]], ["C", 2025, null]]);
+    expect(await label(org)).toEqual({ permit_history: "has_history", sponsor_sort: 6 });
+    const before = await dump(p);
+    await run();
+    expect(await dump(p)).toEqual(before);
   });
 });
 

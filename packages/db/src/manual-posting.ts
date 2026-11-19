@@ -1,7 +1,7 @@
 // Manual posting (step 13 part 13c; #232): an account reviewer posts a job for an existing employer or agency, recorded with posted_by_staff_id (source
 // 'admin_manual'). It is listed only if it passes the checks an employer post runs (the occupation list, the contract, the rules chain, then the pay against the
 // minimum for the stated hours, compared with >=), as "Critical Skills eligible"; otherwise it stays a draft and the reason is kept in the audit row. Never
-// "Sponsor confirmed" (step 14 brings the employer's written confirmation and a second person). Staff may close their own manual posts.
+// "Sponsor confirmed" when posted: that needs the employer's written confirmation and a second person (staff-uploads.ts, Q6). Staff may close their own manual posts.
 // This file does not import from apps/portal: `manualVerdict` is the small check of apps/portal/lib/jobs.ts (`rulesFor`), written again on the same
 // rules in force (#229, `getRules`), with the same pay rule (#107, #150, #225). Every write sets the acting staff id for the transaction and checks the role in the database.
 import type pg from "pg";

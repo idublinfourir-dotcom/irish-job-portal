@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./ssl": "./src/ssl.ts",
     "./rules-data": "./src/rules-data.ts",
-    "./staff-tools": "./src/staff-tools.ts"
+    "./staff-tools": "./src/staff-tools.ts",
+    "./staff-uploads": "./src/staff-uploads.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

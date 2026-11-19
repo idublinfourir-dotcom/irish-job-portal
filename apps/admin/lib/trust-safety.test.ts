@@ -75,6 +75,7 @@ describe("refusal codes", () => {
     expect(statusFor("not_found")).toBe(404);
     expect(statusFor("same_person")).toBe(409);
     expect(statusFor("reply_window_open")).toBe(409);
+    for (const [code, status] of [["already_attached", 409], ["bad_file", 400], ["empty_file", 400], ["file_too_large", 413], ["wrong_file_type", 415]] as const) expect(statusFor(code), code).toBe(status);
     expect(statusFor("not_reviewer")).toBeNull();
     expect(statusFor("toString")).toBeNull();
   });

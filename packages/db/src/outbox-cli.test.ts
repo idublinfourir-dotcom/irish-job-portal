@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { DECISION_TEMPLATE } from "./account-review.ts";
-import { main, noticeEmail, NOTICE_TEMPLATES, parseBatch } from "./outbox-cli.ts";
+import { confirmEmail, digestLines, main, noticeEmail, NOTICE_TEMPLATES, parseBatch } from "./outbox-cli.ts";
 
 const SITE = "https://employers.example.ie";
 
@@ -36,8 +36,16 @@ describe("notice emails", () => {
       "owner_reassign_done", // the second row of a two-row insert in 0036_portal_notices.sql
     ]);
     queued.delete("job_alert"); // its own email (job-alert-email.ts)
+    queued.delete("data_request_confirm"); // its own email (confirmEmail, below)
     expect(queued.size).toBeGreaterThanOrEqual(25);
     expect([...queued].filter((t) => !NOTICE_TEMPLATES.includes(t))).toEqual([]);
+  });
+  it("the data request confirm email (0050): one button to the site's /api/data-request with the token, the link in the text, no dash", () => {
+    const token = "A".repeat(43), m = confirmEmail("https://www.example.test", token);
+    expect(m.subject).toBe("Please confirm your data request");
+    expect([...m.html.matchAll(/href="([^"]+)"/g)].map((x) => x[1])).toEqual([`https://www.example.test/api/data-request?token=${token}`]);
+    expect(m.text).toContain(`https://www.example.test/api/data-request?token=${token}`);
+    for (const part of [m.subject, m.text, m.html]) expect(part).not.toMatch(/PLACEHOLDER|[\u2013\u2014]/);
   });
   it("each has its own subject, a sentence, a sign-in button to the given site, and no placeholder, template name or dash", () => {
     const subjects = new Set<string>();
@@ -61,6 +69,14 @@ describe("notice emails", () => {
       expect(m.subject).toBe("News about your account");
       expect(m.subject + m.text + m.html).not.toMatch(/Bcc|<script|<img|onerror/);
     }
+  });
+  it("the staff digest shows only whole numbers above zero under fixed labels, and nothing else from params (Q11)", () => {
+    expect(digestLines({ scam_flag: 2, reportsOpen: 1, contact: 0, appeals: -1, approvals: 1.5, fetched_job: "3", unknown: 9, data_request: Number.MAX_SAFE_INTEGER + 2 }))
+      .toEqual(["Jobs flagged for scam wording: 2", "Open reports: 1"]);
+    for (const p of [null, "x", [1], 5]) expect(digestLines(p)).toEqual([]);
+    const m = noticeEmail("staff_digest", null, digestLines({ "<script>": 1, reportsNew: 4 }));
+    expect(m.text).toContain("Reports in the last 24 hours: 4");
+    expect(m.html + m.text).not.toMatch(/<script|href=/);
   });
   it("with no site known (a staff or contact row) there is no button and no link", () => {
     expect(noticeEmail("team_removed", null).html).not.toContain("href=");

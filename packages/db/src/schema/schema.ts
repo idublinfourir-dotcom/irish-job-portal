@@ -1,6 +1,6 @@
 // Made by npm run db:pull (packages/db/test/pull-schema.mjs) from a database built by packages/db/migrations.
 // Do not edit by hand: change a migration, then run npm run db:pull. schema.test.ts fails until the two match.
-import { customType, pgTable, index, foreignKey, unique, check, bigint, text, jsonb, timestamp, uniqueIndex, type AnyPgColumn, smallint, integer, boolean, date, pgView } from "drizzle-orm/pg-core"
+import { customType, pgTable, index, foreignKey, unique, check, bigint, text, jsonb, timestamp, uniqueIndex, primaryKey, type AnyPgColumn, smallint, integer, boolean, date, pgView } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 // drizzle-kit cannot read tsvector, so it is declared here
@@ -906,6 +906,28 @@ export const detePermitRise = pgTable("dete_permit_rise", {
 	check("dete_permit_rise_check", sql`permits_after > permits_before`),
 ]);
 
+export const deteLinkRejection = pgTable("dete_link_rejection", {
+	deteName: text("dete_name").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	organisationId: bigint("organisation_id", { mode: "number" }).notNull(),
+	rejectedByStaffId: text("rejected_by_staff_id").notNull(),
+	rejectedAt: timestamp("rejected_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("dete_link_rejection_org_idx").using("btree", table.organisationId.asc().nullsLast().op("int8_ops")),
+	index("dete_link_rejection_staff_idx").using("btree", table.rejectedByStaffId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.organisationId],
+			foreignColumns: [organisation.id],
+			name: "dete_link_rejection_organisation_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.rejectedByStaffId],
+			foreignColumns: [staffUser.id],
+			name: "dete_link_rejection_rejected_by_staff_id_fkey"
+		}),
+	primaryKey({ columns: [table.deteName, table.organisationId], name: "dete_link_rejection_pkey" }),
+]);
+
 export const signupNoCount = pgTable("signup_no_count", {
 	day: date().primaryKey().notNull(),
 	count: integer().notNull(),
@@ -1606,6 +1628,7 @@ export const strike = pgTable("strike", {
 	appealDecidedByStaffUserId: text("appeal_decided_by_staff_user_id"),
 	appealDecidedAt: timestamp("appeal_decided_at", { withTimezone: true, mode: 'string' }),
 	banLiftedAt: timestamp("ban_lifted_at", { withTimezone: true, mode: 'string' }),
+	evidenceStorageKey: text("evidence_storage_key"),
 }, (table) => [
 	index("strike_appeal_entered_idx").using("btree", table.appealEnteredByStaffUserId.asc().nullsLast().op("text_ops")),
 	index("strike_appeal_idx").using("btree", table.appealDecidedByStaffUserId.asc().nullsLast().op("text_ops")),
@@ -1893,7 +1916,7 @@ export const approvalRequest = pgTable("approval_request", {
 	check("approval_request_status_check", sql`status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'refused'::text, 'withdrawn'::text])`),
 	check("approval_request_check", sql`confirmed_by_staff_user_id <> proposed_by_staff_user_id`),
 	check("approval_request_check1", sql`(status <> 'confirmed'::text) OR (confirmed_by_staff_user_id IS NOT NULL)`),
-	check("approval_request_kind_check", sql`kind = ANY (ARRAY['threshold'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'unclear_role_list'::text, 'public_pay_employer'::text, 'big_company_entry'::text, 'pay_floor'::text, 'strike_2'::text, 'strike_3'::text, 'ban'::text, 'ban_lift'::text, 'manual_post_sponsor_confirmed'::text, 'grant_administrator'::text, 'grant_role'::text, 'terms_privacy_page'::text, 'setting'::text])`),
+	check("approval_request_kind_check", sql`kind = ANY (ARRAY['threshold'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'unclear_role_list'::text, 'public_pay_employer'::text, 'big_company_entry'::text, 'pay_floor'::text, 'strike_2'::text, 'strike_3'::text, 'ban'::text, 'ban_lift'::text, 'manual_post_sponsor_confirmed'::text, 'grant_administrator'::text, 'grant_role'::text, 'terms_privacy_page'::text, 'setting'::text, 'company_seed'::text, 'candidate_merge'::text, 'data_request_erase'::text])`),
 ]);
 
 export const setting = pgTable("setting", {

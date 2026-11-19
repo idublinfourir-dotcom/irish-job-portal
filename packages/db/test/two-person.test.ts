@@ -426,8 +426,9 @@ sections[5] = async () => {
     const x = await orgWithOwner(); await su("update membership set status='removed', removed_at=now() where id=$1", [x.m]);
     const o = await org(x.id); const j = await su("select status from job where id=$1", [x.j]); const m = await su("select count(*)::int c from membership where organisation_id=$1 and status<>'removed'", [x.id]);
     must(o.status === "verified" && j.rows[0].status === "live" && m.rows[0].c === 0, JSON.stringify({ o, j: j.rows[0], m: m.rows[0] })); } });
-  await rule("organisation", "#132 must do: the last member is erased (erase_portal_user): organisation stays verified, jobs stay live", { ok: async () => {
-    const x = await orgWithOwner(); const r = await q1("app_admin", S.A, "select private.erase_portal_user($1, true) r", [x.pu]); must(r.r.erased === true, JSON.stringify(r.r));
+  // 0050: erase_portal_user refuses the sole active owner of an open company (close_company_first), so the erase is refused and nothing changes.
+  await rule("organisation", "#132 must do: erasing the last member (the sole owner) is refused close_company_first: organisation stays verified, jobs stay live", { ok: async () => {
+    const x = await orgWithOwner(); const r = await q1("app_admin", S.A, "select private.erase_portal_user($1, true) r", [x.pu]); must(r.r.erased === false && r.r.reason === "close_company_first", JSON.stringify(r.r));
     const o = await org(x.id); const j = await su("select status from job where id=$1", [x.j]); must(o.status === "verified" && j.rows[0].status === "live", JSON.stringify({ o, j: j.rows[0] })); } });
   await rule("organisation", "#132 must do: an administrator reassigns the orphan organisation to a new owner (after the 20b checks, outside the database)", { ok: async () => {
     const x = await orgWithOwner(); await su("update membership set status='removed', removed_at=now() where id=$1", [x.m]); const p2 = await F.portal();

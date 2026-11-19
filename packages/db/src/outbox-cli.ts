@@ -9,6 +9,7 @@
 // an employer or agency); both must be https when anything is pending. Job alerts go from ALERTS_EMAIL_FROM when it is set (else EMAIL_FROM):
 // Brevo adds its own List-Unsubscribe to every email and a click blocks that one sender, so an alert unsubscribe must not block the notices.
 // Logs hold counts and row ids only, never an address or the key.
+import { createHash, randomBytes } from "node:crypto";
 import pg from "pg";
 import { createBrevoMail, type SendMail } from "../../auth/src/brevo.ts";
 import { render, SITE_NAME, type Email } from "../../auth/src/email-layout.ts";
@@ -22,7 +23,7 @@ export const ALERT_MAX_AGE_MS = 3 * 86_400_000; // D4: a job alert queued more t
 
 export const CLAIM =
   "with c as (select id from email_outbox where status = 'pending' and send_after <= now() order by send_after, id limit $1 for update skip locked) " +
-  "update email_outbox o set status = 'sending', attempts = o.attempts + 1 from c where o.id = c.id returning o.id, o.template, o.attempts, o.send_after, o.candidate_user_id, case when o.template = 'job_alert' then o.params end as params, " +
+  "update email_outbox o set status = 'sending', attempts = o.attempts + 1 from c where o.id = c.id returning o.id, o.template, o.attempts, o.send_after, o.candidate_user_id, case when o.template in ('job_alert', 'data_request_confirm', 'staff_digest') then o.params end as params, " +
   "case when o.candidate_user_id is not null then 'candidate' when o.portal_user_id is not null or o.membership_id is not null then 'portal' end as side";
 // The alerts of the claimed job_alert rows (still active) and the jobs they name (still live): two statements for the whole batch.
 export const ALERTS =
@@ -38,12 +39,12 @@ export const ADDRESSES =
   "case when o.template in ('account_deleted', 'deletion_on_hold') then o.params->>'email' end) as email from email_outbox o " +
   "left join candidate_user cu on cu.id = o.candidate_user_id and cu.deleted_at is null " +
   "left join portal_user pu on pu.id = o.portal_user_id and pu.deleted_at is null " +
-  "left join staff_user su on su.id = o.staff_user_id " +
+  "left join staff_user su on su.id = o.staff_user_id and su.status = 'active' " +
   "left join membership m on m.id = o.membership_id left join portal_user mu on mu.id = m.portal_user_id and mu.deleted_at is null " +
   "left join contact_message cm on cm.id = o.contact_message_id where o.id = any($1::bigint[])";
 
 // Draft wording (E1) until the content writers' final text (N2 stays open). One subject and one sentence per template, from the code and the
-// migrations that queue them; never params, staff free text, a reason typed by staff or another person's data. "x" marks a notice with no
+// migrations that queue them; never params (but the staff digest's whole numbers, digestLines), staff free text, a reason typed by staff or another person's data. "x" marks a notice with no
 // button (the login is gone). Unknown templates get the general one.
 const N: Record<string, [subject: string, line: string, x?: "x"]> = {
   // candidates (www)
@@ -73,17 +74,51 @@ const N: Record<string, [subject: string, line: string, x?: "x"]> = {
   strike_decided: ["A decision about your company", "We have made a decision on a case about your company's account."],
   appeal_decided: ["A decision on your appeal", "We have made a decision on your company's appeal."],
   ban_lifted: ["Your company can use the site again", "A ban on your company's account has been lifted."],
+  // staff (no site link: the admin panel; Q11)
+  staff_report_new: ["A new report has arrived", "Someone has reported a job, company, message or profile. It is waiting in the reports inbox."],
+  staff_digest: ["Your work waiting today", "Here is the work waiting for your roles today."],
 };
+// The staff digest's numbers (staff-counts.ts digestParams): a fixed label per known key, and only whole numbers above zero; anything else in params is ignored.
+const DIGEST_LABELS: Record<string, string> = {
+  fetched_job: "Fetched jobs to review", account_review: "Company accounts to review", pay_floor_check: "Pay floors to check",
+  post_strike_job_review: "Jobs to check after a strike", scam_flag: "Jobs flagged for scam wording", agency_client_check: "Agency client checks",
+  data_request: "Data requests", scheduled_check: "Scheduled checks due", reportsOpen: "Open reports", reportsNew: "Reports in the last 24 hours",
+  appeals: "Appeals to decide", contact: "Contact messages", approvals: "Requests waiting for a second person",
+};
+/** The digest lines from a row's params. Pure. */
+export function digestLines(params: unknown): string[] {
+  if (params === null || typeof params !== "object" || Array.isArray(params)) return [];
+  const p = params as Record<string, unknown>;
+  return Object.keys(DIGEST_LABELS).filter((k) => Number.isSafeInteger(p[k]) && (p[k] as number) > 0).map((k) => `${DIGEST_LABELS[k]}: ${p[k]}`);
+}
 export const NOTICE_TEMPLATES = Object.keys(N);
+
+// Decision #271 (0050): the data request confirm link. The token is made here, at send time, and only its sha256 is kept (review_item.detail,
+// 7 days, the same hash as data-request-confirm.ts tokenHash); a newer send by staff (another sentAt), a closed item or a login that no longer matches the row drops the email. A retry makes a new token.
+export const DR_TOKEN_SET =
+  "update review_item set detail = detail || jsonb_build_object('confirmHash', $2::text, 'expiresAt', now() + interval '7 days') " +
+  "where id = $1::bigint and queue = 'data_request' and status in ('open','claimed') and detail->>'sentAt' = $3 and detail->>'confirmedAt' is null " +
+  "and detail->>'userId' = (select coalesce(candidate_user_id, portal_user_id) from email_outbox where id = $4::bigint)";
+/** The confirm email (placeholder wording, no params shown). Pure. */
+export function confirmEmail(site: string, token: string): Email {
+  const subject = "Please confirm your data request";
+  return render(subject, {
+    heading: subject,
+    paragraphs: ["We got a request about the data in your account. Open the link to see it and confirm it. The link works once, for 7 days.",
+      "If you did not ask for this, you can ignore this email and nothing will happen."],
+    button: { label: "Open the request", url: `${site}/api/data-request?token=${token}` },
+    footer: FOOTER,
+  });
+}
 const GENERAL: [string, string] = ["News about your account", "Something has changed on your account."];
 const FOOTER = `You got this email because you have an account on ${SITE_NAME}. We send emails like this when something changes on your account.`;
 
 /** A notice email. `site` is the https origin of the person's site (null: no button, the text says to sign in). */
-export function noticeEmail(template: string, site: string | null): Email {
+export function noticeEmail(template: string, site: string | null, lines: string[] = []): Email {
   const [subject, line, x] = N[template] ?? GENERAL;
   return render(subject, {
     heading: subject,
-    paragraphs: [line, x ? "If you have questions, please use the contact page on the site." : "Please sign in to see the details."],
+    paragraphs: [line, ...lines, x ? "If you have questions, please use the contact page on the site." : "Please sign in to see the details."],
     button: site && !x ? { label: "Sign in", url: `${site}/` } : undefined,
     footer: FOOTER,
   });
@@ -115,8 +150,16 @@ export async function sendPending(c: pg.Pool | pg.Client, send: SendMail, batch 
     const email = to.get(r.id);
     if (!email) { await done(r.id, "dropped"); out.dropped++; continue; }
     try {
-      if (r.template !== "job_alert") {
-        const m = noticeEmail(r.template, siteOrigin(r.side === "candidate" ? siteUrl : r.side === "portal" ? portalUrl : undefined));
+      if (r.template === "data_request_confirm") {
+        const site = siteOrigin(r.side === "candidate" ? siteUrl : portalUrl);
+        if (!site) throw new Error("the site address is not https");
+        const p = (r.params ?? {}) as { itemId?: string; sentAt?: string };
+        const token = randomBytes(32).toString("base64url");
+        if (!(await c.query(DR_TOKEN_SET, [p.itemId, createHash("sha256").update(token).digest("hex"), p.sentAt, r.id])).rowCount) { await done(r.id, "dropped"); out.dropped++; continue; }
+        const m = confirmEmail(site, token);
+        await send(email, m.subject, m.text, m.html);
+      } else if (r.template !== "job_alert") {
+        const m = noticeEmail(r.template, siteOrigin(r.side === "candidate" ? siteUrl : r.side === "portal" ? portalUrl : undefined), r.template === "staff_digest" ? digestLines(r.params) : []);
         await send(email, m.subject, m.text, m.html);
       } else {
         const site = siteOrigin(siteUrl);

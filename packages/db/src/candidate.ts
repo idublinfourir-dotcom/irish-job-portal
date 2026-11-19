@@ -297,7 +297,7 @@ select (select count(*) from logged) as logged, jsonb_build_object(
   'notifications', ${list('n.category, n.template_key as "templateKey", n.params, n.created_at as "createdAt", n.read_at as "readAt"', "candidate_notification n where n.candidate_user_id = $1", '"createdAt" desc')},
   'applications', '[]'::jsonb, 'contactRequests', '[]'::jsonb) as data`;
 
-export async function exportData(db: pg.Pool, userId: string) {
+export async function exportData(db: Pick<pg.Pool, "query">, userId: string) {
   const r = await db.query(EXPORT_SQL, [userId]);
   const x = await db.query("select private.candidate_export_extras($1) as extras", [userId]);
   return { exportedAt: new Date().toISOString(), ...r.rows[0].data, ...x.rows[0].extras, notIncluded: NOT_INCLUDED };

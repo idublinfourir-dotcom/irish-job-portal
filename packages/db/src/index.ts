@@ -82,6 +82,7 @@ export * from "./company-domains";
 export * from "./manual-posting";
 export * from "./owner-reassign";
 export * from "./member-limit";
+export * from "./dete-links";
 
 export * from "./staff-admin";
 export * from "./audit-read";
@@ -89,3 +90,4 @@ export * from "./content-admin";
 
 export * from "./alerts";
 export * from "./self-service";
+export * from "./data-request-confirm";

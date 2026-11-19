@@ -2,6 +2,7 @@
 // different administrator confirms, #137 b), remove a role at once, disable a login (every open session ends in the same transaction) and enable it again. Every call
 // takes the acting staff id from the session and checks in the database, in the same statement that sets app.staff_user_id, that it is an active administrator.
 // No function makes a login: the owner's command does (staff-seed-cli.ts). The grant itself is role-grant.ts, shared with the owner's command.
+import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { QueueRefused } from "./admin-queue";
 import { confirmGrant, proposeGrant } from "./role-grant";
@@ -141,6 +142,58 @@ export async function refuseRoleGrant(db: Db, staff: string, requestId: string):
     const withdrawn = q.proposed_by === staff;
     await c.query("update approval_request set status = $2 where id = $1::bigint", [q.id, withdrawn ? "withdrawn" : "refused"]);
     await audit(c, staff, withdrawn ? "role_withdraw" : "role_refuse", "staff_user", q.target_id, { role: q.role, requestId: q.id }, withdrawn ? null : q.proposed_by);
+  });
+}
+
+// ===== invite a new login (step 15 Q15) =====
+// One administrator makes the login (no password, no role) and proposes its first role in the same transaction; a different administrator confirms
+// it as any grant (#104, #137 b). The route then sends the set-password email through Better Auth's reset (the security@ sender, #264); the invitee
+// can ask for a new one at the sign-in page's reset if it runs out. One pending grant per login and kind (approval_request_pending_unique), so one
+// role here and the others through propose_role.
+export const STAFF_EMAIL = /^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/; // PLAIN_EMAIL in staff-seed-cli.ts (a test keeps them equal)
+export const validStaffEmail = (v: unknown): v is string => typeof v === "string" && v.length <= 254 && STAFF_EMAIL.test(v);
+export const validStaffName = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0 && v.length <= 100 && !/[\u0000-\u001f\u007f]/.test(v);
+const INVITE = "insert into staff_user(id, name, email, email_verified, status) values ($1, $2, $3, false, 'active')";
+
+/** Makes the login and proposes its first role. The email is stored lowercased, as Better Auth looks it up; it is returned for the email. */
+export async function inviteStaff(db: Db, staff: string, email: unknown, name: unknown, role: unknown): Promise<{ staffId: string; requestId: string; email: string }> {
+  const address = typeof email === "string" ? email.trim().toLowerCase() : email;
+  if (!validStaffEmail(address)) throw new QueueRefused("bad_email");
+  if (!validStaffName(name)) throw new QueueRefused("bad_name");
+  checkRole(role);
+  return inTransaction(db, staff, async (c) => {
+    const id = randomUUID();
+    try {
+      await c.query(INVITE, [id, name.trim(), address]);
+    } catch (e) {
+      if ((e as { code?: string }).code === "23505") throw new QueueRefused("email_taken"); // staff_user_email_key
+      throw e;
+    }
+    const requestId = await proposeGrant(c as unknown as pg.ClientBase, staff, id, role as string, "role grant");
+    await audit(c, staff, "invite", "staff_user", id, { role, requestId });
+    return { staffId: id, requestId, email: address };
+  });
+}
+
+// A new set-password email for an invited login that has not set a password yet (no credential account), at most RESEND_MAX an hour per login,
+// counted from its staff.invite_resend audit rows under a lock on the login, so two resends at once take turns.
+export const RESEND_MAX = 3;
+const RESEND_TARGET =
+  "select u.status, u.email, exists (select 1 from staff_account a where a.user_id = u.id and a.provider_id = 'credential') as has_password, " +
+  "(select count(*)::int from audit_event e where e.object_id = u.id and e.object_type = 'staff_user' and e.action = 'staff.invite_resend' and e.at > now() - interval '1 hour') as recent " +
+  "from staff_user u where u.id = $1 for update of u";
+
+/** Checks and records a resend; returns the address for the email. */
+export async function resendInvite(db: Db, staff: string, target: string): Promise<{ email: string }> {
+  checkTarget(target);
+  return inTransaction(db, staff, async (c) => {
+    const t = (await c.query<{ status: string; email: string; has_password: boolean; recent: number }>(RESEND_TARGET, [target])).rows[0];
+    if (!t) throw new QueueRefused("not_found");
+    if (t.status !== "active") throw new QueueRefused("target_not_active");
+    if (t.has_password) throw new QueueRefused("password_set");
+    if (t.recent >= RESEND_MAX) throw new QueueRefused("too_many_resends");
+    await audit(c, staff, "invite_resend", "staff_user", target, {});
+    return { email: t.email };
   });
 }
 

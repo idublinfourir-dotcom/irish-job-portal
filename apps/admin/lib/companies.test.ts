@@ -82,7 +82,9 @@ describe("checkLength", () => {
 });
 describe("refuse", () => {
   it("maps each known code to its status", async () => {
-    for (const [code, status] of [["not_company_staff", 403], ["not_account_reviewer", 403], ["not_found", 404], ["already_merged", 409], ["too_early", 409], ["bad_title", 400], ["bad_origin", 403], ["same_company", 400]] as const) {
+    for (const [code, status] of [["not_company_staff", 403], ["not_account_reviewer", 403], ["not_found", 404], ["already_merged", 409], ["too_early", 409], ["bad_title", 400], ["bad_origin", 403], ["same_company", 400],
+      ["not_administrator", 403], ["not_sponsor_staff", 403], ["already_confirmed", 409], ["job_not_live", 409], ["company_restricted", 409], ["decision_pending", 409],
+      ["request_not_pending", 409], ["same_person", 409], ["no_statement_text", 409], ["bad_file", 400], ["empty_file", 400], ["file_too_large", 413], ["wrong_file_type", 415]] as const) {
       expect(statusFor(code), code).toBe(status);
       const r = refuse(new QueueRefused(code), "t");
       expect([r.status, await r.json()]).toEqual([status, { error: code }]);
