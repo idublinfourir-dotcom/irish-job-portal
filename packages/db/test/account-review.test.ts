@@ -882,7 +882,7 @@ describe("decision notices (N4)", () => {
     expect(await notices(a.user)).toEqual([]);
     expect(await emails(a.user)).toEqual([]);
   });
-  it("the fake sender sends the queued email to the owner's address (placeholder wording); nothing reaches Brevo", async () => {
+  it("the fake sender sends the queued email to the owner's address (its own draft wording, E1); nothing reaches Brevo", async () => {
     const { sendPending } = await import("../src/outbox-cli.ts");
     const a = await registered();
     await claimedBy("reviewer", a.item);
@@ -890,8 +890,8 @@ describe("decision notices (N4)", () => {
     const email = (await su.query("select email from portal_user where id = $1", [a.user])).rows[0].email as string;
     const sent: { to: string; subject: string; text: string }[] = [];
     await sendPending(admin(), async (to, subject, text) => void sent.push({ to, subject, text }), 200);
-    expect(sent.filter((s) => s.to === email)).toEqual([{ to: email, subject: "A notice about your account on the portal", text: expect.stringContaining("PLACEHOLDER WORDING") }]);
-    expect(sent.find((s) => s.to === email)!.text).toContain("account_approved");
+    expect(sent.filter((s) => s.to === email)).toEqual([{ to: email, subject: "Your company account is approved", text: expect.stringContaining("approved it") }]);
+    expect(sent.find((s) => s.to === email)!.text).not.toContain("account_approved");
     expect(await emails(a.user)).toMatchObject([{ template: "account_approved", status: "sent" }]);
   });
 });

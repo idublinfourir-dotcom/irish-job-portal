@@ -52,7 +52,13 @@ describe("buildAlertEmail", () => {
     const a = alert({ county: "Cork" });
     const m = buildAlertEmail("c1", [{ alertId: "1", jobIds: ["10", "11"] }], new Map([["1", a]]), live(job("10"), job("11", { salary_low: null, salary_high: null, pay_grade: "Grade III" })), SITE)!;
     expect(m.subject).toBe("New jobs matching your job alerts");
-    expect(m.text).toContain("PLACEHOLDER WORDING.");
+    expect(m.text + m.html).not.toMatch(/PLACEHOLDER|[\u2013\u2014]/);
+    expect(m.html).toContain(`<a href="${SITE}/jobs/10"`);
+    expect(m.html).toContain(">Cook 10</a>");
+    expect(m.html).toContain("Acme, Cork, €40,000 to €50,000");
+    expect(m.html).toContain(`href="${SITE}/api/alerts/unsubscribe?token=${"T".repeat(40)}&amp;scope=one"`);
+    expect(m.html).toContain(`href="${SITE}/api/alerts/unsubscribe?token=${"T".repeat(40)}&amp;scope=all"`);
+    expect(m.html).toContain(`href="${SITE}/jobs"`); // the main button
     expect(m.text).toContain("Your alert: county Cork (daily)");
     expect(m.text).toContain(`- Cook 10, Acme, Cork, €40,000 to €50,000\n  ${SITE}/jobs/10`);
     expect(m.text).toContain(`- Cook 11, Acme, Cork, Grade III\n  ${SITE}/jobs/11`);
@@ -84,5 +90,32 @@ describe("buildAlertEmail", () => {
     expect(m.text).toContain("- Cook Bcc: x@y.test, Acme Evil https://evil.example, Cork");
     expect(m.text).not.toMatch(/[\u202e\u200b\u2028\r]/);
     expect(JSON.stringify(m.headers)).not.toMatch(/[\r\n]/);
+  });
+  it("hostile job, employer, county and filter text is escaped in the HTML, and every link is on the site", () => {
+    const evil = job("10", { title: "<script>alert(1)</script>", employer_name: '"><img src=x onerror=1>', county: "Cork & <b>Kerry</b>" });
+    const m = buildAlertEmail("c1", [{ alertId: "1", jobIds: ["10"] }], new Map([["1", alert({ sector: "<i>it</i>", county: "\"><svg onload=1>" })]]), live(evil), SITE)!;
+    expect(m.html).not.toMatch(/<script|<img|<svg|<b>|<i>/);
+    expect(m.html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(m.html).toContain("&quot;&gt;&lt;img src=x onerror=1&gt;");
+    expect(m.html).toContain("Cork &amp; &lt;b&gt;Kerry&lt;/b&gt;");
+    for (const [, l] of m.html.matchAll(/href="([^"]+)"/g)) expect(l!.startsWith(`${SITE}/`), l).toBe(true);
+  });
+  it("a hostile unsubscribe token is URL-encoded, so it cannot leave the link", () => {
+    const m = buildAlertEmail("c1", [{ alertId: "1", jobIds: ["10"] }], new Map([["1", alert({ unsubscribe_token: '"><script>&x=1' })]]), live(job("10")), SITE)!;
+    expect(m.html).not.toContain("<script");
+    expect(m.html).toContain("token=%22%3E%3Cscript%3E%26x%3D1");
+  });
+  it("performance: the largest alert email (10 alerts by 20 jobs) builds within the budget", () => {
+    const found = new Map(Array.from({ length: 10 }, (_, i) => [String(i + 1), alert({ id: String(i + 1), county: "Cork" })]));
+    const jobs = live(...Array.from({ length: 200 }, (_, k) => job(String(k + 1), { title: `A long job title number ${k} with words` })));
+    const rows = Array.from({ length: 10 }, (_, i) => ({ alertId: String(i + 1), jobIds: Array.from({ length: 20 }, (_, k) => String(i * 20 + k + 1)) }));
+    buildAlertEmail("c1", rows, found, jobs, SITE); // warm up
+    const t0 = performance.now();
+    for (let i = 0; i < 50; i++) buildAlertEmail("c1", rows, found, jobs, SITE);
+    const ms = (performance.now() - t0) / 50;
+    const m = buildAlertEmail("c1", rows, found, jobs, SITE)!;
+    expect(m.html.match(/\/jobs\/\d+"/g)).toHaveLength(200);
+    expect(m.html.length).toBeLessThan(102_000); // Gmail clips an HTML body over about 102 KB
+    expect(ms).toBeLessThan(10); // measured 1.4 ms on 19 Nov 2026 (19 ms before the formatter was made once); about 7 times that
   });
 });

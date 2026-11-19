@@ -94,10 +94,10 @@ describe("R4: an open case holds deletion and the person is told once", () => {
     expect(await one("select count(*)::int n from notification where template_key = 'deletion_on_hold'")).toEqual({ n: 2 });
     expect(await one("select count(*)::int n from email_outbox where template = 'deletion_on_hold'")).toEqual({ n: 2 });
   });
-  it("the sender delivers both: the deleted login's to the address in params, with placeholder wording only", async () => {
+  it("the sender delivers both: the deleted login's to the address in params, with the notice wording only (no params, E1)", async () => {
     const sent: { to: string; text: string }[] = [];
     await sendPending(admin, async (to, _s, text) => { sent.push({ to, text }); });
     expect(sent.map((s) => s.to).sort()).toEqual([`${deleted}@example.test`, `${unverified}@example.test`].sort());
-    for (const s of sent) expect(s.text).toMatch(/^PLACEHOLDER WORDING/);
+    for (const s of sent) { expect(s.text).toContain("Your account deletion is on hold"); expect(s.text).not.toMatch(/rule|retention/i); }
   });
 });

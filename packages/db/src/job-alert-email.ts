@@ -1,9 +1,11 @@
-// The job alert email (step 11 part 11c, #236 Q1/D4/D5): built at send time from one `job_alert` outbox row, plain text.
+// The job alert email (step 11 part 11c, #236 Q1/D4/D5): built at send time from one `job_alert` outbox row, HTML plus plain text in the
+// shared layout (E1). Draft wording until the content writers' final text (N2 stays open).
 // The row (made by 11b) is { run_on, alerts: [{ alert_id, job_ids }] }; this file only turns what the sender read into text and links.
 // Stands alone for plain node (the outbox command runs without a bundler), so it cannot import soc.ts (a JSON import without an attribute)
 // or search.ts (a directory import): it reads the same SOC data file for titles and keeps a copy of search.ts's salaryLine. Both copies are
 // tested against the originals in packages/db/test/job-alert-email.test.ts.
 import soc from "../../rules/data/soc2010-unit-groups.json" with { type: "json" };
+import { esc, FONT, linkHtml, render, SITE_NAME, SMALL } from "../../auth/src/email-layout.ts";
 
 const TITLES: ReadonlyMap<string, string> = new Map(soc.unit_groups.map((u) => [u.code, u.title]));
 export const MAX_ALERTS = 10; // D1: the shared shape caps a row at 10 alerts and 20 jobs each; the reader applies the same caps to a hostile row
@@ -29,9 +31,10 @@ export function parseAlerts(params: unknown): RowAlert[] {
   return out;
 }
 
+const NUM = new Intl.NumberFormat("en-IE"); // made once: a new formatter per job made the largest alert (10 by 20) take 19 ms instead of 1.4 ms
 /** Copy of search.ts salaryLine (the job list's pay text). */
 export function salaryLine(low: number | null, high: number | null, payGrade: string | null): string | null {
-  const eur = (n: number) => `€${new Intl.NumberFormat("en-IE").format(n)}`;
+  const eur = (n: number) => `€${NUM.format(n)}`;
   if (low !== null && high !== null) return low === high ? eur(low) : `${eur(low)} to ${eur(high)}`;
   if (low !== null) return `From ${eur(low)}`;
   if (high !== null) return `Up to ${eur(high)}`;
@@ -47,7 +50,7 @@ export function filtersInWords(a: AlertRow): string {
     occupation && `occupation ${occupation}`,
     a.sector && `sector ${line(a.sector)}`,
     a.county && `county ${line(a.county)}`,
-    a.salary_min !== null && `pay from €${new Intl.NumberFormat("en-IE").format(a.salary_min)} a year`,
+    a.salary_min !== null && `pay from €${NUM.format(a.salary_min)} a year`,
     a.badge === "sponsor_confirmed" && "only employers with a confirmed sponsor",
   ].filter(Boolean);
   return `${parts.length ? parts.join(", ") : "all new jobs"} (${a.frequency === "weekly" ? "weekly" : "daily"})`;
@@ -65,7 +68,7 @@ export function siteOrigin(v: string | undefined): string | null {
  * An alert not in `found` or owned by another candidate is left out, and so is a job not in `live`. Null when nothing is left.
  */
 export function buildAlertEmail(candidate: string, alerts: RowAlert[], found: Map<string, AlertRow>, live: Map<string, JobRow>, site: string) {
-  const blocks: string[] = [];
+  const blocks: string[] = [], html: string[] = [];
   let first: AlertRow | undefined;
   for (const r of alerts) {
     const a = found.get(r.alertId);
@@ -73,14 +76,27 @@ export function buildAlertEmail(candidate: string, alerts: RowAlert[], found: Ma
     const jobs = r.jobIds.map((id) => live.get(id)).filter((j): j is JobRow => !!j);
     if (!jobs.length) continue;
     first ??= a;
-    const lines = jobs.map((j) => `- ${[line(j.title), line(j.employer_name), line(j.county), salaryLine(j.salary_low, j.salary_high, j.pay_grade)].filter(Boolean).join(", ")}\n  ${site}/jobs/${j.id}`);
+    const facts = (j: JobRow) => [line(j.employer_name), line(j.county), salaryLine(j.salary_low, j.salary_high, j.pay_grade)].filter(Boolean).join(", ");
+    const lines = jobs.map((j) => `- ${[line(j.title), facts(j)].filter(Boolean).join(", ")}\n  ${site}/jobs/${j.id}`);
     blocks.push(`Your alert: ${filtersInWords(a)}\n${lines.join("\n")}\nStop this alert: ${link(site, a.unsubscribe_token, "one")}`);
+    html.push(
+      `<p style="margin:8px 0 8px;font-size:14px;line-height:20px;font-weight:700;color:#1f2933;${FONT}">Your alert: ${esc(filtersInWords(a))}</p>` +
+      jobs.map((j) => `<p style="margin:0 0 12px;font-size:16px;line-height:22px;color:#1f2933;${FONT}">${linkHtml(`${site}/jobs/${j.id}`, line(j.title) || "A job")}<br>` +
+        `<span style="font-size:14px;color:#52606d">${esc(facts(j))}</span></p>`).join("") +
+      `<p style="${SMALL}">${linkHtml(link(site, a.unsubscribe_token, "one"), "Stop this alert")}</p>`,
+    );
   }
   if (!first) return null;
   const all = link(site, first.unsubscribe_token, "all");
-  return {
-    subject: "New jobs matching your job alerts",
-    text: `PLACEHOLDER WORDING.\n\nThese new jobs match your job alerts.\n\n${blocks.join("\n\n")}\n\nStop all your job alerts: ${all}\n`,
-    headers: { "List-Unsubscribe": `<${all}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
-  };
+  const m = render("New jobs matching your job alerts", {
+    heading: "New jobs for you",
+    paragraphs: ["These jobs were added since your last alert and match what you asked for."],
+    extra: {
+      html: `${html.join("")}<p style="${SMALL}">${linkHtml(all, "Stop all your job alerts")}</p>`,
+      text: `${blocks.join("\n\n")}\n\nStop all your job alerts: ${all}`,
+    },
+    button: { label: "See all jobs", url: `${site}/jobs` },
+    footer: `You got this email because you set up a job alert on ${SITE_NAME}. Use the links above to stop one alert or all of them.`,
+  });
+  return { ...m, headers: { "List-Unsubscribe": `<${all}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } };
 }
