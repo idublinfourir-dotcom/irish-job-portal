@@ -967,6 +967,131 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '500': { $ref: '#/components/responses/ServerError' }
+  /api/companies/dete-links:
+    get:
+      operationId: listDeteLinkSuggestions
+      summary: Suggested links from DETE names to companies
+      description: >-
+        DETE employer names none of whose rows is linked yet, each matched to a company by the R23 name matcher run on the company's names
+        (its display name included), best first (score, then permits over every year), 50 a page. A pair staff rejected or unlinked is left
+        out. Companies merged away, rejected or closed are left out. Only `page` (1 to 1000), at most once (anything else is `bad_query`).
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer, trust_and_safety, administrator]
+      x-rate-limit: none
+      parameters:
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 1000, default: 1 } }
+      responses:
+        '200':
+          description: One page of suggestions and how many there are in all.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [suggestions, page, total]
+                properties:
+                  page: { type: integer, minimum: 1 }
+                  total: { type: integer, minimum: 0 }
+                  suggestions:
+                    type: array
+                    maxItems: 50
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [deteName, permits, organisationId, organisation, matchedName, score, kind]
+                      properties:
+                        deteName: { type: string }
+                        permits: { type: integer, minimum: 0 }
+                        organisationId: { $ref: '#/components/schemas/Id' }
+                        organisation: { type: string }
+                        matchedName: { type: string, description: The company name the matcher used. }
+                        score: { type: number, minimum: 0, maximum: 1 }
+                        kind: { type: string, enum: [exact, suggested] }
+              example: { page: 1, total: 1, suggestions: [{ deteName: 'Example Software Ireland Ltd', permits: 120, organisationId: '310', organisation: Example, matchedName: Example Software, score: 1, kind: exact }] }
+        '400':
+          description: "`bad_query`: an unknown or repeated key. `bad_page`: page not a whole number from 1 to 1000."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_page } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_dete_link_viewer`: none of the three roles."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_dete_link_viewer } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: changeDeteLink
+      summary: Link, unlink or reject a DETE name for a company
+      description: >-
+        `link` adds the DETE name to the company as a legal name from DETE (or uses the company's name of the same normalised form), points
+        every DETE row of the name at it and refreshes the permit history labels, so the company's permit history and sponsor sort change at
+        once. `unlink` takes the link off every row of the name, removes the name a link added when nothing else uses it, and remembers the pair
+        as rejected. `reject` turns a suggestion down so it is not suggested again. The Origin header must be the admin app's origin. One
+        audit row each. `deteName` is the stored DETE name exactly (no leading or trailing space).
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer]
+      x-rate-limit: none
+      x-body-cap: 2000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, deteName]
+              properties:
+                action: { type: string, enum: [link, unlink, reject] }
+                deteName: { type: string, minLength: 1, maxLength: 300 }
+                organisationId: { $ref: '#/components/schemas/Id' }
+            example: { action: link, deteName: 'Example Software Ireland Ltd', organisationId: '310' }
+      responses:
+        '200':
+          description: Done.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: object
+                    required: [ok, organisationId, organisationNameId, nameAdded, rowsLinked, labelsChanged, permitHistory]
+                    properties:
+                      ok: { const: true }
+                      organisationId: { $ref: '#/components/schemas/Id' }
+                      organisationNameId: { $ref: '#/components/schemas/Id' }
+                      nameAdded: { type: boolean }
+                      rowsLinked: { type: integer, minimum: 0 }
+                      labelsChanged: { type: integer, minimum: 0 }
+                      permitHistory: { type: string, enum: [has_history, first_time, not_linked] }
+                  - type: object
+                    required: [ok, rowsUnlinked, namesRemoved, labelsChanged, organisationIds]
+                    properties:
+                      ok: { const: true }
+                      rowsUnlinked: { type: integer, minimum: 0 }
+                      namesRemoved: { type: array, items: { type: integer } }
+                      labelsChanged: { type: integer, minimum: 0 }
+                      organisationIds: { type: array, items: { $ref: '#/components/schemas/Id' } }
+                  - type: object
+                    required: [ok, organisationId, rejected]
+                    properties:
+                      ok: { const: true }
+                      organisationId: { $ref: '#/components/schemas/Id' }
+                      rejected: { const: true }
+              example: { ok: true, organisationId: '310', organisationNameId: '5521', nameAdded: true, rowsLinked: 6, labelsChanged: 1, permitHistory: has_history }
+        '400':
+          description: >-
+            `bad_body`: not one JSON object, an unknown field or over 2,000 characters. `bad_action`: not link, unlink or reject. `bad_name`:
+            deteName missing, not a string, empty, over 300 characters, with control characters or with leading or trailing space.
+            `bad_organisation_id`: missing (link, reject) or not an id.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_name } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_dete_link_staff`: not an account reviewer."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_dete_link_staff } } }
+        '404':
+          description: "`not_found`: no such company. `name_not_found`: no DETE row has this name."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: name_not_found } } }
+        '409':
+          description: >-
+            `linked_elsewhere`: the name is linked to another company (unlink first). `name_taken`: another company has a name of the same
+            normalised form (merge first). `company_merged`: the company was merged into another. `not_linked`: unlink of a name not linked.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: linked_elsewhere } } }
+        '500': { $ref: '#/components/responses/ServerError' }
   /api/companies/domains:
     get:
       operationId: listCompanyDomains

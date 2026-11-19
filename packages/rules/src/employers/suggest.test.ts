@@ -57,6 +57,11 @@ describe("buildNameMatcher (R23)", () => {
   it("an empty candidate list gives no candidate for any name", () => {
     expect(buildNameMatcher([]).suggest("Anything")).toEqual({ name: null, score: 0, kind: "no candidate" });
   });
+  it("skip rules a candidate out, the exact one included, and the next best wins", () => {
+    expect(m.suggest("Delta", (c) => c === "Delta Engineering Ltd")).toEqual({ name: "Delta Wind Engineering Ltd", score: 0.45, kind: "suggested" });
+    expect(m.suggest("gamma meats", (c) => c === "Gamma Meats Ireland UC")).toEqual({ name: null, score: 0, kind: "no candidate" });
+    expect(m.suggest("Zeta", () => false)).toEqual(m.suggest("Zeta"));
+  });
   it("names like constructor or __proto__ are plain words", () => {
     expect(m.suggest("constructor")).toEqual({ name: null, score: 0, kind: "no candidate" });
     expect(m.suggest("__proto__")).toEqual({ name: null, score: 0, kind: "no candidate" });

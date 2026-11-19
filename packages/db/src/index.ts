@@ -82,6 +82,7 @@ export * from "./company-domains";
 export * from "./manual-posting";
 export * from "./owner-reassign";
 export * from "./member-limit";
+export * from "./dete-links";
 
 export * from "./staff-admin";
 export * from "./audit-read";

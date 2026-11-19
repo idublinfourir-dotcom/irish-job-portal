@@ -12,6 +12,8 @@
     "listAudit": "GET /api/audit (any active staff member (own rows), administrator (every row))",
     "listSignupNoCounts": "GET /api/signup-no-counts (any active staff member)",
     "listPermitRises": "GET /api/permit-rises (any active staff member)",
+    "listDeteLinkSuggestions": "GET /api/companies/dete-links (account_reviewer, trust_and_safety, administrator)",
+    "changeDeteLink": "POST /api/companies/dete-links (account_reviewer)",
     "listCompanyDomains": "GET /api/companies/domains (account_reviewer, administrator)",
     "changeCompanyDomain": "POST /api/companies/domains (account_reviewer, administrator)",
     "setMemberLimit": "POST /api/companies/member-limit (account_reviewer, administrator)",
