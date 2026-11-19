@@ -38,9 +38,12 @@ export function createMail(baseURL: string, env: NodeJS.ProcessEnv = process.env
   if (!apiKey && !from) return createFakeEmail(baseURL, print, env);
   if (!apiKey || !from) throw new Error("BREVO_API_KEY and EMAIL_FROM must be set together (or neither, for the local fake sender).");
   const mail = createBrevoMail({ apiKey, from, fetch: fetchImpl });
+  // Brevo puts its own unsubscribe on every email and a click blocks that one sender for that person (help.brevo.com 209458705), so a reset
+  // comes from its own address, security@ on EMAIL_FROM's domain: an unsubscribe on a verify or invite email never blocks a later reset.
+  const reset = createBrevoMail({ apiKey, from: `security@${from.split("@")[1]}`, fetch: fetchImpl });
   const send: SendEmail = async (_pool: LoginPool, kind, to, link) => {
     const m = accountEmail(kind, link, baseURL);
-    await mail(to, m.subject, m.text, m.html);
+    await (kind === "reset" ? reset : mail)(to, m.subject, m.text, m.html);
   };
   return { outbox: [], send };
 }

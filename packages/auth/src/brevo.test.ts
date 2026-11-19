@@ -97,7 +97,7 @@ describe("createMail (the switch)", () => {
     await m.send("candidate", "reset", "pat@example.com", "https://portal.example.com/api/auth/candidate/reset-password/abc?callbackURL=");
     const body = JSON.parse(f.mock.calls[0]![1]!.body as string);
     expect(body.subject).toBe("Reset your password");
-    expect(body.sender).toEqual({ name: SITE_NAME, email: "no-reply@example.com" });
+    expect(body.sender).toEqual({ name: SITE_NAME, email: "security@example.com" }); // a reset has its own sender (Brevo blocks per sender)
     expect(body.textContent).toContain("https://portal.example.com/api/auth/candidate/reset-password/abc?callbackURL=");
     expect(body.htmlContent).toContain('href="https://portal.example.com/api/auth/candidate/reset-password/abc?callbackURL="');
     expect(body).not.toHaveProperty("headers"); // account emails add no header of ours
