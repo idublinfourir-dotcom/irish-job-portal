@@ -175,6 +175,28 @@ export async function inviteStaff(db: Db, staff: string, email: unknown, name: u
   });
 }
 
+// A new set-password email for an invited login that has not set a password yet (no credential account), at most RESEND_MAX an hour per login,
+// counted from its staff.invite_resend audit rows under a lock on the login, so two resends at once take turns.
+export const RESEND_MAX = 3;
+const RESEND_TARGET =
+  "select u.status, u.email, exists (select 1 from staff_account a where a.user_id = u.id and a.provider_id = 'credential') as has_password, " +
+  "(select count(*)::int from audit_event e where e.object_id = u.id and e.object_type = 'staff_user' and e.action = 'staff.invite_resend' and e.at > now() - interval '1 hour') as recent " +
+  "from staff_user u where u.id = $1 for update of u";
+
+/** Checks and records a resend; returns the address for the email. */
+export async function resendInvite(db: Db, staff: string, target: string): Promise<{ email: string }> {
+  checkTarget(target);
+  return inTransaction(db, staff, async (c) => {
+    const t = (await c.query<{ status: string; email: string; has_password: boolean; recent: number }>(RESEND_TARGET, [target])).rows[0];
+    if (!t) throw new QueueRefused("not_found");
+    if (t.status !== "active") throw new QueueRefused("target_not_active");
+    if (t.has_password) throw new QueueRefused("password_set");
+    if (t.recent >= RESEND_MAX) throw new QueueRefused("too_many_resends");
+    await audit(c, staff, "invite_resend", "staff_user", target, {});
+    return { email: t.email };
+  });
+}
+
 // ===== remove a role, disable, enable (one administrator, at once) =====
 // Every path that could lower the number of active administrators first locks the active administrators' staff_user rows, in id order, then counts them
 // again in a new statement: two administrators acting at once take turns, and the second sees the first one's result.

@@ -17,13 +17,14 @@ import { BASE, counted, median, oneOfEachRole, ROLE_NAMES, staffHarness, type Ro
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 
 // Statements per call through the route (requireStaff is 2, the role check 1): sample 5 (make, read), decisions 4, targets 4, counts 4; an invite is
-// begin, role check, the login, the grant (2), audit, commit, then the reset (Better Auth: user lookup, the token) = 12. The digest command is
+// begin, role check, the login, the grant (2), audit, commit, then the reset (Better Auth: the user and its accounts 2, the token 1) = 12; a resend is
+// 2 + begin, role check, the locked login with its count, audit, commit + the reset 3 = 10. The digest command is
 // 1 + one per staff member + 1. Measured 19 Nov 2026 on the bulk rows below (about 2,200 live jobs, 500 decided fetched items with 1.8 kB adverts):
 // medians sample 6.6 ms, decisions 5.2, targets 4.1, counts 4.3, invite 5.8, digest 12.8 (19 staff); pages sample make 102, sample read 116, decisions
 // 734 (the 50 adverts' text), targets 193, counts 79. Page limits about 3 times them (decisions 2 times); time limits about 5 times, as the machine
 // runs other test files at once (a load of 19 on 12 cores tripled the medians). Raise these only on purpose.
 const BUDGET = {
-  sample: 5, decisions: 4, targets: 4, counts: 4, invite: 12, ms: 35, inviteMs: 40, cliMs: 65,
+  sample: 5, decisions: 4, targets: 4, counts: 4, invite: 12, resend: 10, ms: 35, inviteMs: 40, cliMs: 65,
   pages: { sampleMake: 300, sampleRead: 350, decisions: 1500, targets: 600, counts: 250 },
 };
 
@@ -281,16 +282,43 @@ describe("Q15: invite a staff login", () => {
     await no(call("/api/staff", "ad2", { action: "invite", email: "NEW.person@example.test", name: "Fake", role: "trust_and_safety" }), 409, "email_taken");
     await no(call("/api/staff", "ad2", { action: "invite", email: "only_content_editor@example.test", name: "Fake", role: "trust_and_safety" }), 409, "email_taken");
   });
-  it("a failed send keeps the login and answers ok (Better Auth logs it, never with the address)", async () => {
+  it("a send the sender refuses answers 502 email_not_sent, keeps the login and its pending role; resend_invite sends it again, 3 an hour", async () => {
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
     brevoDown = true;
+    let r: Awaited<ReturnType<typeof call>>;
     try {
-      const r = await ok(call("/api/staff", "only_administrator", { action: "invite", email: "unlucky@example.test", name: "Fake", role: "content_editor" }));
-      expect((await su.query("select count(*)::int n from staff_user where id = $1", [r.staffId])).rows[0].n).toBe(1);
-      const logged = err.mock.calls.flat().join(" ");
-      expect(logged).toMatch(/Brevo/);
-      expect(logged).not.toContain("unlucky@");
+      r = await call("/api/staff", "only_administrator", { action: "invite", email: "unlucky@example.test", name: "Fake", role: "content_editor" });
+      expect([r.status, r.json, replyProblems(spec, "POST", "/api/staff", r.status, r.json)]).toEqual([502, { error: "email_not_sent", staffId: expect.any(String), requestId: expect.any(String) }, []]);
+      expect(err.mock.calls.flat().join(" ")).not.toContain("unlucky@"); // Better Auth's own log of the failure
+      // a resend while the sender is still down: 502 again
+      const again = await call("/api/staff", "only_administrator", { action: "resend_invite", staffId: r.json.staffId });
+      expect([again.status, again.json, replyProblems(spec, "POST", "/api/staff", again.status, again.json)]).toEqual([502, { error: "email_not_sent", staffId: r.json.staffId }, []]);
     } finally { brevoDown = false; err.mockRestore(); }
+    const id = r.json.staffId;
+    expect((await su.query("select status from staff_user where id = $1", [id])).rows).toEqual([{ status: "active" }]);
+    expect((await su.query("select status from approval_request where id = $1", [r.json.requestId])).rows).toEqual([{ status: "pending" }]);
+    mail.length = 0;
+    const ok1 = await call("/api/staff", "ad2", { action: "resend_invite", staffId: id });
+    expect([ok1.status, ok1.json, replyProblems(spec, "POST", "/api/staff", ok1.status, ok1.json)]).toEqual([200, { ok: true }, []]);
+    expect(mail.map((m) => [m.body.to, m.body.sender.email])).toEqual([[[{ email: "unlucky@example.test" }], "security@account.example.ie"]]);
+    expect((await su.query("select count(*)::int n from staff_user where email = 'unlucky@example.test'")).rows[0].n).toBe(1); // no second login
+    await ok(call("/api/staff", "only_administrator", { action: "resend_invite", staffId: id })); // the third this hour (the failed one counts)
+    const over = await call("/api/staff", "only_administrator", { action: "resend_invite", staffId: id });
+    expect([over.status, over.json, replyProblems(spec, "POST", "/api/staff", over.status, over.json)]).toEqual([429, { error: "too_many_resends" }, []]);
+    expect(mail).toHaveLength(2);
+    expect((await su.query("select actor_staff_user_id a from audit_event where action = 'staff.invite_resend' and object_id = $1 order by id", [id])).rows.map((x) => x.a))
+      .toEqual([h.staff.only_administrator, h.staff.ad2, h.staff.only_administrator]);
+  });
+  it("resend_invite: only an administrator, only an active login with no password yet, and only a real login id", async () => {
+    const newPerson = (await su.query("select id from staff_user where email = 'new.person@example.test'")).rows[0].id;
+    for (const who of [...ROLE_NAMES.filter((r) => r !== "administrator").map((r) => `only_${r}`), "norole"]) await no(call("/api/staff", who, { action: "resend_invite", staffId: newPerson }), 403, "not_administrator");
+    await no(call("/api/staff", "only_administrator", { action: "resend_invite", staffId: newPerson }), 409, "password_set"); // set in the first invite test
+    await no(call("/api/staff", "only_administrator", { action: "resend_invite", staffId: h.staff.only_content_editor! }), 409, "password_set"); // made by the owner's command
+    await no(call("/api/staff", "only_administrator", { action: "resend_invite", staffId: h.staff.tsoff! }), 409, "target_not_active");
+    await no(call("/api/staff", "only_administrator", { action: "resend_invite", staffId: "no-such-login" }), 404, "not_found");
+    for (const staffId of ["", "a b", "x".repeat(65), "1' or '1'='1", 5, null]) await no(call("/api/staff", "only_administrator", { action: "resend_invite", staffId }), 400, "bad_staff_id");
+    await no(call("/api/staff", "only_administrator", { action: "resend_invite", staffId: newPerson, email: "x@example.test" }), 400, "bad_body");
+    await no(call("/api/staff", "only_administrator", { action: "resend_invite", staffId: newPerson }, { origin: "https://evil.example" }), 403, "bad_origin");
   });
   it("refuses every role but administrator, hostile input and a bad origin, and writes nothing", async () => {
     const before = (await su.query("select count(*)::int n from staff_user")).rows[0].n;
@@ -339,6 +367,8 @@ describe("performance", () => {
     const [inv, inviteN] = await counted(() => call("/api/staff", "only_administrator", { action: "invite", email: "perf.0@example.test", name: "Fake", role: "content_editor" }));
     expect([inv.status, inviteN]).toEqual([200, BUDGET.invite]);
     expect(measured.invite = await median((i) => ok(call("/api/staff", "only_administrator", { action: "invite", email: `perf.${i + 1}@example.test`, name: "Fake", role: "content_editor" })))).toBeLessThan(BUDGET.inviteMs);
+    const [res, resendN] = await counted(() => call("/api/staff", "only_administrator", { action: "resend_invite", staffId: inv.json.staffId }));
+    expect([res.status, resendN]).toEqual([200, BUDGET.resend]);
     await su.query("analyze job; analyze review_item; analyze report; analyze audit_event; analyze approval_request; analyze contact_message; analyze strike"); // fresh statistics, so an autovacuum analyze does not re-plan mid-measure
     const client = await su.connect();
     try {

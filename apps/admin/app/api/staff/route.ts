@@ -1,13 +1,14 @@
 // Staff accounts (#233, #234 D4 and D5), administrators only: GET lists the logins with their roles and the role grants waiting for a second administrator;
 // POST proposes a role (one administrator), confirms or refuses it (a different one), removes a role, disables a login (its sessions end) or enables it again,
 // or invites a new login (Q15): the login with no password and no role, its first role proposed for a second administrator, and a set-password email
-// through Better Auth's reset (the security@ sender). Every call needs a signed-in staff member; the administrator check is inside each database call.
+// through Better Auth's reset (the security@ sender); a send the sender refused answers 502 email_not_sent with the login and its pending role kept, and
+// `resend_invite` sends it again for a login that has not set a password (3 an hour). Every call needs a signed-in staff member; the administrator check is inside each database call.
 import { staffSettings } from "@portal/auth";
 import {
-  confirmRoleGrant, disableLogin, enableLogin, getPool, inviteStaff, listStaff, proposeRoleGrant, refuseRoleGrant, removeRole, validStaffName,
+  confirmRoleGrant, disableLogin, enableLogin, getPool, inviteStaff, listStaff, proposeRoleGrant, refuseRoleGrant, removeRole, resendInvite, validStaffName,
 } from "@portal/db";
 import { checkLength, checkOrigin, id19, parseBody, readQuery, refuse, staffIdOk, type Field, type Spec } from "../../../lib/admin-api";
-import { requireStaff, staffAuth } from "../../../lib/staff";
+import { requireStaff, sendSetPassword } from "../../../lib/staff";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ const ACTIONS: Record<string, Spec> = {
   disable: { need: ["staffId"] },
   enable: { need: ["staffId"] },
   invite: { need: ["email", "name", "role"] },
+  resend_invite: { need: ["staffId"] },
 };
 const FIELDS: Record<string, Field> = {
   staffId: [staffIdOk, "bad_staff_id"], requestId: [id19, "bad_request_id"], role: [(v) => typeof v === "string" && /^[a-z_]{1,40}$/.test(v), "bad_role"],
@@ -53,9 +55,14 @@ export async function POST(request: Request) {
       case "enable": await enableLogin(db, staff, s("staffId")); break;
       case "invite": {
         const { staffId, requestId, email } = await inviteStaff(db, staff, b.email, b.name, b.role);
-        // After the commit. Better Auth logs a failed send and still answers ok (as it does for any reset); the login stays and the invitee asks for a reset again.
-        await staffAuth().api.requestPasswordReset({ body: { email } });
+        // After the commit: a failed send keeps the login and the pending role; resend_invite tries again.
+        if (!(await sendSetPassword(email))) return Response.json({ error: "email_not_sent", staffId, requestId }, { status: 502 });
         return Response.json({ ok: true, staffId, requestId });
+      }
+      case "resend_invite": {
+        const { email } = await resendInvite(db, staff, s("staffId"));
+        if (!(await sendSetPassword(email))) return Response.json({ error: "email_not_sent", staffId: s("staffId") }, { status: 502 });
+        break;
       }
     }
     return Response.json({ ok: true });

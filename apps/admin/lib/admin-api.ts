@@ -55,7 +55,8 @@ const STATUS = new Map<string, number>(Object.entries({
   slug_taken: 409, not_editable: 409, already_published: 409, not_published: 409, needs_source_and_checked_on: 409,
   not_claimed: 409, not_claimer: 409, claimed_by_other: 409, already_decided: 409, job_not_in_review: 409, no_advert_text: 409, rules_failed: 409, company_not_active: 409,
   free_email_domain: 409, domain_owned_by_other: 409, already_added: 409, open_ban_case: 409, company_merged: 409,
-  decision_pending: 409, no_change: 409, linked_elsewhere: 409, name_taken: 409, not_linked: 409, email_taken: 409,
+  decision_pending: 409, no_change: 409, linked_elsewhere: 409, name_taken: 409, not_linked: 409, email_taken: 409, password_set: 409,
+  too_many_resends: 429,
   same_account: 400, kept_account_deleted: 409, open_services_case: 409, open_report: 409,
   no_account: 409, several_accounts: 409, sender_not_account: 409, not_open: 409, account_changed: 409, owner_with_members: 409, close_company_first: 409, not_confirmed: 409, account_deleted: 409, email_not_confirmed: 409, bad_purpose: 400,
 }));

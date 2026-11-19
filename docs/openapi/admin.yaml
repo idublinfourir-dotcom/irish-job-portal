@@ -2476,7 +2476,9 @@ paths:
         transaction. `enable`: a disabled login with no roles is turned back on. `invite` (step 15 Q15): makes an active login with no
         password and no role for the email (stored lowercased), proposes `role` for it as `propose_role` does (a different administrator
         confirms), then sends the set-password email through the staff reset (the security@ sender; the link works for 1 hour, and the
-        invitee can ask for a new one through the reset; a failed send is logged and the login stays). The last active
+        invitee can ask for a new one through the reset). If the sender refuses the email the answer is 502 `email_not_sent` with the
+        new login and its grant request, both kept. `resend_invite`: a new set-password email for a login that has not set a password yet, at
+        most 3 an hour per login (429 `too_many_resends`), 502 `email_not_sent` when the sender refuses it. The last active
         administrator cannot lose the role or be disabled. The Origin header must be the admin app's origin.
       security: [{ staffSession: [] }]
       x-roles: [administrator]
@@ -2505,7 +2507,7 @@ paths:
                   additionalProperties: false
                   required: [action, staffId]
                   properties:
-                    action: { type: string, enum: [disable, enable] }
+                    action: { type: string, enum: [disable, enable, resend_invite] }
                     staffId: { $ref: '#/components/schemas/LoginId' }
                 - type: object
                   additionalProperties: false
@@ -2542,9 +2544,24 @@ paths:
           description: "`not_found`: no such login, request, or role on that login."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
         '409':
-          description: "`target_not_active`: the login is disabled. `already_holds`: it has the role. `grant_pending`: a grant of that kind waits already. `request_not_pending`: the request is not pending. `same_person`: the proposer confirming. `last_administrator`: it would leave no active administrator. `already_disabled`, `not_disabled`: the login's status. `holds_roles`: enable of a login that still holds roles. `email_taken`: a staff login with this email exists."
+          description: "`target_not_active`: the login is disabled. `already_holds`: it has the role. `grant_pending`: a grant of that kind waits already. `request_not_pending`: the request is not pending. `same_person`: the proposer confirming. `last_administrator`: it would leave no active administrator. `already_disabled`, `not_disabled`: the login's status. `holds_roles`: enable of a login that still holds roles. `email_taken`: a staff login with this email exists. `password_set`: resend_invite for a login that has set its password."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: last_administrator } } }
+        '429':
+          description: "`too_many_resends`: 3 resends of this login in the last hour."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: too_many_resends } } }
         '500': { $ref: '#/components/responses/ServerError' }
+        '502':
+          description: "`email_not_sent`: invite or resend_invite, the sender refused the set-password email. The login (and, for invite, its grant request) is kept; try resend_invite."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, staffId]
+                properties:
+                  error: { const: email_not_sent }
+                  staffId: { $ref: '#/components/schemas/LoginId' }
+                  requestId: { $ref: '#/components/schemas/Id' }
+              example: { error: email_not_sent, staffId: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', requestId: '121' }
   /api/trust-safety/reports:
     get:
       operationId: listReports
