@@ -1,7 +1,7 @@
 // Unit: the DETE watcher's pure parts (no database, no network), on the pages saved from DETE's site on 19 Nov 2026 (test/fixtures/dete-watch).
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { changeItem, mainPart, MAX_NEW, MAX_TITLE, plain, seen, titlesOf, WATCH } from "./dete-watch-cli";
+import { changeItem, mainPart, MAX_NEW, MAX_TITLE, plain, seen, shortReason, titlesOf, WATCH } from "./dete-watch-cli";
 
 const fx = (f: string) => readFileSync(new URL(`../test/fixtures/dete-watch/${f}`, import.meta.url));
 const [latest, csol] = [WATCH[0], WATCH[1]];
@@ -28,32 +28,36 @@ describe("the saved DETE pages", () => {
     const html = fx("latest-updates.html").toString("utf8");
     const other = html.replace(/(__VIEWSTATE" value=")[^"]*/, "$1zzz").replace(/Elapsed time: [\d.]+/, "Elapsed time: 9.9");
     expect(other).not.toBe(html);
-    expect(seen(latest, Buffer.from(other), null)).toEqual(seen(latest, Buffer.from(html), null));
+    expect(seen(latest, Buffer.from(other))).toEqual(seen(latest, Buffer.from(html)));
   });
   it("the CSOL page links its Word file; a moved link is a change", () => {
     const html = fx("csol.html").toString("utf8");
-    const a = seen(csol, Buffer.from(html), null)!;
-    const b = seen(csol, Buffer.from(html.replace("critical-skills-occupations-list.docx", "csol-2027.docx")), null)!;
+    const a = seen(csol, Buffer.from(html))!;
+    const b = seen(csol, Buffer.from(html.replace("critical-skills-occupations-list.docx", "csol-2027.docx")))!;
     expect(a.fingerprint).not.toBe(b.fingerprint);
     expect(changeItem(csol, a, b)).toMatchObject({ role: "rules_data_editor", name: csol.name, address: csol.address });
   });
   it("a page with no main part, or an empty one, is null (a failed fetch)", () => {
-    expect(seen(latest, Buffer.from("<html><body>Service unavailable</body></html>"), null)).toBeNull();
-    expect(seen(latest, Buffer.from('<article class="content-body__sections__main"> <script>x</script> </article>'), null)).toBeNull();
+    expect(seen(latest, Buffer.from("<html><body>Service unavailable</body></html>"))).toBeNull();
+    expect(seen(latest, Buffer.from('<article class="content-body__sections__main"> <script>x</script> </article>'))).toBeNull();
   });
-  it("a Word file is compared by ETag and byte hash", () => {
+  it("a Word file is compared by its byte hash only (a new ETag on the same bytes is no change)", () => {
     const doc = WATCH[3], bytes = fx("critical-skills-occupations-list.docx");
-    const a = seen(doc, bytes, '"1"')!;
-    expect(a.fingerprint).toMatch(/^"1"\|[0-9a-f]{64}$/);
-    expect(seen(doc, bytes, '"2"')!.fingerprint).not.toBe(a.fingerprint);
-    expect(seen(doc, Buffer.concat([bytes, Buffer.from("x")]), '"1"')!.fingerprint).not.toBe(a.fingerprint);
+    const a = seen(doc, bytes)!;
+    expect(a.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(seen(doc, Buffer.from(bytes))).toEqual(a);
+    expect(seen(doc, Buffer.concat([bytes, Buffer.from("x")]))!.fingerprint).not.toBe(a.fingerprint);
   });
 });
 
 describe("changeItem", () => {
   const s = (fingerprint: string, titles: string[] = []) => ({ fingerprint, titles });
-  it("no item for the baseline or the same value; one per change, keyed by both values", () => {
+  it("shortReason removes control characters and cuts to 200", () => {
+    expect(shortReason(`HTTP 301 to https://x/\u0000\n${"y".repeat(300)}`)).toMatch(/^HTTP 301 to https:\/\/x\/  y{176}$/);
+  });
+  it("no item for the baseline (none stored, or a row with no value yet after failures) or the same value; one per change, keyed by both values", () => {
     expect(changeItem(latest, undefined, s("a"))).toBeNull();
+    expect(changeItem(latest, { fingerprint: null, titles: [] }, s("a"))).toBeNull();
     expect(changeItem(latest, s("a"), s("a"))).toBeNull();
     const i = changeItem(latest, s("a", ["Old"]), s("b", ["New one", "Old"]))!;
     expect(i).toEqual({ key: expect.stringMatching(/^dete_page_changed:latest-updates:[0-9a-f]{16}$/), role: "rules_data_editor", name: latest.name, address: latest.address, newTitles: "New one" });

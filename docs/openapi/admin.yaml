@@ -3036,10 +3036,10 @@ paths:
                       required: [id, reason, detail, status, created_at]
                       properties:
                         id: { $ref: '#/components/schemas/Id' }
-                        reason: { type: string, enum: [dete_notice_check, hand_check_100, big_company_review, role_review, big_company_name_review, registration_body_review, pay_scales_review, sole_owner_retention, dete_page_changed] }
+                        reason: { type: string, enum: [dete_notice_check, hand_check_100, big_company_review, role_review, big_company_name_review, registration_body_review, pay_scales_review, sole_owner_retention, dete_page_changed, dete_page_failing] }
                         detail:
                           type: object
-                          description: "`key` names the reminder and its period; `role` works it; a big-company name review also has `name` and `reviewOn`. A sole_owner_retention reminder (0050, administrator) has `organisationId`: retention would erase that company's only active owner, so it waits until the company is closed or has another owner. A dete_page_changed item (D5, 0060, rules data editor, written by the weekly DETE watch) has `name` and `address` (the DETE page or Word file that changed) and, for the notices page, `newTitles` (the new item titles, plain text, at most 1,000 characters); staff update the rules through /api/rules themselves."
+                          description: "`key` names the reminder and its period; `role` works it; a big-company name review also has `name` and `reviewOn`. A sole_owner_retention reminder (0050, administrator) has `organisationId`: retention would erase that company's only active owner, so it waits until the company is closed or has another owner. A dete_page_changed item (D5, 0060, rules data editor, written by the weekly DETE watch) has `name` and `address` (the DETE page or Word file that changed) and, for the notices page, `newTitles` (the new item titles, plain text, at most 1,000 characters); staff update the rules through /api/rules themselves. A dete_page_failing item (D5, rules data editor) has `name`, `address` and `failure` (a short reason, such as `HTTP 404` or `HTTP 301 to <address>`): that address failed 2 weekly runs in a row; one item per failure streak."
                           required: [key, role]
                           properties:
                             key: { type: string }
@@ -3049,6 +3049,7 @@ paths:
                             organisationId: { $ref: '#/components/schemas/Id' }
                             address: { type: string, format: uri }
                             newTitles: { type: string, maxLength: 1000 }
+                            failure: { type: string, maxLength: 200 }
                         status: { type: string, enum: [open, claimed] }
                         created_at: { $ref: '#/components/schemas/DbTime' }
                   truncated: { type: boolean }

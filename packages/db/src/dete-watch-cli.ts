@@ -1,10 +1,12 @@
 // The weekly DETE watcher (step 15 D5; .github/workflows/weekly-registers.yml). Run from the repo root with the app_admin login:
 //   DETE_WATCH_ADMIN_DATABASE_URL=... node packages/db/src/dete-watch-cli.ts
 // Fetches each DETE page and Word file in WATCH once and compares it with what dete_watch (migration 0060) holds: a page by a hash of its main
-// text (the raw HTML differs on every fetch: __VIEWSTATE and an elapsed-time comment), a Word file by its ETag and a hash of its bytes. The first
+// text (the raw HTML differs on every fetch: __VIEWSTATE and an elapsed-time comment), a Word file by a hash of its bytes (a re-upload of the
+// same bytes gets a new ETag, so the ETag is not used). The first
 // run stores the baseline and raises nothing. A change writes one scheduled_check item for rules data editors (once per change, by its key),
 // naming the page and, for the latest updates page, the new item titles. Nothing changes the rules: staff do that through /api/rules.
-// A failed fetch (not 200, a redirect, a timeout, too big, a page with no main text) is logged and raises nothing; if every address fails, exit 1.
+// A failed fetch (not 200, a redirect, named with its target, a timeout, too big, a page with no main text) is logged and counted per address
+// (failed_runs): two weekly runs in a row write one dete_page_failing item per failure streak; a good fetch resets the count. Every address failing: exit 1.
 import { createHash } from "node:crypto";
 import pg from "pg";
 import { sslOptions } from "./ssl.ts";
@@ -57,24 +59,29 @@ export const titlesOf = (main: string): string[] =>
 
 export type Seen = { fingerprint: string; titles: string[] };
 /** What a fetched page or file is compared by. A page with no main text is null (a failed fetch). Pure. */
-export function seen(w: Pick<Watched, "kind">, body: Buffer, etag: string | null): Seen | null {
-  if (w.kind === "document") return { fingerprint: `${(etag ?? "").slice(0, 100)}|${sha(body)}`, titles: [] };
+export function seen(w: Pick<Watched, "kind">, body: Buffer): Seen | null {
+  if (w.kind === "document") return { fingerprint: sha(body), titles: [] };
   const main = mainPart(body.toString("utf8"));
   const text = main === null ? "" : plain(main);
   return text ? { fingerprint: sha(text), titles: titlesOf(main!) } : null;
 }
 
 /** The review item for a change, or null when there is no stored value yet (the baseline) or nothing changed. Pure. */
-export function changeItem(w: Watched, before: Seen | undefined, now: Seen): Record<string, string> | null {
-  if (!before || before.fingerprint === now.fingerprint) return null;
+export function changeItem(w: Watched, before: { fingerprint: string | null; titles: string[] } | undefined, now: Seen): Record<string, string> | null {
+  if (!before?.fingerprint || before.fingerprint === now.fingerprint) return null;
   const known = new Set(before.titles);
   const fresh = now.titles.filter((t) => !known.has(t)).join("; ").slice(0, MAX_NEW);
   return { key: `dete_page_changed:${w.id}:${sha(`${before.fingerprint}>${now.fingerprint}`).slice(0, 16)}`, role: "rules_data_editor", name: w.name, address: w.address, ...(fresh ? { newTitles: fresh } : {}) };
 }
 
-/** One address, fetched once: fixed https address, no redirects, a timeout and a size cap. Throws with a short reason on any failure. */
+/** A short, plain reason for a failed fetch, safe to store and log: control characters removed, at most 200 characters. Pure. */
+export const shortReason = (s: string) => s.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").slice(0, 200);
+
+/** One address, fetched once: fixed https address, redirects refused (named with their target, DETE moved two pages with 301), a timeout and a
+ *  size cap. Throws with a short reason on any failure. */
 export async function fetchOne(w: Watched, get: typeof fetch): Promise<Seen> {
-  const res = await get(w.address, { redirect: "error", signal: AbortSignal.timeout(30_000) });
+  const res = await get(w.address, { redirect: "manual", signal: AbortSignal.timeout(30_000) });
+  if (res.status >= 300 && res.status < 400) throw new Error(`HTTP ${res.status} to ${res.headers.get("location") ?? "no address"}`);
   if (res.status !== 200 || !res.body) throw new Error(`HTTP ${res.status}`);
   const chunks: Buffer[] = [];
   let size = 0;
@@ -82,42 +89,58 @@ export async function fetchOne(w: Watched, get: typeof fetch): Promise<Seen> {
     if ((size += c.length) > MAX_BYTES) throw new Error(`over ${MAX_BYTES} bytes`);
     chunks.push(Buffer.from(c));
   }
-  const s = seen(w, Buffer.concat(chunks), res.headers.get("etag"));
+  const s = seen(w, Buffer.concat(chunks));
   if (!s) throw new Error("the page has no main text");
   return s;
 }
 
 export const STORED = "select address, fingerprint, titles from dete_watch";
-// One statement per address: keep the new value, and write the item (if any) with it. A key already written is skipped by the unique index.
+// One statement per address: keep the new value (a good fetch ends a failure streak), and write the item (if any) with it. A key already written
+// is skipped by the unique index.
 export const SAVE =
   "with s as (insert into dete_watch(address, fingerprint, titles) values ($1, $2, $3::jsonb) on conflict (address) do update set fingerprint = excluded.fingerprint, " +
-  "titles = excluded.titles, checked_at = now(), changed_at = case when dete_watch.fingerprint = excluded.fingerprint then dete_watch.changed_at else now() end returning 1) " +
+  "titles = excluded.titles, checked_at = now(), failed_runs = 0, failing_since = null, " +
+  "changed_at = case when dete_watch.fingerprint = excluded.fingerprint then dete_watch.changed_at else now() end returning 1) " +
   "insert into review_item(queue, reason, detail) select 'scheduled_check', 'dete_page_changed', $4::jsonb from s where $4::jsonb is not null " +
   "on conflict ((detail->>'key')) where queue = 'scheduled_check' do nothing";
+export const FAILING_RUNS = 2;
+// One statement per failed address: count the failed run (a first-seen address gets a row with no value yet), and from the second run in a row
+// write one dete_page_failing item; its key names the streak's start, so the third run writes nothing and the next streak writes again.
+export const FAILED =
+  "with s as (insert into dete_watch(address, fingerprint, failed_runs, failing_since) values ($1, null, 1, now()) on conflict (address) do update set " +
+  "failed_runs = dete_watch.failed_runs + 1, failing_since = coalesce(dete_watch.failing_since, now()), checked_at = now() returning failed_runs, failing_since) " +
+  "insert into review_item(queue, reason, detail) select 'scheduled_check', 'dete_page_failing', jsonb_build_object('key', 'dete_page_failing:' || $2 || ':' || " +
+  "(extract(epoch from failing_since) * 1000000)::bigint, 'role', 'rules_data_editor', 'name', $3::text, 'address', $1::text, 'failure', $4::text) " +
+  `from s where failed_runs >= ${FAILING_RUNS} on conflict ((detail->>'key')) where queue = 'scheduled_check' do nothing`;
 
 export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: string) => void, deps: { fetch: typeof fetch } = { fetch }): Promise<number> {
   if (argv.length) return log("usage: dete-watch-cli.ts (no arguments)"), 2;
   const url = env.DETE_WATCH_ADMIN_DATABASE_URL;
   if (!url) return log("DETE_WATCH_ADMIN_DATABASE_URL is not set (the app_admin login)"), 2;
-  const fetched: [Watched, Seen][] = [];
+  const fetched: [Watched, Seen | string][] = [];
   for (const w of WATCH) {
     try {
       fetched.push([w, await fetchOne(w, deps.fetch)]);
     } catch (e) {
-      log(`${w.name}: fetch failed, nothing raised: ${(e as Error).message.slice(0, 200)}`);
+      fetched.push([w, shortReason((e as Error).message)]);
     }
   }
-  if (!fetched.length) return log("DETE watch: every address failed"), 1;
   const client = new pg.Client({ connectionString: url, ssl: sslOptions(env) });
   try {
     await client.connect();
-    const stored = new Map((await client.query<Seen & { address: string }>(STORED)).rows.map((r) => [r.address, r]));
+    const stored = new Map((await client.query<{ address: string; fingerprint: string | null; titles: string[] }>(STORED)).rows.map((r) => [r.address, r]));
     for (const [w, now] of fetched) {
+      if (typeof now === "string") {
+        const f = await client.query(FAILED, [w.address, w.id, w.name, now]);
+        log(`${w.name}: fetch failed: ${now}${f.rowCount ? `; failed ${FAILING_RUNS} runs in a row, review item written` : ""}`);
+        continue;
+      }
       const before = stored.get(w.address);
       const item = changeItem(w, before, now);
       const r = await client.query(SAVE, [w.address, now.fingerprint, JSON.stringify(now.titles), item && JSON.stringify(item)]);
-      log(`${w.name}: ${!before ? "baseline stored" : !item ? "unchanged" : r.rowCount ? `changed, review item written${item.newTitles ? ` (new: ${item.newTitles})` : ""}` : "changed, item already written"}`);
+      log(`${w.name}: ${!before?.fingerprint ? "baseline stored" : !item ? "unchanged" : r.rowCount ? `changed, review item written${item.newTitles ? ` (new: ${item.newTitles})` : ""}` : "changed, item already written"}`);
     }
+    if (fetched.every(([, now]) => typeof now === "string")) return log("DETE watch: every address failed"), 1;
     return 0;
   } catch (e) {
     log(`DETE watch refused: ${(e as Error).message}`); // no connection string is ever in these messages

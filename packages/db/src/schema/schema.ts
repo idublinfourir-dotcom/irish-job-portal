@@ -930,12 +930,16 @@ export const deteLinkRejection = pgTable("dete_link_rejection", {
 
 export const deteWatch = pgTable("dete_watch", {
 	address: text().primaryKey().notNull(),
-	fingerprint: text().notNull(),
+	fingerprint: text(),
 	titles: jsonb().default([]).notNull(),
 	checkedAt: timestamp("checked_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	changedAt: timestamp("changed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	failedRuns: integer("failed_runs").default(0).notNull(),
+	failingSince: timestamp("failing_since", { withTimezone: true, mode: 'string' }),
 }, () => [
 	check("dete_watch_address_check", sql`(address ~~ 'https://enterprise.gov.ie/%'::text) AND (length(address) <= 300)`),
+	check("dete_watch_check", sql`(failed_runs = 0) = (failing_since IS NULL)`),
+	check("dete_watch_failed_runs_check", sql`failed_runs >= 0`),
 	check("dete_watch_fingerprint_check", sql`(length(fingerprint) >= 1) AND (length(fingerprint) <= 200)`),
 	check("dete_watch_titles_check", sql`(jsonb_typeof(titles) = 'array'::text) AND (jsonb_array_length(titles) <= 200) AND (length((titles)::text) <= 60000)`),
 ]);

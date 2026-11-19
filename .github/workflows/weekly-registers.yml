@@ -48,7 +48,7 @@ jobs:
           export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
           node packages/db/src/registers-cli.ts wrc
       # D5: compares DETE's notices page, the two occupation list pages and their Word files with last week, and opens a staff review item per
-      # change. Red only when every address failed. Runs even when an import above failed.
+      # change, and one when an address failed 2 weekly runs in a row. Red only when every address failed. Runs even when an import above failed.
       - name: Watch DETE notices and lists
         if: ${{ !cancelled() }}
         env:
