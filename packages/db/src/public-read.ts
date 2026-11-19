@@ -5,9 +5,10 @@
 import type pg from "pg";
 import { similarLiveJobs } from "./candidate";
 import { clientAddress, countRate, Refuse } from "./candidate-route";
-import { getHelp } from "./content";
+import { BadEligibilityInput, registrationFor, type EligibilityInput } from "@portal/rules";
+import { BadContentInput, getHelp, listUpdates } from "./content";
 import { getPool } from "./index";
-import { getCompanyPage, getOccupationPage } from "./public-pages";
+import { checkWithSiteLists, getCompanyPage, getOccupationPage } from "./public-pages";
 import type { ReportLogin } from "./report";
 import { BadSearchInput, getJob, listJobs, PAGE_SIZE, parseSearch, type Sort } from "./search";
 
@@ -38,24 +39,36 @@ export function readPaging(q: URLSearchParams, visitor: boolean): { limit: numbe
 /** A list as sent: a visitor's has no cursor, and signInForMore says jobs were left out. */
 const shown = <L extends { next: string | null }>(l: L, visitor: boolean) => (visitor ? { ...l, next: null, signInForMore: l.next !== null } : { ...l, signInForMore: false });
 
-type Work = (db: pg.Pool, q: URLSearchParams, visitor: boolean) => Promise<unknown>;
-const no = (status: number, code: string) => Response.json({ code }, { status });
+export type Work = (db: pg.Pool, q: URLSearchParams, visitor: boolean) => Promise<unknown>;
+/** What the gate gives back: the data, or a typed refusal. A page shows the refusal; publicRead turns it into the HTTP reply. */
+export type ReadResult =
+  | { ok: true; data: unknown }
+  | { ok: false; status: 429; code: "TOO_MANY_REQUESTS"; retryAfter: number }
+  | { ok: false; status: number; code: string }; // 400 BAD_REQUEST, 401 SIGN_IN_FOR_MORE, 404 NOT_FOUND
 
-/** One public GET: session, rate limit, then the work. null from the work is 404; bad input is 400. */
-export async function publicRead(request: Request, login: (headers: Headers) => Promise<ReportLogin>, work: Work): Promise<Response> {
-  const who = await login(request.headers);
+/** The gate of every public read, callable from a Server Component with `await headers()`: session, rate limit, then the work.
+ *  null from the work is 404; bad input is 400. */
+export async function gatedRead(headers: Headers, query: URLSearchParams, login: (headers: Headers) => Promise<ReportLogin>, work: Work): Promise<ReadResult> {
+  const who = await login(headers);
   const now = Date.now();
-  const counts = await Promise.all(readLimits(who, clientAddress(request.headers)).map(async (l) => ({ rate: l.rate, ...(await countRate("candidate_rate_limit", l.key, l.rate)) })));
+  const counts = await Promise.all(readLimits(who, clientAddress(headers)).map(async (l) => ({ rate: l.rate, ...(await countRate("candidate_rate_limit", l.key, l.rate)) })));
   const wait = retryAfter(counts, now);
-  if (wait !== null) return tooMany(wait);
+  if (wait !== null) return { ok: false, status: 429, code: "TOO_MANY_REQUESTS", retryAfter: wait };
   try {
-    const body = await work(getPool(), new URL(request.url).searchParams, !("userId" in who));
-    return body === null ? no(404, "NOT_FOUND") : Response.json(body);
+    const data = await work(getPool(), query, !("userId" in who));
+    return data === null ? { ok: false, status: 404, code: "NOT_FOUND" } : { ok: true, data };
   } catch (e) {
-    if (e instanceof BadSearchInput) return no(400, "BAD_REQUEST");
-    if (e instanceof Refuse) return no(e.status, e.code);
+    if (e instanceof BadSearchInput || e instanceof BadContentInput || e instanceof BadEligibilityInput) return { ok: false, status: 400, code: "BAD_REQUEST" };
+    if (e instanceof Refuse) return { ok: false, status: e.status, code: e.code };
     throw e;
   }
+}
+
+/** One public GET: the gate's answer as the HTTP reply. */
+export async function publicRead(request: Request, login: (headers: Headers) => Promise<ReportLogin>, work: Work): Promise<Response> {
+  const r = await gatedRead(request.headers, new URL(request.url).searchParams, login, work);
+  if (r.ok) return Response.json(r.data);
+  return "retryAfter" in r ? tooMany(r.retryAfter) : Response.json({ code: r.code }, { status: r.status });
 }
 
 // The work of each route. Query keys: the list takes sort, after, before and the parseSearch filters; one job takes id; a company slug; an occupation
@@ -77,3 +90,63 @@ export const occupationRead: Work = async (db, q, visitor) => {
   return o && { ...o, jobs: shown(o.jobs, visitor) };
 };
 export const helpRead: Work = (db, q) => getHelp(db, q.get("slug") ?? "");
+// The updates feed (GET /api/updates): ?after, the `next` of the page before. News, not jobs: a visitor pages it too.
+export const updatesRead: Work = (db, q) => listUpdates(db, q.get("after") ?? undefined);
+
+// The eligibility checker (GET /api/checker). Strict: every key at most once, no other key, each value in its shape, else 400 before any statement.
+const CHECKER_KEYS = ["occupationCode", "annualPay", "relevantDegree", "degreeAwardMonth", "contractMonths", "weeklyHours", "title"];
+export function checkerInput(q: URLSearchParams): { input: EligibilityInput; title: string | null } {
+  const bad = () => new BadEligibilityInput("bad checker input");
+  const keys = [...q.keys()];
+  if (keys.some((k) => !CHECKER_KEYS.includes(k)) || new Set(keys).size !== keys.length) throw bad();
+  const get = (k: string, shape: RegExp) => {
+    const v = q.get(k);
+    if (v !== null && !shape.test(v)) throw bad();
+    return v;
+  };
+  const code = get("occupationCode", /^[0-9]{4}$/), pay = get("annualPay", /^[0-9]{1,7}(\.[0-9]{1,2})?$/), degree = get("relevantDegree", /^(true|false)$/);
+  if (code === null || pay === null || degree === null) throw bad();
+  const months = get("contractMonths", /^[0-9]{1,3}$/), hours = get("weeklyHours", /^[0-9]{1,2}(\.[0-9]{1,2})?$/);
+  return {
+    input: {
+      occupationCode: code, annualPay: Number(pay), relevantDegree: degree === "true", degreeAwardMonth: get("degreeAwardMonth", /^[0-9]{4}-(0[1-9]|1[0-2])$/),
+      contractMonths: months === null ? null : Number(months), ...(hours === null ? {} : { weeklyHours: Number(hours) }),
+    },
+    // the job title, only to tell a regulated role of a mixed code (S6); never stored
+    title: get("title", /^[^\p{Cc}\p{Cf}]{1,200}$/u),
+  };
+}
+export const checkerRead: Work = async (db, q) => {
+  const { input, title } = checkerInput(q);
+  return { ...(await checkWithSiteLists(db, input)), registration: registrationFor(input.occupationCode, title) };
+};
+
+// ===== R5: the legal text in force (legal-texts.ts publishes it) =====
+export const LEGAL_IN_FORCE =
+  "select purpose, version, body, published_at::text as published_at from consent_text where purpose = $1 order by published_at desc, id desc limit 1";
+export const SITE_PURPOSES = { candidate: ["signup_terms", "privacy_notice"], portal: ["portal_signup_terms", "privacy_notice"] } as const;
+
+/** The text in force for one of the site's purposes, or null before any version. Another purpose is 400. */
+export async function legalInForce(db: Pick<pg.Pool, "query">, site: keyof typeof SITE_PURPOSES, purpose: string | null) {
+  if (!(SITE_PURPOSES[site] as readonly string[]).includes(purpose ?? "")) throw new Refuse(400, "BAD_REQUEST");
+  const r = (await db.query(LEGAL_IN_FORCE, [purpose])).rows[0];
+  return r ? { purpose: r.purpose, version: r.version, body: r.body, publishedAt: r.published_at } : null;
+}
+
+/** The portal's public read: no login, counted per client address in portal_rate_limit (the visitor limits of the candidate reads). */
+export async function portalLegalRead(request: Request): Promise<Response> {
+  const ip = clientAddress(request.headers), now = Date.now();
+  const counts = await Promise.all(VISITOR_READ_RATES.map(async (rate) => ({ rate, ...(await countRate("portal_rate_limit", `legal:ip:${ip}:${rate.windowMs}`, rate)) })));
+  const wait = retryAfter(counts, now);
+  if (wait !== null) return tooMany(wait);
+  try {
+    const body = await legalInForce(getPool(), "portal", new URL(request.url).searchParams.get("purpose"));
+    return body === null ? Response.json({ code: "NOT_FOUND" }, { status: 404 }) : Response.json(body);
+  } catch (e) {
+    if (e instanceof Refuse) return Response.json({ code: e.code }, { status: e.status });
+    throw e;
+  }
+}
+
+/** The candidate site's read (through publicRead): ?purpose=signup_terms or privacy_notice. */
+export const legalRead: Work = (db, q) => legalInForce(db, "candidate", q.get("purpose"));

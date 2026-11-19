@@ -374,6 +374,48 @@ paths:
             application/json:
               schema: { type: object, required: [ok, database], properties: { ok: { type: boolean }, database: { type: boolean } } }
               example: { ok: false, database: false }
+  /api/legal:
+    get:
+      operationId: getLegalText
+      tags: [public]
+      summary: The legal text in force for a purpose
+      description: |
+        Step 15 R5. The newest published version of one legal purpose of this site: portal_signup_terms or privacy_notice. Staff publish
+        a version at the admin site's `/api/legal-texts` (two people); new sign-ups consent to the version shown here. No login is needed.
+        No version yet is 404 `NOT_FOUND`; any other purpose, or none, is 400 `BAD_REQUEST`. The real wording waits for the solicitor and
+        the entity: today only placeholder texts exist. A signed-in session is not read.
+      security: []
+      x-roles: [anyone]
+      x-rate-limit: 60 a minute and 600 an hour per client address, signed in or not
+      parameters:
+        - { name: purpose, in: query, required: true, schema: { type: string, enum: [portal_signup_terms, privacy_notice] } }
+      responses:
+        '200':
+          description: The text in force.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [purpose, version, body, publishedAt]
+                properties:
+                  purpose: { type: string, enum: [portal_signup_terms, privacy_notice] }
+                  version: { type: string }
+                  body: { type: string, description: Plain text; line breaks are kept. }
+                  publishedAt: { type: string, description: 'The database time, as "2026-11-19 09:30:00.123456+00".' }
+              example: { purpose: privacy_notice, version: placeholder-2026-11-19, body: PLACEHOLDER TEXT., publishedAt: '2026-11-19 09:30:00.123456+00' }
+        '400':
+          description: '`BAD_REQUEST`: the purpose is missing or not one of this site''s.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } }
+        '404':
+          description: '`NOT_FOUND`: no version of that purpose is published yet.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_FOUND } } }
+        '429':
+          description: '`TOO_MANY_REQUESTS`: over 60 reads a minute or 600 an hour from one client address (`x-vercel-forwarded-for`). `Retry-After` gives the seconds to wait.'
+          headers:
+            Retry-After: { $ref: '#/components/headers/RetryAfter' }
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: TOO_MANY_REQUESTS } } }
+
   /api/portal/cases/{id}/documents:
     parameters:
       - { name: id, in: path, required: true, description: The services case id. Not an id is 400., schema: { $ref: '#/components/schemas/Id' } }

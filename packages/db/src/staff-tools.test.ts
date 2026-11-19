@@ -42,8 +42,16 @@ describe("dueReminders", () => {
     expect(dueReminders("2026-11-19", []).length).toBe(4);
     expect(dueReminders("2027-05-19", []).slice(4).map((x) => x.name)).toEqual(["nmbi", "medical_council", "coru", "phecc", "psi"]);
   });
+  it("adds the quarterly pay scales review only once a pay_scales version is in force, one key per quarter", () => {
+    expect(dueReminders("2026-11-19", [], []).map((r) => r.reason)).not.toContain("pay_scales_review");
+    const q = (day: string) => dueReminders(day, [], [], true).filter((r) => r.reason === "pay_scales_review");
+    expect(q("2026-11-19")).toEqual([{ reason: "pay_scales_review", key: "pay_scales_review:2026-Q4", role: "rules_data_editor" }]);
+    expect(q("2026-10-01")[0]!.key).toBe(q("2026-12-31")[0]!.key);
+    expect(q("2027-01-01")[0]!.key).toBe("pay_scales_review:2027-Q1");
+    expect(q("2026-09-30")[0]!.key).toBe("pay_scales_review:2026-Q3");
+  });
   it("gives each reminder its role", () => {
-    for (const r of dueReminders("2026-11-18", [{ name: "acme", reviewOn: "2026-01-01" }])) expect(r.role).toBe(REMINDER_ROLE[r.reason]);
+    for (const r of dueReminders("2026-11-18", [{ name: "acme", reviewOn: "2026-01-01" }], undefined, true)) expect(r.role).toBe(REMINDER_ROLE[r.reason]);
     expect(REMINDER_ROLE.role_review).toBe("administrator");
   });
 });

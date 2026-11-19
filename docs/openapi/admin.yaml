@@ -3010,7 +3010,8 @@ paths:
       summary: List the open scheduled reminders for my roles
       description: >-
         The open scheduled_check items (step 15 Q3) the daily command writes: a weekly DETE notice check, a monthly hand check of 100 jobs,
-        a 6-monthly big-company review and one per big-company name due for review (rules_data_editor), and a quarterly role review
+        a 6-monthly big-company review, one per big-company name or health registration body due for review, and a quarterly pay scales
+        review once a pay_scales version is in force (rules_data_editor), and a quarterly role review
         (administrator; the hand check is fetched_job_reviewer); the daily retention run adds a monthly sole_owner_retention reminder
         (administrator) per open company whose only active owner it leaves out (0050). Each member sees the items of the roles they hold; an administrator sees
         them all. Oldest first, at most 100 (`truncated` says more exist). No query key is allowed.
@@ -3033,7 +3034,7 @@ paths:
                       required: [id, reason, detail, status, created_at]
                       properties:
                         id: { $ref: '#/components/schemas/Id' }
-                        reason: { type: string, enum: [dete_notice_check, hand_check_100, big_company_review, role_review, big_company_name_review, registration_body_review, sole_owner_retention] }
+                        reason: { type: string, enum: [dete_notice_check, hand_check_100, big_company_review, role_review, big_company_name_review, registration_body_review, pay_scales_review, sole_owner_retention] }
                         detail:
                           type: object
                           description: "`key` names the reminder and its period; `role` works it; a big-company name review also has `name` and `reviewOn`. A sole_owner_retention reminder (0050, administrator) has `organisationId`: retention would erase that company's only active owner, so it waits until the company is closed or has another owner."
@@ -3466,6 +3467,128 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
         '409':
           description: "`no_change`: the value is already that. `decision_pending`: a change of that key waits already. `request_not_pending`: the request is not pending. `same_person`: the proposer confirming."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: same_person } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/legal-texts:
+    get:
+      operationId: listLegalTexts
+      summary: List the legal text versions and the pending proposals
+      description: >-
+        Step 15 R5. Every version of the three legal purposes (`signup_terms` for candidates, `portal_signup_terms` for employers and agencies,
+        `privacy_notice`), newest first within a purpose (the first of a purpose is the text in force), each with its body, and the proposals
+        waiting for an administrator. The real wording waits for the solicitor and the entity; the placeholders come from signup-terms-cli.ts.
+        No query key is allowed.
+      security: [{ staffSession: [] }]
+      x-roles: [content_editor, administrator]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The versions and the pending proposals.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [versions, pending]
+                properties:
+                  versions:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, purpose, version, body, publishedAt, requestId]
+                      properties:
+                        id: { $ref: '#/components/schemas/Id' }
+                        purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice] }
+                        version: { type: string }
+                        body: { type: string }
+                        publishedAt: { $ref: '#/components/schemas/DbTime' }
+                        requestId: { oneOf: [{ $ref: '#/components/schemas/Id' }, { type: 'null' }] }
+                  pending:
+                    type: array
+                    items:
+                      type: object
+                      required: [requestId, purpose, version, body, proposedBy, createdAt]
+                      properties:
+                        requestId: { $ref: '#/components/schemas/Id' }
+                        purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice] }
+                        version: { type: string }
+                        body: { type: string }
+                        proposedBy: { $ref: '#/components/schemas/LoginId' }
+                        createdAt: { $ref: '#/components/schemas/DbTime' }
+              example:
+                versions: [{ id: '3', purpose: signup_terms, version: placeholder-2026-11-12, body: PLACEHOLDER TEXT., publishedAt: '2026-11-12 09:30:00.123456+00', requestId: '7' }]
+                pending: [{ requestId: '131', purpose: privacy_notice, version: '2026-12-01', body: PLACEHOLDER TEXT., proposedBy: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', createdAt: '2026-11-19 09:30:00.123456+00' }]
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_legal_staff`: neither a content editor nor an administrator."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_legal_staff } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: actOnLegalText
+      summary: Propose, confirm or refuse a new version of a legal text
+      description: >-
+        Step 15 R5 (20c "Terms and privacy pages": content editor edits, administrator approves; #104 two-person). `propose`: a content editor
+        proposes a body and a version label for one purpose; one pending proposal per purpose, and a label already used for that purpose is
+        refused. `confirm`: an administrator who did not propose confirms and the text is published at once (the database's approval check
+        uses the request); new sign-ups of that purpose consent to it from then on. Existing users are not asked again. `refuse`: an
+        administrator refuses, or the proposer withdraws. `propose` and `confirm` publish legal text, so they need a sign-in in the last 10
+        minutes (C4, #270); `refuse` does not. The body is plain text, at most 100,000 characters, not blank; line breaks and tabs are kept,
+        any other control or format character (bidi marks, zero-width) is refused. The Origin header must be the admin app's origin.
+      security: [{ staffSession: [] }]
+      x-roles: [content_editor, administrator]
+      x-rate-limit: none
+      x-body-cap: 400000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, purpose, version, body]
+                  properties:
+                    action: { const: propose }
+                    purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice] }
+                    version: { type: string, pattern: '^[a-z0-9][a-z0-9._-]{0,63}$' }
+                    body: { type: string, minLength: 1, maxLength: 100000 }
+                - type: object
+                  additionalProperties: false
+                  required: [action, requestId]
+                  properties:
+                    action: { type: string, enum: [confirm, refuse] }
+                    requestId: { $ref: '#/components/schemas/Id' }
+            example: { action: propose, purpose: privacy_notice, version: '2026-12-01', body: PLACEHOLDER TEXT. }
+      responses:
+        '200':
+          description: "`propose`: the request id. `confirm`: the published row (id, purpose, version, publishedAt). `refuse`: `{ ok: true }`."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { const: true }
+                  requestId: { $ref: '#/components/schemas/Id' }
+                  id: { $ref: '#/components/schemas/Id' }
+                  purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice] }
+                  version: { type: string }
+                  publishedAt: { $ref: '#/components/schemas/DbTime' }
+              example: { ok: true, requestId: '131' }
+        '400':
+          description: "`bad_body`: not one JSON object, an unknown or missing field, or over 400,000 characters. `bad_action`: unknown action. `bad_purpose`: not one of the three purposes. `bad_version`: not a label of the shape above. `bad_body_text`: blank, too long, or holds a control or format character. `bad_request_id`: not an id."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_body_text } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `reauth_required` (C4): propose or confirm with a session older than 10 minutes. `not_active_staff`: the login is not active. `not_content_editor`: proposing without the content editor role. `not_administrator`: confirming, or refusing someone else's proposal, without the administrator role. `not_legal_staff`: refusing with neither role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: reauth_required } } }
+        '404':
+          description: "`not_found`: no such legal text request."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`version_taken`: that label is already published for the purpose. `decision_pending`: a proposal for the purpose waits already. `request_not_pending`: the request is not pending. `same_person`: the proposer confirming."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: same_person } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/companies/seed:

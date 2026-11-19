@@ -5,6 +5,7 @@
     "portalAuthGet": "GET /api/auth/portal/{path}",
     "portalAuthPost": "POST /api/auth/portal/{path}",
     "portalHealth": "GET /api/health",
+    "getLegalText": "GET /api/legal",
     "portalCaseDocumentsList": "GET /api/portal/cases/{id}/documents (any active portal login)",
     "portalCaseDocumentsUpload": "POST /api/portal/cases/{id}/documents (any active portal login)",
     "portalCaseDocumentDownload": "GET /api/portal/cases/{id}/documents/{docId} (any active portal login)",

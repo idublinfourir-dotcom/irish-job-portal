@@ -1,7 +1,7 @@
 // The content editor (#234 D3, 20c section 2): drafts of content_page (guide, update, help, occupation) are written by a content editor; a content editor publishes
 // help pages and updates and withdraws any page; a rules-data editor publishes guides and occupation texts. The database already refuses to publish anything but
 // help without a source and a checked-on date (content_page_check); that stays the last word and is mapped to a short code here. The writer is recorded in
-// updated_by_staff_user_id. Terms and privacy texts keep their own two-person command (posting-texts-cli.ts, signup-terms-cli.ts) and are not here.
+// updated_by_staff_user_id. Terms and privacy texts have their own two-person route (legal-texts.ts, /api/legal-texts) and are not here.
 import type pg from "pg";
 import { isSoc2010 } from "@portal/rules";
 import { QueueRefused } from "./admin-queue";

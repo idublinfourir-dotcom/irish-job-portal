@@ -157,6 +157,47 @@ describe("Q3: the scheduled reminders", () => {
   });
 });
 
+describe("S7 upkeep: the quarterly pay scales review", () => {
+  it("is not written before a pay_scales version is in force (nor for one still to come), then once a quarter for rules_data_editor", async () => {
+    const pays = async () => (await scheduled()).filter((r) => r.reason === "pay_scales_review");
+    // as the owner: one seeded version, first still to come, then moved into force (a version in force is all the reminder reads)
+    const asOwner = async (sql: string) => {
+      const c = await su.connect();
+      try {
+        await c.query("begin");
+        await c.query("set local role portal_owner");
+        await c.query(sql);
+        await c.query("commit");
+      } catch (e) {
+        await c.query("rollback");
+        throw e;
+      } finally { c.release(); }
+    };
+    await runReminders();
+    expect(await pays()).toEqual([]);
+    await asOwner("insert into rules_version(kind, data, effective_from, seeded_by_owner) values ('pay_scales', '[]'::jsonb, '2999-01-01', true)"); // not yet in force
+    await runReminders();
+    expect(await pays()).toEqual([]);
+    await asOwner("update rules_version set effective_from = '2026-06-01' where kind = 'pay_scales'");
+    const before = (await scheduled()).length;
+    const r = await runReminders();
+    expect(r.code).toBe(0);
+    expect(r.out[0]).toMatch(/, 1 new$/);
+    const today = (await su.query("select (now() at time zone 'Europe/Dublin')::date::text d")).rows[0].d as string;
+    const quarter = `${today.slice(0, 4)}-Q${Math.ceil(Number(today.slice(5, 7)) / 3)}`;
+    expect((await pays()).map((x) => x.detail)).toEqual([{ key: `pay_scales_review:${quarter}`, role: "rules_data_editor" }]);
+    expect((await runReminders()).out[0]).toMatch(/, 0 new$/);
+    expect((await scheduled()).length).toBe(before + 1);
+    const reasons = async (who: string) => (await ok(call("/api/scheduled-checks", who))).items.map((i: { reason: string }) => i.reason);
+    expect(await reasons("only_rules_data_editor")).toContain("pay_scales_review");
+    expect(await reasons("only_administrator")).toContain("pay_scales_review");
+    expect(await reasons("only_fetched_job_reviewer")).not.toContain("pay_scales_review");
+    for (const who of ["only_content_editor", "only_account_reviewer", "norole"]) await no(call("/api/scheduled-checks", who), 403, "not_scheduled_staff");
+    const res = await call("/api/scheduled-checks", "only_rules_data_editor");
+    expect(replyProblems(spec, "GET", "/api/scheduled-checks", res.status, res.json)).toEqual([]);
+  });
+});
+
 describe("Q12: the overdue view", () => {
   it("lists open and claimed items of every queue older than one working day, oldest first, for an administrator only", async () => {
     await su.query("delete from review_item");
