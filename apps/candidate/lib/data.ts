@@ -5,7 +5,7 @@
 import "server-only";
 import { headers } from "next/headers";
 import {
-  checkerRead, companyRead, gatedRead, getPool, helpRead, jobRead, jobsRead, occupationRead, similarRead, sitemapIds, sitemapPart, updatesRead,
+  checkerRead, companyRead, gatedRead, getPool, helpRead, jobRead, jobsRead, legalRead, occupationRead, similarRead, sitemapIds, sitemapPart, updatesRead,
   type ReadResult, type SitemapEntry, type Work,
 } from "@portal/db";
 import { candidateSettings } from "@portal/auth";
@@ -22,6 +22,7 @@ export const readOccupation = read(occupationRead);
 export const readHelp = read(helpRead);
 export const readUpdates = read(updatesRead);
 export const readChecker = read(checkerRead);
+export const readLegal = read(legalRead); // R5: ?purpose=signup_terms or privacy_notice
 
 // The sitemap is for crawlers, so it has no per-address limit (a limited crawler would see an empty site); instead each answer is kept
 // SITEMAP_TTL_MS per instance, so a flood costs the database one read per file per instance in that time.

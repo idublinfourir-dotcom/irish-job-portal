@@ -49,6 +49,7 @@ describe("pages read through the data layer only", () => {
       'import { staffTools } from "@portal/db/staff-tools";', 'import { listUpdates } from "../../../packages/db/src/content";',
       'const db = await import("@portal/db");', 'const db = require("@portal/db");', 'import "@portal/db";',
       'import {\n  type JobCard,\n  similarLiveJobs,\n} from "@portal/db";', 'import { checkWithSiteLists, getCompanyPage, getOccupationPage, getGuide } from "@portal/db"',
+      'import { legalRead, legalInForce } from "@portal/db";',
     ];
     for (const text of planted) expect(badImports(text), text).not.toEqual([]);
     for (const text of [

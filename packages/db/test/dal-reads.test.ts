@@ -1,4 +1,4 @@
-// Small wave 2, agent A: the gate pages call (gatedRead, src/public-read.ts), the two new public routes (GET /api/updates, GET /api/checker) and
+// Small wave 2, agent A: the gate pages call (gatedRead, src/public-read.ts), the new public routes (GET /api/updates, GET /api/checker, and R5 GET /api/legal for the combine) and
 // the S13 sitemap read (src/sitemap.ts), end to end on the test database as app_candidate through the real route handlers and the real candidate
 // login route. The gate and the route must give the same answer for the same input. Hostile input is tried. Fake data only; no network.
 // Budget (measured 19 November 2026, see the printed line): a visitor's updates page is 3 statements (2 rate counts, the feed), a visitor's checker
@@ -17,7 +17,7 @@ const BASE = "http://localhost:3000";
 type Handler = (r: Request) => Promise<Response>;
 type Src = typeof import("../src");
 let db: TestDb, su: pg.Pool, src: Src, login: (h: Headers) => Promise<ReportLogin>;
-let AUTH: Handler, JOBS: Handler, JOB: Handler, COMPANY: Handler, HELP: Handler, UPDATES: Handler, CHECKER: Handler;
+let AUTH: Handler, JOBS: Handler, JOB: Handler, COMPANY: Handler, HELP: Handler, UPDATES: Handler, CHECKER: Handler, LEGAL: Handler;
 let orgSlug: string, liveId: string;
 const status: Record<string, string> = {}; // job id by status, for the sitemap
 
@@ -33,6 +33,7 @@ beforeAll(async () => {
   ({ GET: HELP } = await import("../../../apps/candidate/app/api/help/route"));
   ({ GET: UPDATES } = await import("../../../apps/candidate/app/api/updates/route"));
   ({ GET: CHECKER } = await import("../../../apps/candidate/app/api/checker/route"));
+  ({ GET: LEGAL } = await import("../../../apps/candidate/app/api/legal/route"));
   src = await import("../src");
   ({ signedInCandidate: login } = await import("../../../apps/candidate/lib/candidate"));
   await su.query(`insert into content_page(kind, slug, title, body, status, published_at, source_url, checked_on)
@@ -104,6 +105,10 @@ describe("the gate a page calls gives the route's answer", () => {
       [COMPANY, src.companyRead, `/api/company?slug=${orgSlug}`, {}], [COMPANY, src.companyRead, "/api/company?slug=fake-rejected", { cookie }],
       [HELP, src.helpRead, "/api/help?slug=not-sure", {}], [UPDATES, src.updatesRead, "/api/updates", {}], [UPDATES, src.updatesRead, "/api/updates?after=junk!", {}],
       [CHECKER, src.checkerRead, CHECK, {}], [CHECKER, src.checkerRead, `${CHECK}&x=1`, { cookie }],
+      // R5 legal (privacy_notice has no version in this database: 404; another site's purpose or none: 400)
+      [LEGAL, src.legalRead, "/api/legal?purpose=signup_terms", {}], [LEGAL, src.legalRead, "/api/legal?purpose=signup_terms", { cookie }],
+      [LEGAL, src.legalRead, "/api/legal?purpose=privacy_notice", {}], [LEGAL, src.legalRead, "/api/legal?purpose=portal_signup_terms", {}],
+      [LEGAL, src.legalRead, "/api/legal", { cookie }], [LEGAL, src.legalRead, "/api/legal?purpose=signup_terms'%20or%201=1--", {}],
     ];
     const seen = new Set<number>();
     for (const [route, work, path, o] of cases) {
