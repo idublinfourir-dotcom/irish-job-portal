@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { expect, test } from "vitest";
 import { rulesMatcher } from "../../../matcher/src/rules";
-import { cleanEmployerName } from "../employers";
+import { cleanEmployerName, HSE_ENTRY } from "../employers";
 import { CHAIN_RULES_V1 } from "../snapshot";
 import { assess, type AdvertInput } from "./assess";
 
@@ -63,9 +63,10 @@ test("the TypeScript chain matches the Python on every saved advert", async () =
   // The Python's own data, loaded the way run_day.py loads it.
   const dete = JSON.parse(readFileSync(join(lane, "dete-2026.json"), "utf8")) as [string, number][];
   const deteNames = new Set(dete.map(([name]) => cleanEmployerName(name)));
+  // The Python's list has no HSE entry (its HSE test is always on); the HSE switch ON (#261) is the same thing.
   const candidates = new Map<string, 1 | 2>(
     Object.entries(JSON.parse(readFileSync(join(lane, "public_employers_candidates.json"), "utf8")) as Record<string, { tier: 1 | 2 }>).map(([k, v]) => [k, v.tier]),
-  );
+  ).set(HSE_ENTRY, 1);
 
   const changesFile = join(lane, "expected-changes.json");
   const write = process.env.PARITY_WRITE_EXPECTED === "1";

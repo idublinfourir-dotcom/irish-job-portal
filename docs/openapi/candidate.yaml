@@ -1435,19 +1435,18 @@ paths:
                 properties:
                   settings:
                     type: object
-                    required: [job_alerts, apply_reminders, account]
+                    required: [job_alerts, account]
                     properties:
                       job_alerts: { type: boolean }
-                      apply_reminders: { type: boolean }
                       account: { const: true }
-              example: { settings: { job_alerts: true, apply_reminders: false, account: true } }
+              example: { settings: { job_alerts: false, account: true } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
     put:
       operationId: putNotificationSettings
       tags: [account]
       summary: Change notification settings
-      description: At least one key; a key left out keeps its value. `account` may be sent only as true. Origin checked.
+      description: At least one key; a key left out keeps its value. `account` may be sent only as true; any other key (such as the dropped `apply_reminders`) is 400. Origin checked.
       security: [{ candidateSession: [] }]
       x-roles: [candidate]
       x-body-cap: 2048 characters
@@ -1462,16 +1461,15 @@ paths:
               minProperties: 1
               properties:
                 job_alerts: { type: boolean }
-                apply_reminders: { type: boolean }
                 account: { const: true }
-            example: { apply_reminders: false }
+            example: { job_alerts: false }
       responses:
         '200':
           description: The settings after the change.
           content:
             application/json:
               schema: *settings
-              example: { settings: { job_alerts: true, apply_reminders: false, account: true } }
+              example: { settings: { job_alerts: false, account: true } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/WriteForbidden' }

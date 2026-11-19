@@ -1,4 +1,5 @@
 {
+ "health service executive": {"tier": 1, "note": "the HSE switch (#261): matched by the name test (hse or health service executive), not by exact name"},
  "beaumont hospital": {"tier": 2, "note": "voluntary acute hospital, believed Section 38 (unverified)"},
  "children’s health ireland jobs": {"tier": 2, "note": "Children's Health Ireland, public paediatric body on public pay scales (unverified)"},
  "mater misericordiae university hospital": {"tier": 2, "note": "voluntary acute hospital, believed Section 38 (unverified)"},

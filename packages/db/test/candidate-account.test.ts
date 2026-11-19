@@ -422,14 +422,18 @@ describe("S20: why a saved or tracked job is not shown", () => {
 describe("notification settings", () => {
   it("start all on, switch one off, keep the account category on", async () => {
     const a = await login(), b = await login();
-    expect((await call(R.notifications, "GET", null, a)).json).toEqual({ settings: { job_alerts: true, apply_reminders: true, account: true } });
-    expect((await call(R.notifications, "PUT", { job_alerts: false }, a)).json).toEqual({ settings: { job_alerts: false, apply_reminders: true, account: true } });
-    expect((await call(R.notifications, "PUT", { job_alerts: true, apply_reminders: false, account: true }, a)).json.settings).toEqual({ job_alerts: true, apply_reminders: false, account: true });
-    expect((await call(R.notifications, "GET", null, b)).json.settings).toEqual({ job_alerts: true, apply_reminders: true, account: true });
+    expect((await call(R.notifications, "GET", null, a)).json).toEqual({ settings: { job_alerts: true, account: true } });
+    expect((await call(R.notifications, "PUT", { job_alerts: false }, a)).json).toEqual({ settings: { job_alerts: false, account: true } });
+    expect((await call(R.notifications, "PUT", { job_alerts: true, account: true }, a)).json.settings).toEqual({ job_alerts: true, account: true });
+    expect((await call(R.notifications, "GET", null, b)).json.settings).toEqual({ job_alerts: true, account: true });
+    // #260: the dropped switch is refused by the route and by the database
+    expect(await call(R.notifications, "PUT", { apply_reminders: false }, a)).toMatchObject({ status: 400, code: "BAD_REQUEST" });
+    expect(await call(R.notifications, "PUT", { job_alerts: false, apply_reminders: true }, a)).toMatchObject({ status: 400, code: "BAD_REQUEST" });
+    await expect(su.query("insert into notification_preference(candidate_user_id, category, channel, enabled) values ($1, 'apply_reminders', 'email', false)", [a.id])).rejects.toMatchObject({ code: "23514" });
     expect(await call(R.notifications, "PUT", { account: false }, a)).toMatchObject({ status: 400, code: "BAD_REQUEST" });
     expect(await call(R.notifications, "PUT", { marketing: true }, a)).toMatchObject({ status: 400 });
     expect(await one("select category, channel, enabled from notification_preference where candidate_user_id=$1 order by category", [a.id])).toEqual([
-      { category: "account", channel: "email", enabled: true }, { category: "apply_reminders", channel: "email", enabled: false }, { category: "job_alerts", channel: "email", enabled: true }]);
+      { category: "account", channel: "email", enabled: true }, { category: "job_alerts", channel: "email", enabled: true }]);
   });
   it("the database refuses a free-text category or the account category off, for a candidate only", async () => {
     const a = await login();

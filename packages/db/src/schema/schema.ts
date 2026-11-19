@@ -1805,7 +1805,7 @@ export const notificationPreference = pgTable("notification_preference", {
 			foreignColumns: [staffUser.id],
 			name: "notification_preference_staff_user_id_fkey"
 		}),
-	check("notification_preference_candidate_category", sql`(candidate_user_id IS NULL) OR ((category = ANY (ARRAY['job_alerts'::text, 'apply_reminders'::text, 'account'::text])) AND ((category <> 'account'::text) OR enabled))`),
+	check("notification_preference_candidate_category", sql`(candidate_user_id IS NULL) OR ((category = ANY (ARRAY['job_alerts'::text, 'account'::text])) AND ((category <> 'account'::text) OR enabled))`),
 	check("notification_preference_channel_check", sql`channel = ANY (ARRAY['email'::text, 'in_app'::text])`),
 	check("notification_preference_check", sql`num_nonnulls(candidate_user_id, portal_user_id, staff_user_id) = 1`),
 ]);
@@ -2067,7 +2067,7 @@ export const reviewItem = pgTable("review_item", {
 			foreignColumns: [staffUser.id],
 			name: "review_item_decided_by_staff_user_id_fkey"
 		}),
-	check("review_item_queue_check", sql`queue = ANY (ARRAY['fetched_job'::text, 'account_review'::text, 'merge_confirmation'::text, 'pay_floor_check'::text, 'post_strike_job_review'::text, 'scam_flag'::text, 'agency_client_check'::text, 'data_request'::text, 'scheduled_check'::text])`),
+	check("review_item_queue_check", sql`queue = ANY (ARRAY['fetched_job'::text, 'account_review'::text, 'pay_floor_check'::text, 'post_strike_job_review'::text, 'scam_flag'::text, 'agency_client_check'::text, 'data_request'::text, 'scheduled_check'::text])`),
 	check("review_item_status_check", sql`status = ANY (ARRAY['open'::text, 'claimed'::text, 'done'::text, 'dropped'::text])`),
 	check("review_item_check", sql`(status = ANY (ARRAY['done'::text, 'dropped'::text])) OR (
 CASE

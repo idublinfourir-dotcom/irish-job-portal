@@ -231,7 +231,7 @@ export async function savedJob(db: pg.Pool, userId: string, url: URL) {
 
 // ===== notification settings (D3) =====
 // One switch per category, for the email channel. The account category (security and service messages) is always on.
-export const CATEGORIES = ["job_alerts", "apply_reminders", "account"] as const;
+export const CATEGORIES = ["job_alerts", "account"] as const; // apply_reminders dropped (#260, 0049): no "Did you apply?" email
 export const checkSettings = (b: unknown): Record<string, boolean> | null => {
   if (!isObject(b) || !only(b, CATEGORIES) || !Object.keys(b).length) return null;
   const out: Record<string, boolean> = {};

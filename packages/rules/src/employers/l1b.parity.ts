@@ -6,7 +6,7 @@ import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { checkIrishEmployer, locationLooksIrish } from "../irish";
 import { BIG_COMPANY_NAMES_V1 } from "../snapshot";
-import { buildNameMatcher, cleanEmployerName, isAgencyName, isBigCompany, nameTitlePlaceKey, publicPayTier, urlOrNameKey } from ".";
+import { buildNameMatcher, cleanEmployerName, isAgencyName, isBigCompany, nameTitlePlaceKey, publicPayTier, urlOrNameKey, HSE_ENTRY } from ".";
 
 type Ref = {
   id: string;
@@ -56,7 +56,7 @@ describe("L1b parity with the Python", () => {
     return diffs;
   };
   const publicCandidates = () =>
-    new Map<string, 1 | 2>(Object.entries(readJson<Record<string, { tier: 1 | 2 }>>("public_employers_candidates.json")).map(([k, v]) => [k, v.tier]));
+    new Map<string, 1 | 2>(Object.entries(readJson<Record<string, { tier: 1 | 2 }>>("public_employers_candidates.json")).map(([k, v]) => [k, v.tier])).set(HSE_ENTRY, 1); // the HSE switch ON (#261), as the Python
 
   it("matches the Python on every saved advert, field by field", () => {
     const dir = join(need(), "adverts");

@@ -1,6 +1,7 @@
 // Integration: the rules versions (step 13 part 13a; #229, #230, #234 D9) on the real test database. The owner's seed, the loader across dates, the
 // database's own guard, the real /api/rules handlers with real staff sessions (connected as app_admin), and the daily run. Companies, members, jobs
 // and floors are written as postgres (every CHECK, foreign key and trigger still fires). No network. Fake people only.
+import { readFileSync } from "node:fs";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { seedStaff } from "../src/staff-seed-cli";
@@ -13,6 +14,7 @@ import { fixtures, in30 } from "./fixtures";
 import { confirmedApproval, makeBig } from "./pay-floors-helpers";
 import { assertPageBudget, measurePages } from "./perf/pages";
 import * as R from "@portal/rules";
+import { checkPost, rulesFor, type Post } from "../../../apps/portal/lib/jobs";
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 
@@ -172,6 +174,55 @@ describe("the query string", () => {
       const res = await route.GET(new Request(`${BASE}/api/rules${q}`, { headers: { cookie: cookies.ed1! } }));
       expect([res.status, await res.json()], q).toEqual([400, { error: "bad_query" }]);
     }
+  });
+});
+
+describe("the HSE switch (#261)", () => {
+  const HSE = "HSE Dublin and Midlands";
+  // A portal post on a list role with a public pay grade and no pay (#67), and a fetched advert with no salary: both turn on the public tier.
+  const grade = checkPost({ status: "live", title: "Staff Nurse", description: "We are hiring a staff nurse for our hospital in Dublin. Full sponsorship offered.", county: "Dublin",
+    occupationCode: "2231", contractType: "permanent", salaryLow: null, salaryHigh: null, payGrade: "Staff Nurse scale", ownPageUrl: "https://careers.example.ie/jobs/1" }) as Post;
+  const fetched = { source: "workday", employer: HSE, title: "Staff Nurse", location: "Dublin, Ireland", description: "Permanent role in Dublin. Visa sponsorship available.", employmentType: "", salaryBox: "" };
+  const verdicts = async () => {
+    const r = await loadRules(su, today);
+    const chain = await R.assess(fetched, { deteNames: new Set(), ...R.chainRules(r), matcher: async () => ({ occupationCode: "2231", onCriticalSkillsList: "yes", confidence: "high" }) });
+    return { entry: Object.hasOwn(r.publicPayEmployers, R.HSE_ENTRY), portal: await rulesFor(grade, HSE, r), chain: { bucket: chain.bucket, tier: chain.publicPayTier } };
+  };
+  const pay = async () => (await loadRules(su, today)).publicPayEmployers;
+  // Migration 0049 section 1 as written, run as the owner, the way the migration runs it on a database seeded before the entry existed.
+  const step1 = readFileSync(new URL("../migrations/0049_k_fixes.sql", import.meta.url), "utf8").split("-- ===== 1. the HSE entry")[1]!.split("-- ===== 2.")[0]!;
+  const runStep1 = () => su.query(`set role portal_owner; ${step1} reset role;`);
+  const seed = async () => (await one("select data from rules_version where kind = 'public_pay_employers' and seeded_by_owner")).data;
+
+  it("migration 0049 adds the entry to an owner's seed made without it, keeps every other name, and a second run changes nothing", async () => {
+    const before = await seed();
+    await su.query("update rules_version set data = data - $1 where kind = 'public_pay_employers' and seeded_by_owner", [R.HSE_ENTRY]);
+    expect((await verdicts()).entry).toBe(false);
+    await runStep1();
+    expect(await seed()).toEqual(before);
+    await runStep1();
+    expect(await seed()).toEqual(before);
+  });
+
+  it("is on from the seed; two staff turn it off through the route, an HSE advert then follows the normal checks, and two staff turn it back on", async () => {
+    expect(await verdicts()).toMatchObject({ entry: true, portal: { ok: true, passRoute: "public_pay" }, chain: { bucket: "public_hse", tier: 1 } });
+    const { [R.HSE_ENTRY]: hse, ...off } = await pay();
+    // only a rules data editor proposes, and the proposer cannot confirm their own
+    for (const who of ["ad1", ...OTHERS]) await no(propose(who, "public_pay_employers", today, off), 403, "not_rules_editor");
+    const p = await ok(propose("both", "public_pay_employers", today, off));
+    expect(p.change).toEqual({ added: {}, removed: { [R.HSE_ENTRY]: hse }, changed: {} });
+    await no(decide("both", "confirm", p.requestId), 409, "same_person");
+    for (const who of ["ed1", ...OTHERS]) await no(decide(who, "confirm", p.requestId), 403, "not_administrator");
+    expect((await verdicts()).entry).toBe(true); // nothing changes until a second person confirms
+    await ok(decide("ad1", "confirm", p.requestId));
+    expect(await verdicts()).toMatchObject({ entry: false, portal: { ok: false, code: "PAY_REQUIRED" }, chain: { bucket: "no_salary", tier: 0 } });
+    expect(Object.keys(await pay()).length).toBe(Object.keys(off).length); // the Section 38 names stay
+    const back = await ok(propose("ed1", "public_pay_employers", today, { ...off, [R.HSE_ENTRY]: hse }));
+    expect(back.change).toEqual({ added: { [R.HSE_ENTRY]: hse }, removed: {}, changed: {} });
+    await ok(decide("ad2", "confirm", back.requestId));
+    expect(await verdicts()).toMatchObject({ entry: true, portal: { ok: true, passRoute: "public_pay" }, chain: { bucket: "public_hse", tier: 1 } });
+    // a staff-confirmed version now exists: migration 0049 refuses rather than change data a request confirmed
+    await expect(runStep1()).rejects.toThrow(/staff-confirmed public pay version exists/);
   });
 });
 

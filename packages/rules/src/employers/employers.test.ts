@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BIG_COMPANY_NAMES_V1 } from "../snapshot";
-import { BIG_COMPANY_BRANDS, BIG_COMPANY_LIST_150, cleanEmployerName, isAgencyName, isBigCompany, nameTitlePlaceKey, publicPayTier, urlOrNameKey } from ".";
+import { BIG_COMPANY_BRANDS, BIG_COMPANY_LIST_150, cleanEmployerName, isAgencyName, isBigCompany, nameTitlePlaceKey, publicPayTier, urlOrNameKey, HSE_ENTRY } from ".";
 
 describe("cleanEmployerName (R15)", () => {
   it.each([
@@ -71,9 +71,16 @@ describe("publicPayTier (R17)", () => {
   const candidates = new Map<string, 1 | 2>([
     ["beaumont hospital", 2],
     ["children’s health ireland jobs", 2],
+    [HSE_ENTRY, 1],
   ]);
-  it("tier 1 for HSE names", () => {
+  it("tier 1 for HSE names while the HSE entry is on the list", () => {
     for (const e of ["HSE", "hse west", "Health Service Executive", "  The HSE.  "]) expect(publicPayTier(e, candidates)).toBe(1);
+  });
+  it("the HSE switch off (#261): without the entry an HSE name is tier 0 like any employer, and the Section 38 names still match", () => {
+    const off = new Map([...candidates].filter(([k]) => k !== HSE_ENTRY));
+    for (const e of ["HSE", "hse west", "Health Service Executive", "  The HSE.  "]) expect(publicPayTier(e, off)).toBe(0);
+    expect(publicPayTier("Beaumont Hospital", off)).toBe(2);
+    expect(publicPayTier("HSE", new Map([["hse", 2]]))).toBe(2); // an exact list name still matches as any other
   });
   it("tier 2 for an exact lower-case candidate name, spaces around it ignored", () => {
     expect(publicPayTier(" Beaumont Hospital ", candidates)).toBe(2);
@@ -86,7 +93,7 @@ describe("publicPayTier (R17)", () => {
     expect(publicPayTier("Children's Health Ireland Jobs", candidates)).toBe(0);
   });
   it("known quirk: the HSE test wins over a candidate entry, and any name with the word hse is tier 1", () => {
-    expect(publicPayTier("Acme HSE Contractors", new Map([["acme hse contractors", 2]]))).toBe(1);
+    expect(publicPayTier("Acme HSE Contractors", new Map([["acme hse contractors", 2], [HSE_ENTRY, 1]]))).toBe(1);
   });
   it("names like constructor or __proto__ do not hit object internals", () => {
     expect(publicPayTier("constructor", candidates)).toBe(0);

@@ -459,7 +459,7 @@ await blk("{ const j = await live(), o = await F.org(), ri = (x) => ins(\"postgr
   await rule("review_item", "an item that is not scheduled_check needs a target; scheduled_check has none", { refuse: async () => ri({}), ok: async () => ri({ queue: "scheduled_check" }) });
   const ct = await F.text("pay_floor");
   const targets = { job_id: await live(), organisation_id: await F.org(), organisation_name_id: await ins("postgres", "organisation_name", { name: id("n"), normalised_name: id("n"), kind: "alias", source: "job_site" }), candidate_user_id: await F.cand(), portal_user_id: await F.portal(), contact_message_id: await ins("postgres", "contact_message", { surface: "portal", from_email: "x@example.test", topic: "general", body: "b" }) };
-  for (const [col, v] of Object.entries(targets)) { const q = col === "candidate_user_id" || col === "portal_user_id" ? "data_request" : "merge_confirmation";
+  for (const [col, v] of Object.entries(targets)) { const q = col === "candidate_user_id" || col === "portal_user_id" ? "data_request" : "agency_client_check";
     await rule("review_item", `one open item per (queue, ${col})`, { ok: async () => ri({ queue: q, [col]: v }), refuse: async () => ri({ queue: q, [col]: v }) }); }
   await rule("review_item", "a done or dropped data_request item has its person columns empty", { refuse: async () => su("update review_item set status='done' where queue='data_request' and candidate_user_id=$1", [targets.candidate_user_id]), ok: async () => su("update review_item set status='done', candidate_user_id=null where queue='data_request' and candidate_user_id=$1", [targets.candidate_user_id]) });
   const j2 = await live(), it = await ri({ queue: "fetched_job", job_id: j2 });

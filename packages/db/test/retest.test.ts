@@ -50,7 +50,7 @@ await blk("{ const c = await F.cand(), ct = await F.text(\"services_request\"), 
   rec("3 portal reads candidates", "writes through the views work: app_candidate adds a document to its case and reads its id back", wv3 === "accepted", wv3);
   const vu = await P.app_candidate.query("update candidate_notification set read_at=now() where candidate_user_id=$1", [c]).then((x) => `${x.rowCount} row`, (e) => e.message);
   rec("3 portal reads candidates", "writes through the views work: app_candidate marks its notices read", /^[12] row/.test(vu), `${vu} (the second is the notice app_portal wrote above)`);
-  const vp = await P.app_candidate.query("insert into candidate_notification_preference(candidate_user_id,category,channel,enabled) values($1,'apply_reminders','in_app',true) on conflict do nothing", [c]).then(() => "ok", (e) => e.message);
+  const vp = await P.app_candidate.query("insert into candidate_notification_preference(candidate_user_id,category,channel,enabled) values($1,'job_alerts','in_app',true) on conflict do nothing", [c]).then(() => "ok", (e) => e.message);
   rec("3 portal reads candidates", "writes through the views: app_candidate saves a preference with ON CONFLICT through its view", vp === "ok", vp);
   const vo = await P.app_portal.query("insert into portal_notification(portal_user_id,category,template_key,dedupe_key) values($1,'c','t',$2)", [pu, id("dk")]).then(() => "ok", (e) => `${e.code} ${e.message}`);
   rec("3 portal reads candidates", "app_portal inserts its own notice through portal_notification", vo === "ok" ? true : null, vo === "ok" ? "ok" : `${vo} (only select and update(read_at) are granted on the view; inserts go to the table)`); }

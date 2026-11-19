@@ -61,10 +61,10 @@ describe("the small body checks", () => {
     for (const b of [{ jobId: "3" }, { jobId: "3", stage: "hired!" }, { jobId: "3", stage: "Offer" }, { jobId: "3", stage: "offer", origin: "on_site" }, { stage: "offer" }])
       expect(checkStage(b), JSON.stringify(b)).toBeNull();
   });
-  it("checkSettings takes the three categories as booleans and never switches the account category off", () => {
+  it("checkSettings takes the two categories as booleans and never switches the account category off; apply_reminders is gone (#260)", () => {
     expect(checkSettings({ job_alerts: false })).toEqual({ job_alerts: false });
-    expect(checkSettings({ job_alerts: true, apply_reminders: false, account: true })).toEqual({ job_alerts: true, apply_reminders: false, account: true });
-    for (const b of [{}, null, [], { account: false }, { job_alerts: false, account: false }, { job_alerts: "no" }, { marketing: true }, { job_alerts: 0 }, { job_alerts: null }])
+    expect(checkSettings({ job_alerts: true, account: true })).toEqual({ job_alerts: true, account: true });
+    for (const b of [{ apply_reminders: false }, { job_alerts: true, apply_reminders: true }, {}, null, [], { account: false }, { job_alerts: false, account: false }, { job_alerts: "no" }, { marketing: true }, { job_alerts: 0 }, { job_alerts: null }])
       expect(checkSettings(b), JSON.stringify(b)).toBeNull();
   });
   it("checkDelete wants { confirm: true } and nothing else", () => {
