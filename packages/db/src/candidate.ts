@@ -280,8 +280,10 @@ const NOT_INCLUDED = ["contactFormMessages", "reportsYouMade"].map((section) => 
 }));
 const list = (select: string, from: string, order: string) => `(select coalesce(jsonb_agg(to_jsonb(t) order by ${order}), '[]') from (select ${select} from ${from}) t)`;
 // Every statement part filters by $1, the signed-in candidate. Left out on purpose: password and token columns, unsubscribe tokens, dedupe keys, storage keys.
-// CANDIDATE_DATA is the data alone, so the staff export of a data request (staff-tools.ts) runs this same statement as app_admin.
-export const CANDIDATE_DATA = `jsonb_build_object(
+export const EXPORT_SQL = `with logged as (
+  insert into audit_event(kind, actor_candidate_user_id, action, object_type, object_id, subject_candidate_user_id, source)
+  values ('data_access', $1, 'candidate.export', 'candidate_user', $1, $1, 'site') returning 1)
+select (select count(*) from logged) as logged, jsonb_build_object(
   'account', (select jsonb_build_object('name', u.name, 'email', u.email, 'emailConfirmed', u.email_verified, 'createdAt', u.created_at, 'lastActiveAt', u.last_active_at,
       'signInMethods', (select coalesce(jsonb_agg(distinct a.provider_id), '[]') from candidate_account a where a.user_id = u.id)) from candidate_user u where u.id = $1),
   'profile', (select to_jsonb(t) from (select ${SELECT_PROFILE}, visible_to_employers as "visibleToEmployers", visible_fields as "visibleFields" from candidate_profile where candidate_user_id = $1) t),
@@ -293,15 +295,10 @@ export const CANDIDATE_DATA = `jsonb_build_object(
   'consents', ${list('x.purpose, x.version as "textVersion", c.given_at as "givenAt", c.withdrawn_at as "withdrawnAt", c.details, o.display_name as "organisation"', "candidate_consent_record c join consent_text x on x.id = c.consent_text_id left join organisation o on o.id = c.organisation_id where c.candidate_user_id = $1", '"givenAt"')},
   'notificationSettings', ${list("p.category, p.channel, p.enabled", "candidate_notification_preference p where p.candidate_user_id = $1", "category, channel")},
   'notifications', ${list('n.category, n.template_key as "templateKey", n.params, n.created_at as "createdAt", n.read_at as "readAt"', "candidate_notification n where n.candidate_user_id = $1", '"createdAt" desc')},
-  'applications', '[]'::jsonb, 'contactRequests', '[]'::jsonb)`;
-export const EXPORT_SQL = `with logged as (
-  insert into audit_event(kind, actor_candidate_user_id, action, object_type, object_id, subject_candidate_user_id, source)
-  values ('data_access', $1, 'candidate.export', 'candidate_user', $1, $1, 'site') returning 1)
-select (select count(*) from logged) as logged, ${CANDIDATE_DATA} as data`;
+  'applications', '[]'::jsonb, 'contactRequests', '[]'::jsonb) as data`;
 
-/** `sql` returns the data as `data` for $1: the candidate's own EXPORT_SQL (with its audit row), or the staff export's (staff-tools.ts). */
-export async function exportData(db: Pick<pg.Pool, "query">, userId: string, sql = EXPORT_SQL) {
-  const r = await db.query(sql, [userId]);
+export async function exportData(db: Pick<pg.Pool, "query">, userId: string) {
+  const r = await db.query(EXPORT_SQL, [userId]);
   const x = await db.query("select private.candidate_export_extras($1) as extras", [userId]);
   return { exportedAt: new Date().toISOString(), ...r.rows[0].data, ...x.rows[0].extras, notIncluded: NOT_INCLUDED };
 }

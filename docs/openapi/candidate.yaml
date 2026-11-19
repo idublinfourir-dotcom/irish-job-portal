@@ -2000,3 +2000,85 @@ paths:
               schema: { $ref: '#/components/schemas/CodeError' }
               example: { code: DOCUMENT_NOT_FOUND }
         '503': { $ref: '#/components/responses/FilesUnavailable' }
+  /api/data-request:
+    parameters:
+      - { name: token, in: query, required: true, description: 'The token from the confirm email (43 characters, checked before any query). The only query key allowed.', schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' } }
+    get:
+      operationId: dataRequestInfo
+      tags: [account]
+      summary: What a data request confirm link would confirm
+      description: >-
+        Decision #271 (step 15 Q2): staff sent this candidate login's own address a one-time link for a data request made about it. This
+        shows the purpose and when the link ends, and changes nothing (mail scanners open links). No sign-in; the token is the only
+        credential. A malformed link is 400 before the rate limit; then 30 calls (GET and POST together) per 10 minutes per client address.
+        An unknown, used, expired or closed link, or one made for the other site's kind of login, is 404 `INVALID_LINK`, the same for each.
+      security: []
+      x-roles: [anyone with the token]
+      x-rate-limit: data-request GET and POST together, 30 per client address per 10 minutes
+      responses:
+        '200':
+          description: The live link.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [purpose, expiresAt]
+                properties:
+                  purpose: { enum: [export, erase] }
+                  expiresAt: { type: string }
+              example: { purpose: export, expiresAt: '2026-11-26T09:30:00.123456+00:00' }
+        '400':
+          description: '`BAD_REQUEST`: the token is missing or malformed, or another query key is present.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } }
+        '404':
+          description: '`INVALID_LINK`: unknown, used, expired or closed, or made for the other site.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: INVALID_LINK } } }
+        '429':
+          description: '`TOO_MANY_REQUESTS`: over 30 calls in 10 minutes from one client address (`x-vercel-forwarded-for`, the only address header trusted).'
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: TOO_MANY_REQUESTS } } }
+    post:
+      operationId: dataRequestConfirm
+      tags: [account]
+      summary: Confirm a data request (once)
+      description: >-
+        The account owner confirms. The link works once: afterwards it is 404. For an export the reply is the owner's own data file, the
+        same as their own export (`Content-Disposition: attachment; filename="my-data-YYYY-MM-DD.json"`, `Cache-Control: no-store`); staff
+        never receive it. For an erase the reply is `{ ok: true, purpose: erase }` and staff may then erase the account (two administrators).
+        One audit row by the owner. The Origin header must be this site's origin; no body is needed (at most 200 characters).
+      security: []
+      x-roles: [anyone with the token]
+      x-body-cap: 200 characters
+      x-rate-limit: data-request GET and POST together, 30 per client address per 10 minutes
+      responses:
+        '200':
+          description: "An erase: confirmed. An export: the data file."
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    additionalProperties: false
+                    required: [ok, purpose]
+                    properties:
+                      ok: { const: true }
+                      purpose: { const: erase }
+                  - type: object
+                    required: [exportedAt, account]
+                    properties:
+                      exportedAt: { type: string }
+                      account: { type: object }
+              example: { ok: true, purpose: erase }
+        '400':
+          description: '`BAD_REQUEST`: the token is missing or malformed, or another query key is present.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } }
+        '403':
+          description: "`BAD_ORIGIN`: Origin missing or not this site's."
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_ORIGIN } } }
+        '404':
+          description: '`INVALID_LINK`: unknown, used, expired or closed, or made for the other site.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: INVALID_LINK } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429':
+          description: '`TOO_MANY_REQUESTS`: over 30 calls in 10 minutes from one client address.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: TOO_MANY_REQUESTS } } }

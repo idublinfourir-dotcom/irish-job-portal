@@ -1893,7 +1893,7 @@ export const approvalRequest = pgTable("approval_request", {
 	check("approval_request_status_check", sql`status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'refused'::text, 'withdrawn'::text])`),
 	check("approval_request_check", sql`confirmed_by_staff_user_id <> proposed_by_staff_user_id`),
 	check("approval_request_check1", sql`(status <> 'confirmed'::text) OR (confirmed_by_staff_user_id IS NOT NULL)`),
-	check("approval_request_kind_check", sql`kind = ANY (ARRAY['threshold'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'unclear_role_list'::text, 'public_pay_employer'::text, 'big_company_entry'::text, 'pay_floor'::text, 'strike_2'::text, 'strike_3'::text, 'ban'::text, 'ban_lift'::text, 'manual_post_sponsor_confirmed'::text, 'grant_administrator'::text, 'grant_role'::text, 'terms_privacy_page'::text, 'setting'::text])`),
+	check("approval_request_kind_check", sql`kind = ANY (ARRAY['threshold'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'unclear_role_list'::text, 'public_pay_employer'::text, 'big_company_entry'::text, 'pay_floor'::text, 'strike_2'::text, 'strike_3'::text, 'ban'::text, 'ban_lift'::text, 'manual_post_sponsor_confirmed'::text, 'grant_administrator'::text, 'grant_role'::text, 'terms_privacy_page'::text, 'setting'::text, 'company_seed'::text, 'candidate_merge'::text, 'data_request_erase'::text])`),
 ]);
 
 export const setting = pgTable("setting", {

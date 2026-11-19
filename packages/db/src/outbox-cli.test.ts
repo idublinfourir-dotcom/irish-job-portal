@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { DECISION_TEMPLATE } from "./account-review.ts";
-import { main, noticeEmail, NOTICE_TEMPLATES, parseBatch } from "./outbox-cli.ts";
+import { confirmEmail, main, noticeEmail, NOTICE_TEMPLATES, parseBatch } from "./outbox-cli.ts";
 
 const SITE = "https://employers.example.ie";
 
@@ -36,8 +36,16 @@ describe("notice emails", () => {
       "owner_reassign_done", // the second row of a two-row insert in 0036_portal_notices.sql
     ]);
     queued.delete("job_alert"); // its own email (job-alert-email.ts)
+    queued.delete("data_request_confirm"); // its own email (confirmEmail, below)
     expect(queued.size).toBeGreaterThanOrEqual(25);
     expect([...queued].filter((t) => !NOTICE_TEMPLATES.includes(t))).toEqual([]);
+  });
+  it("the data request confirm email (0050): one button to the site's /api/data-request with the token, the link in the text, no dash", () => {
+    const token = "A".repeat(43), m = confirmEmail("https://www.example.test", token);
+    expect(m.subject).toBe("Please confirm your data request");
+    expect([...m.html.matchAll(/href="([^"]+)"/g)].map((x) => x[1])).toEqual([`https://www.example.test/api/data-request?token=${token}`]);
+    expect(m.text).toContain(`https://www.example.test/api/data-request?token=${token}`);
+    for (const part of [m.subject, m.text, m.html]) expect(part).not.toMatch(/PLACEHOLDER|[\u2013\u2014]/);
   });
   it("each has its own subject, a sentence, a sign-in button to the given site, and no placeholder, template name or dash", () => {
     const subjects = new Set<string>();

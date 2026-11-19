@@ -64,7 +64,7 @@ describe("refuse", () => {
     expect(await status(new QueueRefused("not_held"))).toEqual([409, { error: "not_held" }]);
     expect(await status(new QueueRefused("same_account"))).toEqual([400, { error: "same_account" }]); // C6, the candidate merge
     for (const c of ["kept_account_deleted", "open_services_case", "open_report"]) expect(await status(new QueueRefused(c))).toEqual([409, { error: c }]);
-    for (const c of ["no_account", "several_accounts", "sender_not_account", "not_open", "account_changed", "owner_with_members"]) // Q2, /api/data-requests
+    for (const c of ["no_account", "several_accounts", "sender_not_account", "not_open", "account_changed", "owner_with_members", "close_company_first", "not_confirmed", "account_deleted", "email_not_confirmed"]) // Q2, /api/data-requests
       expect(await status(new QueueRefused(c))).toEqual([409, { error: c }]);
     expect(await status(new QueueRefused("bad_user_id"))).toEqual([400, { error: "bad_user_id" }]);
     expect(await status(new QueueRefused("not_found"))).toEqual([404, { error: "not_found" }]);

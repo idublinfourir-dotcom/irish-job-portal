@@ -2619,7 +2619,8 @@ paths:
       description: >-
         The open scheduled_check items (step 15 Q3) the daily command writes: a weekly DETE notice check, a monthly hand check of 100 jobs,
         a 6-monthly big-company review and one per big-company name due for review (rules_data_editor), and a quarterly role review
-        (administrator; the hand check is fetched_job_reviewer). Each member sees the items of the roles they hold; an administrator sees
+        (administrator; the hand check is fetched_job_reviewer); the daily retention run adds a monthly sole_owner_retention reminder
+        (administrator) per open company whose only active owner it leaves out (0050). Each member sees the items of the roles they hold; an administrator sees
         them all. Oldest first, at most 100 (`truncated` says more exist). No query key is allowed.
       security: [{ staffSession: [] }]
       x-roles: [rules_data_editor, fetched_job_reviewer, administrator]
@@ -2640,16 +2641,17 @@ paths:
                       required: [id, reason, detail, status, created_at]
                       properties:
                         id: { $ref: '#/components/schemas/Id' }
-                        reason: { type: string, enum: [dete_notice_check, hand_check_100, big_company_review, role_review, big_company_name_review] }
+                        reason: { type: string, enum: [dete_notice_check, hand_check_100, big_company_review, role_review, big_company_name_review, sole_owner_retention] }
                         detail:
                           type: object
-                          description: "`key` names the reminder and its period; `role` works it; a big-company name review also has `name` and `reviewOn`."
+                          description: "`key` names the reminder and its period; `role` works it; a big-company name review also has `name` and `reviewOn`. A sole_owner_retention reminder (0050, administrator) has `organisationId`: retention would erase that company's only active owner, so it waits until the company is closed or has another owner."
                           required: [key, role]
                           properties:
                             key: { type: string }
                             role: { type: string }
                             name: { type: string }
                             reviewOn: { $ref: '#/components/schemas/Date' }
+                            organisationId: { $ref: '#/components/schemas/Id' }
                         status: { type: string, enum: [open, claimed] }
                         created_at: { $ref: '#/components/schemas/DbTime' }
                   truncated: { type: boolean }
@@ -3000,8 +3002,9 @@ paths:
       summary: List the open data requests and the erasures waiting for a second administrator
       description: >-
         The open and claimed `data_request` items (step 15 Q2), oldest first, at most 100 (`truncated` says more wait), each with the
-        requester's email from its contact message and whether that message came from a signed-in login; and the pending
-        `data_request_erase` requests with the account each names. No query key is allowed.
+        requester's email from its contact message, whether that message came from a signed-in login, and the state of the owner's
+        confirmation (decision #271: the purpose sent, when, and when the owner confirmed); and the pending `data_request_erase` requests with
+        the account each names. No query key is allowed.
       security: [{ staffSession: [] }]
       x-roles: [administrator]
       x-rate-limit: none
@@ -3020,7 +3023,7 @@ paths:
                     items:
                       type: object
                       additionalProperties: false
-                      required: [itemId, status, createdAt, surface, email, signedIn]
+                      required: [itemId, status, createdAt, surface, email, signedIn, confirmPurpose, confirmSentAt, confirmedAt]
                       properties:
                         itemId: { $ref: '#/components/schemas/Id' }
                         status: { type: string, enum: [open, claimed] }
@@ -3028,6 +3031,9 @@ paths:
                         surface: { type: string, enum: [candidate_site, portal] }
                         email: { type: [string, 'null'] }
                         signedIn: { type: boolean }
+                        confirmPurpose: { type: [string, 'null'], enum: [export, erase, null] }
+                        confirmSentAt: { type: [string, 'null'] }
+                        confirmedAt: { type: [string, 'null'] }
                   truncated: { type: boolean }
                   pending:
                     type: array
@@ -3043,7 +3049,7 @@ paths:
                         proposedBy: { $ref: '#/components/schemas/LoginId' }
                         createdAt: { $ref: '#/components/schemas/DbTime' }
               example:
-                items: [{ itemId: '52', status: open, createdAt: '2026-11-19 09:30:00.123456+00', surface: candidate_site, email: person@example.com, signedIn: false }]
+                items: [{ itemId: '52', status: open, createdAt: '2026-11-19 09:30:00.123456+00', surface: candidate_site, email: person@example.com, signedIn: false, confirmPurpose: erase, confirmSentAt: '2026-11-19T09:35:00.123456+00:00', confirmedAt: null }]
                 truncated: false
                 pending: [{ requestId: '160', itemId: '52', kind: candidate, userId: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', proposedBy: 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6', createdAt: '2026-11-19 09:40:00.123456+00' }]
         '400':
@@ -3056,19 +3062,23 @@ paths:
         '500': { $ref: '#/components/responses/ServerError' }
     post:
       operationId: actOnDataRequest
-      summary: Export or erase the account a data request names, or close the request
+      summary: Ask the account owner to confirm, erase the account a data request names, or close the request
       description: >-
         The account is the one candidate or portal login whose email is the requester's email on the item's contact message (compared in
         lower case). Refused when none matches (`no_account`), when a candidate and a portal login share the address (`several_accounts`), or
-        when a signed-in sender typed another login's address (`sender_not_account`). Staff confirm the requester through that address by
-        hand. `export`: the person's own self-export (the same sections as `GET /api/candidate/export` or the portal's own export), returned
-        to the administrator only and never emailed, with one `data_access` audit row; the item stays open. `close`: ends an open item with
-        nothing erased, with an audit row. `erase_propose`: an administrator proposes erasing that account; one pending erase per item.
-        `erase_confirm`: a different administrator confirms and the erase runs at once, as the retention erase does: refused, and the request
-        left pending, while the person has an open services case or is the target of an open report (or, for a portal login, is an account
-        owner with other active members), when the item is no longer open (`not_open`), or when the match has changed since the proposal.
-        The stored files are removed, the request message is emptied, the item closes and one audit row names both administrators. No reply
-        email is sent. `erase_refuse`: a different administrator refuses, or the proposer withdraws. The Origin header must be the admin app's origin.
+        when a signed-in sender typed another login's address (`sender_not_account`). Staff never receive anyone's data (decision #271).
+        `send_confirm` (`purpose` export or erase): queues one email, placeholder wording, to that login's own confirmed address (never the
+        address typed on the form) with a one-time link to its own site (`GET` and `POST /api/data-request` on the candidate or employer site),
+        made when the outbox sends it and valid for 7 days; only its hash is kept. A new send ends an older link and an older confirmation.
+        Refused `email_not_confirmed` and `account_deleted`. For an export the owner downloads it from the link. `close`: ends an open item
+        (its link stops working), with an audit row. `erase_propose`: refused `not_confirmed` unless the request is proved (sent by that login
+        while signed in, or its owner confirmed an erase from the link); one pending erase per item. `erase_confirm`: a different administrator
+        confirms and the erase runs at once, as the retention erase does: refused, and the request left pending, while the person has an open
+        services case or is the target of an open report (or, for a portal login, is an account owner with other active members, or the only
+        active owner of an open company), when the item is no longer open (`not_open`), or when the match or the proof has changed. The stored
+        files are removed, every visitor message from the requester's address (the request's own among them) is emptied and the open items
+        pointing to them close, the item closes and one audit row names both administrators. `erase_refuse`: a different administrator refuses,
+        or the proposer withdraws. The Origin header must be the admin app's origin.
       security: [{ staffSession: [] }]
       x-roles: [administrator]
       x-rate-limit: none
@@ -3081,9 +3091,16 @@ paths:
               oneOf:
                 - type: object
                   additionalProperties: false
+                  required: [action, itemId, purpose]
+                  properties:
+                    action: { const: send_confirm }
+                    itemId: { $ref: '#/components/schemas/Id' }
+                    purpose: { type: string, enum: [export, erase] }
+                - type: object
+                  additionalProperties: false
                   required: [action, itemId]
                   properties:
-                    action: { type: string, enum: [export, close, erase_propose] }
+                    action: { type: string, enum: [close, erase_propose] }
                     itemId: { $ref: '#/components/schemas/Id' }
                 - type: object
                   additionalProperties: false
@@ -3091,22 +3108,22 @@ paths:
                   properties:
                     action: { type: string, enum: [erase_confirm, erase_refuse] }
                     requestId: { $ref: '#/components/schemas/Id' }
-            example: { action: export, itemId: '52' }
+            example: { action: send_confirm, itemId: '52', purpose: erase }
       responses:
         '200':
-          description: "`export`: the account and its data. `erase_propose`: the account and the request id. `erase_confirm`: the account and the stored files removed. `close` and `erase_refuse`: `{ ok: true }`."
+          description: "`send_confirm`: the account and the purpose. `erase_propose`: the account and the request id. `erase_confirm`: the account and the stored files removed. `close` and `erase_refuse`: `{ ok: true }`."
           content:
             application/json:
               schema:
                 oneOf:
                   - type: object
                     additionalProperties: false
-                    required: [ok, kind, userId, data]
+                    required: [ok, kind, userId, purpose]
                     properties:
                       ok: { const: true }
                       kind: { type: string, enum: [candidate, portal] }
                       userId: { $ref: '#/components/schemas/LoginId' }
-                      data: { type: object, required: [exportedAt, account], properties: { exportedAt: { type: string, format: date-time }, account: { type: object } } }
+                      purpose: { type: string, enum: [export, erase] }
                   - type: object
                     additionalProperties: false
                     required: [ok, kind, userId, requestId]
@@ -3128,9 +3145,9 @@ paths:
                     required: [ok]
                     properties:
                       ok: { const: true }
-              example: { ok: true, kind: candidate, userId: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', filesRemoved: 1 }
+              example: { ok: true, kind: candidate, userId: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', purpose: erase }
         '400':
-          description: "`bad_body`: not one JSON object, an unknown or missing field, or over the cap. `bad_action`: unknown action. `bad_item_id`, `bad_request_id`: not an id."
+          description: "`bad_body`: not one JSON object, an unknown or missing field, or over the cap. `bad_action`: unknown action. `bad_item_id`, `bad_request_id`: not an id. `bad_purpose`: not export or erase."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_item_id } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
@@ -3140,6 +3157,6 @@ paths:
           description: "`not_found`: no open data request item with this id, or no such erase request."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
         '409':
-          description: "`no_account`, `several_accounts`, `sender_not_account`: see above. `open_services_case`, `open_report`, `owner_with_members`, `not_open`, `account_changed`: the erase is refused for now. `decision_pending`: an erase of this item waits already. `request_not_pending`: the request is not pending. `same_person`: the proposer confirming."
-          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: open_services_case } } }
+          description: "`no_account`, `several_accounts`, `sender_not_account`: see above. `email_not_confirmed`, `account_deleted`: no confirm email can go. `not_confirmed`: the owner has not confirmed an erase. `open_services_case`, `open_report`, `owner_with_members`, `not_open`, `account_changed`: the erase is refused for now. `close_company_first`: the login is the only active owner of an open company; close the company first, or a member joins and takes the owner role (`/api/companies/owner-reassign`). `decision_pending`: an erase of this item waits already. `request_not_pending`: the request is not pending. `same_person`: the proposer confirming."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_confirmed } } }
         '500': { $ref: '#/components/responses/ServerError' }

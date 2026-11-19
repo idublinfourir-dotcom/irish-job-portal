@@ -32,7 +32,8 @@ insert into consent_record(id,candidate_user_id,consent_text_id) overriding syst
 insert into services_case(id,candidate_user_id,permit_type,payer,status,consent_record_id) overriding system value values (432,'c3-kc','critical_skills','employer','documents_needed',405);
 insert into report(id,target_kind,target_candidate_user_id,reason,status) overriding system value values (414,'profile','c3-kr','other','job_hidden');
 -- portal user with everything: owner of org 5 alone, signer, posted jobs, invited someone, consent, cases, reports, contact message
-insert into organisation(id,slug,display_name,kind,status,signup_path,claimed_at,verified_at,status_changed_at,permit_history) overriding system value values (13,'c3-org-13','C3 Org 13','employer','verified','first_time',now(),now(),now(),'not_linked');
+insert into organisation(id,slug,display_name,kind,status,signup_path,claimed_at,verified_at,status_changed_at,permit_history) overriding system value values (13,'c3-org-13','C3 Org 13','employer','closed','first_time',now(),now(),now(),'not_linked');
+-- 0050: closed, because erase_portal_user now refuses the only active owner of an open company (close_company_first, sole-owner.test.ts)
 select c3t.mkp('c3-pks');
 update membership set portal_user_id = null where false;
 insert into membership(id,organisation_id,portal_user_id,role,status,is_signer,joined_at) overriding system value values (60,13,'c3-pks','account_owner','active',true,now());

@@ -42,6 +42,8 @@
     "downloadCv": "GET /api/candidate/cv/download (candidate)",
     "listCaseDocuments": "GET /api/candidate/cases/{id}/documents (candidate who owns the case)",
     "uploadCaseDocument": "POST /api/candidate/cases/{id}/documents (candidate who owns the case)",
-    "downloadCaseDocument": "GET /api/candidate/cases/{id}/documents/{docId} (candidate who uploaded it)"
+    "downloadCaseDocument": "GET /api/candidate/cases/{id}/documents/{docId} (candidate who uploaded it)",
+    "dataRequestInfo": "GET /api/data-request (anyone with the token)",
+    "dataRequestConfirm": "POST /api/data-request (anyone with the token)"
   }
 }

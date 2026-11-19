@@ -5,13 +5,11 @@
 // proposer) and setting_guard (a value changes only through a confirmed, unused 'setting' request naming that value, 0004).
 import type pg from "pg";
 import { QueueRefused } from "./admin-queue";
-import { CANDIDATE_DATA, exportData } from "./candidate";
 import { parseSeed, seedRows, type SeedResult, type SeedRow } from "./company-seed";
 import { fileStore } from "./file-store";
 import { validId } from "./search";
 import { requireRole } from "./staff-admin";
 import { AUDIT } from "./trust-safety";
-import { toWire } from "./wire";
 
 type Q = Pick<pg.Pool, "query">;
 type Db = Pick<pg.Pool, "query" | "connect">;
@@ -289,31 +287,34 @@ export const refuseCandidateMerge = (db: Db, staff: string, requestId: unknown) 
 
 // ===== Q2: act on a data request (queue data_request) =====
 // Administrators only (20c: data requests are AD's). The account is the one whose email is the requester's email on the item's message
-// (private.data_request_account, 0050: refused no_account, several_accounts, sender_not_account). export: that person's own self-export (candidate.ts
-// exportData, or private.portal_user_data, the portal self-export's data), returned to the staff member only, never emailed; one data_access audit row.
-// erase: irreversible, so two administrators (as C6): private.data_request_erase (0050) runs the erase function and closes the item. close: ends an
-// item that needs nothing more (after an export). No reply is queued to the requester: there is no data-request email yet, and a stored address
-// would outlive the erase. ponytail: placeholder; staff answer by hand until a template exists.
+// (private.data_request_account, 0050: refused no_account, several_accounts, sender_not_account). Staff never read anyone's data (20c, decision
+// #271): send_confirm emails the matched login's own address a one-time link (the outbox sender makes the token, outbox-cli.ts); its owner confirms
+// on their own site and, for an export, downloads it there (data-request-confirm.ts). erase: irreversible, so two administrators (as C6), and only
+// once the request is proved (sent by that login while signed in, or confirmed by its owner for an erase; private.data_request_proved).
+// private.data_request_erase (0050) runs the erase function and closes the item. close: ends an item that needs nothing more.
 const DR_REFUSED = /^data request refused: ([a-z_]+)/;
 const drRefusal = (e: unknown) => {
   const m = (e as { code?: string }).code === "P0001" ? DR_REFUSED.exec((e as Error).message) : null;
   return m ? new QueueRefused(m[1]!) : e;
 };
 type Account = { kind: "candidate" | "portal"; userId: string };
-async function accountOf(c: Q, itemId: unknown): Promise<Account> {
+async function accountOf(c: Q, itemId: unknown, fn = "data_request_account"): Promise<Account> {
   if (!validId(itemId)) throw new QueueRefused("not_found");
   try {
-    return (await c.query<{ a: Account }>("select private.data_request_account($1::bigint) a", [itemId])).rows[0]!.a;
+    return (await c.query<{ a: Account }>(`select private.${fn}($1::bigint) a`, [itemId])).rows[0]!.a;
   } catch (e) {
     throw drRefusal(e);
   }
 }
-// Oldest first on review_item_queue_idx; the requester's email from the message (signedIn: the message came from a signed-in login).
+// Oldest first on review_item_queue_idx; the requester's email from the message (signedIn: the message came from a signed-in login) and the
+// state of the owner's confirmation.
 export const DATA_REQUESTS =
   "select i.id::text as \"itemId\", i.status, i.created_at::text as \"createdAt\", m.surface, m.from_email as email, " +
-  "coalesce(m.candidate_user_id, m.portal_user_id) is not null as \"signedIn\" from review_item i join contact_message m on m.id = i.contact_message_id " +
+  "coalesce(m.candidate_user_id, m.portal_user_id) is not null as \"signedIn\", i.detail->>'purpose' as \"confirmPurpose\", " +
+  "i.detail->>'sentAt' as \"confirmSentAt\", i.detail->>'confirmedAt' as \"confirmedAt\" from review_item i join contact_message m on m.id = i.contact_message_id " +
   `where i.queue = 'data_request' and i.status in ('open','claimed') order by i.created_at, i.id limit ${MAX_SHOWN + 1}`;
-export type DataRequestItem = { itemId: string; status: string; createdAt: string; surface: string; email: string | null; signedIn: boolean };
+export type DataRequestItem = { itemId: string; status: string; createdAt: string; surface: string; email: string | null; signedIn: boolean;
+  confirmPurpose: string | null; confirmSentAt: string | null; confirmedAt: string | null };
 
 /** The open data requests and the erasures waiting for a second administrator. */
 export async function listDataRequests(db: Q, staff: string) {
@@ -322,28 +323,39 @@ export async function listDataRequests(db: Q, staff: string) {
   return { ...page(items.rows), pending: p.rows.map((x) => ({ requestId: x.id, itemId: x.target_id, kind: x.change.kind, userId: x.change.userId, proposedBy: x.proposed_by, createdAt: x.created_at })) };
 }
 
-const STAFF_CANDIDATE_EXPORT = `select ${CANDIDATE_DATA} as data`;
-const DR_EXPORT_AUDIT =
-  "insert into audit_event(kind, actor_staff_user_id, action, object_type, object_id, subject_candidate_user_id, after, source) " +
-  "values ('data_access', $1, 'data_request.export', $2, $3, $4, $5::jsonb, 'panel')";
+export const DR_PURPOSES = ["export", "erase"] as const;
+const LOGIN_STATE = { candidate: "select email_verified, deleted_at is not null as deleted from candidate_user where id = $1",
+  portal: "select email_verified, deleted_at is not null as deleted from portal_user where id = $1" } as const;
+// The item's detail is replaced (a new send ends an older link and an older confirmation); the outbox row names the login, so the sender takes
+// that login's own address (outbox-cli.ts ADDRESSES). One audit row.
+const DR_SEND =
+  "update review_item set detail = jsonb_build_object('purpose', $2::text, 'kind', $3::text, 'userId', $4::text, 'sentBy', $5::text, 'sentAt', now()) " +
+  "where id = $1::bigint and status in ('open','claimed') returning detail->>'sentAt' as sent_at";
+const DR_OUTBOX = (kind: Account["kind"]) =>
+  `insert into email_outbox(template, ${kind}_user_id, params, dedupe_key) values ('data_request_confirm', $1, jsonb_build_object('itemId', $2::text, 'sentAt', $3::text), ` +
+  "'data_request_confirm:' || $2 || ':' || $3)";
 
-/** The requester's own export, for the staff member to pass on by hand; the audit row is in the same transaction. */
-export async function exportDataRequest(db: Db, staff: string, itemId: unknown): Promise<Account & { data: Record<string, unknown> }> {
+/** Queues the confirm email to the matched login's own, confirmed address. */
+export async function sendDataRequestConfirm(db: Db, staff: string, itemId: unknown, purpose: unknown): Promise<Account & { purpose: string }> {
+  if (!(DR_PURPOSES as readonly unknown[]).includes(purpose)) throw new QueueRefused("bad_purpose");
   return inTransaction(db, staff, ["administrator"], "not_administrator", async (c) => {
     const a = await accountOf(c, itemId);
-    const data = a.kind === "candidate" ? await exportData(c, a.userId, STAFF_CANDIDATE_EXPORT)
-      : (toWire({ exportedAt: new Date().toISOString(), ...(await c.query("select private.portal_user_data($1) r", [a.userId])).rows[0].r }) as Record<string, unknown>);
-    await c.query(DR_EXPORT_AUDIT, [staff, `${a.kind}_user`, a.userId, a.kind === "candidate" ? a.userId : null, JSON.stringify({ item_id: itemId })]);
-    return { ...a, data };
+    const u = (await c.query<{ email_verified: boolean; deleted: boolean }>(LOGIN_STATE[a.kind], [a.userId])).rows[0]!;
+    if (u.deleted) throw new QueueRefused("account_deleted");
+    if (!u.email_verified) throw new QueueRefused("email_not_confirmed");
+    const sentAt = (await c.query<{ sent_at: string }>(DR_SEND, [itemId, purpose, a.kind, a.userId, staff])).rows[0]!.sent_at;
+    await c.query(DR_OUTBOX(a.kind), [a.userId, itemId, sentAt]);
+    await audit(c, staff, "data_request.send_confirm", "review_item", itemId as string, { purpose, kind: a.kind });
+    return { ...a, purpose: purpose as string };
   });
 }
 
 export const DR_CLOSE =
-  "with w as (update review_item set status = 'done', outcome = 'answered', decided_by_staff_user_id = $2, decided_at = now(), candidate_user_id = null, portal_user_id = null " +
+  "with w as (update review_item set status = 'done', outcome = 'answered', decided_by_staff_user_id = $2, decided_at = now(), candidate_user_id = null, portal_user_id = null, detail = null " +
   "where id = $1::bigint and queue = 'data_request' and status in ('open','claimed') returning id) " +
   "insert into audit_event(kind, actor_staff_user_id, action, object_type, object_id, source) select 'admin_action', $2, 'data_request.close', 'review_item', id::text, 'panel' from w";
 
-/** Closes an open item with nothing erased (the export was sent, or nothing more is needed). */
+/** Closes an open item with nothing erased (the owner downloaded the export, or nothing more is needed); its link stops working. */
 export async function closeDataRequest(db: Db, staff: string, itemId: unknown): Promise<void> {
   if (!validId(itemId)) throw new QueueRefused("not_found");
   await inTransaction(db, staff, ["administrator"], "not_administrator", async (c) => {
@@ -353,7 +365,7 @@ export async function closeDataRequest(db: Db, staff: string, itemId: unknown): 
 
 export async function proposeDataRequestErase(db: Db, staff: string, itemId: unknown): Promise<Account & { requestId: string }> {
   return inTransaction(db, staff, ["administrator"], "not_administrator", async (c) => {
-    const a = await accountOf(c, itemId);
+    const a = await accountOf(c, itemId, "data_request_proved");
     const requestId = await propose(c, ["data_request_erase", "review_item", itemId as string, JSON.stringify(a), "data request erase"]);
     await audit(c, staff, "data_request_erase.propose", "review_item", itemId as string, { request_id: requestId, kind: a.kind });
     return { ...a, requestId };

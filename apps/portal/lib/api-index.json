@@ -40,6 +40,8 @@
     "portalTeamGet": "GET /api/portal/team (any active portal login)",
     "portalTeamWrite": "POST /api/portal/team (invite, approve, refuse, remove, role, transfer: account_owner, accept, request: no company yet, leave: any member)",
     "portalAccountDelete": "DELETE /api/portal/account (any active portal login)",
-    "portalAccountExport": "GET /api/portal/account/export (any active portal login)"
+    "portalAccountExport": "GET /api/portal/account/export (any active portal login)",
+    "dataRequestInfo": "GET /api/data-request (anyone with the token)",
+    "dataRequestConfirm": "POST /api/data-request (anyone with the token)"
   }
 }
