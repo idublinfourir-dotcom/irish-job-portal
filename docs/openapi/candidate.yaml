@@ -642,6 +642,16 @@ paths:
                   lastCheckedAt: { type: [string, 'null'], format: date-time }
                   rulesCheckedOn: { type: string }
                   registration: { $ref: '#/components/schemas/Registration' }
+                  payScale:
+                    type: [object, 'null']
+                    description: 'When `payGrade` is a grade code of the public pay scales in force (#269): the scale, and `line` to show ("Pay scale for this grade: EUR X to Y", placeholder wording). Null otherwise.'
+                    required: [code, title, firstEur, lastEur, line]
+                    properties:
+                      code: { type: string }
+                      title: { type: string }
+                      firstEur: { type: integer }
+                      lastEur: { type: integer }
+                      line: { type: string }
               example:
                 id: '1042'
                 source: fetched
@@ -678,6 +688,7 @@ paths:
                   line: You must be registered with Nursing and Midwifery Board of Ireland (NMBI) to work in this role in Ireland.
                   steps: [Apply to NMBI to have your qualification recognised (stage 1).]
                   degreeNote: For nurses and midwives, a relevant degree means a degree or diploma accepted by NMBI.
+                payScale: null
         '400': { $ref: '#/components/responses/PublicBadRequest' }
         '404': { $ref: '#/components/responses/PublicNotFound' }
         '429': { $ref: '#/components/responses/PublicTooMany' }

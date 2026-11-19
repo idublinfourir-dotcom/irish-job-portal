@@ -1,0 +1,327 @@
+[
+ {
+  "code": "2283",
+  "title": "Enhanced Nurse (General), new-entrant grade",
+  "firstEur": 44832,
+  "lastEur": 60194,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 16,
+  "note": "Placeholder: overseas nurses and midwives are paid EUR 33,370 for the first 6 to 12 weeks on an NMBI adaptation placement, which is not a permit job; the permit is for the registered post on this scale."
+ },
+ {
+  "code": "2280",
+  "title": "Enhanced Midwife, new-entrant grade",
+  "firstEur": 44832,
+  "lastEur": 60194,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 16,
+  "note": "Placeholder: overseas nurses and midwives are paid EUR 33,370 for the first 6 to 12 weeks on an NMBI adaptation placement, which is not a permit job; the permit is for the registered post on this scale."
+ },
+ {
+  "code": "2135",
+  "title": "Staff Nurse",
+  "firstEur": 38166,
+  "lastEur": 56592,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 14,
+  "note": "Placeholder: overseas nurses and midwives are paid EUR 33,370 for the first 6 to 12 weeks on an NMBI adaptation placement, which is not a permit job; the permit is for the registered post on this scale."
+ },
+ {
+  "code": "2674",
+  "title": "Mental Health Staff Nurse",
+  "firstEur": 38908,
+  "lastEur": 56948,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 14,
+  "note": "Placeholder: overseas nurses and midwives are paid EUR 33,370 for the first 6 to 12 weeks on an NMBI adaptation placement, which is not a permit job; the permit is for the registered post on this scale."
+ },
+ {
+  "code": "2143",
+  "title": "Registered Midwife (Staff Nurse)",
+  "firstEur": 38166,
+  "lastEur": 56592,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 14,
+  "note": "Placeholder: overseas nurses and midwives are paid EUR 33,370 for the first 6 to 12 weeks on an NMBI adaptation placement, which is not a permit job; the permit is for the registered post on this scale."
+ },
+ {
+  "code": "2289",
+  "title": "Enhanced Nurse Senior (General)",
+  "firstEur": 62047,
+  "lastEur": 62047,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 13
+ },
+ {
+  "code": "2127",
+  "title": "Clinical Nurse Manager 1 (General)",
+  "firstEur": 57780,
+  "lastEur": 70087,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 12
+ },
+ {
+  "code": "2119",
+  "title": "Clinical Nurse Manager 2 (General)",
+  "firstEur": 62699,
+  "lastEur": 79227,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 12
+ },
+ {
+  "code": "2131",
+  "title": "Clinical Midwife Manager 1",
+  "firstEur": 57780,
+  "lastEur": 70087,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 12
+ },
+ {
+  "code": "2132",
+  "title": "Clinical Midwife Manager 2",
+  "firstEur": 62699,
+  "lastEur": 79227,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 12
+ },
+ {
+  "code": "2632",
+  "title": "Clinical Nurse Specialist (General)",
+  "firstEur": 62699,
+  "lastEur": 79227,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 13
+ },
+ {
+  "code": "2267",
+  "title": "Advanced Nurse Practitioner (General)",
+  "firstEur": 72843,
+  "lastEur": 89894,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 11
+ },
+ {
+  "code": "1554",
+  "title": "Intern (NCHD)",
+  "firstEur": 47127,
+  "lastEur": 47127,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 6
+ },
+ {
+  "code": "1012",
+  "title": "Senior House Officer",
+  "firstEur": 55292,
+  "lastEur": 75623,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 7
+ },
+ {
+  "code": "1538",
+  "title": "Registrar",
+  "firstEur": 70276,
+  "lastEur": 82756,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 7
+ },
+ {
+  "code": "1628",
+  "title": "Specialist Registrar",
+  "firstEur": 78786,
+  "lastEur": 98091,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 7
+ },
+ {
+  "code": "1627",
+  "title": "Senior Registrar",
+  "firstEur": 83847,
+  "lastEur": 102619,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 7
+ },
+ {
+  "code": "C2023",
+  "title": "Consultant, 2023 contract, clinician (no grade code printed)",
+  "firstEur": 238221,
+  "lastEur": 286151,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 62
+ },
+ {
+  "code": "314X",
+  "title": "Physiotherapist",
+  "firstEur": 45514,
+  "lastEur": 65068,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 28
+ },
+ {
+  "code": "3298",
+  "title": "Occupational Therapist",
+  "firstEur": 45514,
+  "lastEur": 65068,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 26
+ },
+ {
+  "code": "336Y",
+  "title": "Speech and Language Therapist",
+  "firstEur": 45514,
+  "lastEur": 65068,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 32
+ },
+ {
+  "code": "3389",
+  "title": "Dietitian",
+  "firstEur": 45514,
+  "lastEur": 65068,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 21
+ },
+ {
+  "code": "3352",
+  "title": "Chiropodist / Podiatrist",
+  "firstEur": 45514,
+  "lastEur": 65068,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 19
+ },
+ {
+  "code": "3409",
+  "title": "Orthoptist",
+  "firstEur": 45514,
+  "lastEur": 65068,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 27
+ },
+ {
+  "code": "3093",
+  "title": "Radiographer",
+  "firstEur": 44956,
+  "lastEur": 64235,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 30
+ },
+ {
+  "code": "3950",
+  "title": "Radiation Therapist",
+  "firstEur": 44957,
+  "lastEur": 68372,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 30
+ },
+ {
+  "code": "3875",
+  "title": "Medical Scientist",
+  "firstEur": 45279,
+  "lastEur": 75148,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 25
+ },
+ {
+  "code": "3017",
+  "title": "Social Worker",
+  "firstEur": 51127,
+  "lastEur": 73811,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 31
+ },
+ {
+  "code": "3441",
+  "title": "Audiologist",
+  "firstEur": 40920,
+  "lastEur": 52311,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 18
+ },
+ {
+  "code": "3867",
+  "title": "Cardiac Physiologist",
+  "firstEur": 45224,
+  "lastEur": 66708,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 18
+ },
+ {
+  "code": "3420",
+  "title": "Optometrist, Clinical",
+  "firstEur": 65197,
+  "lastEur": 76767,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 27
+ },
+ {
+  "code": "3689",
+  "title": "Psychologist, Clinical",
+  "firstEur": 63222,
+  "lastEur": 108234,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 29
+ },
+ {
+  "code": "3007",
+  "title": "Perfusionist",
+  "firstEur": 68687,
+  "lastEur": 90688,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 24
+ },
+ {
+  "code": "3247",
+  "title": "Pharmacist",
+  "firstEur": 50485,
+  "lastEur": 80758,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 27
+ },
+ {
+  "code": "3195",
+  "title": "Paramedic, National Ambulance Service",
+  "firstEur": 42731,
+  "lastEur": 60346,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 24
+ },
+ {
+  "code": "3188",
+  "title": "Specialist Paramedic, National Ambulance Service",
+  "firstEur": 53554,
+  "lastEur": 70386,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 24
+ },
+ {
+  "code": "3194",
+  "title": "Emergency Medical Technician",
+  "firstEur": 40989,
+  "lastEur": 55680,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 24
+ },
+ {
+  "code": "6075",
+  "title": "Health Care Assistant (Band 2)",
+  "firstEur": 36651,
+  "lastEur": 45939,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 48
+ },
+ {
+  "code": "6012",
+  "title": "Health Care Assistant (Band 1, named locations only)",
+  "firstEur": 42033,
+  "lastEur": 49050,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 48
+ },
+ {
+  "code": "6482",
+  "title": "Care Assistant (Disability Services)",
+  "firstEur": 34881,
+  "lastEur": 48434,
+  "sourceUrl": "https://assets.hse.ie/media/documents/1_June_2026_pay_scales_yVg87LQ.pdf",
+  "sourcePage": 47
+ }
+]

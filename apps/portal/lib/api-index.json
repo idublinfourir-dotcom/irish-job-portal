@@ -25,6 +25,7 @@
     "portalJobClose": "POST /api/portal/jobs/close (account_owner, recruiter, poster)",
     "portalJobCheck": "POST /api/portal/jobs/check (account_owner, recruiter, poster)",
     "portalJobSuggest": "GET /api/portal/jobs/suggest (any active portal login)",
+    "portalJobGrades": "GET /api/portal/jobs/grades (any active portal login)",
     "portalJobAuthorityList": "GET /api/portal/jobs/{id}/authority (account_owner, recruiter, poster)",
     "portalJobAuthorityUpload": "POST /api/portal/jobs/{id}/authority (account_owner, recruiter, poster)",
     "portalJobAuthorityDownload": "GET /api/portal/jobs/{id}/authority/{docId} (account_owner, recruiter, poster)",

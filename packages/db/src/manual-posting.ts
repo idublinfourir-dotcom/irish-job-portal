@@ -5,7 +5,7 @@
 // This file does not import from apps/portal: `manualVerdict` is the small check of apps/portal/lib/jobs.ts (`rulesFor`), written again on the same
 // rules in force (#229, `getRules`), with the same pay rule (#107, #150, #225). Every write sets the acting staff id for the transaction and checks the role in the database.
 import type pg from "pg";
-import { assess, chainRules, isSoc2010, minimumForHours, type RulesSnapshot } from "@portal/rules";
+import { assess, chainRules, isSoc2010, minimumForHours, offScale, type RulesSnapshot } from "@portal/rules";
 import { QueueRefused, listAnswer } from "./admin-queue";
 import { companyRefusal } from "./merges";
 import { getRules } from "./rules-data";
@@ -102,7 +102,10 @@ export async function manualVerdict(p: ManualPost, employerName: string, r: Rule
   const pay = p.salaryLow === null ? null : (p.salaryHigh ?? p.salaryLow) + (p.healthInsuranceEur ?? 0);
   let passRoute: "stated_pay" | "public_pay";
   if (pay !== null && pay >= minimum) passRoute = "stated_pay";
-  else if (a.publicPayTier > 0 && onList === "yes") passRoute = "public_pay"; // a public pay-scale employer on a list role (#67)
+  else if (a.publicPayTier > 0 && onList === "yes") { // a public pay-scale employer on a list role (#67); stated pay must sit on a listed grade's scale (#269)
+    if (offScale(r, p.payGrade, p.salaryLow, p.salaryHigh)) return { ok: false, code: "pay_not_on_scale" };
+    passRoute = "public_pay";
+  }
   else return { ok: false, code: pay === null ? "pay_required" : "pay_below_minimum" };
   if (a.bucket === "queue" || a.scamFlag) return { ok: false, code: "needs_review", stage: a.stage };
   return { ok: true, passRoute, sector: a.sector, stage: a.stage };

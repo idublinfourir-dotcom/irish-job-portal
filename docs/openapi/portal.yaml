@@ -120,7 +120,7 @@ components:
         contractMonths: { type: [integer, 'null'], minimum: 1, maximum: 600 }
         salaryLow: { type: [integer, 'null'], minimum: 1, maximum: 1000000, description: Whole euros a year. }
         salaryHigh: { type: [integer, 'null'], minimum: 1, maximum: 1000000 }
-        payGrade: { type: [string, 'null'], minLength: 1, maxLength: 100, description: "A public pay grade, shown when no salary is stated." }
+        payGrade: { type: [string, 'null'], minLength: 1, maxLength: 100, description: "A public pay grade, shown when no salary is stated. A grade `code` from GET /api/portal/jobs/grades (the scales in force, #269) makes a public pay employer's stated pay count only when it sits on that grade's scale (`PAY_NOT_ON_SCALE` otherwise); any other text is kept as free text and checked as before." }
         healthInsuranceEur: { type: [integer, 'null'], minimum: 0, maximum: 50000, description: "Employer-paid health insurance a year, counted towards the pay minimum." }
         weeklyHours: { type: integer, minimum: 1, maximum: 60, default: 39 }
         ownPageUrl: { type: string, minLength: 10, maxLength: 500, format: uri, description: "An https address with a dotted host name and no user name or password: where candidates apply." }
@@ -173,7 +173,7 @@ components:
       description: The rules refused a live post. `stage` names the failed stage for `RULES_FAILED`; `exception` carries the Ineligible entry's wording when it names an exception the employer may confirm.
       required: [code]
       properties:
-        code: { type: string, enum: [GENERAL_RULES_NOT_SET, OCCUPATION_INELIGIBLE, QUOTA_FULL, OCCUPATION_NOT_ON_LIST, CONTRACT_TOO_SHORT, RULES_FAILED, PAY_REQUIRED, PAY_BELOW_MINIMUM, STATEMENT_REQUIRED] }
+        code: { type: string, enum: [GENERAL_RULES_NOT_SET, OCCUPATION_INELIGIBLE, QUOTA_FULL, OCCUPATION_NOT_ON_LIST, CONTRACT_TOO_SHORT, RULES_FAILED, PAY_REQUIRED, PAY_BELOW_MINIMUM, PAY_NOT_ON_SCALE, STATEMENT_REQUIRED] }
         stage: { type: string }
         exception: { type: string }
     CaseDocument:
@@ -859,7 +859,7 @@ paths:
                         closeReason: { type: [string, 'null'] }
                         hireAnswer: { type: [string, 'null'], enum: [yes, no, null] }
                         reason: { type: [string, 'null'], enum: [restricted_company, staff_check, pay_check, renewal_check, report, organisation_suspended, admin, null] }
-                        reviewCode: { type: [string, 'null'], enum: [GENERAL_RULES_NOT_SET, OCCUPATION_INELIGIBLE, QUOTA_FULL, OCCUPATION_NOT_ON_LIST, CONTRACT_TOO_SHORT, RULES_FAILED, PAY_REQUIRED, PAY_BELOW_MINIMUM, STATEMENT_REQUIRED, NEEDS_REVIEW, null] }
+                        reviewCode: { type: [string, 'null'], enum: [GENERAL_RULES_NOT_SET, OCCUPATION_INELIGIBLE, QUOTA_FULL, OCCUPATION_NOT_ON_LIST, CONTRACT_TOO_SHORT, RULES_FAILED, PAY_REQUIRED, PAY_BELOW_MINIMUM, PAY_NOT_ON_SCALE, STATEMENT_REQUIRED, NEEDS_REVIEW, null] }
                         exceptionConfirmed: { type: boolean }
                         clientCheck: { type: boolean }
               example: { jobs: [{ id: '5501', title: Senior Software Engineer, status: live, badge: sponsor_confirmed, passRoute: stated_pay, occupationCode: '2136', county: Dublin, salaryLow: 70000, salaryHigh: 85000, payGrade: null, weeklyHours: 39, postedAt: '2026-11-10T08:00:00.000Z', closesAt: '2026-12-10T08:00:00.000Z', closedAt: null, closeReason: null, hireAnswer: null, reason: null, reviewCode: null, exceptionConfirmed: false, clientCheck: false }, { id: '5502', title: Senior Software Engineer, status: under_review, badge: sponsor_confirmed, passRoute: stated_pay, occupationCode: '2136', county: Dublin, salaryLow: 50000, salaryHigh: null, payGrade: null, weeklyHours: 39, postedAt: '2026-10-10T08:00:00.000Z', closesAt: '2026-11-20T08:00:00.000Z', closedAt: null, closeReason: null, hireAnswer: null, reason: renewal_check, reviewCode: PAY_BELOW_MINIMUM, exceptionConfirmed: false, clientCheck: false }] }
@@ -896,7 +896,7 @@ paths:
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or an unknown database refusal. `NOT_A_MEMBER`: no company. `NOT_A_POSTER`: a viewer, or the database's job guard refused the poster. `NOT_A_SIGNER`: this member may not sign the statement. `BADGE_RESTRICTED`: the company may not show `sponsor_confirmed`. `COMPANY_NOT_ACTIVE`: the company cannot post.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_A_POSTER } } } }
         '409': { description: "`NO_STATEMENT_TEXT`: no sponsorship statement wording is published. `BAD_STATE`: the job guard refused the status. `NEEDS_REVIEW`: a live job names a client not in the DETE names.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NO_STATEMENT_TEXT } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
-        '422': { description: "The rules refused the live post: `GENERAL_RULES_NOT_SET`, `OCCUPATION_INELIGIBLE`, `QUOTA_FULL`, `OCCUPATION_NOT_ON_LIST`, `CONTRACT_TOO_SHORT`, `RULES_FAILED` (with `stage`), `PAY_REQUIRED`, `PAY_BELOW_MINIMUM`, `STATEMENT_REQUIRED` (a General permit job needs the statement).", content: { application/json: { schema: { $ref: '#/components/schemas/RulesVerdict' }, example: { code: PAY_BELOW_MINIMUM } } } }
+        '422': { description: "The rules refused the live post: `GENERAL_RULES_NOT_SET`, `OCCUPATION_INELIGIBLE`, `QUOTA_FULL`, `OCCUPATION_NOT_ON_LIST`, `CONTRACT_TOO_SHORT`, `RULES_FAILED` (with `stage`), `PAY_REQUIRED`, `PAY_BELOW_MINIMUM`, `PAY_NOT_ON_SCALE` (a public pay employer's stated pay is off the scale of its listed grade), `STATEMENT_REQUIRED` (a General permit job needs the statement).", content: { application/json: { schema: { $ref: '#/components/schemas/RulesVerdict' }, example: { code: PAY_BELOW_MINIMUM } } } }
         '429': { $ref: '#/components/responses/TooMany' }
   /api/portal/jobs/edit:
     post:
@@ -974,7 +974,7 @@ paths:
                   jobId: { $ref: '#/components/schemas/Id' }
                   status: { type: string, enum: [live, under_review] }
                   closesAt: { $ref: '#/components/schemas/Timestamp' }
-                  code: { type: string, enum: [GENERAL_RULES_NOT_SET, OCCUPATION_INELIGIBLE, QUOTA_FULL, OCCUPATION_NOT_ON_LIST, CONTRACT_TOO_SHORT, RULES_FAILED, PAY_REQUIRED, PAY_BELOW_MINIMUM, STATEMENT_REQUIRED, NEEDS_REVIEW] }
+                  code: { type: string, enum: [GENERAL_RULES_NOT_SET, OCCUPATION_INELIGIBLE, QUOTA_FULL, OCCUPATION_NOT_ON_LIST, CONTRACT_TOO_SHORT, RULES_FAILED, PAY_REQUIRED, PAY_BELOW_MINIMUM, PAY_NOT_ON_SCALE, STATEMENT_REQUIRED, NEEDS_REVIEW] }
                   stage: { type: string }
               examples:
                 renewed: { value: { jobId: '5501', status: live, closesAt: '2026-12-18T09:30:00.000Z' } }
@@ -1057,7 +1057,7 @@ paths:
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login. `NOT_A_MEMBER`: no company. `NOT_A_POSTER`: a viewer.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_A_POSTER } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
-        '422': { description: "The rules would refuse a live post, with the same codes as the post: `GENERAL_RULES_NOT_SET`, `OCCUPATION_INELIGIBLE` (with `exception` when a tick would pass it, including care work not in a private household for 6145), `QUOTA_FULL`, `OCCUPATION_NOT_ON_LIST`, `CONTRACT_TOO_SHORT`, `RULES_FAILED` (with `stage`), `PAY_REQUIRED`, `PAY_BELOW_MINIMUM`, `STATEMENT_REQUIRED`.", content: { application/json: { schema: { $ref: '#/components/schemas/RulesVerdict' }, example: { code: PAY_BELOW_MINIMUM } } } }
+        '422': { description: "The rules would refuse a live post, with the same codes as the post: `GENERAL_RULES_NOT_SET`, `OCCUPATION_INELIGIBLE` (with `exception` when a tick would pass it, including care work not in a private household for 6145), `QUOTA_FULL`, `OCCUPATION_NOT_ON_LIST`, `CONTRACT_TOO_SHORT`, `RULES_FAILED` (with `stage`), `PAY_REQUIRED`, `PAY_BELOW_MINIMUM`, `PAY_NOT_ON_SCALE` (a public pay employer's stated pay is off the scale of its listed grade), `STATEMENT_REQUIRED`.", content: { application/json: { schema: { $ref: '#/components/schemas/RulesVerdict' }, example: { code: PAY_BELOW_MINIMUM } } } }
         '429': { $ref: '#/components/responses/TooMany' }
   /api/portal/jobs/suggest:
     get:
@@ -1082,6 +1082,39 @@ paths:
                     maxItems: 3
                     items: { type: object, required: [code, title], properties: { code: { type: string, pattern: '^[1-9][0-9]{3}$' }, title: { type: string } } }
               example: { suggestions: [{ code: '2231', title: Nurses }] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+  /api/portal/jobs/grades:
+    get:
+      operationId: portalJobGrades
+      summary: List the public pay-scale grades for the posting form
+      description: The grades of the pay scales in force (#269, #67), in list order, for the grade picker. Send a grade's `code` as `payGrade`. `note` is placeholder wording or null. An empty list when no version is in force yet. Any signed-in portal login; no query key.
+      security: [{ portalSession: [] }]
+      x-roles: [any active portal login]
+      responses:
+        '200':
+          description: The grades in force.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [grades]
+                properties:
+                  grades:
+                    type: array
+                    maxItems: 2000
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [code, title, firstEur, lastEur, note]
+                      properties:
+                        code: { type: string, pattern: '^[A-Z0-9]{1,12}$' }
+                        title: { type: string }
+                        firstEur: { type: integer, description: "The first point of the scale, euro a year." }
+                        lastEur: { type: integer, description: "The last point (long service increments included), euro a year." }
+                        note: { type: [string, 'null'] }
+              example: { grades: [{ code: '2135', title: Staff Nurse, firstEur: 38166, lastEur: 56592, note: null }, { code: '1012', title: Senior House Officer, firstEur: 55292, lastEur: 75623, note: null }] }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }

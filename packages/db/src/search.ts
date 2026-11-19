@@ -3,7 +3,7 @@
 // candidate role cannot read), and the list pages on the sort key plus id, never OFFSET. No advert text is read for a list.
 import { createHash } from "node:crypto";
 import type pg from "pg";
-import { registrationFor, RULES_CHECKED_ON as RULES_DATE, SOC2010_CODES, type Registration, type Sector } from "@portal/rules";
+import { payScaleOf, registrationFor, RULES_CHECKED_ON as RULES_DATE, SOC2010_CODES, type Registration, type Sector } from "@portal/rules";
 import { getRules } from "./rules-data";
 import { permitsLast5Years } from "./dete";
 
@@ -257,6 +257,7 @@ export type JobList = {
   count: { n: number; more: boolean } | null;
 };
 
+const NUM = new Intl.NumberFormat("en-IE");
 /** The salary text of a card, without "a year": the page adds the unit. A pay grade stands in when no salary is stated (#67). */
 export function salaryLine(low: number | null, high: number | null, payGrade: string | null): string | null {
   const eur = (n: number) => `€${new Intl.NumberFormat("en-IE").format(n)}`;
@@ -350,6 +351,8 @@ export type JobPage = {
   rulesCheckedOn: string;
   /** The health registration the role needs (S6), or null. */
   registration: Registration | null;
+  /** When payGrade is a grade code of the pay scales in force (#269): its scale and the line "Pay scale for this grade: EUR X to Y" (placeholder wording). */
+  payScale: { code: string; title: string; firstEur: number; lastEur: number; line: string } | null;
 };
 
 /** One live job with what its page shows, or null when the id is not a live job (queued, closed, expired, hidden, under review, unknown or not an id). */
@@ -360,6 +363,7 @@ export async function getJob(db: Db, id: string | number, now = new Date()): Pro
   if (!r) return null;
   const permits = await permitsLast5Years(db, r.organisation_id, now);
   // The count is the last 5 calendar years, so "since" is no earlier than the start of that window.
+  const rules = await getRules(db), g = payScaleOf(rules, r.pay_grade);
   const sponsored = permits && permits.permits > 0 && permits.firstYear !== null ? { permits: permits.permits, since: Math.max(permits.firstYear, now.getUTCFullYear() - 4) } : null;
   return {
     id: r.id, source: r.source, title: r.title, employerName: r.employer_name, county: r.county, sector: r.sector, occupationCode: r.occupation_code,
@@ -370,8 +374,9 @@ export async function getJob(db: Db, id: string | number, now = new Date()): Pro
     postedAt: r.posted_at, closesAt: r.closes_at instanceof Date ? r.closes_at : null,
     advertText: r.advert_text,
     employer: { id: r.organisation_id, slug: r.slug, name: r.display_name, website: r.website, logoUrl: r.logo_url, shortDescription: r.short_description, kind: r.kind },
-    badge: r.badge, sponsored, permitHistory: r.permit_history, lastCheckedAt: r.last_ok_at, rulesCheckedOn: (await getRules(db)).minimums.checkedOn,
+    badge: r.badge, sponsored, permitHistory: r.permit_history, lastCheckedAt: r.last_ok_at, rulesCheckedOn: rules.minimums.checkedOn,
     registration: registrationFor(r.occupation_code, r.title),
+    payScale: g ? { code: g.code, title: g.title, firstEur: g.firstEur, lastEur: g.lastEur, line: `Pay scale for this grade: EUR ${NUM.format(g.firstEur)} to ${NUM.format(g.lastEur)}` } : null,
   };
 }
 

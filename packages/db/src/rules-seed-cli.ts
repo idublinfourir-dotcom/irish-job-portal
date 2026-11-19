@@ -12,6 +12,9 @@ import { cleanData, RULES_KINDS, type BigName, type Minimums, type VersionData, 
 import { sslOptions } from "./ssl.ts";
 
 export const SEED_FROM = "2026-03-01";
+/** The kinds of version 1. The pay scales (#269) came later: their first version goes through the two-person route (step15/s7-live-steps.sh). */
+const SEEDED = RULES_KINDS.filter((k): k is Seeded => k !== "pay_scales");
+type Seeded = Exclude<RulesKind, "pay_scales">;
 const here = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
 
 /** One `export const NAME: readonly string[] = [ ... ];` list from brand.ts. Throws if the file's shape changed, rather than guessing. */
@@ -27,7 +30,7 @@ export function brandList(text: string, name: string): string[] {
 const STAFF_250 = new Set(["mccabes pharmacy", "mccauley", "chemist warehouse"]);
 
 /** Today's values of every kind, from the files and constants, checked as a proposal would be. */
-export function seedData(): Record<RulesKind, VersionData> {
+export function seedData(): Record<Seeded, VersionData> {
   const minimums: Minimums = {
     criticalSkills: T.CRITICAL_SKILLS_MINIMUM, graduate: T.GRADUATE_MINIMUM, graduateMonths: T.GRADUATE_MONTHS, nonList: T.NON_LIST_MINIMUM,
     nonListRoute: T.NON_LIST_ROUTE, minContractMonths: T.MIN_CONTRACT_MONTHS, standardWeekHours: T.STANDARD_WEEK_HOURS, checkedOn: T.RULES_CHECKED_ON,
@@ -38,14 +41,14 @@ export function seedData(): Record<RulesKind, VersionData> {
     ...brandList(brand, "BIG_COMPANY_BRANDS").map((name) => ({ name, test: "brand" as const, link: null, readOn: null, reviewOn: null })),
     ...brandList(brand, "BIG_COMPANY_LIST_150").map((name) => ({ name, test: STAFF_250.has(name) ? ("250_staff" as const) : ("dete_steady_sponsor" as const), link: null, readOn: null, reviewOn: null })),
   ];
-  const raw: Record<RulesKind, unknown> = {
+  const raw: Record<Seeded, unknown> = {
     minimums,
     critical_skills_list: occupations.filter((o) => o.list === "critical-skills"),
     ineligible_list: occupations.filter((o) => o.list === "ineligible"),
     public_pay_employers: JSON.parse(here("../../fetcher/data/L2/public_employers_candidates.json")),
     big_company_names: names,
   };
-  return Object.fromEntries(RULES_KINDS.map((k) => [k, cleanData(k, raw[k])])) as Record<RulesKind, VersionData>;
+  return Object.fromEntries(SEEDED.map((k) => [k, cleanData(k, raw[k])])) as Record<Seeded, VersionData>;
 }
 
 export async function seedRules(client: pg.ClientBase, data = seedData()): Promise<string[]> {
@@ -56,7 +59,7 @@ export async function seedRules(client: pg.ClientBase, data = seedData()): Promi
     });
     if ((await client.query("select 1 from rules_version limit 1")).rowCount) throw new Error("the rules are already in the database; nothing was written");
     const ids: string[] = [];
-    for (const kind of RULES_KINDS) {
+    for (const kind of SEEDED) {
       ids.push((await client.query<{ id: string }>(
         "insert into rules_version(kind, data, effective_from, seeded_by_owner, run_at) values ($1, $2::jsonb, $3::date, true, now()) returning id::text as id",
         [kind, JSON.stringify(data[kind]), SEED_FROM],
@@ -64,7 +67,7 @@ export async function seedRules(client: pg.ClientBase, data = seedData()): Promi
     }
     await client.query(
       "insert into audit_event(kind, actor_system, action, object_type, object_id, after, source) values ('admin_action', 'rules-seed-cli by ' || session_user, 'rules.seed', 'rules_version', $1, $2, 'scheduled_job')",
-      [ids.join(","), { kinds: RULES_KINDS, effective_from: SEED_FROM }],
+      [ids.join(","), { kinds: SEEDED, effective_from: SEED_FROM }],
     );
     await client.query("commit");
     return ids;
@@ -82,7 +85,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: s
   try {
     await client.connect();
     const ids = await seedRules(client);
-    log(`wrote version 1 of ${RULES_KINDS.join(", ")} (ids ${ids.join(", ")}), effective from ${SEED_FROM}`);
+    log(`wrote version 1 of ${SEEDED.join(", ")} (ids ${ids.join(", ")}), effective from ${SEED_FROM}`);
     return 0;
   } catch (e) {
     log(`refused: ${(e as Error).message}`);

@@ -144,3 +144,36 @@ describe("the two commands' arguments", () => {
       "usage: rules-run-cli.ts (no arguments)", "RULES_ADMIN_DATABASE_URL is not set (the app_admin login)"]);
   });
 });
+
+describe("pay scales (#269)", () => {
+  const V1 = JSON.parse(readFileSync(new URL("../../rules/data/pay-scales-v1.json", import.meta.url), "utf8")) as R.PayScale[];
+  const g = (o: Record<string, unknown> = {}) => ({ code: "2135", title: "Staff Nurse", firstEur: 38166, lastEur: 56592, sourceUrl: "https://example.test/p.pdf", sourcePage: 14, ...o });
+  it("version 1 (40 health grades from the HSE 1 June 2026 scales) passes its own check unchanged", () => {
+    expect(cleanData("pay_scales", V1)).toEqual(V1);
+    expect(V1).toHaveLength(40);
+    expect(V1.every((e) => e.firstEur <= e.lastEur && e.sourceUrl.startsWith("https://assets.hse.ie/") && e.sourcePage > 0)).toBe(true);
+    expect(V1.filter((e) => e.note).map((e) => e.code)).toEqual(["2283", "2280", "2135", "2674", "2143"]); // the adaptation placement note on nurse grades
+    expect(V1.some((e) => ["2861", "2635"].includes(e.code))).toBe(false); // adaptation and awaiting-registration pay: not a permit job
+  });
+  it("keeps the checked fields only and the note when there is one", () => {
+    expect(cleanData("pay_scales", [g({ note: "Fake note" })])).toEqual([g({ note: "Fake note" })]);
+    expect(cleanData("pay_scales", [g({ firstEur: 59278, lastEur: 59278 })])).toHaveLength(1); // a one-point scale
+  });
+  it("refuses an empty or broken list: bad codes, a scale out of order, links, pages, text and duplicates", () => {
+    for (const v of [[], {}, null, "x", [g({ code: "" })], [g({ code: "2135' or 1=1" })], [g({ code: "abcd" })], [g({ code: "A".repeat(13) })],
+      [g({ firstEur: 60000, lastEur: 50000 })], [g({ firstEur: 0 })], [g({ lastEur: 1_000_001 })], [g({ firstEur: 38166.5 })], [g({ firstEur: "38166" })],
+      [g({ sourceUrl: "http://example.test/p.pdf" })], [g({ sourceUrl: "javascript:alert(1)" })], [g({ sourcePage: 0 })], [g({ sourcePage: "14" })],
+      [g({ title: "" })], [g({ title: "x".repeat(201) })], [g({ title: "Fake‮title" })], [g({ note: "Fake\u0007" })], [g({ note: 5 })],
+      [g({ extra: 1 })], [{ code: "2135" }], [g(), g()], Array.from({ length: 2001 }, (_, i) => g({ code: `G${i}` }))]) expect(bad("pay_scales", v), JSON.stringify(v).slice(0, 80)).toBe("bad");
+  });
+  it("the change shown to staff is keyed by grade code", () => {
+    const d = diffVersion("pay_scales", [g(), g({ code: "2674" })], [g({ lastEur: 57000 }), g({ code: "1012" })]);
+    expect([Object.keys(d.added), Object.keys(d.removed), Object.keys(d.changed)]).toEqual([["1012"], ["2674"], ["2135"]]);
+  });
+  it("checkSnapshot refuses an empty pay scales list and accepts none at all (no version yet)", async () => {
+    const s = await R.rulesV1();
+    expect(R.checkSnapshot({ ...s, payScales: V1 })).toBeTruthy();
+    expect(R.checkSnapshot(s).payScales).toBeUndefined();
+    expect(() => R.checkSnapshot({ ...s, payScales: [] })).toThrow(/pay scales list is empty/);
+  });
+});

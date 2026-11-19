@@ -16,10 +16,10 @@ type Db = Pick<pg.Pool, "query" | "connect">;
 
 const REQUEST_KIND: Record<RulesKind, string> = {
   minimums: "threshold", critical_skills_list: "critical_skills_list", ineligible_list: "ineligible_list",
-  public_pay_employers: "public_pay_employer", big_company_names: "big_company_entry",
+  public_pay_employers: "public_pay_employer", big_company_names: "big_company_entry", pay_scales: "pay_scales",
 };
 /** The rules data's own requests, and the big-company flag on one company (#230). */
-const OURS = "((target_table = 'rules_version' and kind in ('threshold','critical_skills_list','ineligible_list','public_pay_employer','big_company_entry')) " +
+const OURS = "((target_table = 'rules_version' and kind in ('threshold','critical_skills_list','ineligible_list','public_pay_employer','big_company_entry','pay_scales')) " +
   "or (target_table = 'organisation' and kind = 'big_company_entry'))";
 export const isRulesKind = (k: unknown): k is RulesKind => typeof k === "string" && (RULES_KINDS as readonly string[]).includes(k);
 
@@ -68,7 +68,7 @@ const UPCOMING = "select kind, data, id::text as id, effective_from::text as eff
 export const PENDING =
   "select q.id::text as id, q.kind, q.target_table, q.target_id, q.change, q.proposed_by_staff_user_id as proposed_by, q.created_at::text as created_at, o.display_name " +
   "from approval_request q left join organisation o on q.target_table = 'organisation' and o.id::text = q.target_id where q.status = 'pending' " +
-  "and ((q.target_table = 'rules_version' and q.kind in ('threshold','critical_skills_list','ineligible_list','public_pay_employer','big_company_entry')) " +
+  "and ((q.target_table = 'rules_version' and q.kind in ('threshold','critical_skills_list','ineligible_list','public_pay_employer','big_company_entry','pay_scales')) " +
   "or (q.target_table = 'organisation' and q.kind = 'big_company_entry')) order by q.created_at, q.id";
 type VersionRow = { kind: RulesKind; data: VersionData; id: string; effective_from: string };
 export type Version = { kind: RulesKind; versionId: string; effectiveFrom: string; data: VersionData };
