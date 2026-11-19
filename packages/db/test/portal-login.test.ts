@@ -186,7 +186,7 @@ describe("requirePortal", () => {
     for (let i = 0; i < 9; i++) { const t = performance.now(); await requirePortal(auth(), headers); ms.push(performance.now() - t); }
     expect(ms.sort((a, b) => a - b)[4]).toBeLessThan(BUDGET.requirePortalMs);
     expect(n, `${n} statements`).toBeLessThanOrEqual(BUDGET.requirePortal);
-    expect(me).toEqual({ userId: cat.id, email: cat.email, membership: null });
+    expect(me).toEqual({ userId: cat.id, email: cat.email, fresh: true, membership: null });
   });
   it("a removed membership is no company", async () => {
     const dan = await login("dan");

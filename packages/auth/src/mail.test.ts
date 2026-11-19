@@ -12,6 +12,8 @@ describe("accountEmail", () => {
     ["verify", "Confirm your email address", "1 hour", "Confirm email address"],
     ["reset", "Reset your password", "1 hour and only once", "Choose a new password"],
     ["invite", "You are invited to join a company team on irishworkpermit.ie", "7 days", "Accept the invitation"],
+    ["change-email", "Confirm the change of your email address", "1 hour", "Confirm the change"], // C4, to the old address
+    ["new-email", "Confirm your new email address", "1 hour", "Confirm new email address"], // C4, to the new address
   ] as const;
   for (const [kind, subject, expiry, button] of cases)
     it(`${kind}: subject, what to do, how long the link works, the ignore line, one button and no raw link in the HTML`, () => {

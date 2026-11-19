@@ -1,7 +1,7 @@
 // Trust and safety cases (#44, #104, #134 to #137, #213, #214 d): GET lists the cases that need a step or shows one (?id=); POST opens a case,
 // notifies the employer, enters a reply or appeal received by email or post, decides, confirms or refuses as the second person, decides an appeal,
 // proposes a ban lift, or ticks off the WRC report. Every call needs a signed-in staff member; the trust_and_safety role check is in each database call.
-import { staffSettings } from "@portal/auth";
+import { StaffRefused, staffSettings } from "@portal/auth";
 import {
   confirmDecision, decideAppeal, decideCase, getCase, getPool, listCases, markWrcReported, notifyEmployer, openCase, proposeBanLift, recordAppeal,
   recordReply, refuseDecision,
@@ -9,10 +9,13 @@ import {
 import { checkOrigin } from "../../../../lib/account-review";
 import { refusal } from "../../../../lib/refusal";
 import { readQuery } from "../../../../lib/admin-api";
-import { requireStaff } from "../../../../lib/staff";
+import { requireStaff, staffSession } from "../../../../lib/staff";
 import { CASE_ACTIONS, checkLength, parseBody } from "../../../../lib/trust-safety";
 
 export const dynamic = "force-dynamic";
+
+// C4: the actions that set, confirm, overturn or lift a strike or ban need a sign-in in the last 10 minutes.
+const SENSITIVE = new Set(["decide", "confirm", "decide_appeal", "propose_ban_lift"]);
 
 export async function GET(request: Request) {
   try {
@@ -33,8 +36,9 @@ export async function POST(request: Request) {
   try {
     checkOrigin(request.headers.get("origin"), new URL(staffSettings(process.env).baseURL).origin);
     checkLength(request.headers.get("content-length"));
-    const staff = await requireStaff(request.headers);
+    const { id: staff, fresh } = await staffSession(request.headers);
     const b = parseBody(await request.text(), CASE_ACTIONS);
+    if (!fresh && SENSITIVE.has(b.action as string)) throw new StaffRefused("reauth_required");
     const db = getPool();
     const id = b.caseId as string;
     const s = (k: string) => b[k] as string;

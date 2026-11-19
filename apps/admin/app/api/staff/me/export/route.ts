@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   let res: Response;
   try {
-    const staff = await requireStaff(request.headers);
+    const staff = await requireStaff(request.headers, true); // C4: an export needs a sign-in in the last 10 minutes
     readQuery(request.url, []);
     res = Response.json(await staffExport(getPool(), staff));
     res.headers.set("content-disposition", `attachment; filename="${exportFilename(new Date())}"`);

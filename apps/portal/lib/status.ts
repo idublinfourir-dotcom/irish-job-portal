@@ -36,6 +36,7 @@ export async function statusPost(request: Request): Promise<Response> {
   const read = await readPost(request, checkStatus);
   if (read instanceof Response) return read;
   const { login, body } = read;
+  if (body.action === "appeal" && !login.fresh) return no(403, "REAUTH_REQUIRED"); // C4: an appeal needs a sign-in in the last 10 minutes
   if (!(await withinLimit(`status:${login.userId}`, STATUS_RATE))) return no(429, "TOO_MANY_REQUESTS");
   try {
     return ok((await getPool().query("select private.status_write($1, $2, $3, $4) r", [login.userId, body.action, body.caseId, body.text])).rows[0].r);

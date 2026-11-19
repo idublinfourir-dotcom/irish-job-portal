@@ -103,6 +103,13 @@ describe("createMail (the switch)", () => {
     expect(body).not.toHaveProperty("headers"); // account emails add no header of ours
     expect(m.outbox).toEqual([]);
   });
+  it("C4: the change-email notice to the old address comes from security@ too; the new-address link from the usual sender", async () => {
+    const f = ok();
+    const m = createMail("https://portal.example.com", { BREVO_API_KEY: KEY, EMAIL_FROM: "no-reply@example.com" }, print, f as unknown as typeof fetch);
+    await m.send("candidate", "change-email", "old@example.com", "https://portal.example.com/api/auth/candidate/verify-email?token=a");
+    await m.send("candidate", "new-email", "new@example.com", "https://portal.example.com/api/auth/candidate/verify-email?token=b");
+    expect(f.mock.calls.map((c) => JSON.parse(c[1]!.body as string).sender.email)).toEqual(["security@example.com", "no-reply@example.com"]);
+  });
   it("the sender name is the site name (one brand constant each side, held equal here)", () => expect(SENDER_NAME).toBe(SITE_NAME));
   it("a Brevo failure reaches the caller as a thrown error (the portal turns it into EMAIL_FAILED)", async () => {
     const f = vi.fn(async () => new Response("{}", { status: 500 }));

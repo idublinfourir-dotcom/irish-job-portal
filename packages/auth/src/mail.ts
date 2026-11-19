@@ -18,6 +18,15 @@ const WORDS: Record<EmailKind, Omit<Part, "button" | "footer"> & { subject: stri
     subject: "Reset your password", heading: "Reset your password", button: "Choose a new password",
     paragraphs: [`Someone asked to reset the password for your ${SITE_NAME} account. Use the button to choose a new one.`, "The link works for 1 hour and only once. Your other sign-ins will end when you change it.", IGNORE],
   },
+  // C4: the old address confirms a change first, then the new address confirms itself; the change happens only on that second link.
+  "change-email": {
+    subject: "Confirm the change of your email address", heading: "Change your email address", button: "Confirm the change",
+    paragraphs: [`Someone signed in to your ${SITE_NAME} account and asked to move it to a new email address. If it was you, use the button; we then send a link to the new address.`, "The link works for 1 hour. Nothing changes until the new address is confirmed too.", "If this was not you, ignore this email and change your password."],
+  },
+  "new-email": {
+    subject: "Confirm your new email address", heading: "Confirm your new email address", button: "Confirm new email address",
+    paragraphs: [`Please confirm this address to finish moving your ${SITE_NAME} account to it.`, "The link works for 1 hour.", IGNORE],
+  },
   invite: {
     subject: `You are invited to join a company team on ${SITE_NAME}`, heading: "You are invited to join a team", button: "Accept the invitation",
     paragraphs: [`A company has invited you to join its team on ${SITE_NAME}, where it posts jobs for people who need an Irish work permit.`, "The invitation works for 7 days.", "If you did not expect this, you can ignore this email."],
@@ -40,10 +49,11 @@ export function createMail(baseURL: string, env: NodeJS.ProcessEnv = process.env
   const mail = createBrevoMail({ apiKey, from, fetch: fetchImpl });
   // Brevo puts its own unsubscribe on every email and a click blocks that one sender for that person (help.brevo.com 209458705), so a reset
   // comes from its own address, security@ on EMAIL_FROM's domain: an unsubscribe on a verify or invite email never blocks a later reset.
+  // The notice to the old address about an email change is a security email too (C4).
   const reset = createBrevoMail({ apiKey, from: `security@${from.split("@")[1]}`, fetch: fetchImpl });
   const send: SendEmail = async (_pool: LoginPool, kind, to, link) => {
     const m = accountEmail(kind, link, baseURL);
-    await (kind === "reset" ? reset : mail)(to, m.subject, m.text, m.html);
+    await (kind === "reset" || kind === "change-email" ? reset : mail)(to, m.subject, m.text, m.html);
   };
   return { outbox: [], send };
 }

@@ -33,7 +33,7 @@ export async function POST(request: Request) {
   try {
     checkOrigin(request.headers.get("origin"), new URL(staffSettings(process.env).baseURL).origin);
     checkLength(request.headers.get("content-length"), MAX_BODY);
-    const staff = await requireStaff(request.headers);
+    const staff = await requireStaff(request.headers, true); // C4: every action here blocks, lifts or merges a login
     const b = parseBody(await request.text(), MAX_BODY, ACTIONS, FIELDS);
     const db = getPool();
     if (b.action === "merge_propose") return Response.json({ ok: true, ...(await proposeCandidateMerge(db, staff, b.keep, b.drop)) });

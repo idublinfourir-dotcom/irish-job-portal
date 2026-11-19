@@ -69,7 +69,7 @@ function refusalFor(e: unknown): Refuse | null {
 
 async function run(env: CandidateEnv, headers: Headers, rate: boolean, work: (userId: string) => Promise<unknown>): Promise<Response> {
   const who = await env.login(headers);
-  if ("refused" in who) return who.refused === "no_session" ? no(401, "NO_SESSION") : no(403, "REFUSED");
+  if ("refused" in who) return who.refused === "no_session" ? no(401, "NO_SESSION") : no(403, who.refused === "reauth_required" ? "REAUTH_REQUIRED" : "REFUSED");
   if (rate && !(await withinLimit(who.userId))) return no(429, "TOO_MANY_REQUESTS");
   try { return Response.json(await work(who.userId)); } catch (e) {
     const r = refusalFor(e);

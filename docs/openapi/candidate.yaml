@@ -453,7 +453,7 @@ paths:
       summary: Better Auth GET endpoints (candidate pool)
       description: |
         Handed to Better Auth unchanged (basePath `/api/auth/candidate`). The GET endpoints the site uses: `get-session`,
-        `verify-email?token=` (the link in the confirmation email), `callback/google` (Google sign-in, on only when
+        `verify-email?token=` (the link in the confirmation email, and the two links of an email change), `callback/google` (Google sign-in, on only when
         GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set) and `error`. Request and reply shapes are Better Auth's own; see its docs.
         The session cookie is `candidate.session_token` (`__Secure-` over HTTPS); sessions are read from the database every time.
       security: [{}, { candidateSession: [] }]
@@ -471,6 +471,12 @@ paths:
             Location:
               schema: { type: string }
               example: /
+        '409':
+          description: '`EMAIL_TAKEN`: an email-change link whose new address got an account in the meantime (no `callbackURL` given).'
+          content:
+            application/json:
+              schema: { type: object }
+              example: { code: EMAIL_TAKEN, message: This address already has an account. }
         '400':
           description: Better Auth refused the request (its own `{ code, message }` body).
           content:
@@ -483,7 +489,8 @@ paths:
       summary: Better Auth POST endpoints (candidate pool)
       description: |
         Handed to Better Auth after the bot check. The POST endpoints the site uses: `sign-up/email`, `sign-in/email`,
-        `sign-in/social` (Google), `sign-out`, `send-verification-email`, `request-password-reset` and `reset-password`.
+        `sign-in/social` (Google), `sign-out`, `send-verification-email`, `request-password-reset`, `reset-password`, `change-email`,
+        `revoke-sessions` and `revoke-other-sessions`.
 
         - Bot check first (only when BOT_CHECK=on) on `sign-up/email`, `sign-in/email`, `request-password-reset`,
           `send-verification-email` and `sign-in/social` (the Google start): 403 `{ "code": "BOT_SUSPECTED" }` before Better Auth reads the body.
@@ -500,9 +507,18 @@ paths:
           account, and is refused there as before (`error=SIGNUP_ANSWERS_REFUSED`); a returning Google user's answers are not read.
         - A suspended or deleted candidate cannot start a session (403).
         - A password reset ends every other session.
+        - `change-email` `{ newEmail, callbackURL? }` (C4, #270): needs a session from a sign-in in the last 10 minutes, else 403 `REAUTH_REQUIRED`.
+          It emails the OLD address a confirm link (kind `change-email`, from the security sender); that link sends the NEW address its own link
+          (kind `new-email`), and only that second link changes the address. An address that already has an account answers 200 and sends nothing.
+          An address over 254 characters is 400 `INVALID_EMAIL`. 3 in 5 minutes per client address.
+        - `link-social` (adding a Google account) needs a session from a sign-in in the last 10 minutes too, else 403 `REAUTH_REQUIRED`.
+        - On `verify-email`, either link of an email change whose new address got an account in the meantime is refused and nothing
+          changes: a redirect to its `callbackURL` with `error=EMAIL_TAKEN` only when that is a plain path on this site (printable ASCII, no backslash, no whitespace, at most 1,000 characters), else 409 `{ code: EMAIL_TAKEN }` without one.
+        - `revoke-sessions` (sign out everywhere) ends every session of this login at once; `revoke-other-sessions` ends all but this one. Any
+          signed-in session may call them (no fresh sign-in needed); the next request with an ended session is 401.
       security: [{}, { candidateSession: [] }]
       x-roles: [anyone]
-      x-rate-limit: sign-in, sign-up and the Google start 5 a minute per address; reset and resend 3 in 5 minutes per address and 3 an hour per email
+      x-rate-limit: sign-in, sign-up and the Google start 5 a minute per address; reset, resend and change-email 3 in 5 minutes per address; reset and resend also 3 an hour per email
       x-body-cap: none set by this repo (Better Auth's own handling)
       responses:
         '200':
@@ -524,7 +540,7 @@ paths:
               schema: { type: object }
               example: { code: INVALID_EMAIL_OR_PASSWORD, message: Invalid email or password }
         '403':
-          description: '`BOT_SUSPECTED` (`{ code }` from the bot check), an unconfirmed email, a refused origin, or a suspended or deleted account (Better Auth''s own body).'
+          description: '`BOT_SUSPECTED` (`{ code }` from the bot check), `REAUTH_REQUIRED` (change-email on a session older than 10 minutes), an unconfirmed email, a refused origin, or a suspended or deleted account (Better Auth''s own body).'
           content:
             application/json:
               schema: { type: object }
@@ -1571,6 +1587,7 @@ paths:
         everything held about the candidate: account, profile, CV details, saved jobs, tracker, "Did you apply?", alerts,
         consents, notification settings and notifications, plus their emails, own actions and who accessed their data. Never
         tokens, password hashes, storage keys or staff notes. Writes one audit row. Query parameters are ignored.
+        C4 (#270): the session must come from a sign-in in the last 10 minutes, else 403 `REAUTH_REQUIRED` (no file, no audit row).
       security: [{ candidateSession: [] }]
       x-roles: [candidate]
       responses:
@@ -1617,14 +1634,22 @@ paths:
                 contactRequests: []
                 notIncluded: [{ section: contactFormMessages, reason: 'not available in this file yet; ask for it through the contact form (topic: data request)' }]
         '401': { $ref: '#/components/responses/NoSession' }
-        '403': { $ref: '#/components/responses/ReadForbidden' }
+        '403':
+          description: '`REFUSED` (suspended or deleted), or `REAUTH_REQUIRED`: the session is older than 10 minutes, sign in again.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: REAUTH_REQUIRED }
 
   /api/candidate/account:
     delete:
       operationId: deleteAccount
       tags: [account]
       summary: Delete the account
-      description: Final at once. The login is refused from now on, every session ends and one confirmation email is queued. The data goes with the 30-day retention rule. Origin checked.
+      description: |
+        Final at once. The login is refused from now on, every session ends and one confirmation email is queued. The data goes with the 30-day retention rule. Origin checked.
+        C4 (#270): the session must come from a sign-in in the last 10 minutes (password, or Google for an account with no password); an older one is
+        403 `REAUTH_REQUIRED` and nothing changes, so the page asks the person to sign in again.
       security: [{ candidateSession: [] }]
       x-roles: [candidate]
       x-body-cap: 2048 characters
@@ -1649,7 +1674,12 @@ paths:
               example: { ok: true }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/NoSession' }
-        '403': { $ref: '#/components/responses/WriteForbidden' }
+        '403':
+          description: '`BAD_ORIGIN`, `REFUSED` (suspended or deleted), or `REAUTH_REQUIRED`: the session is older than 10 minutes, sign in again.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: REAUTH_REQUIRED }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
         '429': { $ref: '#/components/responses/WriteTooMany' }
 

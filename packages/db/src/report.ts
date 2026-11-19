@@ -42,7 +42,8 @@ const SIDES = {
 } as const;
 export type ReportSide = keyof typeof SIDES;
 /** Who is reporting: a user id, or why not. */
-export type ReportLogin = { userId: string } | { refused: "no_session" | "refused" };
+// reauth_required: only a login asked for a fresh session (C4) gives it; a route that does not know it refuses with REFUSED.
+export type ReportLogin = { userId: string } | { refused: "no_session" | "refused" | "reauth_required" };
 
 const no = (status: number, code: string) => Response.json({ code }, { status });
 
