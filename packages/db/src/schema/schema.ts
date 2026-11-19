@@ -221,6 +221,9 @@ export const job = pgTable("job", {
 	underReviewSince: timestamp("under_review_since", { withTimezone: true, mode: 'string' }),
 	exceptionConfirmedAt: timestamp("exception_confirmed_at", { withTimezone: true, mode: 'string' }),
 	underReviewReason: text("under_review_reason"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	twinOfJobId: bigint("twin_of_job_id", { mode: "number" }),
+	titleKey: text("title_key").generatedAlwaysAs(sql`TRIM(BOTH FROM regexp_replace(lower(title), '[^a-z0-9]+'::text, ' '::text, 'g'::text))`),
 }, (table) => [
 	index("job_closed_idx").using("btree", table.closedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'closed'::text)`),
 	index("job_company_page_idx").using("btree", sql`organisation_id`, sql`((NOT quota_full))`, sql`posted_at`, sql`id`).where(sql`(status = 'live'::text)`),
@@ -237,6 +240,9 @@ export const job = pgTable("job", {
 	index("job_live_sector_salary").using("btree", sql`sector`, sql`((NOT quota_full))`, sql`salary_sort`, sql`id`, sql`quota_full`, sql`closes_at`).where(sql`(status = 'live'::text)`),
 	index("job_organisation_idx").using("btree", table.organisationId.asc().nullsLast().op("int8_ops"), table.postedAt.desc().nullsFirst().op("int8_ops"), table.id.desc().nullsFirst().op("int8_ops")),
 	index("job_pay_floor_idx").using("btree", table.payFloorId.asc().nullsLast().op("int8_ops")),
+	index("job_twin_fetched_idx").using("btree", table.organisationId.asc().nullsLast().op("int8_ops"), table.titleKey.asc().nullsLast().op("text_ops")).where(sql`((source = 'fetched'::text) AND (status = ANY (ARRAY['live'::text, 'hidden'::text])))`),
+	uniqueIndex("job_twin_of_idx").using("btree", table.twinOfJobId.asc().nullsLast().op("int8_ops")).where(sql`(hidden_reason = 'duplicate'::text)`),
+	index("job_twin_owner_idx").using("btree", table.organisationId.asc().nullsLast().op("int8_ops"), table.titleKey.asc().nullsLast().op("text_ops")).where(sql`((status = 'live'::text) AND (source = ANY (ARRAY['employer'::text, 'admin_manual'::text])))`),
 	index("job_under_review_idx").using("btree", table.underReviewSince.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'under_review'::text)`),
 	foreignKey({
 			columns: [table.organisationId],
@@ -258,6 +264,11 @@ export const job = pgTable("job", {
 			foreignColumns: [payFloor.id],
 			name: "job_pay_floor_id_fkey"
 		}),
+	foreignKey({
+			columns: [table.twinOfJobId],
+			foreignColumns: [table.id],
+			name: "job_twin_of_job_id_fkey"
+		}).onDelete("set null"),
 	foreignKey({
 			columns: [table.permitEmployerNameId],
 			foreignColumns: [organisationName.id],
@@ -288,7 +299,7 @@ export const job = pgTable("job", {
 	check("job_hire_answer_check", sql`hire_answer = ANY (ARRAY['yes'::text, 'no'::text])`),
 	check("job_status_check", sql`status = ANY (ARRAY['draft'::text, 'in_review'::text, 'live'::text, 'under_review'::text, 'hidden'::text, 'closed'::text])`),
 	check("job_close_reason_check", sql`close_reason = ANY (ARRAY['expired'::text, 'closed'::text, 'removed'::text, 'under_review_expired'::text, 'abandoned'::text, 'recheck_failed'::text, 'source_stale'::text])`),
-	check("job_hidden_reason_check", sql`hidden_reason = ANY (ARRAY['report'::text, 'organisation_suspended'::text, 'admin'::text])`),
+	check("job_hidden_reason_check", sql`hidden_reason = ANY (ARRAY['report'::text, 'organisation_suspended'::text, 'admin'::text, 'duplicate'::text])`),
 	check("job_under_review_reason_check", sql`under_review_reason = ANY (ARRAY['pay_check'::text, 'GENERAL_RULES_NOT_SET'::text, 'OCCUPATION_INELIGIBLE'::text, 'QUOTA_FULL'::text, 'OCCUPATION_NOT_ON_LIST'::text, 'CONTRACT_TOO_SHORT'::text, 'RULES_FAILED'::text, 'PAY_REQUIRED'::text, 'PAY_BELOW_MINIMUM'::text, 'STATEMENT_REQUIRED'::text, 'NEEDS_REVIEW'::text, 'PAY_NOT_ON_SCALE'::text])`),
 	check("job_under_review_reason_check2", sql`(status = 'under_review'::text) = (under_review_reason IS NOT NULL)`),
 	check("job_permit_history_check", sql`permit_history = ANY (ARRAY['has_history'::text, 'first_time'::text, 'not_linked'::text])`),
@@ -926,6 +937,22 @@ export const deteLinkRejection = pgTable("dete_link_rejection", {
 			name: "dete_link_rejection_rejected_by_staff_id_fkey"
 		}),
 	primaryKey({ columns: [table.deteName, table.organisationId], name: "dete_link_rejection_pkey" }),
+]);
+
+export const deteWatch = pgTable("dete_watch", {
+	address: text().primaryKey().notNull(),
+	fingerprint: text(),
+	titles: jsonb().default([]).notNull(),
+	checkedAt: timestamp("checked_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	changedAt: timestamp("changed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	failedRuns: integer("failed_runs").default(0).notNull(),
+	failingSince: timestamp("failing_since", { withTimezone: true, mode: 'string' }),
+}, () => [
+	check("dete_watch_address_check", sql`(address ~~ 'https://enterprise.gov.ie/%'::text) AND (length(address) <= 300)`),
+	check("dete_watch_check", sql`(failed_runs = 0) = (failing_since IS NULL)`),
+	check("dete_watch_failed_runs_check", sql`failed_runs >= 0`),
+	check("dete_watch_fingerprint_check", sql`(length(fingerprint) >= 1) AND (length(fingerprint) <= 200)`),
+	check("dete_watch_titles_check", sql`(jsonb_typeof(titles) = 'array'::text) AND (jsonb_array_length(titles) <= 200) AND (length((titles)::text) <= 60000)`),
 ]);
 
 export const signupNoCount = pgTable("signup_no_count", {
@@ -2092,7 +2119,7 @@ export const reviewItem = pgTable("review_item", {
 			foreignColumns: [staffUser.id],
 			name: "review_item_decided_by_staff_user_id_fkey"
 		}),
-	check("review_item_queue_check", sql`queue = ANY (ARRAY['fetched_job'::text, 'account_review'::text, 'pay_floor_check'::text, 'post_strike_job_review'::text, 'scam_flag'::text, 'agency_client_check'::text, 'data_request'::text, 'scheduled_check'::text])`),
+	check("review_item_queue_check", sql`queue = ANY (ARRAY['fetched_job'::text, 'account_review'::text, 'pay_floor_check'::text, 'post_strike_job_review'::text, 'scam_flag'::text, 'agency_client_check'::text, 'data_request'::text, 'scheduled_check'::text, 'licence_lapse_job'::text])`),
 	check("review_item_status_check", sql`status = ANY (ARRAY['open'::text, 'claimed'::text, 'done'::text, 'dropped'::text])`),
 	check("review_item_check", sql`(status = ANY (ARRAY['done'::text, 'dropped'::text])) OR (
 CASE

@@ -6,6 +6,7 @@ const yml = readFileSync(new URL("../../../.github/workflows/weekly-registers.ym
 const step = (name: string) => yml.split(/^ {6}- /m).find((s) => s.startsWith(`name: ${name}`)) ?? "";
 const cro = step("Import CRO companies");
 const wrc = step("Import WRC agency list");
+const watch = step("Watch DETE notices and lists");
 
 it("runs weekly on Sunday and by hand", () => {
   expect([...yml.matchAll(/^\s*- cron: "([^"]+)"/gm)].map((m) => m[1])).toEqual(["23 3 * * 0"]);
@@ -21,7 +22,9 @@ it("uses only the two existing secrets, each in its own step", () => {
   expect(cro).not.toMatch(/ADMIN_DATABASE_URL/);
   expect(wrc).toMatch(/WRC_ADMIN_DATABASE_URL: \$\{\{ secrets\.ADMIN_DATABASE_URL \}\}/);
   expect(wrc).not.toMatch(/FETCHER_DATABASE_URL/);
-  expect(yml.match(/secrets\./g)).toHaveLength(2);
+  expect(watch).toMatch(/DETE_WATCH_ADMIN_DATABASE_URL: \$\{\{ secrets\.ADMIN_DATABASE_URL \}\}/);
+  expect(watch).not.toMatch(/FETCHER_DATABASE_URL/);
+  expect(yml.match(/secrets\./g)).toHaveLength(3);
 });
 it("the WRC steps run even when the CRO step failed", () => {
   expect(wrc).toMatch(/if: \$\{\{ !cancelled\(\) \}\}/);
@@ -32,4 +35,10 @@ it("calls the registers CLI, which exists", () => {
   expect(cro).toMatch(/node packages\/db\/src\/registers-cli\.ts cro/);
   expect(wrc).toMatch(/node packages\/db\/src\/registers-cli\.ts wrc/);
   expect(existsSync(new URL("../src/registers-cli.ts", import.meta.url))).toBe(true);
+});
+it("the DETE watch (D5) runs after the imports even when one failed, and its command exists", () => {
+  expect(watch).toMatch(/if: \$\{\{ !cancelled\(\) \}\}/);
+  expect(watch).toMatch(/node packages\/db\/src\/dete-watch-cli\.ts\n/);
+  expect(yml.indexOf("Watch DETE notices and lists")).toBeGreaterThan(yml.indexOf("Import WRC agency list"));
+  expect(existsSync(new URL("../src/dete-watch-cli.ts", import.meta.url))).toBe(true);
 });

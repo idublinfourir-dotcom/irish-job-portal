@@ -27,7 +27,7 @@ const advert = (fields = {}) => ins("postgres", "fetched_advert", { job_source_i
 async function fetchedJob({ status = "live", closed = null } = {}) {
   const j = await su(
     `insert into job(organisation_id,source,job_source_id,title,employer_name,sector,permit_type,status,own_page_url,closes_at,search_vector,badge)
-     values($1,'fetched',$2,'t','e','it','critical_skills',$3,'u','infinity',to_tsvector('x'),'critical_skills_eligible') returning id`,
+     values($1,'fetched',$2,'fetched t','e','it','critical_skills',$3,'u','infinity',to_tsvector('x'),'critical_skills_eligible') returning id`,
     [org, board, status],
   ).then((r) => r.rows[0].id);
   if (closed) await su("update job set status='closed', close_reason=$2, closed_at=now(), search_vector=null where id=$1", [j, closed]);

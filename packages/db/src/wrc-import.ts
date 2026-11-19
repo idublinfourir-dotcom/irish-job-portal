@@ -121,17 +121,38 @@ export const WRC_UPSERT =
 export const WRC_MISSED = "update wrc_licence set missed_imports = least(missed_imports + 1, 100) where last_seen_on < $1::date returning licence_number, missed_imports";
 // Adverts still open are flagged again against the new list (0047); the number changed is returned.
 export const WRC_REFRESH = "select private.refresh_wrc_agency() as n";
+// P9 (#278): agencies whose licence has just reached two missed lists ($1, the licence numbers; $2 the import date). Each one in pending_review or
+// verified becomes needs_info, as staff "ask for more" does (account-review.ts REVIEW_DECIDE): its one open account_review item (made, or the open one
+// marked), the owner's account_needs_info notice and queued email, one audit row with the system as actor. Every live job of those agencies gets one
+// licence_lapse_job item and stays live. Only the date goes in the item: never the list's content (#212). Staff clear it by approving the account
+// item (posting resumes) and decide each job item. A licence back on a later list clears nothing. Run once per lapse: the next import counts 3.
+// A verified_restricted agency keeps its status (approving needs_info would end the restriction early) but its live jobs are still queued.
+export const WRC_LAPSE =
+  "with a as (select id, status from organisation where kind = 'agency' and wrc_licence_number = any($1::text[]) and merged_into_id is null for update), " +
+  "o as (update organisation g set status = 'needs_info' from a where g.id = a.id and a.status in ('pending_review','verified') returning g.id, a.status as before), " +
+  "i as (insert into review_item(queue, organisation_id, reason, detail) select 'account_review', id, 'licence not found', jsonb_build_object('licence_not_found_on', $2::text) from o " +
+  "on conflict (queue, organisation_id) where status in ('open','claimed') do update set detail = coalesce(review_item.detail, '{}'::jsonb) || excluded.detail), " +
+  "w as (select m.portal_user_id, jsonb_build_object('organisationId', o.id::text, 'reason', 'licence_not_found') as params from o " +
+  "join membership m on m.organisation_id = o.id and m.role = 'account_owner' and m.status = 'active'), " +
+  "n as (insert into notification(portal_user_id, category, template_key, params) select portal_user_id, 'account', 'account_needs_info', params from w), " +
+  "e as (insert into email_outbox(template, portal_user_id, params) select 'account_needs_info', portal_user_id, params from w), " +
+  "j as (insert into review_item(queue, job_id, reason) select 'licence_lapse_job', x.id, 'agency licence not found' from job x join a on a.id = x.organisation_id " +
+  "where x.status = 'live' and x.source = 'agency' on conflict do nothing returning id), " +
+  "t as (insert into audit_event(kind, actor_system, action, object_type, object_id, changed_columns, before, after, reason_code, source) " +
+  "select 'admin_action', 'wrc_import', 'organisation.licence_not_found', 'organisation', id::text, '{status}', jsonb_build_object('status', before), " +
+  "'{\"status\":\"needs_info\"}'::jsonb, 'licence_not_found', 'scheduled_job' from o) " +
+  "select (select count(*) from o)::int as paused, (select count(*) from j)::int as jobs";
 export const RECORD_IMPORT =
   "insert into register_import(source, validator, imported_on, row_count) values ($1, $2, $3::date, $4) " +
   "on conflict (source) do update set validator = excluded.validator, imported_on = excluded.imported_on, row_count = excluded.row_count";
 export const LAST_IMPORT = "select validator, row_count from register_import where source = $1";
 
-export type WrcResult = { reflagged: number; rows: number; inserted: number; before: number; unreadable: number; duplicates: string[]; lapsed: string[] };
+export type WrcResult = { reflagged: number; rows: number; inserted: number; before: number; unreadable: number; duplicates: string[]; lapsed: string[]; paused: number; jobsQueued: number };
 
 /**
  * Loads the parsed list in one transaction. Refused (nothing written) when it has no rows, more than 2% of rows with no usable number, or a row count more than 5% away
  * from the last list (unless `acceptCountChange`). A licence missing from this list gets missed_imports + 1; at 2 it is "possibly lapsed" and returned
- * for staff to look at: nothing is banned or removed because of it (#212).
+ * for staff to look at: nothing is banned or removed because of it (#212). On the import where it reaches 2, its agency is paused (WRC_LAPSE, #278).
  */
 export async function importWrc(db: Db, parsed: WrcParsed, today: string, validator: string | null, opts: { acceptCountChange?: boolean } = {}): Promise<WrcResult> {
   const { rows } = parsed;
@@ -147,9 +168,12 @@ export async function importWrc(db: Db, parsed: WrcParsed, today: string, valida
     const up = await client.query(WRC_UPSERT, [rows.map((r) => r.licenceNumber), rows.map((r) => r.agencyName), rows.map((r) => r.tradingName), rows.map((r) => r.address), rows.map((r) => r.county), today]);
     const missed = await client.query<{ licence_number: string; missed_imports: number }>(WRC_MISSED, [today]);
     const reflagged = (await client.query<{ n: number }>(WRC_REFRESH)).rows[0]!.n;
+    const lapsed = missed.rows.filter((r) => r.missed_imports >= 2).map((r) => r.licence_number);
+    const fresh = missed.rows.filter((r) => r.missed_imports === 2).map((r) => r.licence_number); // just reached the rule in this import
+    const lapse = fresh.length ? (await client.query<{ paused: number; jobs: number }>(WRC_LAPSE, [fresh, today])).rows[0]! : { paused: 0, jobs: 0 };
     await client.query(RECORD_IMPORT, ["wrc", validator, today, rows.length]);
     await client.query("commit");
-    return { reflagged, rows: rows.length, inserted: up.rowCount ?? 0, before, unreadable: parsed.badNumbers, duplicates: parsed.duplicates, lapsed: missed.rows.filter((r) => r.missed_imports >= 2).map((r) => r.licence_number) };
+    return { reflagged, rows: rows.length, inserted: up.rowCount ?? 0, before, unreadable: parsed.badNumbers, duplicates: parsed.duplicates, lapsed, paused: lapse.paused, jobsQueued: lapse.jobs };
   } catch (e) {
     await client.query("rollback");
     throw e;

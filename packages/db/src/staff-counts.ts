@@ -11,6 +11,7 @@ export const QUEUE_ROLES: Record<string, readonly string[]> = {
   post_strike_job_review: ["account_reviewer", "administrator"],
   scam_flag: ["trust_and_safety", "administrator"],
   agency_client_check: ["account_reviewer", "administrator"],
+  licence_lapse_job: ["account_reviewer", "administrator"],
   data_request: ["administrator"],
   scheduled_check: ["rules_data_editor", "fetched_job_reviewer", "administrator"], // by detail.role; an administrator sees them all (staff-tools.ts)
 };

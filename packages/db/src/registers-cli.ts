@@ -93,6 +93,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: s
       const r = await importWrc(db, parsed, today, validator, { acceptCountChange: flag("--accept-count-change") });
       log(`WRC: ${r.rows} agencies (last time ${r.before}), ${r.unreadable} unreadable rows left out, ${r.duplicates.length} repeated numbers${r.duplicates.map((d) => `\n  ${d}`).join("")}`);
       log(`WRC: ${r.lapsed.length} licences missing from two lists in a row, for staff to check${r.lapsed.map((n) => `\n  ${n}`).join("")}`);
+      log(`WRC: ${r.paused} agencies moved to needs more info, ${r.jobsQueued} of their live jobs queued for staff`);
       log(`WRC: ${r.reflagged} open adverts flagged again against this list`);
     }
     return 0;

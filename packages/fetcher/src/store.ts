@@ -57,7 +57,7 @@ const SLUGS = "select slug from organisation where slug = $1 or slug like $2";
 const INSERT_ORG = "insert into organisation(slug, display_name, kind) values ($1, $2, 'employer') returning id";
 const INSERT_NAME =
   "insert into organisation_name(organisation_id, name, normalised_name, kind, source) values ($1, $2, $3, 'alias', 'job_site')";
-const INSERT_JOB =
+export const INSERT_JOB =
   "insert into job(organisation_id, source, job_source_id, fetched_advert_id, title, employer_name, county, sector, occupation_code, permit_type, badge, " +
   "salary_low, salary_high, pass_route, status, closes_at, search_vector, own_page_url) " +
   "values ($1, 'fetched', $2, $3, $4::text, $5::text, $6, $7, $8, 'critical_skills', $9, $10, $11, $12, $13, 'infinity', " +
@@ -71,7 +71,7 @@ const UPDATE_JOB =
   "pass_route = $11, status = $12, close_reason = null, closed_at = null, own_page_url = $13, " +
   "search_vector = to_tsvector('english', $3::text || ' ' || $4::text || ' ' || $14::text) where id = $1 and status = $2";
 // A live job that now fails its check: its own close reason, no search vector, no text.
-const CLOSE_RECHECK =
+export const CLOSE_RECHECK =
   "with c as (update job set status = 'closed', close_reason = 'recheck_failed', search_vector = null where id = $1 and status = 'live' returning id), " +
   "t as (delete from job_text where job_id in (select id from c)) select count(*)::int as n from c";
 
