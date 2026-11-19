@@ -314,8 +314,8 @@ describe("disable and enable (one administrator, at once)", () => {
     // the database says the same, whatever the route did
     await expect(db.pool("app_admin").query("update staff_user set status = 'active' where id = $1", [h.staff[b]])).rejects.toThrow(/not turned back on/);
   });
-  it("no route makes a login", async () => {
-    for (const action of ["create", "create_login", "invite", "add_staff"]) await no(act("ad1", action, { email: "x@example.test" }), 400, "bad_action");
+  it("no other action makes a login (invite, step 15 Q15, is tested in staff-notices.test.ts)", async () => {
+    for (const action of ["create", "create_login", "add_staff"]) await no(act("ad1", action, { email: "x@example.test" }), 400, "bad_action");
     expect((await one("select count(*)::int n from staff_user where email = 'x@example.test'")).n).toBe(0);
   });
 });

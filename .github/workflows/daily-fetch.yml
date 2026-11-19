@@ -110,6 +110,15 @@ jobs:
         run: |
           export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
           node packages/db/src/scheduled-checks-cli.ts
+      # The staff digest (step 15 Q11): one email row per active staff member with work waiting for their roles (counts only), sent by the next
+      # step. A second run the same day writes nothing. Same admin login, given to this step only; after the reminders, so they are counted.
+      - name: Queue the staff digest
+        if: ${{ !cancelled() }}
+        env:
+          DIGEST_ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
+        run: |
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          node packages/db/src/staff-digest-cli.ts
       # Job alerts (#236): one email row per candidate with new jobs since their alert last ran, sent later by the outbox command. Same admin
       # login, given to this step only; it runs every day after the jobs are fetched, closed and checked, and before retention.
       - name: Queue job alerts

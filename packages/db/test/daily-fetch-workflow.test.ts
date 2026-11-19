@@ -54,7 +54,7 @@ it("applies the retention rules last, every day, with the admin login only in th
   // the S3 files key reaches this step only: bucket and region are plain values
   expect(s).toMatch(/FILES_S3_KEY_ID: \$\{\{ secrets\.FILES_S3_KEY_ID \}\}\n {10}FILES_S3_SECRET: \$\{\{ secrets\.FILES_S3_SECRET \}\}\n {10}FILES_S3_BUCKET: irish-job-portal-files\n {10}FILES_S3_REGION: eu-west-1\n/);
   expect(yml.match(/^ +FILES_S3_\w+:/gm)).toHaveLength(4); // set on no other step
-  expect(yml.match(/secrets\.ADMIN_DATABASE_URL/g)).toHaveLength(7); // refresh, expiry, minimum, reminders, alerts, outbox, retention: one step each
+  expect(yml.match(/secrets\.ADMIN_DATABASE_URL/g)).toHaveLength(8); // refresh, expiry, minimum, reminders, digest, alerts, outbox, retention: one step each
 });
 it("writes the scheduled reminders every day, after the minimum and before retention, with the admin login only in that step (Q3)", () => {
   const s = step("Write scheduled reminders");
@@ -64,6 +64,15 @@ it("writes the scheduled reminders every day, after the minimum and before reten
   expect(s).not.toMatch(/FETCHER_/);
   expect(yml.indexOf("name: Write scheduled reminders")).toBeGreaterThan(yml.indexOf("name: Apply a new minimum"));
   expect(yml.indexOf("name: Apply the retention rules")).toBeGreaterThan(yml.indexOf("name: Write scheduled reminders"));
+});
+it("queues the staff digest every day, after the reminders and before the outbox sends, with the admin login only in that step (Q11)", () => {
+  const s = step("Queue the staff digest");
+  expect(s).toMatch(/if: \$\{\{ !cancelled\(\) \}\}/);
+  expect(s).toMatch(/DIGEST_ADMIN_DATABASE_URL: \$\{\{ secrets\.ADMIN_DATABASE_URL \}\}/);
+  expect(s).toMatch(/node packages\/db\/src\/staff-digest-cli\.ts/);
+  expect(s).not.toMatch(/FETCHER_|BREVO/);
+  expect(yml.indexOf("name: Queue the staff digest")).toBeGreaterThan(yml.indexOf("name: Write scheduled reminders"));
+  expect(yml.indexOf("name: Send queued emails")).toBeGreaterThan(yml.indexOf("name: Queue the staff digest"));
 });
 it("queues job alerts every day, after the fetch and the minimum and before retention, with the admin login only in that step (0024)", () => {
   const s = step("Queue job alerts");

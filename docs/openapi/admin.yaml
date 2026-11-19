@@ -2468,17 +2468,20 @@ paths:
         '500': { $ref: '#/components/responses/ServerError' }
     post:
       operationId: actOnStaff
-      summary: Grant, remove or confirm roles; disable or enable a login
+      summary: Invite a login; grant, remove or confirm roles; disable or enable a login
       description: >-
         `propose_role`: an administrator proposes a role for a login (one pending grant per login and kind). `confirm_role`: a different
         administrator confirms and the role is written. `refuse_role`: a different administrator refuses, or the proposer withdraws.
         `remove_role`: one administrator removes a role at once. `disable`: the login is disabled and its sessions end in the same
-        transaction. `enable`: a disabled login with no roles is turned back on. Nothing here makes a login (the owner's command does). The
-        last active administrator cannot lose the role or be disabled. The Origin header must be the admin app's origin.
+        transaction. `enable`: a disabled login with no roles is turned back on. `invite` (step 15 Q15): makes an active login with no
+        password and no role for the email (stored lowercased), proposes `role` for it as `propose_role` does (a different administrator
+        confirms), then sends the set-password email through the staff reset (the security@ sender; the link works for 1 hour, and the
+        invitee can ask for a new one through the reset; a failed send is logged and the login stays). The last active
+        administrator cannot lose the role or be disabled. The Origin header must be the admin app's origin.
       security: [{ staffSession: [] }]
       x-roles: [administrator]
       x-rate-limit: none
-      x-body-cap: 500
+      x-body-cap: 1000
       requestBody:
         required: true
         content:
@@ -2504,10 +2507,18 @@ paths:
                   properties:
                     action: { type: string, enum: [disable, enable] }
                     staffId: { $ref: '#/components/schemas/LoginId' }
+                - type: object
+                  additionalProperties: false
+                  required: [action, email, name, role]
+                  properties:
+                    action: { const: invite }
+                    email: { type: string, format: email, maxLength: 254 }
+                    name: { type: string, minLength: 1, maxLength: 100 }
+                    role: { $ref: '#/components/schemas/StaffRole' }
             example: { action: propose_role, staffId: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', role: content_editor }
       responses:
         '200':
-          description: "`propose_role`: the request id. `confirm_role`: the login and role written. `disable`: the sessions ended. The rest `{ ok: true }`."
+          description: "`propose_role`: the request id. `confirm_role`: the login and role written. `disable`: the sessions ended. `invite`: the new login and its grant request. The rest `{ ok: true }`."
           content:
             application/json:
               schema:
@@ -2521,7 +2532,7 @@ paths:
                   sessionsEnded: { type: integer }
               example: { ok: true, requestId: '120' }
         '400':
-          description: "`bad_body`: not one JSON object, an unknown or missing field, or over 500 characters. `bad_action`: unknown action. `bad_staff_id`: not a login id. `bad_request_id`: not an id. `bad_role`: not one of the seven roles."
+          description: "`bad_body`: not one JSON object, an unknown or missing field, or over 1,000 characters. `bad_action`: unknown action. `bad_staff_id`: not a login id. `bad_request_id`: not an id. `bad_role`: not one of the seven roles. `bad_email`: not a plain address. `bad_name`: empty, over 100 characters or with control characters."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_role } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
@@ -2531,7 +2542,7 @@ paths:
           description: "`not_found`: no such login, request, or role on that login."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
         '409':
-          description: "`target_not_active`: the login is disabled. `already_holds`: it has the role. `grant_pending`: a grant of that kind waits already. `request_not_pending`: the request is not pending. `same_person`: the proposer confirming. `last_administrator`: it would leave no active administrator. `already_disabled`, `not_disabled`: the login's status. `holds_roles`: enable of a login that still holds roles."
+          description: "`target_not_active`: the login is disabled. `already_holds`: it has the role. `grant_pending`: a grant of that kind waits already. `request_not_pending`: the request is not pending. `same_person`: the proposer confirming. `last_administrator`: it would leave no active administrator. `already_disabled`, `not_disabled`: the login's status. `holds_roles`: enable of a login that still holds roles. `email_taken`: a staff login with this email exists."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: last_administrator } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/trust-safety/reports:
@@ -3119,6 +3130,201 @@ paths:
         '403':
           description: "`not_active_staff`: the login is not active. `not_administrator`: no administrator role."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/staff/me/counts:
+    get:
+      operationId: getMyStaffCounts
+      summary: Count the work waiting for my roles
+      description: >-
+        The signed-in member's notices (step 15 Q11): open and claimed items of each review queue their roles may work (a queue with none is
+        left out), and for the roles that work them: open reports and those of the last 24 hours (trust_and_safety), strike appeals waiting
+        (trust_and_safety, administrator), new and claimed contact messages (services_case_handler, content_editor, administrator) and
+        two-person requests someone else proposed (administrator). A count the roles do not cover is null. Any active staff login. No query
+        key is allowed. The same numbers go out in the daily digest email.
+      security: [{ staffSession: [] }]
+      x-roles: [any active staff]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The counts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [queues, reportsOpen, reportsNew, appeals, contact, approvals]
+                properties:
+                  queues: { type: object, additionalProperties: { type: integer, minimum: 1 } }
+                  reportsOpen: { type: [integer, 'null'] }
+                  reportsNew: { type: [integer, 'null'] }
+                  appeals: { type: [integer, 'null'] }
+                  contact: { type: [integer, 'null'] }
+                  approvals: { type: [integer, 'null'] }
+              example: { queues: { scam_flag: 2, scheduled_check: 1 }, reportsOpen: 3, reportsNew: 1, appeals: 0, contact: null, approvals: null }
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_active_staff } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/accuracy-sample:
+    get:
+      operationId: getAccuracySample
+      summary: Read this month's sample of live jobs for the hand check
+      description: >-
+        This month's (Irish time) sample of up to 100 random live jobs for the badge hand check (#74, step 15 Q8), made on the first read of
+        the month and stored on that month's `hand_check_100` reminder, so a reload shows the same jobs in the same order. Each job as it is
+        now, with the source link, the badge and permit type, the pass route and the fetcher's stage, reason, quoted evidence and model.
+        `approvedByYou`: the reader approved it in the fetched-job queue (20c section 3: someone else should check it). With no live job
+        nothing is made: `key` and `createdAt` are null and `jobs` is empty. No query key is allowed.
+      security: [{ staffSession: [] }]
+      x-roles: [fetched_job_reviewer, rules_data_editor, trust_and_safety, administrator]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The sample.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [key, createdAt, jobs]
+                properties:
+                  key: { type: [string, 'null'] }
+                  createdAt: { oneOf: [{ $ref: '#/components/schemas/DbTime' }, { type: 'null' }] }
+                  jobs:
+                    type: array
+                    maxItems: 100
+                    items:
+                      type: object
+                      required: [id, title, employerName, sourceUrl, source, status, badge, permitType, passRoute, occupationCode, salaryLow, salaryHigh, stage, reason, quotedEvidence, matcherModel, approvedByYou]
+                      properties:
+                        id: { $ref: '#/components/schemas/Id' }
+                        title: { type: string }
+                        employerName: { type: string }
+                        sourceUrl: { type: [string, 'null'] }
+                        source: { type: string, enum: [fetched, employer, agency, admin_manual] }
+                        status: { type: string }
+                        badge: { type: [string, 'null'] }
+                        permitType: { type: string, enum: [critical_skills, general] }
+                        passRoute: { type: [string, 'null'] }
+                        occupationCode: { type: [string, 'null'] }
+                        salaryLow: { type: [integer, 'null'] }
+                        salaryHigh: { type: [integer, 'null'] }
+                        stage: { type: [string, 'null'] }
+                        reason: { type: [string, 'null'] }
+                        quotedEvidence: { type: [string, 'null'] }
+                        matcherModel: { type: [string, 'null'] }
+                        approvedByYou: { type: boolean }
+              example:
+                key: 'hand_check_100:2026-11'
+                createdAt: '2026-11-19 09:00:00.123456+00'
+                jobs: [{ id: '501', title: Example Software Engineer, employerName: Example Ltd, sourceUrl: 'https://jobs.example.com/1', source: fetched, status: live, badge: critical_skills_eligible, permitType: critical_skills, passRoute: stated_pay, occupationCode: '2136', salaryLow: 45000, salaryHigh: 55000, stage: '7 passed', reason: null, quotedEvidence: null, matcherModel: null, approvedByYou: false }]
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_sample_staff`: none of the four roles."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_sample_staff } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/fetched-jobs/decisions:
+    get:
+      operationId: listFetchedDecisions
+      summary: Export the fetched-job queue decisions as labelled rows
+      description: >-
+        The decided items of the fetched-job queue as labelled rows for the matcher test set (#120, step 15 Q8): `label` approved or rejected,
+        the decision's reason code, the advert text and link, the job's occupation code after the decision, and the fetcher's stage, reason,
+        quoted evidence and model. Oldest first by item id, 50 a page; `next` is the `after` of the next page (null on the last). Only `after`
+        is allowed in the query.
+      security: [{ staffSession: [] }]
+      x-roles: [fetched_job_reviewer, rules_data_editor, administrator]
+      x-rate-limit: none
+      parameters:
+        - name: after
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/Id' }
+      responses:
+        '200':
+          description: One page of decisions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next]
+                properties:
+                  next: { oneOf: [{ $ref: '#/components/schemas/Id' }, { type: 'null' }] }
+                  items:
+                    type: array
+                    maxItems: 50
+                    items:
+                      type: object
+                      required: [itemId, label, reasonCode, decidedAt, jobId, title, employerName, sourceUrl, occupationCode, county, stage, reason, quotedEvidence, matcherModel, advertText]
+                      properties:
+                        itemId: { $ref: '#/components/schemas/Id' }
+                        label: { type: string, enum: [approved, rejected] }
+                        reasonCode: { type: [string, 'null'] }
+                        decidedAt: { $ref: '#/components/schemas/DbTime' }
+                        jobId: { $ref: '#/components/schemas/Id' }
+                        title: { type: string }
+                        employerName: { type: string }
+                        sourceUrl: { type: [string, 'null'] }
+                        occupationCode: { type: [string, 'null'] }
+                        county: { type: [string, 'null'] }
+                        stage: { type: [string, 'null'] }
+                        reason: { type: [string, 'null'] }
+                        quotedEvidence: { type: [string, 'null'] }
+                        matcherModel: { type: [string, 'null'] }
+                        advertText: { type: [string, 'null'] }
+              example:
+                next: null
+                items: [{ itemId: '88', label: rejected, reasonCode: not_in_ireland, decidedAt: '2026-11-16 10:40:00.123456+00', jobId: '501', title: Example Nurse, employerName: Example Clinic, sourceUrl: 'https://jobs.example.com/2', occupationCode: '2231', county: Dublin, stage: '4 low confidence', reason: matcher unsure, quotedEvidence: null, matcherModel: null, advertText: Example advert text. }]
+        '400':
+          description: "`bad_query`: any query key but `after`, or it twice. `bad_cursor`: `after` is not an id."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_decision_staff`: none of the three roles."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_decision_staff } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/targets:
+    get:
+      operationId: getTargetCounts
+      summary: Read the counts behind the launch targets
+      description: >-
+        Aggregates for the #74 targets (step 15 Q8): candidates active in the last 7 days, "Yes, I applied" and "Mark applied" taps (tracker
+        entries by origin), jobs whose employer answered yes to "did you hire", on-site applications marked hired, live jobs now, reports of
+        the last 30 days and those per 1,000 live jobs (one decimal; null with no live job). Counts only, never a person or a job. Any staff
+        login holding a role. No query key is allowed.
+      security: [{ staffSession: [] }]
+      x-roles: [any staff role]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The counts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [weeklyActiveCandidates, yesIApplied, markApplied, hires, hiredOnSite, liveJobs, reports30Days, reportsPer1000LiveJobs]
+                properties:
+                  weeklyActiveCandidates: { type: integer, minimum: 0 }
+                  yesIApplied: { type: integer, minimum: 0 }
+                  markApplied: { type: integer, minimum: 0 }
+                  hires: { type: integer, minimum: 0 }
+                  hiredOnSite: { type: integer, minimum: 0 }
+                  liveJobs: { type: integer, minimum: 0 }
+                  reports30Days: { type: integer, minimum: 0 }
+                  reportsPer1000LiveJobs: { type: [number, 'null'], minimum: 0 }
+              example: { weeklyActiveCandidates: 420, yesIApplied: 75, markApplied: 30, hires: 4, hiredOnSite: 0, liveJobs: 1200, reports30Days: 6, reportsPer1000LiveJobs: 5 }
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `no_role`: the login holds no role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: no_role } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/settings:
     get:

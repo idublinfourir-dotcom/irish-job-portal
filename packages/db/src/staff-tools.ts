@@ -8,7 +8,8 @@ import { QueueRefused } from "./admin-queue";
 import { parseSeed, seedRows, type SeedResult, type SeedRow } from "./company-seed";
 import { fileStore } from "./file-store";
 import { validId } from "./search";
-import { requireRole } from "./staff-admin";
+import { staffCounts, type StaffCounts } from "./staff-counts";
+import { requireRole, STAFF_ROLE_LIST, staffRoles } from "./staff-admin";
 import { AUDIT } from "./trust-safety";
 
 type Q = Pick<pg.Pool, "query">;
@@ -393,3 +394,106 @@ export async function confirmDataRequestErase(db: Db, staff: string, requestId: 
 
 export const refuseDataRequestErase = (db: Db, staff: string, requestId: unknown) =>
   inTransaction(db, staff, ["administrator"], "not_administrator", (c) => endRequest(c, staff, "data_request_erase", requestId, "review_item"));
+
+// ===== Q8: the monthly accuracy sample, the fetched-queue decisions and the #74 target counts =====
+// Matrix 20c: the monthly hand check of 100 live jobs is edited by the fetched-job reviewer and viewed by the rules data editor, trust and safety
+// and the administrator. The sample is kept on that month's hand_check_100 reminder (the key scheduled-checks-cli.ts writes), made on the first
+// read of the month and never changed after: a reload shows the same jobs. No live job: nothing is made yet.
+export const SAMPLE_ROLES = ["fetched_job_reviewer", "rules_data_editor", "trust_and_safety", "administrator"] as const;
+export const SAMPLE_SIZE = 100;
+// ponytail: order by random() reads every live job once a month (about 1,500 at the 3-month target); TABLESAMPLE if live jobs reach the 100,000s.
+export const SAMPLE_MAKE =
+  "insert into review_item(queue, reason, detail) select 'scheduled_check', 'hand_check_100', jsonb_build_object('key', 'hand_check_100:' || " +
+  "to_char(now() at time zone 'Europe/Dublin', 'YYYY-MM'), 'role', 'fetched_job_reviewer', 'jobIds', (select jsonb_agg(id::text) from " +
+  `(select id from job where status = 'live' order by random() limit ${SAMPLE_SIZE}) s)) where exists (select 1 from job where status = 'live') ` +
+  "on conflict ((detail->>'key')) where queue = 'scheduled_check' do update set detail = review_item.detail || jsonb_build_object('jobIds', excluded.detail->'jobIds') " +
+  "where not review_item.detail ? 'jobIds'";
+// The jobs as they are now, in the sample's order, with what a hand checker needs; approvedByYou: this member approved it in the queue (20c section 3:
+// the approver should not hand-check it).
+export const SAMPLE_READ =
+  "select i.detail->>'key' as key, i.created_at::text as created_at, j.id::text as id, j.title, j.employer_name, coalesce(f.url, j.own_page_url) as source_url, j.source, " +
+  "j.status, j.badge, j.permit_type, j.pass_route, j.occupation_code, j.salary_low, j.salary_high, f.stage, f.reason, f.quoted_evidence, f.matcher_model, " +
+  "exists (select 1 from review_item q where q.job_id = j.id and q.queue = 'fetched_job' and q.outcome = 'approved' and q.decided_by_staff_user_id = $1) as approved_by_you " +
+  "from review_item i cross join lateral jsonb_array_elements_text(i.detail->'jobIds') with ordinality s(job_id, n) join job j on j.id = s.job_id::bigint " +
+  "left join fetched_advert f on f.id = j.fetched_advert_id where i.queue = 'scheduled_check' and i.detail->>'key' = 'hand_check_100:' || " +
+  "to_char(now() at time zone 'Europe/Dublin', 'YYYY-MM') order by s.n";
+export type SampleJob = {
+  id: string; title: string; employerName: string; sourceUrl: string | null; source: string; status: string; badge: string | null; permitType: string;
+  passRoute: string | null; occupationCode: string | null; salaryLow: number | null; salaryHigh: number | null;
+  /** Why the rules and the matcher gave the result (fetched jobs): the stage, the reason, the AI's quoted evidence and model. */
+  stage: string | null; reason: string | null; quotedEvidence: string | null; matcherModel: string | null; approvedByYou: boolean;
+};
+
+/** This month's sample, made on the first read. Two statements after the role check. */
+export async function accuracySample(db: Q, staff: string): Promise<{ key: string | null; createdAt: string | null; jobs: SampleJob[] }> {
+  await requireRole(db, staff, SAMPLE_ROLES, "not_sample_staff");
+  await db.query(SAMPLE_MAKE);
+  const rows = (await db.query(SAMPLE_READ, [staff])).rows;
+  return {
+    key: rows[0]?.key ?? null, createdAt: rows[0]?.created_at ?? null,
+    jobs: rows.map((r) => ({
+      id: r.id, title: r.title, employerName: r.employer_name, sourceUrl: r.source_url, source: r.source, status: r.status, badge: r.badge, permitType: r.permit_type,
+      passRoute: r.pass_route, occupationCode: r.occupation_code, salaryLow: r.salary_low, salaryHigh: r.salary_high, stage: r.stage, reason: r.reason,
+      quotedEvidence: r.quoted_evidence, matcherModel: r.matcher_model, approvedByYou: r.approved_by_you,
+    })),
+  };
+}
+
+// The fetched-queue decisions as labelled rows for the matcher test set (#120): approved or rejected, the reason code from the decision's audit row,
+// the advert text and what the fetcher said. Oldest first by item id; `after` is the last id of the page before.
+export const DECISION_ROLES = ["fetched_job_reviewer", "rules_data_editor", "administrator"] as const;
+export const DECISIONS_PAGE = 50;
+// ponytail: walks review_item by its primary key filtering on queue and status; add an index on (id) where queue = 'fetched_job' and status = 'done' if the export slows.
+export const DECISIONS =
+  "select r.id::text as id, r.outcome, r.decided_at::text as decided_at, j.id::text as job_id, j.title, j.employer_name, coalesce(f.url, j.own_page_url) as source_url, " +
+  "j.occupation_code, j.county, f.stage, f.reason, f.quoted_evidence, f.matcher_model, t.advert_text, (select a.reason_code from audit_event a where a.object_id = j.id::text " +
+  "and a.object_type = 'job' and a.action in ('fetched_job.approve', 'fetched_job.reject') order by a.id desc limit 1) as reason_code " +
+  "from review_item r join job j on j.id = r.job_id left join fetched_advert f on f.id = j.fetched_advert_id left join job_text t on t.job_id = j.id " +
+  `where r.queue = 'fetched_job' and r.status = 'done' and r.id > $1::bigint order by r.id limit ${DECISIONS_PAGE + 1}`;
+export type DecisionRow = {
+  itemId: string; label: "approved" | "rejected"; reasonCode: string | null; decidedAt: string; jobId: string; title: string; employerName: string;
+  sourceUrl: string | null; occupationCode: string | null; county: string | null; stage: string | null; reason: string | null; quotedEvidence: string | null;
+  matcherModel: string | null; advertText: string | null;
+};
+
+export async function fetchedDecisions(db: Q, staff: string, after: unknown): Promise<{ items: DecisionRow[]; next: string | null }> {
+  if (after !== undefined && !validId(after)) throw new QueueRefused("bad_cursor");
+  await requireRole(db, staff, DECISION_ROLES, "not_decision_staff");
+  const rows = (await db.query(DECISIONS, [after ?? "0"])).rows;
+  const items = rows.slice(0, DECISIONS_PAGE).map((r) => ({
+    itemId: r.id, label: r.outcome, reasonCode: r.reason_code, decidedAt: r.decided_at, jobId: r.job_id, title: r.title, employerName: r.employer_name,
+    sourceUrl: r.source_url, occupationCode: r.occupation_code, county: r.county, stage: r.stage, reason: r.reason, quotedEvidence: r.quoted_evidence,
+    matcherModel: r.matcher_model, advertText: r.advert_text,
+  }));
+  return { items, next: rows.length > DECISIONS_PAGE ? items.at(-1)!.itemId : null };
+}
+
+// The #74 targets, aggregates only (matrix 20c: stats are viewed by every role). One statement on indexes where one exists (candidate_user_active_idx,
+// job_live_newest, the report scan by created_at is small). ponytail: tracker_entry and application are counted by a full scan; add a partial index
+// on origin or status when either passes a few hundred thousand rows.
+export const TARGET_COUNTS =
+  "select (select count(*)::int from candidate_user where deleted_at is null and last_active_at > now() - interval '7 days') as weekly_active, " +
+  "(select count(*)::int from tracker_entry where origin = 'did_you_apply_yes') as yes_applied, " +
+  "(select count(*)::int from tracker_entry where origin = 'mark_applied') as mark_applied, " +
+  "(select count(*)::int from job where hire_answer = 'yes') as hires, (select count(*)::int from application where status = 'hired') as hired_on_site, " +
+  "(select count(*)::int from job where status = 'live') as live_jobs, (select count(*)::int from report where created_at > now() - interval '30 days') as reports_30d";
+export type TargetCounts = {
+  weeklyActiveCandidates: number; yesIApplied: number; markApplied: number; hires: number; hiredOnSite: number; liveJobs: number; reports30Days: number;
+  /** Reports of the last 30 days per 1,000 live jobs now; null with no live job. */
+  reportsPer1000LiveJobs: number | null;
+};
+
+export async function targetCounts(db: Q, staff: string): Promise<TargetCounts> {
+  await requireRole(db, staff, STAFF_ROLE_LIST, "no_role");
+  const r = (await db.query(TARGET_COUNTS)).rows[0]!;
+  return {
+    weeklyActiveCandidates: r.weekly_active, yesIApplied: r.yes_applied, markApplied: r.mark_applied, hires: r.hires, hiredOnSite: r.hired_on_site, liveJobs: r.live_jobs,
+    reports30Days: r.reports_30d, reportsPer1000LiveJobs: r.live_jobs ? Math.round((r.reports_30d * 10_000) / r.live_jobs) / 10 : null,
+  };
+}
+
+// ===== Q11: the signed-in member's counts =====
+/** Any active staff login: the counts its roles cover (none for a login with no role). The role read and one counts statement. */
+export async function myCounts(db: Q, staff: string): Promise<StaffCounts> {
+  return staffCounts(db, staff, await staffRoles(db, staff));
+}

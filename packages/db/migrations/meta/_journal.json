@@ -358,6 +358,13 @@
       "when": 1794300047000,
       "tag": "0052_staff_uploads",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1794300053000,
+      "tag": "0053_staff_notices",
+      "breakpoints": true
     }
   ]
 }
