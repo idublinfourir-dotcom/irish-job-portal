@@ -461,9 +461,11 @@ it("the account review pages and an approve stay under the limit", async () => {
 });
 
 // The trust and safety reports queue (src/trust-safety.ts), as app_admin on the full-size fill (its reports are all cleared) plus 300 open and 50 job_hidden
-// reports on live jobs: the first page and a page from the middle, under the same page and time limits as the other admin queues.
+// reports on live jobs and 50 open company reports (S11): the first page and a page from the middle, under the same page and time limits as the other admin queues.
 it("the trust and safety report list stays under the limit", async () => {
   await su.query("insert into report(target_kind, target_job_id, reason, evidence_text, status, created_at) select 'job', j.id, 'no_sponsorship', 'Fake evidence of normal length.', case when n <= 50 then 'job_hidden' else 'open' end, now() - n * interval '1 minute' from (select id, row_number() over (order by id) n from job where status = 'live' limit 350) j");
+  // S11 (#102): 50 open company reports among them, so the page also walks the company join of a report with no job.
+  await su.query("insert into report(target_kind, target_organisation_id, reason, status, created_at) select 'organisation', o.id, 'fake_company', 'open', now() - (2 * n + 1) * interval '30 seconds' from (select id, row_number() over (order by id) n from organisation limit 50) o");
   await owner.query("vacuum (analyze) report");
   const mid = (await su.query("select created_at::text t, id::text i from report where status in ('open','job_hidden') order by created_at, id offset 150 limit 1")).rows[0];
   const client = new pg.Client({ connectionString: urlFor(db.name, "app_admin") });

@@ -2,8 +2,13 @@
 // with new jobs and stamps every due alert. The outbox command sends the rows later. Run from the repo root with the app_admin login, daily from
 // .github/workflows/daily-fetch.yml after the fetch and before the retention step:
 //   ALERTS_ADMIN_DATABASE_URL=... node packages/db/src/alerts-run-cli.ts
+// Weekly alerts (#275, 0054) go out on the candidate's own weekday (weeklyDay), so they spread over the week under Brevo's 300 a day.
+import { createHash } from "node:crypto";
 import pg from "pg";
 import { sslOptions } from "./ssl.ts";
+
+/** The ISO weekday (1 Monday to 7 Sunday) of a candidate's weekly alerts: the same formula as private.alert_weekly_day (0054). Pure. */
+export const weeklyDay = (candidateId: string) => 1 + (parseInt(createHash("md5").update(candidateId).digest("hex").slice(0, 7), 16) % 7);
 
 export type AlertRun = { alerts_due: number; candidates_queued: number; rows_written: number; alerts_paused: number };
 

@@ -18,7 +18,7 @@ export function companyRefusal(e: unknown): never {
 
 export type Merged = { absorbed: string; survivor: string; names: number; jobs: number };
 
-/** Merges `absorbed` into `survivor`. Refusal codes: not_active_staff, not_company_staff, not_found, same_company, already_merged, target_merged, not_mergeable, kind_mismatch, active_members, has_applications. */
+/** Merges `absorbed` into `survivor`. Refusal codes: not_active_staff, not_company_staff, not_found, same_company, already_merged, target_merged, not_mergeable, kind_mismatch, active_members, has_applications, open_reports (0056). */
 export async function mergeCompanies(db: Q, staff: string, absorbed: string, survivor: string): Promise<Merged> {
   if (!validId(absorbed) || !validId(survivor)) throw new QueueRefused("bad_input");
   try {

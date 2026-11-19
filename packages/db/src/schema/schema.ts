@@ -289,7 +289,7 @@ export const job = pgTable("job", {
 	check("job_status_check", sql`status = ANY (ARRAY['draft'::text, 'in_review'::text, 'live'::text, 'under_review'::text, 'hidden'::text, 'closed'::text])`),
 	check("job_close_reason_check", sql`close_reason = ANY (ARRAY['expired'::text, 'closed'::text, 'removed'::text, 'under_review_expired'::text, 'abandoned'::text, 'recheck_failed'::text, 'source_stale'::text])`),
 	check("job_hidden_reason_check", sql`hidden_reason = ANY (ARRAY['report'::text, 'organisation_suspended'::text, 'admin'::text])`),
-	check("job_under_review_reason_check", sql`under_review_reason = ANY (ARRAY['pay_check'::text, 'GENERAL_RULES_NOT_SET'::text, 'OCCUPATION_INELIGIBLE'::text, 'QUOTA_FULL'::text, 'OCCUPATION_NOT_ON_LIST'::text, 'CONTRACT_TOO_SHORT'::text, 'RULES_FAILED'::text, 'PAY_REQUIRED'::text, 'PAY_BELOW_MINIMUM'::text, 'STATEMENT_REQUIRED'::text, 'NEEDS_REVIEW'::text])`),
+	check("job_under_review_reason_check", sql`under_review_reason = ANY (ARRAY['pay_check'::text, 'GENERAL_RULES_NOT_SET'::text, 'OCCUPATION_INELIGIBLE'::text, 'QUOTA_FULL'::text, 'OCCUPATION_NOT_ON_LIST'::text, 'CONTRACT_TOO_SHORT'::text, 'RULES_FAILED'::text, 'PAY_REQUIRED'::text, 'PAY_BELOW_MINIMUM'::text, 'STATEMENT_REQUIRED'::text, 'NEEDS_REVIEW'::text, 'PAY_NOT_ON_SCALE'::text])`),
 	check("job_under_review_reason_check2", sql`(status = 'under_review'::text) = (under_review_reason IS NOT NULL)`),
 	check("job_permit_history_check", sql`permit_history = ANY (ARRAY['has_history'::text, 'first_time'::text, 'not_linked'::text])`),
 	check("job_application_route_check", sql`application_route = ANY (ARRAY['own_page'::text, 'on_site'::text])`),
@@ -1532,10 +1532,12 @@ export const report = pgTable("report", {
 	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
+	uniqueIndex("report_candidate_org_open_unique").using("btree", table.reporterCandidateUserId.asc().nullsLast().op("text_ops"), table.targetOrganisationId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
 	uniqueIndex("report_candidate_open_unique").using("btree", table.reporterCandidateUserId.asc().nullsLast().op("int8_ops"), table.targetJobId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
 	index("report_decided_idx").using("btree", table.decidedByStaffUserId.asc().nullsLast().op("text_ops")),
 	index("report_inbox_idx").using("btree", table.status.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
 	index("report_queue_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
+	uniqueIndex("report_portal_org_open_unique").using("btree", table.reporterPortalUserId.asc().nullsLast().op("text_ops"), table.targetOrganisationId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
 	uniqueIndex("report_portal_open_unique").using("btree", table.reporterPortalUserId.asc().nullsLast().op("text_ops"), table.targetJobId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
 	index("report_reporter_candidate_idx").using("btree", table.reporterCandidateUserId.asc().nullsLast().op("text_ops")),
 	index("report_reporter_portal_idx").using("btree", table.reporterPortalUserId.asc().nullsLast().op("text_ops")),
@@ -1579,7 +1581,7 @@ export const report = pgTable("report", {
 			name: "report_decided_by_staff_user_id_fkey"
 		}),
 	check("report_target_kind_check", sql`target_kind = ANY (ARRAY['job'::text, 'organisation'::text, 'message'::text, 'profile'::text])`),
-	check("report_reason_check", sql`reason = ANY (ARRAY['asks_for_money'::text, 'no_sponsorship'::text, 'job_closed'::text, 'wrong_details'::text, 'other'::text])`),
+	check("report_reason_check", sql`CASE target_kind WHEN 'job'::text THEN (reason = ANY (ARRAY['asks_for_money'::text, 'no_sponsorship'::text, 'job_closed'::text, 'wrong_details'::text, 'other'::text])) WHEN 'organisation'::text THEN (reason = ANY (ARRAY['fake_company'::text, 'asks_for_money'::text, 'no_sponsorship'::text, 'other'::text])) ELSE (reason = ANY (ARRAY['asks_for_money'::text, 'no_sponsorship'::text, 'job_closed'::text, 'wrong_details'::text, 'other'::text])) END`),
 	check("report_status_check", sql`status = ANY (ARRAY['open'::text, 'job_hidden'::text, 'cleared'::text, 'upheld'::text])`),
 	check("report_check", sql`(target_wiped_at IS NOT NULL) OR (num_nonnulls(target_job_id, target_organisation_id, target_message_id, target_candidate_user_id) = 1)`),
 	check("report_check1", sql`CHECK (
@@ -1916,7 +1918,7 @@ export const approvalRequest = pgTable("approval_request", {
 	check("approval_request_status_check", sql`status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'refused'::text, 'withdrawn'::text])`),
 	check("approval_request_check", sql`confirmed_by_staff_user_id <> proposed_by_staff_user_id`),
 	check("approval_request_check1", sql`(status <> 'confirmed'::text) OR (confirmed_by_staff_user_id IS NOT NULL)`),
-	check("approval_request_kind_check", sql`kind = ANY (ARRAY['threshold'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'unclear_role_list'::text, 'public_pay_employer'::text, 'big_company_entry'::text, 'pay_floor'::text, 'strike_2'::text, 'strike_3'::text, 'ban'::text, 'ban_lift'::text, 'manual_post_sponsor_confirmed'::text, 'grant_administrator'::text, 'grant_role'::text, 'terms_privacy_page'::text, 'setting'::text, 'company_seed'::text, 'candidate_merge'::text, 'data_request_erase'::text])`),
+	check("approval_request_kind_check", sql`kind = ANY (ARRAY['threshold'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'unclear_role_list'::text, 'public_pay_employer'::text, 'big_company_entry'::text, 'pay_floor'::text, 'strike_2'::text, 'strike_3'::text, 'ban'::text, 'ban_lift'::text, 'manual_post_sponsor_confirmed'::text, 'grant_administrator'::text, 'grant_role'::text, 'terms_privacy_page'::text, 'setting'::text, 'company_seed'::text, 'candidate_merge'::text, 'data_request_erase'::text, 'pay_scales'::text])`),
 ]);
 
 export const setting = pgTable("setting", {
@@ -1993,7 +1995,7 @@ export const emailOutbox = pgTable("email_outbox", {
 }, (table) => [
 	index("email_outbox_body_idx").using("btree", sql`COALESCE(sent_at, send_after)`).where(sql`((status = ANY (ARRAY['sending'::text, 'sent'::text, 'failed'::text, 'dropped'::text])) AND (params IS NOT NULL))`),
 	index("email_outbox_candidate_idx").using("btree", table.candidateUserId.asc().nullsLast().op("text_ops")).where(sql`(candidate_user_id IS NOT NULL)`),
-	index("email_outbox_pending_idx").using("btree", table.sendAfter.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'pending'::text)`),
+	index("email_outbox_pending_idx").using("btree", sql`(template = 'job_alert'::text)`, table.sendAfter.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`(status = 'pending'::text)`),
 	index("email_outbox_portal_idx").using("btree", table.portalUserId.asc().nullsLast().op("text_ops")).where(sql`(portal_user_id IS NOT NULL)`),
 	index("email_outbox_record_idx").using("btree", sql`COALESCE(sent_at, send_after)`).where(sql`(status = ANY (ARRAY['sending'::text, 'sent'::text, 'failed'::text, 'dropped'::text]))`),
 	unique("email_outbox_dedupe_key_key").on(table.dedupeKey),
@@ -2301,7 +2303,7 @@ export const rulesVersion = pgTable("rules_version", {
 	unique("rules_version_approval_request_id_key").on(table.approvalRequestId),
 	check("rules_version_check", sql`seeded_by_owner OR (approval_request_id IS NOT NULL)`),
 	check("rules_version_data_check", sql`jsonb_typeof(data) = ANY (ARRAY['object'::text, 'array'::text])`),
-	check("rules_version_kind_check", sql`kind = ANY (ARRAY['minimums'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'public_pay_employers'::text, 'big_company_names'::text])`),
+	check("rules_version_kind_check", sql`kind = ANY (ARRAY['minimums'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'public_pay_employers'::text, 'big_company_names'::text, 'pay_scales'::text])`),
 ]);
 
 export const ownerReassign = pgTable("owner_reassign", {

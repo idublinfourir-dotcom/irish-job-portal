@@ -490,11 +490,17 @@ describe("performance", () => {
     await su.query(
       "insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, status, closes_at, own_page_url, salary_low, search_vector) " +
       "select $1, 'employer', $2, 'Big ' || g, 'Big', 'it', 'critical_skills', 'closed', now() + interval '20 days', 'https://x.example.ie/1', 50000, to_tsvector('x') from generate_series(1, 400) g", [big, src]);
+    // 0056: 200 decided company reports and 20 strike cases move with it (the open-report check and the two moves)
+    await su.query("insert into report(target_kind, target_organisation_id, reason, status) select 'organisation', $1, 'other', 'cleared' from generate_series(1, 200)", [big]);
+    await su.query("insert into strike(organisation_id, case_kind, reason_code) select $1, 'false_claim', 'false_sponsorship' from generate_series(1, 20)", [big]);
     const t0 = performance.now();
     const r = await mergeCompanies(admin, staff.account_reviewer!, String(big), String(s));
     const ms = performance.now() - t0;
+    console.log(`merge of 150 names, 400 jobs, 200 reports, 20 strikes: ${ms.toFixed(1)} ms`);
     expect(r).toMatchObject({ names: 150, jobs: 400 });
-    // measured 33 ms on 13 November 2026; the limit leaves room for a busy laptop
+    expect((await one("select count(*)::int n from report where target_organisation_id = $1", [s])).n).toBe(200);
+    expect((await one("select count(*)::int n from strike where organisation_id = $1", [s])).n).toBe(20);
+    // measured 33 ms on 13 November 2026 (names and jobs only); the limit leaves room for a busy laptop
     expect(ms, "merge of 150 names and 400 jobs").toBeLessThan(400);
     // one app statement for the whole merge: the work is inside the function
     const [x, y] = [String(await org()), String(await org())];

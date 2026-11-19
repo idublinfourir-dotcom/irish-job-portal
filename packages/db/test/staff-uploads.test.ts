@@ -281,6 +281,16 @@ describe("evidence on a report or a strike case (Q7)", () => {
     expect(store.objects.size).toBe(before);
   });
 
+  it("a company report (#102) takes an evidence file the same way", async () => {
+    const { org } = await manualPost();
+    const rep = (await db.query("app_candidate", "insert into report(target_kind, target_organisation_id, reporter_candidate_user_id, reason) values ('organisation', $1, $2, 'fake_company') returning id::text",
+      [org, await F.cand()])).rows[0].id as string;
+    okay(await attach("trust_and_safety", `?reportId=${rep}`));
+    expect((await one("select evidence_storage_key k from report where id = $1", [rep])).k).toMatch(/^evidence\/[0-9a-f-]{36}\.png$/);
+    expect(okay(await send(reports, "/api/trust-safety/reports", "trust_and_safety", { query: `?id=${rep}` })).item).toMatchObject({ evidenceFile: true, targetKind: "organisation", organisationId: String(org) });
+    is(await attach("account_reviewer", `?reportId=${rep}`), 403, "not_trust_and_safety");
+  });
+
   it("every role but trust and safety is refused, attach and read", async () => {
     const { org, job } = await manualPost();
     const rep = await report(job), cs = await strike(org);

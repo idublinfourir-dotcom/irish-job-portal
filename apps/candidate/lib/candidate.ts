@@ -1,7 +1,7 @@
 // The candidate login (#174 to #178). Made on first use, not at import, so `next build` runs without the settings; a request with
 // any setting missing fails closed. Google sign-in is on only when GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are both set. DATABASE_URL is the app_candidate login. Email goes to the fake sender, which runs on localhost only.
-import { candidateSettings, createAuth, createMail, googleSettings, type FakeEmail } from "@portal/auth";
-import { getPool } from "@portal/db";
+import { candidateSettings, createAuth, createMail, googleSettings, isFresh, type FakeEmail } from "@portal/auth";
+import { getPool, type ReportLogin } from "@portal/db";
 import { after } from "next/server";
 
 // Email sends run after the reply (slice 2 review finding 4). after() keeps the function alive until they end; outside a Next request
@@ -18,10 +18,12 @@ export const candidateAuth = () => (made ?? make()).auth;
 /** The emails the fake sender kept (tests read the links here). */
 export const candidateMail = () => (made ?? make()).mail.outbox;
 
-/** The signed-in candidate for every account route and the report: no session, or a suspended or deleted candidate, is refused. */
-export async function signedInCandidate(headers: Headers): Promise<{ userId: string } | { refused: "no_session" | "refused" }> {
+/** The signed-in candidate for every account route and the report: no session, or a suspended or deleted candidate, is refused.
+ *  `fresh` (a sensitive action, C4) also refuses a session not made by a sign-in in the last REAUTH_SECONDS. */
+export async function signedInCandidate(headers: Headers, fresh = false): Promise<ReportLogin> {
   const s = await candidateAuth().api.getSession({ headers });
   if (!s) return { refused: "no_session" };
   const u = s.user as { suspendedAt?: unknown; deletedAt?: unknown };
-  return u.suspendedAt || u.deletedAt ? { refused: "refused" } : { userId: s.user.id };
+  if (u.suspendedAt || u.deletedAt) return { refused: "refused" };
+  return fresh && !isFresh(s.session) ? { refused: "reauth_required" } : { userId: s.user.id };
 }

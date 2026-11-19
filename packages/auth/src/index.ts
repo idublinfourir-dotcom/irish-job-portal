@@ -5,16 +5,20 @@ import { generateRandomString } from "better-auth/crypto";
 import type { Pool } from "pg";
 import { COUNT_NO, checkPortalSignup, checkSignup, signupPlugin, writeConsent, type Answers } from "./signup";
 import { emailLimitPlugin } from "./email-limit";
+import { isFresh, reauthPlugin } from "./reauth";
 
 export { readAnswers, readPortalAnswers, checkSignup, checkPortalSignup, currentTermsId, writeConsent, type Answers, type PortalAnswers } from "./signup";
 export { createFakeEmail, type FakeEmail } from "./fake-email";
 export { accountEmail, createMail } from "./mail";
 export { createBrevoMail, type SendMail } from "./brevo";
 export { EMAIL_LIMIT, emailLimitKey } from "./email-limit";
+export { isFresh, REAUTH_CODE, REAUTH_SECONDS } from "./reauth";
 
 // The pool is called portal, not employer: its tables are portal_user and so on (23-database-design.md).
 export type LoginPool = "candidate" | "portal" | "staff";
-export type EmailKind = "verify" | "reset" | "invite"; // invite: a portal team invite (apps/portal/lib/team.ts)
+// invite: a portal team invite (apps/portal/lib/team.ts). change-email: to the OLD address, which must confirm a change first (C4);
+// new-email: then the link to the NEW address, which makes the change.
+export type EmailKind = "verify" | "reset" | "invite" | "change-email" | "new-email";
 // Email is an outside service, so the caller passes the sender in; tests pass a fake.
 export type SendEmail = (pool: LoginPool, kind: EmailKind, to: string, link: string) => Promise<void>;
 export type GoogleSettings = { clientId: string; clientSecret: string };
@@ -81,6 +85,10 @@ export const refuseEmail: SendEmail = async (pool, kind) => {
 };
 
 type Ctx = { path?: string; body?: unknown; context: { adapter: unknown } };
+// The verify token is a signed JWT; only its (already signed) payload is read here, to pick the wording. Never trusted for anything else.
+const changeTo = (token: string): boolean => {
+  try { return typeof JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString()).updateTo === "string"; } catch { return false; }
+};
 // The answers of a Google sign-up that passed the user-create step, until its account row is made (same request, same context object).
 const fromGoogle = new WeakMap<object, Answers>();
 
@@ -110,7 +118,8 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
       revokeSessionsOnPasswordReset: true, // a reset ends every other session, so an intruder's session does not outlive the owner's reset
       sendResetPassword: ({ user, url }) => sendEmail(name, "reset", user.email, url),
     },
-    emailVerification: { sendVerificationEmail: ({ user, url }) => sendEmail(name, "verify", user.email, url) },
+    // The second step of an email change comes here too, its token naming the new address (updateTo); it gets its own wording.
+    emailVerification: { sendVerificationEmail: ({ user, url, token }) => sendEmail(name, changeTo(token) ? "new-email" : "verify", user.email, url) },
     // Counts live in the database: the default memory store is per instance, which does not hold on serverless.
     rateLimit: {
       enabled: true,
@@ -119,19 +128,25 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
       fields: { lastRequest: "last_request" },
       customRules: {
         "/sign-in/email": { window: 60, max: 5 }, "/sign-up/email": { window: 60, max: 5 }, "/sign-in/social": { window: 60, max: 5 },
-        "/request-password-reset": { window: 300, max: 3 }, "/send-verification-email": { window: 300, max: 3 },
+        "/request-password-reset": { window: 300, max: 3 }, "/send-verification-email": { window: 300, max: 3 }, "/change-email": { window: 300, max: 3 },
       },
     },
     ...(name === "candidate" && google ? { socialProviders: { google } } : {}),
     trustedOrigins: [baseURL],
-    user: { modelName: `${name}_user`, fields: snake.user, additionalFields: added[name] },
+    // C4: an email change takes effect only when the NEW address follows its link, and that link is sent only after the OLD address has
+    // confirmed (Better Auth's sendChangeEmailConfirmation). A change to an address that has an account here answers the same and sends nothing.
+    // Staff emails are changed by administrators, so the staff pool has no change-email.
+    user: {
+      modelName: `${name}_user`, fields: snake.user, additionalFields: added[name],
+      ...(name !== "staff" ? { changeEmail: { enabled: true, sendChangeEmailConfirmation: ({ user, url }: { user: { email: string }; url: string }) => sendEmail(name, "change-email", user.email, url) } } : {}),
+    },
     // The cookie cache stays off, so every request reads the session and user from the database.
     session: {
       modelName: `${name}_session`, cookieCache: { enabled: false }, fields: snake.session,
       ...(name === "staff" ? { expiresIn: STAFF_IDLE_SECONDS, updateAge: STAFF_REFRESH_SECONDS } : {}),
     },
     // Staff: server calls (requireStaff) refresh the session row, and this sends the new cookie back in Next.js route handlers and server actions.
-    plugins: name === "staff" ? [nextCookies()] : name === "candidate" || name === "portal" ? [emailLimitPlugin(database, name, secret), signupPlugin(database, name)] : [],
+    plugins: name === "staff" ? [nextCookies()] : name === "candidate" || name === "portal" ? [emailLimitPlugin(database, name, secret), signupPlugin(database, name), reauthPlugin(name, secret)] : [],
     // A Google sign-in joins an existing account with the same email only when Google says the email is verified AND that account's
     // email was confirmed here (Better Auth's defaults, written out so a change shows in review). No trusted providers: Google's word
     // alone is not enough for an unconfirmed email-and-password account, so there is no silent takeover.
@@ -211,17 +226,25 @@ export class StaffRefused extends Error {}
 // Every admin call starts here. The session read also reads staff_user.status (the cookie cache is off), so a person disabled
 // after signing in is refused on their next request even if their session row was not deleted. Returns the id the admin
 // queue functions take. ponytail: no roles yet (#172 adds the queue role check later; reading them costs one more statement).
-export async function requireStaff(auth: ReturnType<typeof createAuth>, headers: Headers): Promise<string> {
+// C4: `fresh` (a sensitive action) also refuses a session older than REAUTH_SECONDS with "reauth_required".
+export async function requireStaff(auth: ReturnType<typeof createAuth>, headers: Headers, fresh = false): Promise<string> {
+  return (await staffSession(auth, headers, fresh)).id;
+}
+/** requireStaff with the session's freshness, for a route where only some actions are sensitive. */
+export async function staffSession(auth: ReturnType<typeof createAuth>, headers: Headers, fresh = false): Promise<{ id: string; fresh: boolean }> {
   const s = await auth.api.getSession({ headers });
   if (!s) throw new StaffRefused("no_session");
   if ((s.user as { status?: unknown }).status !== "active") throw new StaffRefused("not_active");
-  return s.user.id;
+  const f = isFresh(s.session);
+  if (fresh && !f) throw new StaffRefused("reauth_required");
+  return { id: s.user.id, fresh: f };
 }
 
 /** A request with no usable portal session. `why` is "no_session" or "not_active". */
 export class PortalRefused extends Error {}
 export type PortalMembership = { id: number; organisationId: number; role: string; isSigner: boolean; organisationStatus: string; organisationKind: string };
-export type PortalLogin = { userId: string; email: string; membership: PortalMembership | null };
+// fresh: the session was made by a sign-in less than REAUTH_SECONDS ago; the sensitive portal actions (C4) refuse it otherwise.
+export type PortalLogin = { userId: string; email: string; fresh: boolean; membership: PortalMembership | null };
 
 // Every portal call starts here. Like requireStaff, a login blocked or deleted after signing in is refused on its next request
 // (the cookie cache is off, so the status fields are read fresh). Then one more statement reads the login's active membership.
@@ -237,7 +260,7 @@ export async function requirePortal(auth: ReturnType<typeof createAuth>, headers
       where m.portal_user_id = $1 and m.status = 'active'`, [s.user.id]);
   const m = rows[0];
   return {
-    userId: s.user.id, email: s.user.email,
+    userId: s.user.id, email: s.user.email, fresh: isFresh(s.session),
     membership: m ? { id: Number(m.id), organisationId: Number(m.organisation_id), role: m.role, isSigner: m.is_signer, organisationStatus: m.status, organisationKind: m.kind } : null,
   };
 }

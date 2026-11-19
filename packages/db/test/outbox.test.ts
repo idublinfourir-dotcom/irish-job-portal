@@ -8,6 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { fixtures } from "./fixtures";
 import { main, sendPending, MAX_ATTEMPTS, ALERTS, LIVE_JOBS } from "../src/outbox-cli.ts";
+import { writeDigest } from "../src/staff-digest-cli.ts";
 import { createBrevoMail, BREVO_URL } from "../../auth/src/brevo.ts";
 import { deleteAccount } from "../src/candidate.ts";
 import { socTitle } from "../../rules/src/soc.ts";
@@ -51,7 +52,7 @@ describe("outbox sender", () => {
       await queue({ contact_message_id: cm, send_after: new Date(Date.now() - 2000) }),
     ];
     const f = fake();
-    expect(await sendPending(admin, f.send)).toEqual({ sent: 6, retry: 0, failed: 0, dropped: 0 });
+    expect(await sendPending(admin, f.send)).toEqual({ sent: 6, retry: 0, failed: 0, dropped: 0, old: 0 });
     expect(f.sent.map((x) => x.to)).toEqual([`${p}@example.test`, `${c}@example.test`, `${p}@example.test`, "invitee@example.test", "pat@example.test", `${s}@example.test`]);
     for (const id of ids) expect(await row(id)).toMatchObject({ status: "sent", attempts: 1 });
     expect((await row(ids[0]!)).sent_at).toBeInstanceOf(Date);
@@ -76,7 +77,7 @@ describe("outbox sender", () => {
     }
     expect(await sendPending(admin, bad.send, 50, (l) => lines.push(l))).toMatchObject({ retry: 0, failed: 1 });
     expect(await row(id)).toMatchObject({ status: "failed", attempts: MAX_ATTEMPTS, sent_at: null });
-    expect(await sendPending(admin, bad.send)).toEqual({ sent: 0, retry: 0, failed: 0, dropped: 0 }); // never tried again
+    expect(await sendPending(admin, bad.send)).toEqual({ sent: 0, retry: 0, failed: 0, dropped: 0, old: 0 }); // never tried again
     expect(lines.join("\n")).not.toContain("example.test"); // no address in the log
   });
   it("one bad row does not stop the others, and a retry succeeds later", async () => {
@@ -122,7 +123,7 @@ describe("outbox sender", () => {
     const other = await queue({ candidate_user_id: gone, template: "t", params: JSON.stringify({ email: "gone@example.test" }) });
     const noEmail = await queue({ candidate_user_id: gone, template: "account_deleted", params: JSON.stringify({}) });
     const f = fake();
-    expect(await sendPending(admin, f.send)).toEqual({ sent: 1, retry: 0, failed: 0, dropped: 2 });
+    expect(await sendPending(admin, f.send)).toEqual({ sent: 1, retry: 0, failed: 0, dropped: 2, old: 0 });
     expect(f.sent.map((x) => x.to)).toEqual([`${gone}@example.test`]);
     expect(await row(notice)).toMatchObject({ status: "sent" });
     for (const id of [other, noEmail]) expect((await row(id)).status).toBe("dropped");
@@ -131,7 +132,7 @@ describe("outbox sender", () => {
     const gone = await F.cand({ deleted: new Date() });
     const ids = [await queue({ candidate_user_id: gone }), await queue({ candidate_user_id: "erased-123" })];
     const f = fake();
-    expect(await sendPending(admin, f.send)).toEqual({ sent: 0, retry: 0, failed: 0, dropped: 2 });
+    expect(await sendPending(admin, f.send)).toEqual({ sent: 0, retry: 0, failed: 0, dropped: 2, old: 0 });
     for (const id of ids) expect((await row(id)).status).toBe("dropped");
     expect(f.sent).toHaveLength(0);
   });
@@ -235,7 +236,7 @@ describe("job alert email", () => {
     const a = await alertFor(c, { county: "Cork", occupation_code: "2134" }), t = await tokenOf(a);
     const id = await alertRow(c, [[a, [j2!, j1!]]]);
     const f = fake();
-    expect(await sendPending(admin, f.send, 50, undefined, SITE)).toEqual({ sent: 1, retry: 0, failed: 0, dropped: 0 });
+    expect(await sendPending(admin, f.send, 50, undefined, SITE)).toEqual({ sent: 1, retry: 0, failed: 0, dropped: 0, old: 0 });
     const m = f.sent[0]!;
     expect(m.to).toBe(`${c}@example.test`);
     expect(m.text + m.html).not.toContain("PLACEHOLDER");
@@ -276,7 +277,7 @@ describe("job alert email", () => {
     await su.query("update job set status='closed', close_reason='closed' where id=$1", [j3]);
     const id2 = await alertRow(c, [[a, [j1!, j2!, j3!]]]);
     const g = fake();
-    expect(await sendPending(admin, g.send, 50, undefined, SITE)).toEqual({ sent: 0, retry: 0, failed: 0, dropped: 1 });
+    expect(await sendPending(admin, g.send, 50, undefined, SITE)).toEqual({ sent: 0, retry: 0, failed: 0, dropped: 1, old: 0 });
     expect(g.sent).toHaveLength(0);
     expect(await row(id2)).toMatchObject({ status: "dropped", sent_at: null });
   });
@@ -286,7 +287,7 @@ describe("job alert email", () => {
     const old = await alertRow(c, [[a, [j!]]], { send_after: new Date(Date.now() - 72 * hour - 60_000) });
     const edge = await alertRow(c, [[a, [j!]]], { send_after: new Date(Date.now() - 72 * hour + 60_000) });
     const f = fake();
-    expect(await sendPending(admin, f.send, 50, undefined, SITE)).toEqual({ sent: 1, retry: 0, failed: 0, dropped: 1 });
+    expect(await sendPending(admin, f.send, 50, undefined, SITE)).toEqual({ sent: 1, retry: 0, failed: 0, dropped: 1, old: 1 });
     expect((await row(old)).status).toBe("dropped");
     expect((await row(edge)).status).toBe("sent");
   });
@@ -315,7 +316,7 @@ describe("job alert email", () => {
     const susp = await alertRow(s, [[as, [j2!]]]);
     await su.query("update candidate_user set suspended_at = now() where id = $1", [s]);
     const f = fake();
-    expect(await sendPending(admin, f.send, 50, undefined, SITE)).toEqual({ sent: 0, retry: 0, failed: 0, dropped: 2 });
+    expect(await sendPending(admin, f.send, 50, undefined, SITE)).toEqual({ sent: 0, retry: 0, failed: 0, dropped: 2, old: 0 });
     expect(f.sent).toHaveLength(0);
     for (const id of [full, susp]) expect(await row(id)).toMatchObject({ status: "dropped", sent_at: null });
     const mixed = await alertRow(c, [[a, [j1!, j2!]]]);
@@ -345,7 +346,7 @@ describe("job alert email", () => {
       await queue({ template: "job_alert", candidate_user_id: c, params: JSON.stringify("alerts") }), await queue({ template: "job_alert", candidate_user_id: c })];
     const big = await alertRow(c, Array.from({ length: 30 }, () => [a, Array.from({ length: 50 }, () => j!)] as [string, string[]]));
     const f = fake();
-    expect(await sendPending(admin, f.send, 50, undefined, SITE)).toEqual({ sent: 1, retry: 0, failed: 0, dropped: 3 });
+    expect(await sendPending(admin, f.send, 50, undefined, SITE)).toEqual({ sent: 1, retry: 0, failed: 0, dropped: 3, old: 0 });
     for (const id of bad) expect((await row(id)).status).toBe("dropped");
     expect((await row(big)).status).toBe("sent");
     expect(f.sent[0]!.text.match(/Your alert:/g)).toHaveLength(10); // 30 alerts in the row: only the first 10 are read (D1)
@@ -396,7 +397,7 @@ describe("job alert email", () => {
     const fetchFake = (async (url: string, init: RequestInit) => (calls.push({ url, body: JSON.parse(init.body as string) }), new Response("{}", { status: 201 }))) as unknown as typeof fetch;
     const notices = createBrevoMail({ apiKey: "xkeysib-test", from: "no-reply@account.example.ie", fetch: fetchFake });
     const alertsMail = createBrevoMail({ apiKey: "xkeysib-test", from: "no-reply@alerts.example.ie", fetch: fetchFake });
-    expect(await sendPending(admin, notices, 50, undefined, SITE, EMPL, alertsMail)).toEqual({ sent: 3, retry: 0, failed: 0, dropped: 0 });
+    expect(await sendPending(admin, notices, 50, undefined, SITE, EMPL, alertsMail)).toEqual({ sent: 3, retry: 0, failed: 0, dropped: 0, old: 0 });
     expect(calls).toHaveLength(3);
     for (const { url, body } of calls) {
       expect(url).toBe(BREVO_URL);
@@ -416,6 +417,66 @@ describe("job alert email", () => {
     }
     expect(String(calls.find((x) => x.body.subject === "You are now the account owner")!.body.htmlContent)).toContain(`href="${EMPL}/"`);
   });
+  // #275: Brevo Free sends 300 a day; the run takes 200. Through the real command (main) as app_admin with the fake sender.
+  const ENV = () => ({ DATABASE_URL: urlFor(db.name, "app_admin"), DATABASE_SSL: "disable", SITE_URL: SITE, PORTAL_SITE_URL: EMPL });
+  const lastRun = async () => (await su.query("select actor_system, after from audit_event where action = 'email_outbox.run' order by id desc limit 1")).rows[0];
+  it("#275: 250 job alerts and 20 newer notices: every notice goes first, 200 in all, 70 left, and the warning and the audit row hold the right counts only", async () => {
+    const cs = await Promise.all(Array.from({ length: 25 }, () => F.cand()));
+    const [j] = await jobs(1);
+    const as = await Promise.all(cs.map((c) => alertFor(c)));
+    for (let i = 0; i < 250; i++) await alertRow(cs[i % 25]!, [[as[i % 25]!, [j!]]], { send_after: new Date(Date.now() - 2 * hour - i * 1000) });
+    for (let i = 0; i < 20; i++) await queue({ template: "account_merged", candidate_user_id: cs[i]!, send_after: new Date(Date.now() - 60_000) });
+    const lines: string[] = [], f = fake();
+    expect(await main(["--batch", "200"], ENV(), (l) => lines.push(l), f.send)).toBe(0);
+    expect(f.sent).toHaveLength(200);
+    expect(f.sent.slice(0, 20).every((m) => m.subject === "Your accounts have been joined")).toBe(true);
+    expect(f.sent.slice(20).some((m) => m.subject === "Your accounts have been joined")).toBe(false);
+    expect((await su.query("select count(*)::int n from email_outbox where status = 'pending' and template = 'job_alert'")).rows[0].n).toBe(70);
+    expect(lines.at(-1)).toBe("::warning::email outbox (#275, Brevo Free 300 a day): 70 emails left unsent; dropped this run: 0 job alerts too old (over 3 days), 0 with no address or nothing to send");
+    expect(await lastRun()).toEqual({ actor_system: "outbox-cli by app_admin", after: { sent: 200, retry: 0, failed: 0, dropped: 0, old: 0, left: 70 } });
+    // security: counts only, never an address, a candidate id or a title
+    for (const l of lines) { expect(l).not.toMatch(/@|Cook/); for (const c of cs) expect(l).not.toContain(c); }
+    // the next run sends the 70 and is quiet
+    lines.length = 0;
+    expect(await main(["--batch", "200"], ENV(), (l) => lines.push(l), fake().send)).toBe(0);
+    expect(lines.some((l) => l.startsWith("::warning::"))).toBe(false);
+    expect((await lastRun()).after).toMatchObject({ sent: 70, left: 0 });
+  });
+  it("#275: an alert dropped as too old is warned about even with nothing left, and a run with nothing to do is quiet", async () => {
+    const c = await F.cand(), [j] = await jobs(1), a = await alertFor(c);
+    await alertRow(c, [[a, [j!]]], { send_after: new Date(Date.now() - 80 * hour) });
+    await queue({ candidate_user_id: "nobody" }); // no address: dropped, not a limit problem
+    const lines: string[] = [];
+    expect(await main([], ENV(), (l) => lines.push(l), fake().send)).toBe(0);
+    expect(lines.at(-1)).toBe("::warning::email outbox (#275, Brevo Free 300 a day): 0 emails left unsent; dropped this run: 1 job alerts too old (over 3 days), 1 with no address or nothing to send");
+    lines.length = 0;
+    expect(await main([], ENV(), (l) => lines.push(l), fake().send)).toBe(0);
+    expect(lines).toEqual(["outbox: sent 0, to retry 0, failed for good 0, dropped (no address, nothing to send or too old) 0"]);
+  });
+  it("#275: the next staff digest gives administrators the numbers of the last run (counts only) and other staff none", async () => {
+    const cs = await Promise.all(Array.from({ length: 3 }, () => F.cand()));
+    for (const c of cs) await alertFor(c);
+    for (let i = 0; i < 3; i++) await queue({ template: "account_merged", candidate_user_id: cs[i]! });
+    expect(await main(["--batch", "1"], ENV(), () => {}, fake().send)).toBe(0); // 1 sent, 2 left
+    const ad = await F.staff(), ts = await F.staff();
+    await su.query("insert into staff_role(staff_user_id, role, seeded_by_owner) values ($1, 'administrator', true), ($2, 'trust_and_safety', true)", [ad, ts]);
+    await su.query("insert into report(target_kind, target_job_id, reason) select 'job', id, 'no_sponsorship' from job where status = 'live' limit 1"); // work for trust_and_safety
+    await su.query("delete from email_outbox where template = 'staff_report_new'");
+    await writeDigest(admin);
+    const subscribers = (await su.query("select count(distinct candidate_user_id)::int n from alert where status = 'active'")).rows[0].n;
+    const params = async (s: string) => (await su.query("select params from email_outbox where template = 'staff_digest' and staff_user_id = $1", [s])).rows[0]?.params;
+    expect(await params(ad)).toMatchObject({ emailsLeft: 2, alertSubscribers: subscribers });
+    expect(await params(ad)).not.toHaveProperty("alertsTooOld"); // zero: no line
+    const t = await params(ts);
+    for (const k of ["emailsLeft", "alertsTooOld", "alertSubscribers"]) expect(t).not.toHaveProperty(k);
+    await su.query("update email_outbox set status = 'dropped' where template <> 'staff_digest'");
+    const f = fake();
+    await sendPending(admin, f.send, 50);
+    const m = f.sent.find((x) => x.to === `${ad}@example.test`)!;
+    expect(m.text).toContain("Emails left unsent by the last send run: 2");
+    expect(m.text).toContain(`Active job alert subscribers: ${subscribers}`);
+    for (const c of cs) expect(m.text + m.html).not.toContain(c);
+  });
   it("performance: a batch of 200 alert rows is read in two statements and sent within the budget", async () => {
     const cs = await Promise.all(Array.from({ length: 20 }, () => F.cand()));
     const js = await jobs(100, { title: "Perf" });
@@ -428,7 +489,7 @@ describe("job alert email", () => {
     const f = fake(), seen: string[] = [];
     const counted = { query: (q: unknown, ...rest: unknown[]) => (seen.push(typeof q === "string" ? q : "?"), (admin.query as (...a: unknown[]) => unknown)(q, ...rest)) } as unknown as pg.Pool;
     const t0 = performance.now();
-    expect(await sendPending(counted, f.send, 200, undefined, SITE)).toEqual({ sent: 200, retry: 0, failed: 0, dropped: 0 });
+    expect(await sendPending(counted, f.send, 200, undefined, SITE)).toEqual({ sent: 200, retry: 0, failed: 0, dropped: 0, old: 0 });
     const ms = performance.now() - t0;
     expect(f.sent).toHaveLength(200);
     expect(seen.filter((q) => q === ALERTS)).toHaveLength(1);

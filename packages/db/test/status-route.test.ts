@@ -217,6 +217,17 @@ describe("POST reply and appeal", () => {
       expect((await row(x)).appeal_text).toBeNull();
     }
   });
+  it("C4: an appeal needs a sign-in in the last 10 minutes, from every role; a reply does not", async () => {
+    const c = await company(), id = await decided(c.org), w = await waiting(c.org);
+    const age = (user: string, sql: string) => su.query(`update portal_session set created_at = ${sql} where user_id = $1`, [user]);
+    for (const who of [c.owner, c.viewer]) await age(who.id, "now() - interval '11 minutes'");
+    for (const who of [c.owner, c.viewer]) expect(await act(who.cookie, "appeal", id), "stale").toMatchObject({ status: 403, json: { code: "REAUTH_REQUIRED" } });
+    expect(await row(id)).toMatchObject({ appeal_text: null, stage: "decided" });
+    expect((await act(c.owner.cookie, "reply", w)).status).toBe(200); // a stale session may still reply
+    for (const who of [c.owner, c.viewer]) await age(who.id, "now() - interval '9 minutes'");
+    expect(await act(c.viewer.cookie, "appeal", id)).toMatchObject({ status: 403, json: { code: "NOT_OWNER" } }); // fresh, then the role check
+    expect(await act(c.owner.cookie, "appeal", id)).toMatchObject({ status: 200, json: { kind: "appeal" } });
+  });
   it("stores SQL-looking text verbatim", async () => {
     const c = await company(), id = await waiting(c.org), text = "'); drop table strike; --";
     expect((await act(c.owner.cookie, "reply", id, text)).status).toBe(200);

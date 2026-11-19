@@ -6,6 +6,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { isObject, no, ok, only, portalLogin, readPost, withinLimit, type Refusal } from "./company";
 import { portalOrigin, portalSend } from "./portal";
 
+const FRESH_ACTIONS = new Set<TeamAction["action"]>(["transfer", "invite", "approve", "role"]);
 export const TEAM_RATE = { windowMs: 10 * 60_000, max: 20 }; // every team action together, per login (an invite sends an email)
 
 // The invite token: 32 random bytes in the link, only its sha256 in the database (membership.invite_token_hash).
@@ -114,6 +115,9 @@ export async function teamPost(request: Request): Promise<Response> {
   const read = await readPost(request, checkTeam);
   if (read instanceof Response) return read;
   const { login, body } = read;
+  // C4: the actions that grant or move power need a sign-in in the last 10 minutes (transfer with a stolen owner session is a takeover).
+  // remove, refuse, leave, request and accept only reduce access or are the invitee's own step.
+  if (FRESH_ACTIONS.has(body.action) && !login.fresh) return no(403, "REAUTH_REQUIRED");
   if (!(await withinLimit(`team:${login.userId}`, TEAM_RATE))) return no(429, "TOO_MANY_REQUESTS");
   if (body.action === "invite") return invite(login.userId, body);
   try {

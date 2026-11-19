@@ -1,5 +1,5 @@
 // Manual posting: the body check and the rules check, with no database and no network (the rules chain is local code; the matcher is a fake inside manualVerdict).
-import { rulesV1 } from "@portal/rules";
+import { offScale, rulesV1 } from "@portal/rules";
 import { describe, expect, it } from "vitest";
 import { QueueRefused } from "./admin-queue";
 import { checkManualPost, manualVerdict, type ManualPost } from "./manual-posting";
@@ -65,6 +65,18 @@ describe("manualVerdict", () => {
   });
   it("asks for pay when there is only a grade", async () => {
     expect(await manualVerdict(post({ salaryLow: null, salaryHigh: null, payGrade: "Grade VI" }), "Fake Co", v1)).toEqual({ ok: false, code: "pay_required" });
+  });
+  it("a public pay employer with a listed grade needs its stated pay on the scale (#269); free text and no version as before", async () => {
+    const r = { ...v1, payScales: [{ code: "2135", title: "Staff Nurse", firstEur: 38166, lastEur: 56592, sourceUrl: "https://example.test/p.pdf", sourcePage: 14 }] };
+    const nurse = (o: Partial<ManualPost>) => post({ title: "Staff Nurse", occupationCode: "2231", salaryLow: 39000, salaryHigh: null, payGrade: "2135", ...o });
+    expect(await manualVerdict(nurse({}), "HSE South West", r)).toMatchObject({ ok: true, passRoute: "public_pay" });
+    expect(await manualVerdict(nurse({ salaryLow: 38000 }), "HSE South West", r)).toEqual({ ok: false, code: "pay_not_on_scale" });
+    expect(await manualVerdict(nurse({ salaryLow: 38000, payGrade: "Staff Nurse scale" }), "HSE South West", r)).toMatchObject({ ok: true, passRoute: "public_pay" });
+    expect(await manualVerdict(nurse({ salaryLow: 38000 }), "HSE South West", v1)).toMatchObject({ ok: true, passRoute: "public_pay" }); // no version in force
+    expect(await manualVerdict(nurse({}), "Fake Co", r)).toEqual({ ok: false, code: "pay_below_minimum" });
+    // the one rule both posts use: the edges of the scale count, a null grade or no stated pay is never off it
+    expect([offScale(r, "2135", 38166, 56592), offScale(r, "2135", 38165, null), offScale(r, "2135", 40000, 56593), offScale(r, "2135", null, null), offScale(r, null, 1, 1), offScale(r, "x", 1, 1)])
+      .toEqual([false, true, true, false, false, false]);
   });
 });
 

@@ -330,3 +330,49 @@ describe("more jobs like this (S9, GET /api/job/similar)", () => {
     expect(n).toBe(4);
   });
 });
+
+describe("S6: the health registration on the job and occupation reads", () => {
+  type Reg = { status: string; body: { id: string }; steps: string[]; degreeNote?: string } | null;
+  const reg = (g: Got) => g.body.registration as Reg;
+  const spec = loadSpec("candidate");
+  async function job(title: string, code: string) {
+    const r = await su.query(
+      `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, occupation_code, permit_type, badge, quota_full, status, closes_at, own_page_url, search_vector)
+       select organisation_id, source, job_source_id, $1, employer_name, 'health', $2, permit_type, badge, false, 'live', closes_at, own_page_url, search_vector from job where id = $3 returning id::text`,
+      [title, code, jobIds[0]]);
+    return r.rows[0].id as string;
+  }
+  it("a job shows the body its code and title need, through the real route, and the reply matches the spec", async () => {
+    const cases: [string, string, string | null, string | null][] = [
+      ["Fake Staff Nurse", "2231", "required", "nmbi"], ["Fake Senior Radiographer", "2217", "required", "coru"],
+      ["Fake Cardiac Physiologist", "2217", null, null], ["Fake Sonographer", "2217", "may_need", "coru"], ["Fake Psychologist", "2212", "not_open", "coru"],
+      ["Fake EMT", "6142", "required", "phecc"], ["Fake Cook", "1122", null, null],
+      // hostile titles: a long one and regex-like text change nothing beyond the cautious line
+      [`Fake ${"(a+)+".repeat(500)}`, "2219", "may_need", "coru"], ["x'; drop table job; -- dietitian", "2219", "required", "coru"],
+    ];
+    for (const [title, code, status, body] of cases) {
+      const g = await get(JOB, `/api/job?id=${await job(title, code)}`);
+      expect([g.status, reg(g)?.status ?? null, reg(g)?.body.id ?? null], title).toEqual([200, status, body]);
+      expect(replyProblems(spec, "GET", "/api/job", g.status, g.body), title).toEqual([]);
+    }
+    const nurse = reg(await get(JOB, `/api/job?id=${await job("Fake Nurse", "2231")}`))!;
+    expect(nurse.degreeNote).toMatch(/degree or diploma accepted by NMBI/);
+    expect(nurse.steps.length).toBeGreaterThan(0);
+  });
+  it("an occupation page shows the body by code alone (a mixed code gives the cautious line), and the reply matches the spec", async () => {
+    for (const [code, status] of [["2231", "required"], ["2212", "not_open"], ["2217", "may_need"], ["1122", null]] as const) {
+      const g = await get(OCCUPATION, `/api/occupation?code=${code}`);
+      expect([g.status, reg(g)?.status ?? null], code).toEqual([200, status]);
+      expect(replyProblems(spec, "GET", "/api/occupation", g.status, g.body), code).toEqual([]);
+    }
+  });
+  it("adds no statement: a nurse's job and occupation page cost what a cook's do", async () => {
+    const nurse = await job("Fake Nurse", "2231");
+    const [, a] = await counted(() => get(JOB, `/api/job?id=${jobIds[0]}`));
+    const [, b] = await counted(() => get(JOB, `/api/job?id=${nurse}`));
+    const [, c] = await counted(() => get(OCCUPATION, "/api/occupation?code=1122"));
+    const [, d] = await counted(() => get(OCCUPATION, "/api/occupation?code=2231"));
+    console.log(`S6 registration: job ${a}/${b} statements, occupation ${c}/${d} statements (cook/nurse)`);
+    expect([b, d]).toEqual([a, c]);
+  });
+});

@@ -1,7 +1,7 @@
 // The admin app's staff login (#169 to #172). Made on first use, not at import, so `next build` runs without the settings;
 // a request with any setting missing fails closed. DATABASE_URL is the app_admin login.
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createAuth, createMail, refuseEmail, requireStaff as check, staffSettings, type SendEmail } from "@portal/auth";
+import { createAuth, createMail, refuseEmail, requireStaff as check, staffSession as checkSession, staffSettings, type SendEmail } from "@portal/auth";
 import { getPool } from "@portal/db";
 
 let auth: ReturnType<typeof createAuth> | undefined;
@@ -33,5 +33,8 @@ export async function sendSetPassword(email: string): Promise<boolean> {
   return box.sent === true;
 }
 
-/** The signed-in, active staff member's id, or StaffRefused (from @portal/auth). */
-export const requireStaff = (headers: Headers) => check(staffAuth(), headers);
+/** The signed-in, active staff member's id, or StaffRefused (from @portal/auth). `fresh` (a sensitive action, C4): a session not made by a sign-in
+ *  in the last 10 minutes is StaffRefused("reauth_required"). */
+export const requireStaff = (headers: Headers, fresh = false) => check(staffAuth(), headers, fresh);
+/** The id and whether the session is fresh, for a route where only some actions are sensitive (refuse with StaffRefused("reauth_required")). */
+export const staffSession = (headers: Headers) => checkSession(staffAuth(), headers);

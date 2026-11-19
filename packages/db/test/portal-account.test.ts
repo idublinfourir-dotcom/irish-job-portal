@@ -195,6 +195,26 @@ describe("delete my login", () => {
     expect((await del(c.recruiter)).status).toBe(401);
   });
 
+  it("C4: the delete and the export need a sign-in in the last 10 minutes (owner, recruiter and a login with no company); nothing changes", async () => {
+    const c = await company();
+    const age = (sql: string) => su.query(`update portal_session set created_at = ${sql} where user_id = any($1)`, [[c.owner.id, c.recruiter.id]]);
+    await age("now() - interval '11 minutes'");
+    for (const who of [c.owner, c.recruiter]) expect(await del(who)).toMatchObject({ status: 403, code: "REAUTH_REQUIRED" });
+    expect((await call("DELETE", c.recruiter, { confirm: false })).status).toBe(400); // the body check still comes first
+    const alone = await login();
+    await su.query("update portal_session set created_at = now() - interval '11 minutes' where user_id = $1", [alone.id]);
+    for (const who of [c.owner, c.recruiter, alone]) {
+      const r = await call("GET", who);
+      expect([r.status, r.code, r.headers.get("content-disposition")]).toEqual([403, "REAUTH_REQUIRED", null]);
+    }
+    expect((await call("DELETE", alone, { confirm: true })).code).toBe("REAUTH_REQUIRED");
+    expect(await one("select count(*)::int n from audit_event where action = 'portal_user.export' and actor_portal_user_id = any($1)", [[c.owner.id, c.recruiter.id, alone.id]])).toEqual({ n: 0 });
+    expect(await one("select count(*)::int n from portal_user where id = any($1)", [[c.owner.id, c.recruiter.id]])).toEqual({ n: 2 });
+    await age("now() - interval '9 minutes'");
+    expect((await del(c.owner)).code).toBe("OWNER_MUST_TRANSFER"); // fresh, then the erase's own rule
+    expect((await call("GET", c.owner)).status).toBe(200);
+    expect((await del(c.recruiter)).status).toBe(200);
+  });
   it("the account owner of a company with other active members is refused (transfer first); nothing changes", async () => {
     const c = await company();
     expect((await del(c.owner)).code).toBe("OWNER_MUST_TRANSFER");

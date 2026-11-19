@@ -32,7 +32,21 @@ export type RulesSnapshot = {
   publicPayEmployers: Readonly<Record<string, { tier: 1 | 2; note?: string }>>;
   /** Cleaned names, matched as isBigCompany does today: BIG_COMPANY_BRANDS then BIG_COMPANY_LIST_150, in that order. */
   bigCompanyNames: readonly string[];
+  /** Public pay scales by grade (#269, #67), when a version of that kind is in force (none before the engineer's first one). */
+  payScales?: readonly PayScale[];
 };
+/** The grade's scale in the version in force (#269) when `payGrade` is one of its codes; otherwise (free text, no version) undefined. */
+export const payScaleOf = (r: RulesSnapshot, payGrade: string | null): PayScale | undefined => (payGrade === null ? undefined : r.payScales?.find((g) => g.code === payGrade));
+/**
+ * The #269 rule on the public pay route (#67), for an employer post and a staff manual post alike: stated pay off the listed grade's scale (any point counts;
+ * the low and, when given, the high must lie between the first and last point). A free-text grade, no version or no stated pay is never off the scale.
+ */
+export function offScale(r: RulesSnapshot, payGrade: string | null, low: number | null, high: number | null): boolean {
+  const s = payScaleOf(r, payGrade);
+  return !!s && low !== null && (low < s.firstEur || (high ?? low) > s.lastEur);
+}
+/** One grade's pay scale (#269): the first and last point in euro a year, and the page it was read on. `note` is placeholder wording. */
+export type PayScale = { code: string; title: string; firstEur: number; lastEur: number; sourceUrl: string; sourcePage: number; note?: string };
 
 /** Version 1 of the minimums: today's constants. */
 export const MINIMUMS_V1: Minimums = {
@@ -69,6 +83,7 @@ export function checkSnapshot(s: RulesSnapshot): RulesSnapshot {
   if (!lists.some((e) => e.list === "ineligible")) throw new Error("rules: the Ineligible list is empty");
   if (!s.publicPayEmployers || Object.keys(s.publicPayEmployers).length === 0) throw new Error("rules: the public pay employers list is empty");
   if (!Array.isArray(s.bigCompanyNames) || s.bigCompanyNames.length === 0) throw new Error("rules: the big-company names list is empty");
+  if (s.payScales !== undefined && (!Array.isArray(s.payScales) || s.payScales.length === 0)) throw new Error("rules: the pay scales list is empty");
   return s;
 }
 

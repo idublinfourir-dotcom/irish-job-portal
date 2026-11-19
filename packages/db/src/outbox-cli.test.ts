@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { DECISION_TEMPLATE } from "./account-review.ts";
-import { confirmEmail, digestLines, main, noticeEmail, NOTICE_TEMPLATES, parseBatch } from "./outbox-cli.ts";
+import { confirmEmail, digestLines, limitWarning, main, noticeEmail, NOTICE_TEMPLATES, parseBatch, sendOrder } from "./outbox-cli.ts";
 
 const SITE = "https://employers.example.ie";
 
@@ -80,5 +80,25 @@ describe("notice emails", () => {
   });
   it("with no site known (a staff or contact row) there is no button and no link", () => {
     expect(noticeEmail("team_removed", null).html).not.toContain("href=");
+  });
+});
+
+// #275: the send order and the limit warning, no database.
+describe("the email limit (#275)", () => {
+  const r = (id: number, template: string, minsAgo: number) => ({ id: String(id), template, send_after: new Date(Date.UTC(2026, 10, 19) - minsAgo * 60_000) });
+  it("every row that is not a job alert goes first, then oldest first, then by id", () => {
+    const rows = [r(1, "job_alert", 90), r(2, "staff_digest", 1), r(3, "job_alert", 100), r(4, "data_request_confirm", 5), r(5, "account_approved", 5), r(6, "job_alert", 100)];
+    expect(rows.sort(sendOrder).map((x) => x.id)).toEqual(["4", "5", "2", "3", "6", "1"]);
+  });
+  it("warns only when rows are left or an alert went stale, with counts only", () => {
+    const res = { sent: 200, retry: 0, failed: 0, dropped: 0, old: 0 };
+    expect(limitWarning(res, 0)).toBeNull();
+    expect(limitWarning({ ...res, dropped: 3 }, 0)).toBeNull(); // no address or nothing to send: not a limit problem
+    expect(limitWarning(res, 70)).toBe("::warning::email outbox (#275, Brevo Free 300 a day): 70 emails left unsent; dropped this run: 0 job alerts too old (over 3 days), 0 with no address or nothing to send");
+    expect(limitWarning({ ...res, dropped: 5, old: 2 }, 0)).toMatch(/^::warning::.* 0 emails left unsent; dropped this run: 2 job alerts too old .*, 3 with no address/);
+  });
+  it("the digest shows the email limit numbers with fixed labels, and nothing else from params", () => {
+    expect(digestLines({ emailsLeft: 70, alertsTooOld: 2, alertSubscribers: 151, email: "x@example.test" })).toEqual([
+      "Emails left unsent by the last send run: 70", "Job alerts dropped as too old in the last send run: 2", "Active job alert subscribers: 151"]);
   });
 });

@@ -157,6 +157,18 @@ describe("POST sign", () => {
     expect(f).toMatchObject({ status: "pending_check", role_family: "2134", floor_eur: 45000, signer_name: c.owner.name, signer_title: "Account owner", signer_membership_id: String(c.owner.mem), consent_text_id: textId, year: true });
     expect(await one("select count(*)::int n from review_item where queue='pay_floor_check' and pay_floor_id=$1 and status='open'", [f.id])).toEqual({ n: 1 });
   });
+  it("C4: signing needs a sign-in in the last 10 minutes, from every role; a withdrawal does not", async () => {
+    const c = await company(), all = [c.owner, c.signer, c.poster, c.recruiter, c.viewer];
+    const age = (sql: string) => su.query(`update portal_session set created_at = ${sql} where user_id = any($1)`, [all.map((m) => m.id)]);
+    expect((await sign(c.owner.cookie, { roleFamily: "3411" })).status).toBe(200);
+    await age("now() - interval '11 minutes'");
+    for (const who of all) expect(await sign(who.cookie), who.email).toMatchObject({ status: 403, json: { code: "REAUTH_REQUIRED" } });
+    expect((await floors(c.org)).length).toBe(1);
+    expect((await post(c.owner.cookie, { action: "withdraw", floorId: (await floors(c.org))[0].id })).status).toBe(200);
+    await age("now()");
+    for (const who of [c.poster, c.recruiter, c.viewer]) expect(await sign(who.cookie), who.email).toMatchObject({ status: 403, json: { code: "NOT_SIGNER" } });
+    expect((await sign(c.signer.cookie)).status).toBe(200);
+  });
   it("lets a poster with the signer switch sign, and refuses a poster without it, a recruiter without it and a viewer", async () => {
     const c = await company();
     const ok = await sign(c.signer.cookie, { roleFamily: "3412" });

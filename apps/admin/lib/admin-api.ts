@@ -48,7 +48,7 @@ const STATUS = new Map<string, number>(Object.entries({
   bad_text: 400, bad_data: 400, bad_key: 400, bad_value: 400, bad_email: 400,
   bad_name: 400, bad_page: 400,
   no_session: 401, not_active: 401,
-  bad_origin: 403, not_contact_staff: 403, not_contact_reader: 403, not_active_staff: 403, not_administrator: 403, not_content_staff: 403, not_content_editor: 403, not_rules_data_editor: 403, not_publisher: 403, not_reviewer: 403, not_domain_staff: 403,
+  reauth_required: 403, bad_origin: 403, not_contact_staff: 403, not_contact_reader: 403, not_active_staff: 403, not_administrator: 403, not_content_staff: 403, not_content_editor: 403, not_rules_data_editor: 403, not_publisher: 403, not_reviewer: 403, not_domain_staff: 403,
   not_scheduled_staff: 403, not_seed_staff: 403, not_dete_link_staff: 403, not_dete_link_viewer: 403, not_sample_staff: 403, not_decision_staff: 403, no_role: 403,
   not_found: 404, domain_not_found: 404, name_not_found: 404,
   target_not_active: 409, already_holds: 409, grant_pending: 409, request_not_pending: 409, same_person: 409, last_administrator: 409, not_disabled: 409, already_disabled: 409, holds_roles: 409, already_held: 409, not_held: 409,

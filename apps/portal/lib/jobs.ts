@@ -4,7 +4,7 @@
 // statement check). There is no row level security: every read and write here is filtered by the login's own company.
 import { getPool, getRules, listAnswer, validId } from "@portal/db";
 import { suggestCodes } from "@portal/matcher/rules";
-import { assess, chainRules, isSoc2010, minimumForHours, socTitle, type RulesSnapshot } from "@portal/rules";
+import { assess, chainRules, isSoc2010, minimumForHours, offScale, socTitle, type RulesSnapshot } from "@portal/rules";
 import type pg from "pg";
 import { isObject, no, ok, only, portalLogin, readPost, withinLimit, type Refusal } from "./company";
 
@@ -174,8 +174,12 @@ export async function rulesFor(p: Post, employerName: string, r: RulesSnapshot):
   const pay = p.salaryLow === null ? null : (p.salaryHigh ?? p.salaryLow) + (p.healthInsuranceEur ?? 0);
   let passRoute: "stated_pay" | "public_pay";
   if (pay !== null && pay >= minimum) passRoute = "stated_pay";
-  else if (!general && a.publicPayTier > 0 && onList === "yes") passRoute = "public_pay"; // a public pay-scale employer on a list role (#67)
-  else return { ok: false, code: pay === null ? "PAY_REQUIRED" : "PAY_BELOW_MINIMUM" };
+  else if (!general && a.publicPayTier > 0 && onList === "yes") {
+    // a public pay-scale employer on a list role (#67). With a grade code from the scales in force (#269), stated pay must sit on that grade's scale
+    // (any point counts); a grade typed as free text, or no stated pay, passes as before.
+    if (offScale(r, p.payGrade, p.salaryLow, p.salaryHigh)) return { ok: false, code: "PAY_NOT_ON_SCALE" };
+    passRoute = "public_pay";
+  } else return { ok: false, code: pay === null ? "PAY_REQUIRED" : "PAY_BELOW_MINIMUM" };
   if (general && !p.statement) return { ok: false, code: "STATEMENT_REQUIRED" }; // #31: a General job appears only when the employer confirms sponsorship
   return { ok: true, passRoute, status: a.bucket === "queue" || a.scamFlag ? "in_review" : "live", sector: a.sector, stage: a.stage, ticked };
 }
@@ -430,4 +434,12 @@ export async function jobSuggest(request: Request): Promise<Response> {
   const title = line(params.get("title"), 2, 200);
   if (!title || [...params.keys()].length !== 1) return no(400, "BAD_REQUEST");
   return ok({ suggestions: suggestCodes(title).filter(isSoc2010).map((code) => ({ code, title: socTitle(code) })) });
+}
+
+/** GET /api/portal/jobs/grades (#269): the grades of the pay scales in force, for the posting form's grade picker. Any signed-in portal login; no parameters. */
+export async function jobGrades(request: Request): Promise<Response> {
+  const login = await portalLogin(request);
+  if (login instanceof Response) return login;
+  if ([...new URL(request.url).searchParams.keys()].length) return no(400, "BAD_REQUEST");
+  return ok({ grades: ((await getRules(getPool())).payScales ?? []).map(({ code, title, firstEur, lastEur, note }) => ({ code, title, firstEur, lastEur, note: note ?? null })) });
 }

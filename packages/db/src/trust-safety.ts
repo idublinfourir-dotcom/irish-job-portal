@@ -88,7 +88,8 @@ const camel = (r: Record<string, unknown>) => Object.fromEntries(Object.entries(
 // ===== reports: list and look =====
 const REPORT_COLS =
   "r.id, r.status, r.target_kind, r.reason, r.created_at::text as created_text, r.target_job_id, j.title as job_title, j.status as job_status, " +
-  "j.organisation_id, o.display_name from report r left join job j on j.id = r.target_job_id left join organisation o on o.id = j.organisation_id";
+  "o.id as organisation_id, o.display_name, o.status as organisation_status " +
+  "from report r left join job j on j.id = r.target_job_id left join organisation o on o.id = coalesce(j.organisation_id, r.target_organisation_id)";
 // Oldest first on report_inbox_idx (status, created_at, id) where status in ('open','job_hidden').
 const INBOX = "r.status in ('open','job_hidden')";
 export const REPORTS_FIRST = `select ${REPORT_COLS} where ${INBOX} order by r.created_at, r.id limit ${PAGE_SIZE + 1}`;
@@ -120,13 +121,18 @@ export async function getReport(db: Q, staff: string, id: string | number) {
 }
 
 // ===== reports: hide, clear, uphold =====
-// Only job reports are handled here (the one kind the report routes make); any other kind is not_found.
+// Job and company reports (the two kinds the report routes make); any other kind is not_found. A company report has no job: hiding is refused
+// (not_a_job_report), clearing changes nothing else, upholding opens a case on the company with no job. The report row is locked, then its job.
 export const REPORT_LOCK =
-  "select r.status, r.target_job_id, j.status as job_status, j.organisation_id from report r join job j on j.id = r.target_job_id where r.id = $1::bigint for update of r, j";
-type ReportLock = { status: string; target_job_id: string; job_status: string; organisation_id: string };
+  "select r.status, r.target_job_id, coalesce(j.organisation_id, r.target_organisation_id) as organisation_id from report r " +
+  "left join job j on j.id = r.target_job_id where r.id = $1::bigint and r.target_kind in ('job','organisation') " +
+  "and coalesce(j.organisation_id, r.target_organisation_id) is not null for update of r";
+const JOB_LOCK = "select 1 from job where id = $1::bigint for update";
+type ReportLock = { status: string; target_job_id: string | null; organisation_id: string };
 async function lockReport(c: pg.PoolClient, id: string): Promise<ReportLock> {
   const r = (await c.query<ReportLock>(REPORT_LOCK, [id])).rows[0];
   if (!r) throw new QueueRefused("not_found");
+  if (r.target_job_id !== null) await c.query(JOB_LOCK, [r.target_job_id]);
   if (r.status === "cleared" || r.status === "upheld") throw new QueueRefused("already_decided");
   return r;
 }
@@ -164,6 +170,7 @@ const decideReport = (c: pg.PoolClient, id: string, outcome: "cleared" | "upheld
 export async function hideReportedJob(db: Db, staff: string, reportId: string | number): Promise<void> {
   await acting(db, staff, reportId, async (c, id) => {
     const r = await lockReport(c, id);
+    if (r.target_job_id === null) throw new QueueRefused("not_a_job_report");
     if (r.status === "job_hidden") throw new QueueRefused("already_hidden");
     if ((await c.query<{ n: number }>(HIDE_JOB, [id, r.target_job_id, JSON.stringify(hiddenNotice(r.target_job_id, r.organisation_id))])).rows[0]!.n !== 1) throw new QueueRefused("job_not_live");
     await c.query("update report set status = 'job_hidden' where id = $1::bigint", [id]);
@@ -182,7 +189,7 @@ export async function clearReport(db: Db, staff: string, reportId: string | numb
 }
 
 export type CaseInput = { caseKind: string; reasonCode: string; noticeSummary?: string };
-/** Upheld: the database closes a job the report hid (report_upheld) and a case opens on the job's company. Returns the case id. */
+/** Upheld: the database closes a job the report hid (report_upheld) and a case opens on the job's company (a company report: on that company, no job). Returns the case id. */
 export async function upholdReport(db: Db, staff: string, reportId: string | number, input: CaseInput): Promise<{ caseId: string }> {
   checkCase(input);
   return acting(db, staff, reportId, async (c, id) => {

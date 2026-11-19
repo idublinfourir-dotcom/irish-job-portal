@@ -501,3 +501,29 @@ describe("C5: a Google 'no' to the permit question is counted once", () => {
     expect(codes).toEqual([200, 200, 200, 200, 200, 429]);
   });
 });
+
+describe("C4: an account with no password proves itself with a fresh Google sign-in", () => {
+  it("a stale Google session cannot delete or change the email; a new Google sign-in can", async () => {
+    const { DELETE } = await import("../../../apps/candidate/app/api/candidate/account/route");
+    const del = (cookie: string) => DELETE(new Request(`${BASE}/api/candidate/account`, { method: "DELETE", body: JSON.stringify({ confirm: true }), headers: { "content-type": "application/json", origin: BASE, cookie } }));
+    const p = person("c4");
+    const first = await viaGoogle(p);
+    expect(first.ok).toBe(true);
+    expect(await count("select 1 from candidate_account a join candidate_user u on u.id = a.user_id where u.email = $1 and a.provider_id = 'credential'", [p.email])).toBe(0); // no password
+    await su.query("update candidate_session s set created_at = now() - interval '11 minutes' from candidate_user u where u.id = s.user_id and u.email = $1", [p.email]);
+    const stale = await del(first.callback.cookie);
+    expect([stale.status, await stale.json()]).toEqual([403, { code: "REAUTH_REQUIRED" }]);
+    expect((await call("change-email", { newEmail: "fake.g.c4.new@example.test" }, { cookie: first.callback.cookie })).json).toMatchObject({ code: "REAUTH_REQUIRED" });
+    expect(await count("select 1 from candidate_user where email = $1 and deleted_at is null", [p.email])).toBe(1);
+    // linking another Google account (C4 gap round): an attacker's own Google would keep access after a password reset
+    const link = (cookie: string) => call("link-social", { provider: "google", callbackURL: "/account" }, { cookie });
+    expect(await link(first.callback.cookie)).toMatchObject({ status: 403, json: { code: "REAUTH_REQUIRED" } });
+    const again = await viaGoogle(p); // the re-ask: sign in with Google again
+    const linked = await link(again.callback.cookie);
+    expect([linked.status, new URL(linked.json!.url).hostname]).toEqual([200, "accounts.google.com"]);
+    expect((await call("link-social", { provider: "google" })).status).toBe(401);
+    expect(again.ok).toBe(true);
+    expect((await del(again.callback.cookie)).status).toBe(200);
+    expect(await count("select 1 from candidate_user where email = $1 and deleted_at is null", [p.email])).toBe(0);
+  });
+});

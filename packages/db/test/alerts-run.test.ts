@@ -1,9 +1,9 @@
 // The daily job alert run (0024, private.queue_job_alerts) on the real test database: which alerts are due, which jobs are new for them, the
 // outbox row's shape (step11/wave-brief.md, "The shared shape"), and who may run it. Fake data only. Fixed run times: 16 November 2026 is a
-// Monday, the 17th a Tuesday. Every test starts with no alerts, no outbox rows and no live jobs.
+// Monday, the 17th a Tuesday. Weekly alerts go on each candidate's own weekday (#275, 0054). Every test starts with no alerts, no outbox rows and no live jobs.
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { main, queueAlerts } from "../src/alerts-run-cli.ts";
+import { main, queueAlerts, weeklyDay } from "../src/alerts-run-cli.ts";
 import { createTestDb, urlFor } from "./db";
 import { fixtures } from "./fixtures";
 
@@ -156,19 +156,44 @@ describe("which jobs are new for an alert", () => {
 });
 
 describe("which alerts are due", () => {
-  it("daily every day; weekly only on a Monday; the same last_sent_at rule for both", async () => {
-    const c1 = await cand(), c2 = await cand();
+  // a candidate whose weekly day (#275, alerts-run-cli.ts weeklyDay) is the ISO weekday d
+  const candOn = async (d: number) => { for (;;) { const c = await cand(); if (weeklyDay(c) === d) return c; } };
+  it("daily every day; weekly on or after the candidate's own weekday, once a UTC week (#275); the same last_sent_at rule for both", async () => {
+    const c1 = await cand(), c2 = await candOn(3); // Wednesday
     await job();
     const daily = await alert(c1), weekly = await alert(c2, { frequency: "weekly" });
     expect(await run(TUE)).toMatchObject({ alerts_due: 1 });
     expect([await lastSent(daily), await lastSent(weekly)]).toEqual([TUE, null]);
     expect(await outbox(c2)).toHaveLength(0);
-    expect(await run(WED)).toMatchObject({ alerts_due: 1 }); // daily again, weekly still waits
-    expect(await lastSent(weekly)).toBeNull();
-    const nextMon = new Date("2026-11-23T06:00:00Z");
-    expect(await run(nextMon)).toMatchObject({ alerts_due: 2 });
+    expect(await run(WED)).toMatchObject({ alerts_due: 2 }); // its day
     expect(await jobsFor(c2)).toHaveLength(1);
-    expect(await run(new Date("2026-11-23T18:00:00Z"))).toMatchObject({ alerts_due: 0 }); // already sent this Monday
+    expect(await run(new Date("2026-11-18T18:00:00Z"))).toMatchObject({ alerts_due: 0 }); // already sent today
+    expect(await run(new Date("2026-11-19T06:00:00Z"))).toMatchObject({ alerts_due: 1 }); // daily only: the weekly one went this week
+    expect(await run(new Date("2026-11-25T06:00:00Z"))).toMatchObject({ alerts_due: 2 }); // next Wednesday
+  });
+  it("a run missed on the weekly day is caught up later the same week, and not again that week (#275)", async () => {
+    const c = await candOn(2); // Tuesday
+    await job();
+    const a = await alert(c, { frequency: "weekly" });
+    expect(await run(WED)).toMatchObject({ alerts_due: 1 }); // Tuesday's run did not happen
+    expect(await lastSent(a)).toEqual(WED);
+    expect(await run(new Date("2026-11-19T06:00:00Z"))).toMatchObject({ alerts_due: 0 });
+    expect(await run(new Date("2026-11-24T06:00:00Z"))).toMatchObject({ alerts_due: 1 });
+  });
+  it("the switch and two weeks of daily runs (#275): weekly alerts last sent on the old Monday each get exactly one email, the next week on their own day", async () => {
+    const cs = await Promise.all(Array.from({ length: 28 }, () => cand()));
+    for (const c of cs) await su("update alert set last_sent_at = $2 where id = $1", [await alert(c, { frequency: "weekly" }), MON]);
+    await job({ at: "2026-11-17T12:00:00Z" });
+    for (let d = 17; d <= 29; d++) await run(new Date(`2026-11-${d}T06:00:00Z`)); // Tuesday 17 to Sunday 29
+    for (const c of cs) {
+      const rows = await outbox(c);
+      expect(rows, c).toHaveLength(1);
+      expect(new Date(rows[0].send_after).getUTCDate(), c).toBe(22 + weeklyDay(c)); // Monday 23 is day 1
+    }
+    const days = new Set(cs.map(weeklyDay));
+    expect(days.size).toBeGreaterThan(4); // spread, not all on one day
+    // the database's day is the same formula as the code's
+    for (const r of (await su("select id, private.alert_weekly_day(id) d from candidate_user where id = any($1)", [cs])).rows) expect(r.d, r.id).toBe(weeklyDay(r.id));
   });
   it("paused, unsubscribed, Stamp 4 paused, unverified, deleted, suspended and setting-off candidates get nothing; setting-on does", async () => {
     await job();

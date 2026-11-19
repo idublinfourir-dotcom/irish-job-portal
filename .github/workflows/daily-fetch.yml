@@ -129,7 +129,7 @@ jobs:
           export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
           node packages/db/src/alerts-run-cli.ts
       # The email outbox (8.1b): sends what is queued (notices, job alerts), at most 200 a run, under Brevo's free 300 a day with room for the
-      # apps' own sign-up and reset emails. Email is off until the domain and Brevo exist: with no BREVO_API_KEY secret the step says so and
+      # apps' own sign-up and reset emails. Notices go before job alerts; rows left unsent or alerts dropped as too old print a ::warning:: (#275). Email is off until the domain and Brevo exist: with no BREVO_API_KEY secret the step says so and
       # sends nothing. At the switch-on: the secret BREVO_API_KEY and the variables EMAIL_FROM, SITE_URL and PORTAL_SITE_URL (the https candidate
       # and employer sites the links go to; the command refuses without both). ALERTS_EMAIL_FROM (optional) sends job alerts from their own
       # sender, so Brevo's unsubscribe on an alert blocks only that sender, not the notices (E1).

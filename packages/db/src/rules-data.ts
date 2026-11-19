@@ -4,15 +4,15 @@
 import type pg from "pg";
 
 // The shared shape lives in packages/rules/src/snapshot.ts. A type-only import, erased when plain node runs the daily run (rules-run-cli.ts).
-import type { Minimums, RulesSnapshot } from "@portal/rules";
-export type { Minimums, RulesSnapshot };
+import type { Minimums, PayScale, RulesSnapshot } from "@portal/rules";
+export type { Minimums, PayScale, RulesSnapshot };
 
-export const RULES_KINDS = ["minimums", "critical_skills_list", "ineligible_list", "public_pay_employers", "big_company_names"] as const;
+export const RULES_KINDS = ["minimums", "critical_skills_list", "ineligible_list", "public_pay_employers", "big_company_names", "pay_scales"] as const;
 export type RulesKind = (typeof RULES_KINDS)[number];
 export type Occupation = RulesSnapshot["occupationLists"][number];
 /** One big-company name (#230): the test it passed, its link, the date read and the next review. The seed may leave the last three empty. */
 export type BigName = { name: string; test: "brand" | "250_staff" | "dete_steady_sponsor"; link: string | null; readOn: string | null; reviewOn: string | null };
-export type VersionData = Minimums | Occupation[] | Record<string, { tier: 1 | 2; note?: string }> | BigName[];
+export type VersionData = Minimums | Occupation[] | Record<string, { tier: 1 | 2; note?: string }> | BigName[] | PayScale[];
 
 /** Data that does not fit its kind. The message names the kind and the first problem. */
 export class BadRulesData extends Error {}
@@ -32,6 +32,7 @@ const GENERAL = ["general", "generalLower", "generalLowerCodes", "generalQuotaFu
 const codes = (v: unknown) => Array.isArray(v) && v.length <= 200 && v.every((c) => typeof c === "string" && /^\d{4}$/.test(c)) && new Set(v).size === v.length;
 const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 const int = (v: unknown, lo: number, hi: number) => Number.isInteger(v) && (v as number) >= lo && (v as number) <= hi;
+const https = (v: unknown) => typeof v === "string" && v.length <= 500 && /^https:\/\/[^\s]+$/.test(v) && URL.canParse(v);
 
 function fail(kind: string, why: string): never {
   throw new BadRulesData(`${kind}: ${why}`);
@@ -96,10 +97,22 @@ export function cleanData(kind: RulesKind, v: unknown): VersionData {
         if (!isObject(e) || !keysAre(e, ["name", "test", "link", "readOn", "reviewOn"])) fail(kind, "an entry has missing or unknown fields");
         if (typeof e.name !== "string" || e.name.length > 100 || !CLEANED.test(e.name)) fail(kind, "a name is not a cleaned name (lower-case letters, digits, single spaces)");
         if (typeof e.test !== "string" || !TESTS.includes(e.test)) fail(kind, `${e.name}: the test is not brand, 250_staff or dete_steady_sponsor`);
-        if (e.link !== null && !(typeof e.link === "string" && e.link.length <= 500 && /^https:\/\/[^\s]+$/.test(e.link) && URL.canParse(e.link))) fail(kind, `${e.name}: the link is not an https address`);
+        if (e.link !== null && !https(e.link)) fail(kind, `${e.name}: the link is not an https address`);
         for (const k of ["readOn", "reviewOn"]) if (e[k] !== null && !validDate(e[k])) fail(kind, `${e.name}: ${k} is not a date`);
         return { name: e.name, test: e.test, link: e.link, readOn: e.readOn, reviewOn: e.reviewOn } as BigName;
       }, (e) => e.name);
+    case "pay_scales":
+      return list(kind, v, (e) => {
+        if (!isObject(e) || !keysAre(e, ["code", "title", "firstEur", "lastEur", "sourceUrl", "sourcePage"], ["note"])) fail(kind, "an entry has missing or unknown fields");
+        if (typeof e.code !== "string" || !/^[A-Z0-9]{1,12}$/.test(e.code)) fail(kind, "a grade code is not 1 to 12 capital letters or digits");
+        if (!plain(e.title, 200)) fail(kind, `${e.code}: the title is empty, too long or has control characters`);
+        if (!int(e.firstEur, 1, 1_000_000) || !int(e.lastEur, e.firstEur as number, 1_000_000)) fail(kind, `${e.code}: the scale is not whole euro amounts from first to last`);
+        if (!https(e.sourceUrl)) fail(kind, `${e.code}: the source is not an https address`);
+        if (!int(e.sourcePage, 1, 10_000)) fail(kind, `${e.code}: the source page is not a page number`);
+        if (e.note !== undefined && !plain(e.note, 500)) fail(kind, `${e.code}: the note is not plain text`);
+        const out: PayScale = { code: e.code, title: e.title as string, firstEur: e.firstEur as number, lastEur: e.lastEur as number, sourceUrl: e.sourceUrl as string, sourcePage: e.sourcePage as number };
+        return e.note === undefined ? out : { ...out, note: e.note as string };
+      }, (e) => e.code);
   }
 }
 
@@ -107,6 +120,7 @@ export function cleanData(kind: RulesKind, v: unknown): VersionData {
 export function entriesOf(kind: RulesKind, data: VersionData): Map<string, unknown> {
   if (kind === "minimums" || kind === "public_pay_employers") return new Map(Object.entries(data));
   if (kind === "big_company_names") return new Map((data as BigName[]).map((e) => [e.name, e]));
+  if (kind === "pay_scales") return new Map((data as PayScale[]).map((e) => [e.code, e]));
   return new Map((data as Occupation[]).map((e) => [e.id, e]));
 }
 
@@ -117,7 +131,7 @@ export const IN_FORCE =
 
 /**
  * The rules in force on `day` (YYYY-MM-DD). One query. Throws when a kind has no version, a list is empty or a minimum is missing or not positive,
- * so a run never goes on with half the rules.
+ * so a run never goes on with half the rules. The pay scales (#269) are the one kind that may have no version yet: then `payScales` is left out.
  */
 export async function loadRules(db: Pick<pg.ClientBase, "query">, day: string): Promise<RulesSnapshot> {
   if (!validDate(day)) throw new Error(`rules: "${day}" is not a date (YYYY-MM-DD)`);
@@ -136,6 +150,7 @@ export async function loadRules(db: Pick<pg.ClientBase, "query">, day: string): 
     occupationLists: [...get<Occupation[]>("critical_skills_list"), ...get<Occupation[]>("ineligible_list")],
     publicPayEmployers: get<Record<string, { tier: 1 | 2; note?: string }>>("public_pay_employers"),
     bigCompanyNames: get<BigName[]>("big_company_names").map((e) => e.name),
+    ...(by.has("pay_scales") ? { payScales: get<PayScale[]>("pay_scales") } : {}),
   };
 }
 

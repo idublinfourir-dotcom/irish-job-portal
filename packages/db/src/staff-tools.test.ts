@@ -36,6 +36,12 @@ describe("dueReminders", () => {
       { reason: "big_company_name_review", key: "big_company_name_review:old:2026-05-01", role: "rules_data_editor", name: "old", reviewOn: "2026-05-01" },
     ]);
   });
+  it("adds a registration body (S6) once its review date has come; the real bodies are not due before their date", () => {
+    const r = dueReminders("2027-05-19", [], [{ id: "nmbi", reviewOn: "2027-05-19" }, { id: "coru", reviewOn: "2027-05-20" }]).slice(4);
+    expect(r).toEqual([{ reason: "registration_body_review", key: "registration_body_review:nmbi:2027-05-19", role: "rules_data_editor", name: "nmbi", reviewOn: "2027-05-19" }]);
+    expect(dueReminders("2026-11-19", []).length).toBe(4);
+    expect(dueReminders("2027-05-19", []).slice(4).map((x) => x.name)).toEqual(["nmbi", "medical_council", "coru", "phecc", "psi"]);
+  });
   it("gives each reminder its role", () => {
     for (const r of dueReminders("2026-11-18", [{ name: "acme", reviewOn: "2026-01-01" }])) expect(r.role).toBe(REMINDER_ROLE[r.reason]);
     expect(REMINDER_ROLE.role_review).toBe("administrator");

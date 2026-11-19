@@ -48,6 +48,7 @@ export async function floorPost(request: Request): Promise<Response> {
       return ok({ ok: true });
     }
     if (!ACTIVE_COMPANY.includes(m.organisationStatus)) return no(403, "REFUSED");
+    if (!login.fresh) return no(403, "REAUTH_REQUIRED"); // C4: signing is a sensitive action; a withdrawal is not
     return ok(await createPayFloor(getPool(), who, body));
   } catch (e) {
     if (e instanceof FloorRefused) return no(STATUS[e.message] ?? 403, STATUS[e.message] ? e.message : "REFUSED");

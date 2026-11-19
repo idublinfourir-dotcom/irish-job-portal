@@ -4,7 +4,7 @@
 // (/api/settings). No network. Fake people and companies only.
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { main as remindersMain } from "../src/scheduled-checks-cli";
+import { main as remindersMain, type Dated } from "../src/scheduled-checks-cli";
 import { CONTENT_STALE, STALE_DAYS } from "../src/content-admin";
 import { OVERDUE, OVERDUE_APPROVALS, SCHEDULED_LIST, workingDayBefore } from "../src/staff-tools";
 import { createTestDb, urlFor, type TestDb } from "./db";
@@ -31,9 +31,9 @@ const ok = (r: ReturnType<typeof call>) => h.ok(r);
 const no = (r: ReturnType<typeof call>, status: number, error: string) => h.no(r, status, error);
 const NOT_ADMIN = ROLE_NAMES.filter((r) => r !== "administrator").map((r) => `only_${r}`);
 const ENV = (role = "app_admin") => ({ SCHEDULED_ADMIN_DATABASE_URL: urlFor(db.name, role), DATABASE_SSL: "disable" });
-const runReminders = async (env: Record<string, string> = ENV()) => {
+const runReminders = async (env: Record<string, string> = ENV(), bodies: Dated[] = []) => {
   const out: string[] = [];
-  return { code: await remindersMain([], env, (l) => out.push(l)), out };
+  return { code: await remindersMain([], env, (l) => out.push(l), bodies), out };
 };
 const scheduled = async () => (await su.query("select reason, detail, status from review_item where queue = 'scheduled_check' order by id")).rows;
 
@@ -140,6 +140,20 @@ describe("Q3: the scheduled reminders", () => {
     const item = (await su.query("insert into review_item(queue, organisation_id) values ('account_review', $1) returning id::text", [org])).rows[0].id;
     await no(call("/api/scheduled-checks", who, { action: "done", itemId: item }), 404, "not_found");
     expect((await su.query("select status from review_item where id = $1", [item])).rows[0].status).toBe("open");
+  });
+  it("S6: a registration body whose review date has come gets one item for rules_data_editor, once; a later one none", async () => {
+    const bodies = [{ id: "fake_body", reviewOn: "2026-01-01" }, { id: "fake_later", reviewOn: "2999-01-01" }];
+    const first = await runReminders(ENV(), bodies);
+    expect(first.out).toEqual(["scheduled checks: 6 due, 1 new"]);
+    expect((await runReminders(ENV(), bodies)).out).toEqual(["scheduled checks: 6 due, 0 new"]);
+    const rows = (await scheduled()).filter((r) => r.reason === "registration_body_review");
+    expect(rows.map((r) => r.detail)).toEqual([{ key: "registration_body_review:fake_body:2026-01-01", role: "rules_data_editor", name: "fake_body", reviewOn: "2026-01-01" }]);
+    const reasons = async (who: string) => (await ok(call("/api/scheduled-checks", who))).items.map((i: { reason: string }) => i.reason);
+    expect(await reasons("only_rules_data_editor")).toContain("registration_body_review");
+    expect(await reasons("only_fetched_job_reviewer")).not.toContain("registration_body_review");
+    for (const who of ["only_content_editor", "only_account_reviewer", "norole"]) await no(call("/api/scheduled-checks", who), 403, "not_scheduled_staff");
+    const r = await call("/api/scheduled-checks", "only_administrator");
+    expect(replyProblems(spec, "GET", "/api/scheduled-checks", r.status, r.json)).toEqual([]);
   });
 });
 

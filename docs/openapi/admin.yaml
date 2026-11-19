@@ -345,8 +345,8 @@ components:
         proposedBy: { type: [string, 'null'] }
     RulesKind:
       type: string
-      description: 'public_pay_employers holds the HSE switch (#261): the entry "health service executive" (tier 1) gives every HSE name tier 1 while it is in force; a version without it turns the switch off.'
-      enum: [minimums, critical_skills_list, ineligible_list, public_pay_employers, big_company_names]
+      description: 'public_pay_employers holds the HSE switch (#261): the entry "health service executive" (tier 1) gives every HSE name tier 1 while it is in force; a version without it turns the switch off. pay_scales (#269) is a list of grades, each {code (1 to 12 capital letters or digits, unique), title, firstEur, lastEur (whole euro, first not above last), sourceUrl (https), sourcePage, note?}; it may have no version yet, and an empty or broken one stops the rules loading.'
+      enum: [minimums, critical_skills_list, ineligible_list, public_pay_employers, big_company_names, pay_scales]
     RulesChange:
       type: object
       properties:
@@ -378,14 +378,15 @@ components:
       properties:
         id: { $ref: '#/components/schemas/Id' }
         status: { type: string }
-        targetKind: { type: string }
+        targetKind: { type: string, description: "`job` or `organisation` (a company report, #102: no job; targetJobId, jobTitle and jobStatus are null)." }
         reason: { type: string }
         createdText: { $ref: '#/components/schemas/DbTime' }
         targetJobId: { type: [string, 'null'] }
         jobTitle: { type: [string, 'null'] }
         jobStatus: { type: [string, 'null'] }
-        organisationId: { type: [string, 'null'] }
+        organisationId: { type: [string, 'null'], description: "The job's company, or the reported company." }
         displayName: { type: [string, 'null'] }
+        organisationStatus: { type: [string, 'null'], description: "The company's status now (S11)." }
     CaseSummary:
       type: object
       required: [id, organisationId, displayName, caseKind, reasonCode, stage]
@@ -538,7 +539,9 @@ paths:
         refreshed every 5 minutes; a "remember me: false" sign-in is capped at the same limit), the cookie cache is off, a disabled login
         cannot sign in (403) and Better Auth's own Origin check is on (trusted origin: STAFF_AUTH_URL). The client address for limits is
         `x-vercel-forwarded-for` only. Staff email is not set up yet, so `request-password-reset` sends nothing. There is no bot check on
-        the staff pool. Shapes are Better Auth's own; only what the repo's tests show is described here.
+        the staff pool. `revoke-sessions` (sign out everywhere, C4) ends every session of this login at once and `revoke-other-sessions` all
+        but this one; any signed-in session may call them and the next request with an ended session is 401. `change-email` is off for staff
+        (400): administrators change staff emails. Shapes are Better Auth's own; only what the repo's tests show is described here.
       security: []
       x-roles: [anyone]
       x-body-cap: none set by this repo (Better Auth's own handling)
@@ -617,6 +620,8 @@ paths:
         (status blocked, blocked_at, blocked_reason_code). Either way every open session of the login ends in the same transaction, and the
         next request of an old cookie is refused. `lift_candidate` and `lift_portal` lift it again. One audit row (account.suspend,
         account.unsuspend, account.block, account.unblock) with the reason code; never free text. Appeal is through the contact form.
+        C4 (#270): every action here needs a session from a sign-in in the last 10 minutes, else 403 `reauth_required` (checked right after the
+        session, before the body and the administrator check).
         `merge_propose` (step 15 C6): an administrator proposes merging candidate account `drop` into `keep`; one pending merge per dropped
         account. `merge_confirm`: a different administrator confirms and the merge runs at once: refused, and the request left pending, while
         either account has an open services case or an open report. The dropped account's saved jobs, alerts, tracker rows, hidden companies,
@@ -707,7 +712,7 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_reason } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
-          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_administrator`: no administrator role."
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_administrator`: no administrator role. `reauth_required` (C4, #270): the session is older than 10 minutes; sign in again."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
         '404':
           description: "`not_found`: no such login in that pool, no such candidate account (either one, also when gone since the proposal), or no such merge request."
@@ -1330,7 +1335,8 @@ paths:
           description: >-
             `already_merged`: the absorbed company was merged already. `target_merged`: the survivor was merged into another.
             `not_mergeable`: one is rejected, closed, banned or suspended. `kind_mismatch`: not the same kind. `active_members`: the absorbed
-            company still has active members. `has_applications`: the absorbed company has applications.
+            company still has active members. `has_applications`: the absorbed company has applications. `open_reports`: the absorbed
+            company has open company reports (decide them first). A merge moves the absorbed company's decided company reports and strike cases too.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: kind_mismatch } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/companies/owner-reassign:
@@ -1983,7 +1989,8 @@ paths:
       description: >-
         `create` posts a job for an existing employer or agency. It is listed (live, "Critical Skills eligible") only when it passes the
         checks an employer post runs (the occupation list, the contract, the rules chain, then the pay against the minimum for the stated
-        hours); otherwise it stays a draft and `reason` says why. Never "Sponsor confirmed". `close` closes a manual post the same staff
+        hours; a public pay employer on a list role passes without the minimum, unless payGrade is a grade code of the pay scales in force and the
+        stated pay is off that grade's scale, `pay_not_on_scale`, #269); otherwise it stays a draft and `reason` says why. Never "Sponsor confirmed". `close` closes a manual post the same staff
         member posted. The Origin header must be the admin app's origin. Field rules for create: title 2 to 200 characters on one line;
         description 20 to 10,000 characters (line breaks and tabs allowed); county one of the 26 counties; occupationCode a SOC 2010 code;
         contractMonths 1 to 600 or null (null means permanent); salaryLow and salaryHigh 1 to 1,000,000 or null (pay or a public pay grade
@@ -2473,7 +2480,7 @@ paths:
         `propose_role`: an administrator proposes a role for a login (one pending grant per login and kind). `confirm_role`: a different
         administrator confirms and the role is written. `refuse_role`: a different administrator refuses, or the proposer withdraws.
         `remove_role`: one administrator removes a role at once. `disable`: the login is disabled and its sessions end in the same
-        transaction. `enable`: a disabled login with no roles is turned back on. `invite` (step 15 Q15): makes an active login with no
+        transaction. C4 (#270): every action here needs a session from a sign-in in the last 10 minutes, else 403 `reauth_required`. `enable`: a disabled login with no roles is turned back on. `invite` (step 15 Q15): makes an active login with no
         password and no role for the email (stored lowercased), proposes `role` for it as `propose_role` does (a different administrator
         confirms), then sends the set-password email through the staff reset (the security@ sender; the link works for 1 hour, and the
         invitee can ask for a new one through the reset). If the sender refuses the email the answer is 502 `email_not_sent` with the
@@ -2538,7 +2545,7 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_role } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
-          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_administrator`: no administrator role."
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_administrator`: no administrator role. `reauth_required` (C4, #270): the session is older than 10 minutes; sign in again."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
         '404':
           description: "`not_found`: no such login, request, or role on that login."
@@ -2565,10 +2572,11 @@ paths:
   /api/trust-safety/reports:
     get:
       operationId: listReports
-      summary: List open job reports, or show one
+      summary: List open job and company reports, or show one
       description: >-
-        Without `id`: the open and job_hidden reports, oldest first, 20 a page (no evidence text, no reporter). With `id`: one report with
-        its evidence, the job as reported and, until it is decided, who reported it. An unknown or repeated query key is 400 `bad_query`.
+        Without `id`: the open and job_hidden reports, job and company reports together, oldest first, 20 a page (no evidence text, no
+        reporter), each with its company. With `id`: one report with its evidence, the job or company as reported and, until it is decided,
+        who reported it. An unknown or repeated query key is 400 `bad_query`.
       security: [{ staffSession: [] }]
       x-roles: [trust_and_safety]
       x-rate-limit: none
@@ -2596,7 +2604,7 @@ paths:
                           - type: object
                             properties:
                               evidenceText: { type: [string, 'null'] }
-                              targetSnapshot: { description: The job as it was when reported (any JSON). }
+                              targetSnapshot: { description: The job or company as it was when reported (any JSON). }
                               reporterCandidateUserId: { type: [string, 'null'] }
                               reporterPortalUserId: { type: [string, 'null'] }
                               decidedByStaffUserId: { type: [string, 'null'] }
@@ -2621,8 +2629,9 @@ paths:
       operationId: actOnReport
       summary: Hide the reported job, clear the report, or uphold it
       description: >-
-        `hide` hides the live job at once. `clear` closes the report and the job comes back. `uphold` closes the report, the database closes
-        a hidden job, and a case opens on the job's company (`caseKind` and `reasonCode` must pair: false_claim with false_sponsorship,
+        `hide` hides the live job at once (a job report only; a company report is 409 `not_a_job_report`, as a report never hides a
+        company or its jobs by itself). `clear` closes the report and the job comes back. `uphold` closes the report, the database closes
+        a hidden job, and a case opens on the job's company, or on the reported company with no job (`caseKind` and `reasonCode` must pair: false_claim with false_sponsorship,
         false_pay_floor with false_pay_floor, instant_ban with asks_for_money, fake_company or fake_job). `noticeSummary` 1 to 1,000
         characters (line breaks and tabs allowed). The Origin header must be the admin app's origin.
       security: [{ staffSession: [] }]
@@ -2674,7 +2683,7 @@ paths:
           description: "`not_found`: no such report."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
         '409':
-          description: "`already_decided`: the report was cleared or upheld. `already_hidden`: hide of a job hidden already. `job_not_live`: hide of a job that is not live."
+          description: "`already_decided`: the report was cleared or upheld. `already_hidden`: hide of a job hidden already. `job_not_live`: hide of a job that is not live. `not_a_job_report`: hide of a company report."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: already_hidden } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/trust-safety/cases:
@@ -2748,7 +2757,8 @@ paths:
         `conclusive` only with ban. `confirm`, `refuse`: the second officer on what waits (never the proposer or whoever entered the
         reply). `decide_appeal`: upheld or overturned (not by whoever entered the appeal or decided the case). `propose_ban_lift`: propose
         lifting the case's bans. `mark_wrc`: tick off that an agency's instant-ban case was reported to the WRC. The Origin header must be
-        the admin app's origin.
+        the admin app's origin. C4 (#270): `decide`, `confirm`, `decide_appeal` and `propose_ban_lift` need a session from a sign-in in the
+        last 10 minutes, else 403 `reauth_required` (before the role check); the other actions do not.
       security: [{ staffSession: [] }]
       x-roles: [trust_and_safety]
       x-rate-limit: none
@@ -2831,7 +2841,7 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_time } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
-          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_trust_and_safety`: no trust_and_safety role."
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_trust_and_safety`: no trust_and_safety role. `reauth_required` (C4, #270): the session is older than 10 minutes; sign in again."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_trust_and_safety } } }
         '404':
           description: "`not_found`: no such case, company or job."
@@ -2949,6 +2959,7 @@ paths:
         given or wrote, as ids and codes only. Never case evidence, note or message bodies, reasons, before or after values, or another
         staff member's id. Writes one audit row (it shows in the next export). Any active staff login, whatever its roles. No query key
         is allowed (`bad_query`). Staff do not delete their own login: an administrator disables it (`POST /api/staff`, action `disable`).
+        C4 (#270): the session must come from a sign-in in the last 10 minutes, else 403 `reauth_required`.
       security: [{ staffSession: [] }]
       x-roles: [any active staff login]
       x-rate-limit: none
@@ -2991,7 +3002,7 @@ paths:
                 caseNotesWritten: []
         '400': { description: "`bad_query`: any query key.", content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
-        '403': { description: "`not_active_staff`: the login was disabled between the session check and the read.", content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_active_staff } } } }
+        '403': { description: "`not_active_staff`: the login was disabled between the session check and the read. `reauth_required` (C4, #270): the session is older than 10 minutes; sign in again.", content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: reauth_required } } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/scheduled-checks:
     get:
@@ -3022,7 +3033,7 @@ paths:
                       required: [id, reason, detail, status, created_at]
                       properties:
                         id: { $ref: '#/components/schemas/Id' }
-                        reason: { type: string, enum: [dete_notice_check, hand_check_100, big_company_review, role_review, big_company_name_review, sole_owner_retention] }
+                        reason: { type: string, enum: [dete_notice_check, hand_check_100, big_company_review, role_review, big_company_name_review, registration_body_review, sole_owner_retention] }
                         detail:
                           type: object
                           description: "`key` names the reminder and its period; `role` works it; a big-company name review also has `name` and `reviewOn`. A sole_owner_retention reminder (0050, administrator) has `organisationId`: retention would erase that company's only active owner, so it waits until the company is closed or has another owner."

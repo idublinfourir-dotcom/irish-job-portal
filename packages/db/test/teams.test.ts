@@ -400,6 +400,65 @@ describe("owner transfer", () => {
   });
 });
 
+describe("C4: transfer, invite, approve and role need a sign-in in the last 10 minutes", () => {
+  const age = (id: string, sql = "now() - interval '11 minutes'") => su.query(`update portal_session set created_at = ${sql} where user_id = $1`, [id]);
+  // One company with a member of every role, a target member and an open join request; each test ages the actor's session.
+  async function setup() {
+    const c = await company(), target = await joined(c, "recruiter"), asker = await login(c.domain);
+    const req = (await team(asker.cookie, { action: "request", organisationId: c.org })).json!.membershipId as string;
+    const actors: Record<string, Login> = {
+      owner: c.owner, posterSigner: await joined(c, "poster", true), poster: await joined(c, "poster"), recruiter: await joined(c, "recruiter"),
+      viewer: await joined(c, "viewer"), noCompany: await login(c.domain),
+    };
+    return { c, target, req, actors };
+  }
+  const sensitive = (x: Awaited<ReturnType<typeof setup>>, i: number) => [
+    { action: "transfer", membershipId: x.target.mem },
+    { action: "invite", email: `fake.c4.${i}@${x.c.domain}`, role: "viewer", isSigner: false },
+    { action: "approve", membershipId: x.req, role: "viewer", isSigner: false },
+    { action: "role", membershipId: x.target.mem, role: "poster", isSigner: true },
+  ];
+  it("every role with a stale session gets REAUTH_REQUIRED on each, and nothing changes; fresh, the owner may and the others get their usual refusal", async () => {
+    const x = await setup();
+    let i = 0;
+    for (const [name, who] of Object.entries(x.actors)) {
+      await age(who.id);
+      for (const body of sensitive(x, i++)) expect(await team(who.cookie, body), `${name} ${body.action}`).toMatchObject({ status: 403, json: { code: "REAUTH_REQUIRED" } });
+    }
+    expect(await mem(x.target.mem)).toMatchObject({ status: "active", role: "recruiter", is_signer: false });
+    expect(await mem(x.req)).toMatchObject({ status: "join_requested" });
+    expect(await count("select 1 from membership where organisation_id = $1 and status = 'invited'", [x.c.org])).toBe(0);
+    expect(mail().filter((m) => m.kind === "invite" && m.to.startsWith("fake.c4."))).toEqual([]);
+    for (const [name, who] of Object.entries(x.actors)) {
+      if (name === "owner") continue;
+      await age(who.id, "now()");
+      for (const body of sensitive(x, i++)) expect(["NOT_OWNER", "NOT_A_MEMBER"], `${name} ${body.action}`).toContain((await team(who.cookie, body)).json!.code); // the database's own refusal
+    }
+    await age(x.c.owner.id, "now() - interval '9 minutes'");
+    const [transfer, inv, approve, role] = sensitive(x, i++);
+    for (const body of [inv, approve, role, transfer]) expect((await team(x.c.owner.cookie, body!)).status, body!.action).toBe(200);
+    expect(await mem(x.target.mem)).toMatchObject({ role: "account_owner" });
+  });
+  it("remove, refuse, leave, request and accept still work with a stale session", async () => {
+    const x = await setup();
+    const invited = await login(x.c.domain);
+    expect((await invite(x.c, invited.email)).status).toBe(200);
+    for (const who of [x.c.owner, invited, x.actors.viewer!, x.actors.noCompany!]) await age(who.id);
+    expect((await team(invited.cookie, { action: "accept", token: tokenFor(invited.email) })).status).toBe(200);
+    expect((await team(x.c.owner.cookie, { action: "refuse", membershipId: x.req })).status).toBe(200);
+    expect((await team(x.c.owner.cookie, { action: "remove", membershipId: x.target.mem })).status).toBe(200);
+    expect((await team(x.actors.viewer!.cookie, { action: "leave" })).status).toBe(200);
+    expect((await team(x.actors.noCompany!.cookie, { action: "request", organisationId: x.c.org })).status).toBe(200);
+  });
+  it("a stale refusal costs requirePortal's 3 statements only (no rate count, no function)", async () => {
+    const x = await setup();
+    await age(x.c.owner.id);
+    const [r, stmts] = await counted(() => team(x.c.owner.cookie, { action: "transfer", membershipId: x.target.mem }));
+    expect(r.status).toBe(403);
+    expect(stmts).toBeLessThanOrEqual(3);
+  });
+});
+
 describe("the member limit (#103: 10, counting members, live invites and join requests)", () => {
   it("the 11th person is refused for an invite and a request; an expired invite frees its place; app_admin can raise the limit", async () => {
     const c = await company();

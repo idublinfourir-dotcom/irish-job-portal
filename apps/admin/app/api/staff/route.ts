@@ -42,7 +42,7 @@ export async function POST(request: Request) {
   try {
     checkOrigin(request.headers.get("origin"), new URL(staffSettings(process.env).baseURL).origin);
     checkLength(request.headers.get("content-length"), MAX_BODY);
-    const staff = await requireStaff(request.headers);
+    const staff = await requireStaff(request.headers, true); // C4: every action here changes a login or its roles
     const b = parseBody(await request.text(), MAX_BODY, ACTIONS, FIELDS);
     const db = getPool();
     const s = (k: string) => b[k] as string;
