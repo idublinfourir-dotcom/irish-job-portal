@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs/config";
 import { securityHeaders } from "../../security-headers";
 
 const config: NextConfig = {
@@ -9,4 +10,11 @@ const config: NextConfig = {
   headers: securityHeaders(),
 };
 
-export default config;
+// Source maps upload only when SENTRY_AUTH_TOKEN is set (build time only); a build without it passes and uploads nothing.
+export default withSentryConfig(config, {
+  org: "dublin4ir",
+  project: "irish-job-portal-portal",
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  telemetry: false,
+  silent: true,
+});
