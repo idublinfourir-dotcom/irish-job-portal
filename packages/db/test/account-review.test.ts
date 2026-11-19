@@ -281,6 +281,8 @@ describe("approve", () => {
     const blocked = await claimed();
     await su.query("update portal_user set status = 'blocked', blocked_at = now(), blocked_reason_code = 'fake_company' where id = $1", [blocked.user]);
     const erased = await claimed();
+    // 0050: a sole owner of an open company is not erased (close_company_first), so the claimant leaves the company first, then is erased.
+    await su.query("update membership set status = 'removed', removed_at = now() where organisation_id = $1 and portal_user_id = $2", [erased.org, erased.user]);
     expect((await admin().query("select private.erase_portal_user($1, true) r", [erased.user])).rows[0].r.erased).toBe(true);
     const domainBanned = await claimed();
     await ban("email_domain", domainBanned.domain);

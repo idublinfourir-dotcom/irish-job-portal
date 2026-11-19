@@ -8,7 +8,7 @@ check apply_click_status_check on apply_click: CHECK ((status = ANY (ARRAY['pend
 check apply_click_times_asked_check on apply_click: CHECK (((times_asked >= 0) AND (times_asked <= 2)))
 check approval_request_check on approval_request: CHECK ((confirmed_by_staff_user_id <> proposed_by_staff_user_id))
 check approval_request_check1 on approval_request: CHECK (((status <> 'confirmed'::text) OR (confirmed_by_staff_user_id IS NOT NULL)))
-check approval_request_kind_check on approval_request: CHECK ((kind = ANY (ARRAY['threshold'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'unclear_role_list'::text, 'public_pay_employer'::text, 'big_company_entry'::text, 'pay_floor'::text, 'strike_2'::text, 'strike_3'::text, 'ban'::text, 'ban_lift'::text, 'manual_post_sponsor_confirmed'::text, 'grant_administrator'::text, 'grant_role'::text, 'terms_privacy_page'::text, 'setting'::text, 'company_seed'::text, 'candidate_merge'::text])))
+check approval_request_kind_check on approval_request: CHECK ((kind = ANY (ARRAY['threshold'::text, 'critical_skills_list'::text, 'ineligible_list'::text, 'unclear_role_list'::text, 'public_pay_employer'::text, 'big_company_entry'::text, 'pay_floor'::text, 'strike_2'::text, 'strike_3'::text, 'ban'::text, 'ban_lift'::text, 'manual_post_sponsor_confirmed'::text, 'grant_administrator'::text, 'grant_role'::text, 'terms_privacy_page'::text, 'setting'::text, 'company_seed'::text, 'candidate_merge'::text, 'data_request_erase'::text])))
 check approval_request_status_check on approval_request: CHECK ((status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'refused'::text, 'withdrawn'::text])))
 check audit_event_check on audit_event: CHECK ((num_nonnulls(actor_staff_user_id, actor_candidate_user_id, actor_portal_user_id, actor_system) <= 1))
 check audit_event_kind_check on audit_event: CHECK ((kind = ANY (ARRAY['admin_action'::text, 'data_access'::text, 'security'::text])))
@@ -167,7 +167,7 @@ check tracker_entry_origin_check on tracker_entry: CHECK ((origin = ANY (ARRAY['
 check tracker_entry_route_check on tracker_entry: CHECK ((route = ANY (ARRAY['redirect'::text, 'on_site'::text])))
 check wrc_licence_missed_imports_check on wrc_licence: CHECK ((missed_imports >= 0))
 rights app_admin on alert: table[select] columns[]
-rights app_admin on application: table[] columns[]
+rights app_admin on application: table[] columns[select(status)]
 rights app_admin on apply_click: table[select] columns[]
 rights app_admin on approval_request: table[select] columns[insert(change,effective_from,kind,reason,target_id,target_table) update(status)]
 rights app_admin on audit_event: table[insert,select] columns[]
@@ -194,6 +194,7 @@ rights app_admin on contact_message: table[select,update] columns[]
 rights app_admin on contact_request: table[] columns[]
 rights app_admin on content_page: table[insert,select,update] columns[]
 rights app_admin on cro_company: table[select] columns[]
+rights app_admin on dete_link_rejection: table[select] columns[]
 rights app_admin on dete_permit_count: table[delete,insert,select,update] columns[]
 rights app_admin on dete_permit_rise: table[insert,select] columns[]
 rights app_admin on email_outbox: table[insert,select] columns[update(attempts,sent_at,status)]
@@ -240,8 +241,8 @@ rights app_admin on staff_role: table[delete,select] columns[insert(approval_req
 rights app_admin on staff_session: table[delete,insert,select,update] columns[]
 rights app_admin on staff_user: table[delete,insert,select,update] columns[]
 rights app_admin on staff_verification: table[delete,insert,select,update] columns[]
-rights app_admin on strike: table[select] columns[insert(appeal_due_at,appeal_received_at,appeal_text,approval_request_id,case_kind,employer_reply,job_id,level,notice_summary,organisation_id,outcome,pay_floor_id,reason_code,reply_due_at,reply_received_at,report_id,stage) update(appeal_due_at,appeal_received_at,appeal_text,approval_request_id,case_kind,employer_reply,job_id,level,notice_summary,organisation_id,outcome,pay_floor_id,reason_code,reply_due_at,reply_received_at,report_id,stage)]
-rights app_admin on tracker_entry: table[] columns[]
+rights app_admin on strike: table[select] columns[insert(appeal_due_at,appeal_received_at,appeal_text,approval_request_id,case_kind,employer_reply,job_id,level,notice_summary,organisation_id,outcome,pay_floor_id,reason_code,reply_due_at,reply_received_at,report_id,stage) update(appeal_due_at,appeal_received_at,appeal_text,approval_request_id,case_kind,employer_reply,evidence_storage_key,job_id,level,notice_summary,organisation_id,outcome,pay_floor_id,reason_code,reply_due_at,reply_received_at,report_id,stage)]
+rights app_admin on tracker_entry: table[] columns[select(origin)]
 rights app_admin on wrc_licence: table[delete,insert,select,update] columns[]
 rights app_candidate on alert: table[delete,insert,select,update] columns[]
 rights app_candidate on application: table[] columns[]
@@ -271,6 +272,7 @@ rights app_candidate on contact_message: table[] columns[insert(body,candidate_u
 rights app_candidate on contact_request: table[] columns[]
 rights app_candidate on content_page: table[] columns[]
 rights app_candidate on cro_company: table[] columns[]
+rights app_candidate on dete_link_rejection: table[] columns[]
 rights app_candidate on dete_permit_count: table[select] columns[]
 rights app_candidate on dete_permit_rise: table[] columns[]
 rights app_candidate on email_outbox: table[insert] columns[select(dedupe_key)]
@@ -348,6 +350,7 @@ rights app_fetcher on contact_message: table[] columns[]
 rights app_fetcher on contact_request: table[] columns[]
 rights app_fetcher on content_page: table[] columns[]
 rights app_fetcher on cro_company: table[delete,insert,select,update] columns[]
+rights app_fetcher on dete_link_rejection: table[] columns[]
 rights app_fetcher on dete_permit_count: table[select] columns[]
 rights app_fetcher on dete_permit_rise: table[] columns[]
 rights app_fetcher on email_outbox: table[insert] columns[select(dedupe_key)]
@@ -425,6 +428,7 @@ rights app_portal on contact_message: table[] columns[insert(body,from_email,fro
 rights app_portal on contact_request: table[] columns[]
 rights app_portal on content_page: table[] columns[]
 rights app_portal on cro_company: table[select] columns[]
+rights app_portal on dete_link_rejection: table[] columns[]
 rights app_portal on dete_permit_count: table[select] columns[]
 rights app_portal on dete_permit_rise: table[] columns[]
 rights app_portal on email_outbox: table[insert] columns[select(dedupe_key)]
@@ -523,6 +527,7 @@ trigger pay_floor_guard on pay_floor: CREATE TRIGGER pay_floor_guard BEFORE UPDA
 trigger pay_floor_queue on pay_floor: CREATE TRIGGER pay_floor_queue AFTER INSERT ON public.pay_floor FOR EACH ROW EXECUTE FUNCTION private.pay_floor_insert()
 trigger pay_floor_signer on pay_floor: CREATE TRIGGER pay_floor_signer BEFORE INSERT ON public.pay_floor FOR EACH ROW EXECUTE FUNCTION private.signer_check()
 trigger pay_floor_withdrawn on pay_floor: CREATE TRIGGER pay_floor_withdrawn AFTER UPDATE OF status ON public.pay_floor FOR EACH ROW WHEN (((old.status = 'pending_check'::text) AND (new.status = 'withdrawn'::text))) EXECUTE FUNCTION private.pay_floor_withdrawn()
+trigger report_staff_alert on report: CREATE TRIGGER report_staff_alert AFTER INSERT ON public.report FOR EACH ROW EXECUTE FUNCTION private.report_staff_alert()
 trigger report_upheld on report: CREATE TRIGGER report_upheld AFTER UPDATE OF status ON public.report FOR EACH ROW EXECUTE FUNCTION private.report_upheld()
 trigger review_item_fetcher on review_item: CREATE TRIGGER review_item_fetcher BEFORE INSERT ON public.review_item FOR EACH ROW EXECUTE FUNCTION private.review_item_fetcher()
 trigger rules_version_approval on rules_version: CREATE TRIGGER rules_version_approval BEFORE INSERT ON public.rules_version FOR EACH ROW EXECUTE FUNCTION private.approval_check()
@@ -597,6 +602,7 @@ unique CREATE UNIQUE INDEX portal_user_email_key ON public.portal_user USING btr
 unique CREATE UNIQUE INDEX report_candidate_open_unique ON public.report USING btree (reporter_candidate_user_id, target_job_id) WHERE (status = ANY (ARRAY['open'::text, 'job_hidden'::text]))
 unique CREATE UNIQUE INDEX report_portal_open_unique ON public.report USING btree (reporter_portal_user_id, target_job_id) WHERE (status = ANY (ARRAY['open'::text, 'job_hidden'::text]))
 unique CREATE UNIQUE INDEX review_item_candidate_unique ON public.review_item USING btree (queue, candidate_user_id) WHERE (status = ANY (ARRAY['open'::text, 'claimed'::text]))
+unique CREATE UNIQUE INDEX review_item_confirm_hash_unique ON public.review_item USING btree (((detail ->> 'confirmHash'::text))) WHERE (queue = 'data_request'::text)
 unique CREATE UNIQUE INDEX review_item_contact_unique ON public.review_item USING btree (queue, contact_message_id) WHERE (status = ANY (ARRAY['open'::text, 'claimed'::text]))
 unique CREATE UNIQUE INDEX review_item_floor_unique ON public.review_item USING btree (queue, pay_floor_id) WHERE (status = ANY (ARRAY['open'::text, 'claimed'::text]))
 unique CREATE UNIQUE INDEX review_item_job_unique ON public.review_item USING btree (queue, job_id) WHERE (status = ANY (ARRAY['open'::text, 'claimed'::text]))
