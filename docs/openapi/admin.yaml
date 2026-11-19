@@ -3022,7 +3022,7 @@ paths:
                       required: [id, reason, detail, status, created_at]
                       properties:
                         id: { $ref: '#/components/schemas/Id' }
-                        reason: { type: string, enum: [dete_notice_check, hand_check_100, big_company_review, role_review, big_company_name_review, sole_owner_retention] }
+                        reason: { type: string, enum: [dete_notice_check, hand_check_100, big_company_review, role_review, big_company_name_review, registration_body_review, sole_owner_retention] }
                         detail:
                           type: object
                           description: "`key` names the reminder and its period; `role` works it; a big-company name review also has `name` and `reviewOn`. A sole_owner_retention reminder (0050, administrator) has `organisationId`: retention would erase that company's only active owner, so it waits until the company is closed or has another owner."

@@ -2,7 +2,7 @@
 // jobs in the job list's own columns and cards; a further page is the `next` cursor of the one before. The scope (the company, the code) is a
 // parameter and the column it filters is fixed in code, never taken from input.
 import type pg from "pg";
-import { checkEligibility, standingLine, type RulesSnapshot } from "@portal/rules";
+import { checkEligibility, registrationFor, standingLine, type Registration, type RulesSnapshot } from "@portal/rules";
 import { getRules } from "./rules-data";
 import { getContent, validSlug, type ContentPage } from "./content";
 import { BadSearchInput, card, COUNT_CAP, cursorOf, decodeCursor, KEYS, CAST, LIST, LIVE, PAGE_SIZE, pageSize, SOURCE, type JobCard, type ListRow, type Sort } from "./search";
@@ -144,6 +144,8 @@ export type OccupationPage = {
   text: ContentPage | null;
   standingLine: string;
   rulesCheckedOn: string;
+  /** The health registration the code needs (S6), with no title: a mixed code gives the cautious line. */
+  registration: Registration | null;
 };
 
 /** One occupation by code, or null when the code is not on either list (so there is no page for it). */
@@ -160,7 +162,7 @@ export async function getOccupationPage(db: Db, code: string, opts: { after?: st
     minimums: listed
       ? { withDegree: m.criticalSkills, recentGraduate: m.graduate, graduateMonths: m.graduateMonths, withoutDegreeOrNotListed: m.nonListRoute ? m.nonList : null, minContractMonths: m.minContractMonths, basedOnWeekHours: m.standardWeekHours }
       : null,
-    jobs, text, standingLine: standingLine(m.checkedOn), rulesCheckedOn: m.checkedOn,
+    jobs, text, standingLine: standingLine(m.checkedOn), rulesCheckedOn: m.checkedOn, registration: registrationFor(code),
   };
 }
 

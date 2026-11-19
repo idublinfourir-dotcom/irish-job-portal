@@ -144,6 +144,25 @@ components:
         next: { type: [string, 'null'] }
         count: { $ref: '#/components/schemas/Count' }
         signInForMore: { type: boolean }
+    Registration:
+      type: [object, 'null']
+      description: |
+        The health registration the role needs (S6, decision #269), from the registration bodies read on each body's own pages. null when
+        the code needs no body, or the job title is known to be unregulated. Placeholder wording.
+      required: [status, body, line, steps]
+      properties:
+        status: { enum: [required, may_need, not_open], description: may_need is a code that mixes regulated and unregulated roles; not_open is a register not open yet. }
+        body:
+          type: object
+          required: [id, name, url, readOn]
+          properties:
+            id: { enum: [nmbi, medical_council, coru, phecc, psi] }
+            name: { type: string }
+            url: { type: string, format: uri }
+            readOn: { $ref: '#/components/schemas/Date' }
+        line: { type: string }
+        steps: { type: array, items: { type: string }, description: For an applicant trained outside the EU. Empty unless status is required. }
+        degreeNote: { type: string, description: Nurses and midwives only. }
     SmallJobCard:
       type: object
       description: The card of a saved, tracked or similar job.
@@ -577,7 +596,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [id, title, employerName, employer, badge, sponsored, rulesCheckedOn]
+                required: [id, title, employerName, employer, badge, sponsored, rulesCheckedOn, registration]
                 properties:
                   id: { $ref: '#/components/schemas/Id' }
                   source: { enum: [fetched, employer, agency, admin_manual] }
@@ -622,6 +641,7 @@ paths:
                   permitHistory: { enum: [has_history, first_time, not_linked] }
                   lastCheckedAt: { type: [string, 'null'], format: date-time }
                   rulesCheckedOn: { type: string }
+                  registration: { $ref: '#/components/schemas/Registration' }
               example:
                 id: '1042'
                 source: fetched
@@ -652,6 +672,12 @@ paths:
                 permitHistory: has_history
                 lastCheckedAt: '2026-11-18T06:00:00.000Z'
                 rulesCheckedOn: '2026-11-01'
+                registration:
+                  status: required
+                  body: { id: nmbi, name: Nursing and Midwifery Board of Ireland (NMBI), url: 'https://www.nmbi.ie/Registration/Qualified-outside-the-EU', readOn: '2026-11-19' }
+                  line: You must be registered with Nursing and Midwifery Board of Ireland (NMBI) to work in this role in Ireland.
+                  steps: [Apply to NMBI to have your qualification recognised (stage 1).]
+                  degreeNote: For nurses and midwives, a relevant degree means a degree or diploma accepted by NMBI.
         '400': { $ref: '#/components/responses/PublicBadRequest' }
         '404': { $ref: '#/components/responses/PublicNotFound' }
         '429': { $ref: '#/components/responses/PublicTooMany' }
@@ -773,7 +799,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [code, entries, listStatus, minimums, jobs, text, standingLine, rulesCheckedOn]
+                required: [code, entries, listStatus, minimums, jobs, text, standingLine, rulesCheckedOn, registration]
                 properties:
                   code: { type: string }
                   entries: { type: array, items: { type: object, required: [list, title], properties: { list: { type: string }, title: { type: string } } } }
@@ -802,6 +828,7 @@ paths:
                       updatedAt: { $ref: '#/components/schemas/Timestamp' }
                   standingLine: { type: string }
                   rulesCheckedOn: { type: string }
+                  registration: { $ref: '#/components/schemas/Registration' }
               example:
                 code: '2136'
                 entries: [{ list: critical-skills, title: Programmers and software development professionals }]
@@ -811,6 +838,7 @@ paths:
                 text: null
                 standingLine: Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 1 November 2026.
                 rulesCheckedOn: '2026-11-01'
+                registration: null
         '400': { $ref: '#/components/responses/PublicBadRequest' }
         '401': { $ref: '#/components/responses/SignInForMore' }
         '404': { $ref: '#/components/responses/PublicNotFound' }

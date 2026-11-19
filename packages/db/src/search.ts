@@ -3,7 +3,7 @@
 // candidate role cannot read), and the list pages on the sort key plus id, never OFFSET. No advert text is read for a list.
 import { createHash } from "node:crypto";
 import type pg from "pg";
-import { RULES_CHECKED_ON as RULES_DATE, SOC2010_CODES, type Sector } from "@portal/rules";
+import { registrationFor, RULES_CHECKED_ON as RULES_DATE, SOC2010_CODES, type Registration, type Sector } from "@portal/rules";
 import { getRules } from "./rules-data";
 import { permitsLast5Years } from "./dete";
 
@@ -348,6 +348,8 @@ export type JobPage = {
   lastCheckedAt: Date | null;
   /** For the standing line "Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on [date]." (#94) */
   rulesCheckedOn: string;
+  /** The health registration the role needs (S6), or null. */
+  registration: Registration | null;
 };
 
 /** One live job with what its page shows, or null when the id is not a live job (queued, closed, expired, hidden, under review, unknown or not an id). */
@@ -369,6 +371,7 @@ export async function getJob(db: Db, id: string | number, now = new Date()): Pro
     advertText: r.advert_text,
     employer: { id: r.organisation_id, slug: r.slug, name: r.display_name, website: r.website, logoUrl: r.logo_url, shortDescription: r.short_description, kind: r.kind },
     badge: r.badge, sponsored, permitHistory: r.permit_history, lastCheckedAt: r.last_ok_at, rulesCheckedOn: (await getRules(db)).minimums.checkedOn,
+    registration: registrationFor(r.occupation_code, r.title),
   };
 }
 
