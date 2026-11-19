@@ -35,3 +35,15 @@ export async function seedSignupTerms(su: Pool, purpose: "signup_terms" | "porta
     await c.query("commit");
   } catch (e) { await c.query("rollback"); throw e; } finally { c.release(); }
 }
+
+/** R5: publishes a legal text through the real database functions (legal-texts.ts) as app_admin: a content editor proposes, an administrator
+ *  confirms. `admin` is an app_admin pool, `su` the superuser pool that seeds the two fake staff members once. */
+export async function publishLegal(su: Pool, admin: Pool, purpose: string, version: string, body = `PLACEHOLDER ${purpose} ${version}.`): Promise<void> {
+  const { confirmLegal, proposeLegal } = await import("../src/legal-texts");
+  for (const [id, role] of [["legal-proposer", "content_editor"], ["legal-confirmer", "administrator"]] as const) {
+    await su.query("insert into staff_user(id,name,email,email_verified) values($1,'Fake Staff',$2,true) on conflict do nothing", [id, `${id}@example.test`]);
+    await su.query("insert into staff_role(staff_user_id, role, seeded_by_owner) values ($1,$2,true) on conflict do nothing", [id, role]);
+  }
+  const { requestId } = await proposeLegal(admin, "legal-proposer", { purpose, version, body });
+  await confirmLegal(admin, "legal-confirmer", requestId);
+}

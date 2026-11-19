@@ -120,3 +120,33 @@ export const checkerRead: Work = async (db, q) => {
   const { input, title } = checkerInput(q);
   return { ...(await checkWithSiteLists(db, input)), registration: registrationFor(input.occupationCode, title) };
 };
+
+// ===== R5: the legal text in force (legal-texts.ts publishes it) =====
+export const LEGAL_IN_FORCE =
+  "select purpose, version, body, published_at::text as published_at from consent_text where purpose = $1 order by published_at desc, id desc limit 1";
+export const SITE_PURPOSES = { candidate: ["signup_terms", "privacy_notice"], portal: ["portal_signup_terms", "privacy_notice"] } as const;
+
+/** The text in force for one of the site's purposes, or null before any version. Another purpose is 400. */
+export async function legalInForce(db: Pick<pg.Pool, "query">, site: keyof typeof SITE_PURPOSES, purpose: string | null) {
+  if (!(SITE_PURPOSES[site] as readonly string[]).includes(purpose ?? "")) throw new Refuse(400, "BAD_REQUEST");
+  const r = (await db.query(LEGAL_IN_FORCE, [purpose])).rows[0];
+  return r ? { purpose: r.purpose, version: r.version, body: r.body, publishedAt: r.published_at } : null;
+}
+
+/** The portal's public read: no login, counted per client address in portal_rate_limit (the visitor limits of the candidate reads). */
+export async function portalLegalRead(request: Request): Promise<Response> {
+  const ip = clientAddress(request.headers), now = Date.now();
+  const counts = await Promise.all(VISITOR_READ_RATES.map(async (rate) => ({ rate, ...(await countRate("portal_rate_limit", `legal:ip:${ip}:${rate.windowMs}`, rate)) })));
+  const wait = retryAfter(counts, now);
+  if (wait !== null) return tooMany(wait);
+  try {
+    const body = await legalInForce(getPool(), "portal", new URL(request.url).searchParams.get("purpose"));
+    return body === null ? Response.json({ code: "NOT_FOUND" }, { status: 404 }) : Response.json(body);
+  } catch (e) {
+    if (e instanceof Refuse) return Response.json({ code: e.code }, { status: e.status });
+    throw e;
+  }
+}
+
+/** The candidate site's read (through publicRead): ?purpose=signup_terms or privacy_notice. */
+export const legalRead: Work = (db, q) => legalInForce(db, "candidate", q.get("purpose"));

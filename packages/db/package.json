@@ -8,6 +8,7 @@
     "./ssl": "./src/ssl.ts",
     "./rules-data": "./src/rules-data.ts",
     "./staff-tools": "./src/staff-tools.ts",
+    "./legal-texts": "./src/legal-texts.ts",
     "./staff-uploads": "./src/staff-uploads.ts"
   },
   "scripts": {

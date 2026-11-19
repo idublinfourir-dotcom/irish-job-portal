@@ -997,6 +997,44 @@ paths:
         '400': { $ref: '#/components/responses/PublicBadRequest' }
         '429': { $ref: '#/components/responses/PublicTooMany' }
 
+  /api/legal:
+    get:
+      operationId: getLegalText
+      tags: [public]
+      summary: The legal text in force for a purpose
+      description: |
+        Step 15 R5. The newest published version of one legal purpose of this site: signup_terms or privacy_notice. Staff publish
+        a version at the admin site's `/api/legal-texts` (two people); new sign-ups consent to the version shown here. No login is needed.
+        No version yet is 404 `NOT_FOUND`; any other purpose, or none, is 400 `BAD_REQUEST`. The real wording waits for the solicitor and
+        the entity: today only placeholder texts exist.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      parameters:
+        - { name: purpose, in: query, required: true, schema: { type: string, enum: [signup_terms, privacy_notice] } }
+      responses:
+        '200':
+          description: The text in force.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [purpose, version, body, publishedAt]
+                properties:
+                  purpose: { type: string, enum: [signup_terms, privacy_notice] }
+                  version: { type: string }
+                  body: { type: string, description: Plain text; line breaks are kept. }
+                  publishedAt: { type: string, description: 'The database time, as "2026-11-19 09:30:00.123456+00".' }
+              example: { purpose: privacy_notice, version: placeholder-2026-11-19, body: PLACEHOLDER TEXT., publishedAt: '2026-11-19 09:30:00.123456+00' }
+        '400':
+          description: '`BAD_REQUEST`: the purpose is missing or not one of this site''s.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } }
+        '404':
+          description: '`NOT_FOUND`: no version of that purpose is published yet.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_FOUND } } }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
   /api/contact:
     post:
       operationId: sendContactMessage
