@@ -177,7 +177,7 @@ describe("which alerts are due", () => {
       [await cand({ verified: false }), {}], [await cand({ deleted: new Date() }), {}], [await cand({ suspended: new Date() }), {}], [await cand(), {}],
     ] as const;
     const off = nothing[6][0], on = await cand();
-    await su("insert into notification_preference(candidate_user_id, category, channel, enabled) values ($1, 'job_alerts', 'email', false), ($2, 'job_alerts', 'email', true), ($2, 'apply_reminders', 'email', false)", [off, on]);
+    await su("insert into notification_preference(candidate_user_id, category, channel, enabled) values ($1, 'job_alerts', 'email', false), ($2, 'job_alerts', 'email', true), ($2, 'account', 'email', true)", [off, on]);
     const ids: number[] = [];
     for (const [c, o] of nothing) ids.push(await alert(c, o));
     await alert(on);

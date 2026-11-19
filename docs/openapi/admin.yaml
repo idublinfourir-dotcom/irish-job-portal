@@ -345,6 +345,7 @@ components:
         proposedBy: { type: [string, 'null'] }
     RulesKind:
       type: string
+      description: 'public_pay_employers holds the HSE switch (#261): the entry "health service executive" (tier 1) gives every HSE name tier 1 while it is in force; a version without it turns the switch off.'
       enum: [minimums, critical_skills_list, ineligible_list, public_pay_employers, big_company_names]
     RulesChange:
       type: object

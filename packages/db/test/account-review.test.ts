@@ -135,7 +135,9 @@ describe("list and look", () => {
     for (let i = 0; i < PAGE_SIZE + 2; i++) await registered();
     // other queues' items and decided items are not listed
     const other = await F.org({ status: "unclaimed" });
-    await su.query("insert into review_item(queue, organisation_id, reason) values ('merge_confirmation', $1, 'x')", [other]);
+    await su.query("insert into review_item(queue, organisation_id, reason) values ('agency_client_check', $1, 'x')", [other]);
+    // #262 (0049): the dead merge_confirmation queue is gone from the check
+    await expect(su.query("insert into review_item(queue, organisation_id, reason) values ('merge_confirmation', $1, 'x')", [other])).rejects.toMatchObject({ code: "23514" });
     const done = await registered();
     await su.query("update review_item set status = 'done', outcome = 'approved', decided_at = now() where id = $1", [done.item]);
 
@@ -169,7 +171,7 @@ describe("list and look", () => {
     await su.query("update review_item set status = 'done', outcome = 'approved', decided_at = now() where id = $1", [a.item]);
     expect(await getAccountReview(admin(), staff.reviewer!, a.item)).toMatchObject({ status: "done" });
     const other = await F.org({ status: "unclaimed" });
-    const wrong = (await su.query("insert into review_item(queue, organisation_id, reason) values ('merge_confirmation', $1, 'x') returning id::text", [other])).rows[0].id;
+    const wrong = (await su.query("insert into review_item(queue, organisation_id, reason) values ('agency_client_check', $1, 'x') returning id::text", [other])).rows[0].id;
     expect(await getAccountReview(admin(), staff.reviewer!, wrong)).toBeNull();
     expect(await getAccountReview(admin(), staff.reviewer!, "999999999999")).toBeNull();
     expect(await getAccountReview(admin(), staff.reviewer!, "1; drop table review_item")).toBeNull();
@@ -200,7 +202,7 @@ describe("claim and release", () => {
   });
   it("refuses an unknown id, a made-up id and an item of another queue", async () => {
     const other = await F.org({ status: "unclaimed" });
-    const wrong = (await su.query("insert into review_item(queue, organisation_id, reason) values ('merge_confirmation', $1, 'x') returning id::text", [other])).rows[0].id;
+    const wrong = (await su.query("insert into review_item(queue, organisation_id, reason) values ('agency_client_check', $1, 'x') returning id::text", [other])).rows[0].id;
     for (const bad of [wrong, "999999999999", "0", "-1", "1; drop table review_item", "abc", "99999999999999999999"]) expect(await refusal(claimedBy("reviewer", bad)), bad).toBe("not_found");
     expect((await itemRow(wrong)).status).toBe("open");
   });
@@ -667,7 +669,7 @@ describe("route: the whole path to a Verified company", () => {
   });
   it("an item of the fetched_job queue is not found by any action", async () => {
     const org = await F.org({ status: "unclaimed" });
-    const wrong = (await su.query("insert into review_item(queue, organisation_id, reason) values ('merge_confirmation', $1, 'x') returning id::text", [org])).rows[0].id;
+    const wrong = (await su.query("insert into review_item(queue, organisation_id, reason) values ('agency_client_check', $1, 'x') returning id::text", [org])).rows[0].id;
     for (const action of ["claim", "release", "approve", "ask_more"]) expect(await post("reviewer", { action, itemId: wrong }), action).toEqual({ status: 404, json: { error: "not_found" } });
     expect(await post("reviewer", { action: "reject", itemId: wrong, reason: "nope" })).toEqual({ status: 404, json: { error: "not_found" } });
     expect((await get("reviewer", `?id=${wrong}`)).status).toBe(404);

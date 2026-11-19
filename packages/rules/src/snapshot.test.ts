@@ -71,7 +71,7 @@ describe("a changed snapshot changes the result", () => {
     expect(isBigCompany("Google Ireland", without.bigCompanyNames)).toBe(false);
   });
   it("the chain: a removed public pay employer loses its tier", async () => {
-    const name = Object.keys(today.publicPayEmployers)[0]!;
+    const name = Object.entries(today.publicPayEmployers).find(([, v]) => v.tier === 2)![0];
     const a = advert({ employer: name, description: "Permanent role. Visa sponsorship available." });
     expect((await run(today, a)).publicPayTier).toBe(2);
     expect((await run({ ...today, publicPayEmployers: { other: { tier: 2 } } }, a)).publicPayTier).toBe(0);

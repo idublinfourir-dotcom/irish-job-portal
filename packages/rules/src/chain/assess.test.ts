@@ -1,14 +1,14 @@
 // Unit tests for the decision chain. Made-up text only; the matcher is a fake the test controls.
 import { describe, expect, it, vi } from "vitest";
 import { assess, monthsText, type AdvertInput, type ChainData, type ChainMatcher } from "./assess";
-import { cleanEmployerName } from "../employers";
+import { cleanEmployerName, HSE_ENTRY } from "../employers";
 import { CHAIN_RULES_V1 } from "../snapshot";
 
 type Match = Awaited<ReturnType<ChainMatcher>>;
 const found = (occupationCode: string, onCriticalSkillsList: Match["onCriticalSkillsList"], confidence: Match["confidence"]): ChainMatcher => async () => ({ occupationCode, onCriticalSkillsList, confidence });
 const GOOD = found("2134", "yes", "high");
 
-const data = (o: Partial<ChainData> = {}): ChainData => ({ deteNames: new Set(), publicPayCandidates: new Map(), ...CHAIN_RULES_V1, matcher: GOOD, ...o });
+const data = (o: Partial<ChainData> = {}): ChainData => ({ deteNames: new Set(), publicPayCandidates: new Map([[HSE_ENTRY, 1]]), ...CHAIN_RULES_V1, matcher: GOOD, ...o });
 const advert = (o: Partial<AdvertInput> = {}): AdvertInput => ({
   source: "greenhouse",
   employer: "Acme Widgets",
@@ -236,6 +236,10 @@ describe("buckets and the public tier", () => {
   it("known quirk: D4 the public tier changes only the bucket", async () => {
     expect(await run(noPay)).toMatchObject({ stage: "8 no salary, not a big company", bucket: "public_hse", publicPayTier: 1 });
     expect(await run({ employer: "Beaumont Hospital", description: "Salary €30,000." }, { publicPayCandidates: new Map([["beaumont hospital", 2]]) })).toMatchObject({ stage: "8 salary below €40,904", bucket: "public_s38", publicPayTier: 2 });
+  });
+
+  it("the HSE switch off (#261): an HSE advert with no salary is judged as any employer's", async () => {
+    expect(await run(noPay, { publicPayCandidates: new Map() })).toMatchObject({ stage: "8 no salary, not a big company", bucket: "no_salary", publicPayTier: 0 });
   });
 
   it("a public employer with a stated salary stays stated_pay", async () => {

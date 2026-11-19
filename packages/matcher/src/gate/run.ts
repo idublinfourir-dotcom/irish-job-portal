@@ -2,7 +2,7 @@
 // Private data stays outside the repo. The report holds numbers and advert ids only, never advert text, never the key.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assess, CHAIN_RULES_V1, cleanEmployerName, type Assessment, type ChainData, type ChainMatcher } from "@portal/rules";
+import { assess, CHAIN_RULES_V1, cleanEmployerName, HSE_ENTRY, type Assessment, type ChainData, type ChainMatcher } from "@portal/rules";
 import { createBatchChecker } from "../ai/batch";
 import { chatClient } from "../ai/client";
 import { createAiMatcher } from "../ai/matcher";
@@ -49,7 +49,7 @@ export async function runGate(env: Record<string, string | undefined>, deps: { f
   // The gate measures version 1 of the minimums and big-company names (#229) on its frozen set.
   const base = {
     deteNames: new Set(dete.map(([name]) => cleanEmployerName(name))),
-    publicPayCandidates: new Map<string, 1 | 2>(Object.entries(candidates).map(([k, v]) => [k, v.tier])),
+    publicPayCandidates: new Map<string, 1 | 2>(Object.entries(candidates).map(([k, v]) => [k, v.tier])).set(HSE_ENTRY, 1), // the HSE switch ON (#261)
     ...CHAIN_RULES_V1,
   };
 
