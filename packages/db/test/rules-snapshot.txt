@@ -45,6 +45,11 @@ check content_page_occupation_slug_check on content_page: CHECK (((kind <> 'occu
 check content_page_status_check on content_page: CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'withdrawn'::text])))
 check dete_permit_count_month_check on dete_permit_count: CHECK (((month >= 1) AND (month <= 12)))
 check dete_permit_rise_check on dete_permit_rise: CHECK ((permits_after > permits_before))
+check dete_watch_address_check on dete_watch: CHECK (((address ~~ 'https://enterprise.gov.ie/%'::text) AND (length(address) <= 300)))
+check dete_watch_check on dete_watch: CHECK (((failed_runs = 0) = (failing_since IS NULL)))
+check dete_watch_failed_runs_check on dete_watch: CHECK ((failed_runs >= 0))
+check dete_watch_fingerprint_check on dete_watch: CHECK (((length(fingerprint) >= 1) AND (length(fingerprint) <= 200)))
+check dete_watch_titles_check on dete_watch: CHECK (((jsonb_typeof(titles) = 'array'::text) AND (jsonb_array_length(titles) <= 200) AND (length((titles)::text) <= 60000)))
 check email_outbox_check on email_outbox: CHECK ((num_nonnulls(candidate_user_id, portal_user_id, staff_user_id, membership_id, contact_message_id) = 1))
 check email_outbox_status_check on email_outbox: CHECK ((status = ANY (ARRAY['pending'::text, 'sending'::text, 'sent'::text, 'failed'::text, 'dropped'::text])))
 check feature_flag_key_check on feature_flag: CHECK ((key = ANY (ARRAY['on_site_applications'::text, 'candidate_search'::text, 'contact_requests'::text, 'visibility_switch'::text, 'messaging'::text])))
@@ -68,7 +73,7 @@ check job_check8 on job: CHECK (((hidden_report_id IS NULL) OR (hidden_reason = 
 check job_check9 on job: CHECK (((hidden_reason IS DISTINCT FROM 'report'::text) OR (hidden_report_id IS NOT NULL)))
 check job_close_reason_check on job: CHECK ((close_reason = ANY (ARRAY['expired'::text, 'closed'::text, 'removed'::text, 'under_review_expired'::text, 'abandoned'::text, 'recheck_failed'::text, 'source_stale'::text])))
 check job_health_insurance_eur_check on job: CHECK ((health_insurance_eur >= 0))
-check job_hidden_reason_check on job: CHECK ((hidden_reason = ANY (ARRAY['report'::text, 'organisation_suspended'::text, 'admin'::text])))
+check job_hidden_reason_check on job: CHECK ((hidden_reason = ANY (ARRAY['report'::text, 'organisation_suspended'::text, 'admin'::text, 'duplicate'::text])))
 check job_hire_answer_check on job: CHECK ((hire_answer = ANY (ARRAY['yes'::text, 'no'::text])))
 check job_pass_route_check on job: CHECK ((pass_route = ANY (ARRAY['stated_pay'::text, 'big_company'::text, 'pay_floor'::text, 'public_pay'::text])))
 check job_permit_employer_check_check on job: CHECK ((permit_employer_check = ANY (ARRAY['pending'::text, 'found'::text, 'not_found'::text])))
@@ -125,12 +130,12 @@ check report_check on report: CHECK (((target_wiped_at IS NOT NULL) OR (num_nonn
 check report_check1 on report: CHECK ( CASE target_kind WHEN 'job'::text THEN (num_nonnulls(target_organisation_id, target_message_id, target_candidate_user_id) = 0) WHEN 'organisation'::text THEN (num_nonnulls(target_job_id, target_message_id, target_candidate_user_id) = 0) WHEN 'message'::text THEN (num_nonnulls(target_job_id, target_organisation_id, target_candidate_user_id) = 0) ELSE (num_nonnulls(target_job_id, target_organisation_id, target_message_id) = 0) END)
 check report_check2 on report: CHECK ((num_nonnulls(reporter_candidate_user_id, reporter_portal_user_id) <= 1))
 check report_check3 on report: CHECK (((status <> ALL (ARRAY['cleared'::text, 'upheld'::text])) OR (num_nonnulls(reporter_candidate_user_id, reporter_portal_user_id) = 0)))
-check report_reason_check on report: CHECK ( CASE target_kind WHEN 'job'::text THEN (reason = ANY (ARRAY['asks_for_money'::text, 'no_sponsorship'::text, 'job_closed'::text, 'wrong_details'::text, 'other'::text])) WHEN 'organisation'::text THEN (reason = ANY (ARRAY['fake_company'::text, 'asks_for_money'::text, 'no_sponsorship'::text, 'other'::text])) ELSE (reason = ANY (ARRAY['asks_for_money'::text, 'no_sponsorship'::text, 'job_closed'::text, 'wrong_details'::text, 'other'::text])) END)
+check report_reason_check on report: CHECK ( CASE target_kind WHEN 'job'::text THEN (reason = ANY (ARRAY['asks_for_money'::text, 'no_sponsorship'::text, 'job_closed'::text, 'wrong_details'::text, 'other'::text, 'not_recognised'::text])) WHEN 'organisation'::text THEN (reason = ANY (ARRAY['fake_company'::text, 'asks_for_money'::text, 'no_sponsorship'::text, 'other'::text])) ELSE (reason = ANY (ARRAY['asks_for_money'::text, 'no_sponsorship'::text, 'job_closed'::text, 'wrong_details'::text, 'other'::text])) END)
 check report_status_check on report: CHECK ((status = ANY (ARRAY['open'::text, 'job_hidden'::text, 'cleared'::text, 'upheld'::text])))
 check report_target_kind_check on report: CHECK ((target_kind = ANY (ARRAY['job'::text, 'organisation'::text, 'message'::text, 'profile'::text])))
 check review_item_check on review_item: CHECK (((status = ANY (ARRAY['done'::text, 'dropped'::text])) OR ( CASE WHEN (queue = 'scheduled_check'::text) THEN 0 ELSE 1 END = num_nonnulls(job_id, organisation_id, organisation_name_id, pay_floor_id, candidate_user_id, portal_user_id, contact_message_id))))
 check review_item_check1 on review_item: CHECK (((queue <> 'data_request'::text) OR (status <> ALL (ARRAY['done'::text, 'dropped'::text])) OR (num_nonnulls(candidate_user_id, portal_user_id) = 0)))
-check review_item_queue_check on review_item: CHECK ((queue = ANY (ARRAY['fetched_job'::text, 'account_review'::text, 'pay_floor_check'::text, 'post_strike_job_review'::text, 'scam_flag'::text, 'agency_client_check'::text, 'data_request'::text, 'scheduled_check'::text])))
+check review_item_queue_check on review_item: CHECK ((queue = ANY (ARRAY['fetched_job'::text, 'account_review'::text, 'pay_floor_check'::text, 'post_strike_job_review'::text, 'scam_flag'::text, 'agency_client_check'::text, 'data_request'::text, 'scheduled_check'::text, 'licence_lapse_job'::text])))
 check review_item_status_check on review_item: CHECK ((status = ANY (ARRAY['open'::text, 'claimed'::text, 'done'::text, 'dropped'::text])))
 check rules_version_check on rules_version: CHECK ((seeded_by_owner OR (approval_request_id IS NOT NULL)))
 check rules_version_data_check on rules_version: CHECK ((jsonb_typeof(data) = ANY (ARRAY['object'::text, 'array'::text])))
@@ -197,6 +202,7 @@ rights app_admin on cro_company: table[select] columns[]
 rights app_admin on dete_link_rejection: table[select] columns[]
 rights app_admin on dete_permit_count: table[delete,insert,select,update] columns[]
 rights app_admin on dete_permit_rise: table[insert,select] columns[]
+rights app_admin on dete_watch: table[insert,select,update] columns[]
 rights app_admin on email_outbox: table[insert,select] columns[update(attempts,sent_at,status)]
 rights app_admin on feature_flag: table[select] columns[]
 rights app_admin on fetch_run: table[select] columns[]
@@ -275,6 +281,7 @@ rights app_candidate on cro_company: table[] columns[]
 rights app_candidate on dete_link_rejection: table[] columns[]
 rights app_candidate on dete_permit_count: table[select] columns[]
 rights app_candidate on dete_permit_rise: table[] columns[]
+rights app_candidate on dete_watch: table[] columns[]
 rights app_candidate on email_outbox: table[insert] columns[select(dedupe_key)]
 rights app_candidate on feature_flag: table[select] columns[]
 rights app_candidate on fetch_run: table[] columns[]
@@ -353,6 +360,7 @@ rights app_fetcher on cro_company: table[delete,insert,select,update] columns[]
 rights app_fetcher on dete_link_rejection: table[] columns[]
 rights app_fetcher on dete_permit_count: table[select] columns[]
 rights app_fetcher on dete_permit_rise: table[] columns[]
+rights app_fetcher on dete_watch: table[] columns[]
 rights app_fetcher on email_outbox: table[insert] columns[select(dedupe_key)]
 rights app_fetcher on feature_flag: table[select] columns[]
 rights app_fetcher on fetch_run: table[insert,select,update] columns[]
@@ -431,6 +439,7 @@ rights app_portal on cro_company: table[select] columns[]
 rights app_portal on dete_link_rejection: table[] columns[]
 rights app_portal on dete_permit_count: table[select] columns[]
 rights app_portal on dete_permit_rise: table[] columns[]
+rights app_portal on dete_watch: table[] columns[]
 rights app_portal on email_outbox: table[insert] columns[select(dedupe_key)]
 rights app_portal on feature_flag: table[select] columns[]
 rights app_portal on fetch_run: table[] columns[]
@@ -501,12 +510,15 @@ trigger fetched_advert_wrc on fetched_advert: CREATE TRIGGER fetched_advert_wrc 
 trigger job_authority_limit on job_authority_document: CREATE TRIGGER job_authority_limit BEFORE INSERT ON public.job_authority_document FOR EACH ROW EXECUTE FUNCTION private.job_authority_limit()
 trigger job_closed_at on job: CREATE TRIGGER job_closed_at BEFORE INSERT OR UPDATE OF status ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_closed_at()
 trigger job_defaults on job: CREATE TRIGGER job_defaults BEFORE INSERT OR UPDATE OF permit_employer_kind, permit_employer_name, permit_employer_check ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_defaults()
+trigger job_drop_lapse_items on job: CREATE TRIGGER job_drop_lapse_items AFTER UPDATE OF status ON public.job FOR EACH ROW WHEN (((new.status = 'closed'::text) AND (old.status <> 'closed'::text))) EXECUTE FUNCTION private.drop_lapse_items()
 trigger job_guard on job: CREATE TRIGGER job_guard BEFORE INSERT OR UPDATE ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_guard()
 trigger job_org_live on job: CREATE TRIGGER job_org_live BEFORE INSERT OR UPDATE OF status ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_org_live()
 trigger job_queue_review on job: CREATE TRIGGER job_queue_review AFTER INSERT OR UPDATE OF status, permit_employer_check ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_queue_review()
 trigger job_quota_full on job: CREATE TRIGGER job_quota_full BEFORE INSERT OR UPDATE OF permit_type, occupation_code ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_quota_full()
 trigger job_sponsor_statement on job: CREATE CONSTRAINT TRIGGER job_sponsor_statement AFTER INSERT OR UPDATE ON public.job DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION private.job_sponsor_statement()
 trigger job_text_guard on job_text: CREATE TRIGGER job_text_guard BEFORE INSERT OR DELETE OR UPDATE ON public.job_text FOR EACH ROW EXECUTE FUNCTION private.job_text_guard()
+trigger job_twin_fetched on job: CREATE TRIGGER job_twin_fetched BEFORE INSERT OR UPDATE OF status, title, county ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_twin_fetched()
+trigger job_twin_owner on job: CREATE TRIGGER job_twin_owner AFTER INSERT OR UPDATE OF status, title, county ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_twin_owner()
 trigger job_under_review_since on job: CREATE TRIGGER job_under_review_since BEFORE INSERT OR UPDATE OF status, under_review_reason ON public.job FOR EACH ROW EXECUTE FUNCTION private.job_under_review_since()
 trigger last_active_guard on candidate_user: CREATE TRIGGER last_active_guard BEFORE INSERT OR UPDATE OF last_active_at ON public.candidate_user FOR EACH ROW EXECUTE FUNCTION private.last_active_guard()
 trigger message_parent_accepted on message: CREATE TRIGGER message_parent_accepted BEFORE INSERT ON public.message FOR EACH ROW EXECUTE FUNCTION private.message_parent_accepted()
@@ -601,6 +613,7 @@ unique CREATE UNIQUE INDEX portal_session_token_key ON public.portal_session USI
 unique CREATE UNIQUE INDEX portal_user_email_key ON public.portal_user USING btree (email)
 unique CREATE UNIQUE INDEX report_candidate_open_unique ON public.report USING btree (reporter_candidate_user_id, target_job_id) WHERE (status = ANY (ARRAY['open'::text, 'job_hidden'::text]))
 unique CREATE UNIQUE INDEX report_candidate_org_open_unique ON public.report USING btree (reporter_candidate_user_id, target_organisation_id) WHERE (status = ANY (ARRAY['open'::text, 'job_hidden'::text]))
+unique CREATE UNIQUE INDEX report_not_recognised_open_unique ON public.report USING btree (target_job_id) WHERE ((reason = 'not_recognised'::text) AND (status = ANY (ARRAY['open'::text, 'job_hidden'::text])))
 unique CREATE UNIQUE INDEX report_portal_open_unique ON public.report USING btree (reporter_portal_user_id, target_job_id) WHERE (status = ANY (ARRAY['open'::text, 'job_hidden'::text]))
 unique CREATE UNIQUE INDEX report_portal_org_open_unique ON public.report USING btree (reporter_portal_user_id, target_organisation_id) WHERE (status = ANY (ARRAY['open'::text, 'job_hidden'::text]))
 unique CREATE UNIQUE INDEX review_item_candidate_unique ON public.review_item USING btree (queue, candidate_user_id) WHERE (status = ANY (ARRAY['open'::text, 'claimed'::text]))
