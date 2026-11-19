@@ -221,6 +221,9 @@ export const job = pgTable("job", {
 	underReviewSince: timestamp("under_review_since", { withTimezone: true, mode: 'string' }),
 	exceptionConfirmedAt: timestamp("exception_confirmed_at", { withTimezone: true, mode: 'string' }),
 	underReviewReason: text("under_review_reason"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	twinOfJobId: bigint("twin_of_job_id", { mode: "number" }),
+	titleKey: text("title_key").generatedAlwaysAs(sql`TRIM(BOTH FROM regexp_replace(lower(title), '[^a-z0-9]+'::text, ' '::text, 'g'::text))`),
 }, (table) => [
 	index("job_closed_idx").using("btree", table.closedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'closed'::text)`),
 	index("job_company_page_idx").using("btree", sql`organisation_id`, sql`((NOT quota_full))`, sql`posted_at`, sql`id`).where(sql`(status = 'live'::text)`),
@@ -237,7 +240,9 @@ export const job = pgTable("job", {
 	index("job_live_sector_salary").using("btree", sql`sector`, sql`((NOT quota_full))`, sql`salary_sort`, sql`id`, sql`quota_full`, sql`closes_at`).where(sql`(status = 'live'::text)`),
 	index("job_organisation_idx").using("btree", table.organisationId.asc().nullsLast().op("int8_ops"), table.postedAt.desc().nullsFirst().op("int8_ops"), table.id.desc().nullsFirst().op("int8_ops")),
 	index("job_pay_floor_idx").using("btree", table.payFloorId.asc().nullsLast().op("int8_ops")),
-	index("job_twin_idx").using("btree", sql`organisation_id`, sql`TRIM(BOTH FROM regexp_replace(lower(title), '[^a-z0-9]+'::text, ' '::text, 'g'::text))`).where(sql`(status = ANY (ARRAY['live'::text, 'hidden'::text]))`),
+	index("job_twin_fetched_idx").using("btree", table.organisationId.asc().nullsLast().op("int8_ops"), table.titleKey.asc().nullsLast().op("text_ops")).where(sql`((source = 'fetched'::text) AND (status = ANY (ARRAY['live'::text, 'hidden'::text])))`),
+	uniqueIndex("job_twin_of_idx").using("btree", table.twinOfJobId.asc().nullsLast().op("int8_ops")).where(sql`(hidden_reason = 'duplicate'::text)`),
+	index("job_twin_owner_idx").using("btree", table.organisationId.asc().nullsLast().op("int8_ops"), table.titleKey.asc().nullsLast().op("text_ops")).where(sql`((status = 'live'::text) AND (source = ANY (ARRAY['employer'::text, 'admin_manual'::text])))`),
 	index("job_under_review_idx").using("btree", table.underReviewSince.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'under_review'::text)`),
 	foreignKey({
 			columns: [table.organisationId],
@@ -259,6 +264,11 @@ export const job = pgTable("job", {
 			foreignColumns: [payFloor.id],
 			name: "job_pay_floor_id_fkey"
 		}),
+	foreignKey({
+			columns: [table.twinOfJobId],
+			foreignColumns: [table.id],
+			name: "job_twin_of_job_id_fkey"
+		}).onDelete("set null"),
 	foreignKey({
 			columns: [table.permitEmployerNameId],
 			foreignColumns: [organisationName.id],
