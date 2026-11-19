@@ -18,8 +18,9 @@ function redactEmails(s: string): string {
   }
   return out + s.slice(from);
 }
-// Keys dropped wherever they appear: cookies, headers, user data, query strings and fragments (event fields and span attributes).
-const DROP = /^(cookies?|headers|user|query_string|env)$|^user\.|header|cookie|(^|\.)(query|fragment)$/i;
+// Keys dropped wherever they appear: cookies, headers, user data, query strings and fragments (event fields and span attributes), and the
+// culture context (locale and time zone: a visitor's time zone is location; Sentry's server-side rules cannot remove it, checked 19 Nov 2026).
+const DROP = /^(cookies?|headers|user|query_string|env|culture)$|^user\.|header|cookie|(^|\.)(query|fragment)$/i;
 
 export function scrubText(s: string): string {
   const out = s.includes("@") || s.includes("%40") ? redactEmails(s) : s;

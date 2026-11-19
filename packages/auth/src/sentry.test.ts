@@ -72,7 +72,7 @@ describe("scrubbers on hostile input", () => {
       request: { url: RESET, method: "POST", cookies: { session: "s" }, headers: { authorization: "Bearer t" }, data: { email: "jane@example.com" }, query_string: "token=x", env: { REMOTE_ADDR: "203.0.113.9" } },
       exception: { values: [{ type: "Error", value: `upload ${S3} failed for bob@example.org` }] },
       breadcrumbs: [{ message: "sent to jane@example.com", data: { url: RESET, nested: { deeper: [{ url: S3, cookie: "c" }] } } }],
-      contexts: { response: { headers: { "set-cookie": "s" }, status_code: 500 } },
+      contexts: { response: { headers: { "set-cookie": "s" }, status_code: 500 }, culture: { locale: "en-IE", timezone: "Europe/Dublin" } },
       sdkProcessingMetadata: { keep: "as is" },
     };
     const out = scrubEvent(event);
@@ -82,6 +82,7 @@ describe("scrubbers on hostile input", () => {
     for (const bad of ["jane@", "bob@", "token", "X-Amz", "Bearer", "203.0.113.9", "set-cookie", "session"]) expect(text).not.toContain(bad);
     expect(out.breadcrumbs[0]?.data.nested.deeper[0]).toEqual({ url: "https://bucket.s3.eu-west-1.amazonaws.com/cv/1.pdf" });
     expect(out.contexts.response).toEqual({ status_code: 500 });
+    expect(out.contexts).not.toHaveProperty("culture");
     expect(out.sdkProcessingMetadata).toBe(event.sdkProcessingMetadata);
   });
 

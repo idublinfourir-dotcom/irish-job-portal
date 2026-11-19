@@ -18,8 +18,8 @@ describe.each([["admin", admin], ["candidate", candidate], ["portal", portal]])(
     expect(config.poweredByHeader).toBe(false);
     const rules = await config.headers!();
     expect(rules).toHaveLength(1);
-    expect(rules[0].source).toBe("/:path*");
-    const sent = Object.fromEntries(rules[0].headers.map((h) => [h.key, h.value]));
+    expect(rules[0]!.source).toBe("/:path*");
+    const sent = Object.fromEntries(rules[0]!.headers.map((h) => [h.key, h.value]));
     for (const [k, v] of Object.entries(must)) expect(sent[k]).toBe(v);
     expect(sent["Strict-Transport-Security"]).not.toMatch(/includeSubDomains|preload/);
     expect(sent["X-Robots-Tag"]).toBe(name === "admin" ? "noindex, nofollow" : undefined);
