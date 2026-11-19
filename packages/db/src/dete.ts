@@ -79,10 +79,13 @@ export function parseLinks(text: string): Parsed<Link> {
   return { rows, errors };
 }
 
-// A yearly total has no month. Same figures again change nothing (the where clause), so a re-import writes no row.
+// A yearly total has no month. Same figures again change nothing (the where clause), so a re-import writes no row. A new row (a new year) of a name
+// already linked takes that link (the name's newest linked row), so the January import keeps a linked employer's new year in its counts.
 const UPSERT =
-  "insert into dete_permit_count(dete_name, year, month, permits, source_file) " +
-  "select t.name, t.year, null, t.permits, t.source from unnest($1::text[], $2::int[], $3::int[], $4::text[]) as t(name, year, permits, source) " +
+  "insert into dete_permit_count(dete_name, year, month, permits, source_file, organisation_name_id) " +
+  "select t.name, t.year, null, t.permits, t.source, l.id from unnest($1::text[], $2::int[], $3::int[], $4::text[]) as t(name, year, permits, source) " +
+  "left join (select distinct on (dete_name) dete_name, organisation_name_id as id from dete_permit_count where organisation_name_id is not null " +
+  "order by dete_name, id desc) l on l.dete_name = t.name " +
   "on conflict (dete_name, year, month) do update set permits = excluded.permits, source_file = excluded.source_file, imported_at = now() " +
   "where (dete_permit_count.permits, dete_permit_count.source_file) is distinct from (excluded.permits, excluded.source_file) " +
   "returning (xmax = 0) as inserted";
@@ -149,7 +152,8 @@ const ZERO_MISSING =
   "and not exists (select 1 from unnest($2::text[], $3::int[]) as t(name, year) where t.name = d.dete_name and t.year = d.year)";
 
 /**
- * Upserts the rows in one transaction, 10,000 per statement, then refreshes the labels in that transaction. Run as app_admin. Never touches organisation_name_id.
+ * Upserts the rows in one transaction, 10,000 per statement, then refreshes the labels in that transaction. Run as app_admin. Never changes an existing
+ * row's organisation_name_id; a new row of a name already linked gets that link.
  * `replaceYears` is for a newer cumulative file of a year (the monthly import): afterwards each year in the file totals exactly what the file says, so a
  * name the file dropped is set to 0 (never deleted, its link stays), and each count that went up is kept in dete_permit_rise (`rose`). It refuses a file whose total for a year is under half of what is stored (a cut-off file).
  */

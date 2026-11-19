@@ -10,6 +10,8 @@
 --      nothing else points at it, remembers the pair as rejected, refreshes the labels and writes one audit row.
 --   4. private.dete_reject(staff, dete_name, organisation): an account reviewer turns a suggestion down; one audit row.
 -- One person is enough for each: the matrix row has no 2P mark, and the audit row keeps every id, so a wrong link is undone with an unlink.
+--   5. Backfill: before this migration importPermits wrote a new year's row of a linked name with no link (dete.ts now copies it). Each such row
+--      takes the name's newest linked row's link, then the labels and sponsor keys are refreshed. A second run changes nothing.
 set role portal_owner;
 
 -- ===== 1. rejected suggestions
@@ -111,6 +113,13 @@ begin
     values ('admin_action', p_staff, 'organisation.dete_reject', 'organisation', o.id::text, jsonb_build_object('dete_name', p_name), 'panel');
   return jsonb_build_object('organisationId', o.id::text, 'rejected', true);
 end $$;
+
+-- ===== 5. backfill of rows a new-year import left unlinked
+update dete_permit_count d set organisation_name_id = l.id
+  from (select distinct on (dete_name) dete_name, organisation_name_id as id from dete_permit_count where organisation_name_id is not null order by dete_name, id desc) l
+ where d.dete_name = l.dete_name and d.organisation_name_id is null;
+select private.refresh_permit_history();
+-- ===== end of backfill
 
 revoke all on function private.dete_link_company(bigint), private.dete_link_rows(text), private.dete_link(text, text, bigint), private.dete_unlink(text, text),
   private.dete_reject(text, text, bigint) from public, anon, authenticated, service_role;

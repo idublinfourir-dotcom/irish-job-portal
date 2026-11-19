@@ -1,12 +1,12 @@
 // Parity run for lane L1b: the TypeScript against the Python on every saved advert (reference made by
 // step5/parity/L1b/ref.py). Reads private text on this machine only. Not part of `npm run check`.
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { checkIrishEmployer, locationLooksIrish } from "../irish";
 import { BIG_COMPANY_NAMES_V1 } from "../snapshot";
-import { buildNameMatcher, cleanEmployerName, isAgencyName, isBigCompany, nameTitlePlaceKey, publicPayTier, urlOrNameKey, HSE_ENTRY } from ".";
+import { BIG_COMPANY_BRANDS, BIG_COMPANY_LIST_150, buildNameMatcher, cleanEmployerName, isAgencyName, isBigCompany, nameTitlePlaceKey, publicPayTier, urlOrNameKey, HSE_ENTRY } from ".";
 
 type Ref = {
   id: string;
@@ -22,6 +22,19 @@ type Ref = {
 };
 type Advert = { id: string; employer?: string | null; title?: string | null; location?: string | null; description?: string | null; url?: string | null };
 type Suggest = Record<string, { name: string | null; score: number; kind: string }>;
+type Changes = Record<string, { cause: string; fields: Record<string, unknown> }>;
+
+/**
+ * Where the TypeScript now differs from the Python on purpose, frozen per advert in the private folder (L1b/expected-changes.json for the saved
+ * adverts, L1b/expected-changes-fuzz.json for the fuzz cases: id, cause, and the TypeScript's value for each changed field; no advert text), as
+ * L2 does (chain/assess.parity.ts). Any other difference fails, and so does an override the TypeScript no longer gives. A difference no cause
+ * below explains cannot be frozen. Regenerate on purpose only, after a deliberate rule change: PARITY_WRITE_EXPECTED=1, then check by hand.
+ */
+function causeOf(field: string, ts: unknown, py: unknown, employer: string): string | null {
+  // NEW BEHAVIOUR (11 November 2026, #150, #151, commit 9bd3b88): the big-company list adds names the Python's 42 brands do not have.
+  if (field === "brand" && ts === true && py === false && !isBigCompany(employer, BIG_COMPANY_BRANDS) && isBigCompany(employer, BIG_COMPANY_LIST_150)) return "#150, #151";
+  return null;
+}
 
 const base = process.env.PORTAL_PRIVATE_DATA;
 const need = (): string => {
@@ -31,11 +44,24 @@ const need = (): string => {
 const readJson = <T>(file: string): T => JSON.parse(readFileSync(join(need(), file), "utf8")) as T;
 
 describe("L1b parity with the Python", () => {
-  const compareAll = (adverts: Advert[], ref: Ref[], candidates: Map<string, 1 | 2>): string[] => {
+  const compareAll = (adverts: Advert[], ref: Ref[], candidates: Map<string, 1 | 2>, changesName: string): string[] => {
     expect(adverts.length).toBe(ref.length);
+    const changesFile = join(need(), changesName);
+    const write = process.env.PARITY_WRITE_EXPECTED === "1";
+    const changes: Changes = write ? {} : readJson<Changes>(changesName);
+    const used = new Set<string>();
     const diffs: string[] = [];
     const cmp = (i: number, field: string, got: unknown, want: unknown) => {
-      if (JSON.stringify(got) !== JSON.stringify(want)) diffs.push(`advert #${i} (${ref[i]!.id}) ${field}: ts=${JSON.stringify(got)} py=${JSON.stringify(want)}`);
+      const id = ref[i]!.id;
+      const same = (x: unknown) => JSON.stringify(got) === JSON.stringify(x);
+      if (write && !same(want)) {
+        const cause = causeOf(field, got, want, adverts[i]!.employer || "");
+        if (cause) (changes[id] ??= { cause, fields: {} }).fields[field] = got;
+      }
+      const over = changes[id]?.fields ?? {};
+      if (field in over) used.add(`${id}\t${field}`);
+      const expected = field in over ? over[field] : want;
+      if (!same(expected) || (field in over && same(want))) diffs.push(`advert #${i} (${id}) ${field}: ts=${JSON.stringify(got)} expected=${JSON.stringify(expected)} py=${JSON.stringify(want)}`);
     };
     adverts.forEach((a, i) => {
       const j = { employer: a.employer || "", title: a.title || "", location: a.location || "", description: a.description || "", url: a.url || "" };
@@ -53,6 +79,8 @@ describe("L1b parity with the Python", () => {
       cmp(i, "duplicate key (url)", urlOrNameKey(j), typeof r.dup_url === "string" ? "u:" + r.dup_url : "t:" + JSON.stringify(r.dup_url));
       cmp(i, "duplicate key (name)", nameTitlePlaceKey(j.employer, j.title, j.location), r.dup_name);
     });
+    for (const [id, c] of Object.entries(changes)) for (const f of Object.keys(c.fields)) if (!used.has(`${id}\t${f}`)) diffs.push(`${id} ${f} is frozen but was not compared`);
+    if (write) writeFileSync(changesFile, JSON.stringify(changes, null, 1) + "\n");
     return diffs;
   };
   const publicCandidates = () =>
@@ -64,16 +92,16 @@ describe("L1b parity with the Python", () => {
       .filter((f) => f.endsWith(".jsonl.gz"))
       .sort()
       .flatMap((f) => gunzipSync(readFileSync(join(dir, f))).toString("utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as Advert));
-    const diffs = compareAll(adverts, readJson<Ref[]>("reference.json"), publicCandidates());
+    const diffs = compareAll(adverts, readJson<Ref[]>("reference.json"), publicCandidates(), "expected-changes.json");
     console.log(`L1b parity: ${adverts.length} adverts, ${diffs.length} differences`);
     expect(diffs).toEqual([]);
   });
 
   it("matches the Python on random made-up inputs with odd Unicode (fuzz.json from fuzz_gen.py)", () => {
     const cases = readJson<(Advert & Ref)[]>("fuzz.json");
-    const diffs = compareAll(cases, cases, publicCandidates());
+    const diffs = compareAll(cases, cases, publicCandidates(), "expected-changes-fuzz.json");
     console.log(`L1b fuzz: ${cases.length} cases, ${diffs.length} differences`);
-    expect(diffs.slice(0, 20)).toEqual([]);
+    expect(diffs).toEqual([]);
   });
 
   const compareSuggestions = (prefix: string): { total: number; diffs: string[]; ties: number } => {

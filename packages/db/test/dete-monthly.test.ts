@@ -139,6 +139,18 @@ describe("the monthly command", () => {
     expect([await total(y - 1), await total(y)]).toEqual([9, 1]);
   });
 
+  it("the January run gives the new year's row of a linked name that link (step 15 Q5 gap); an unlinked name stays unlinked", async () => {
+    const p = id("jan3"), y = 2071;
+    const org = String(await F.org());
+    const nameId = (await su("insert into organisation_name(organisation_id, name, normalised_name, kind, source) values ($1, $2, $2, 'alias', 'admin') returning id::text", [org, id("n")])).rows[0].id;
+    expect((await run(ENV(), site({ [y - 1]: file([[`${p} A Limited`, 9], [`${p} B Limited`, 2]]) }).get, at(`${y - 1}-06-15`))).code).toBe(0);
+    await su("update dete_permit_count set organisation_name_id = $1 where dete_name = $2", [nameId, `${p} A Limited`]);
+    const s = site({ [y - 1]: file([[`${p} A Limited`, 10], [`${p} B Limited`, 2]]), [y]: file([[`${p} A Limited`, 1], [`${p} B Limited`, 1]]) });
+    expect((await run(ENV(), s.get, at(`${y}-01-15`))).code).toBe(0);
+    for (const year of [y - 1, y])
+      expect((await stored(year)).filter((r) => r.dete_name.startsWith(p)).map((r) => [r.dete_name.slice(-9, -8), r.organisation_name_id]), String(year)).toEqual([["A", nameId], ["B", null]]);
+  });
+
   it("outside January a 404 is red, and so is last year's file missing in January", async () => {
     const y = 2049;
     const r = await run(ENV(), site({}).get, at(`${y}-06-15`));
