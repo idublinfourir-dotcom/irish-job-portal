@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Refuse } from "./candidate-route";
-import { CANDIDATE_READ_RATES, jobsRead, readLimits, readPaging, retryAfter, tooMany, VISITOR_JOBS, VISITOR_READ_RATES } from "./public-read";
+import { BadEligibilityInput } from "@portal/rules";
+import { CANDIDATE_READ_RATES, checkerInput, jobsRead, readLimits, readPaging, retryAfter, tooMany, VISITOR_JOBS, VISITOR_READ_RATES } from "./public-read";
 import { BadSearchInput, listJobs, listQuery, PAGE_SIZE } from "./search";
 import { scopedQuery } from "./public-pages";
 
@@ -56,4 +57,21 @@ describe("the read limits", () => {
     const r = tooMany(42);
     expect([r.status, r.headers.get("retry-after"), await r.json()]).toEqual([429, "42", { code: "TOO_MANY_REQUESTS" }]);
   });
+});
+
+describe("the checker input (GET /api/checker)", () => {
+  const ok = "occupationCode=2231&annualPay=40000&relevantDegree=true";
+  it("takes the checker's inputs, typed, and the optional title", () => {
+    expect(checkerInput(q(ok))).toEqual({ input: { occupationCode: "2231", annualPay: 40000, relevantDegree: true, degreeAwardMonth: null, contractMonths: null }, title: null });
+    expect(checkerInput(q(`${ok}&degreeAwardMonth=2026-05&contractMonths=24&weeklyHours=37.5&title=Staff%20Nurse`))).toEqual({
+      input: { occupationCode: "2231", annualPay: 40000, relevantDegree: true, degreeAwardMonth: "2026-05", contractMonths: 24, weeklyHours: 37.5 }, title: "Staff Nurse",
+    });
+  });
+  it.each([
+    "", "occupationCode=2231&annualPay=40000", `${ok}&occupationCode=2232`, `${ok}&limit=5`, `${ok}&__proto__=1`, "occupationCode=223&annualPay=1&relevantDegree=true",
+    "occupationCode=2231&annualPay=1e5&relevantDegree=true", "occupationCode=2231&annualPay=-1&relevantDegree=true", "occupationCode=2231&annualPay=NaN&relevantDegree=true",
+    "occupationCode=2231&annualPay=12345678&relevantDegree=true", "occupationCode=2231&annualPay=1&relevantDegree=yes", `${ok}&degreeAwardMonth=2026-13`,
+    `${ok}&contractMonths=-3`, `${ok}&contractMonths=1.5`, `${ok}&weeklyHours=100`, `${ok}&title=`, `${ok}&title=${"a".repeat(201)}`, `${ok}&title=a%00b`,
+    `${ok}&title=a%E2%80%AEb`, "occupationCode=2231%27%3B--&annualPay=1&relevantDegree=true",
+  ])("refuses %j", (s) => expect(() => checkerInput(q(s))).toThrow(BadEligibilityInput));
 });

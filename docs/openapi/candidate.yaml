@@ -906,6 +906,97 @@ paths:
         '404': { $ref: '#/components/responses/PublicNotFound' }
         '429': { $ref: '#/components/responses/PublicTooMany' }
 
+  /api/updates:
+    get:
+      operationId: listUpdates
+      tags: [public]
+      summary: The updates feed, newest first
+      description: |
+        The published updates (news on permits and rules), 20 a page, newest first. `after` is the `next` of the page before; a visitor
+        pages it too (the 6-job cap is for job lists only). A cursor this route did not make is 400.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      parameters:
+        - { name: after, in: query, schema: { type: string, maxLength: 200, pattern: '^[A-Za-z0-9_-]+$' } }
+      responses:
+        '200':
+          description: One page of updates.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [updates, next]
+                properties:
+                  updates:
+                    type: array
+                    maxItems: 20
+                    items:
+                      type: object
+                      required: [id, kind, slug, title, body, sourceUrl, checkedOn, publishedAt, updatedAt]
+                      properties:
+                        id: { $ref: '#/components/schemas/Id' }
+                        kind: { const: update }
+                        slug: { type: string }
+                        title: { type: string }
+                        body: { type: string }
+                        sourceUrl: { type: [string, 'null'] }
+                        checkedOn: { type: [string, 'null'] }
+                        publishedAt: { $ref: '#/components/schemas/Timestamp' }
+                        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+                  next: { type: [string, 'null'] }
+              example:
+                updates: [{ id: '31', kind: update, slug: new-minimums, title: Placeholder update, body: Placeholder text., sourceUrl: 'https://enterprise.gov.ie/', checkedOn: '2026-11-01', publishedAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z' }]
+                next: null
+        '400': { $ref: '#/components/responses/PublicBadRequest' }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
+  /api/checker:
+    get:
+      operationId: checkEligibility
+      tags: [public]
+      summary: The eligibility checker
+      description: |
+        Whether an offer qualifies for a Critical Skills permit under the rules in force, which minimum applies and why, plus the
+        health registration the occupation needs (S6). Strict input: every key at most once and no other key, else 400. Nothing is stored.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      parameters:
+        - { name: occupationCode, in: query, required: true, schema: { type: string, pattern: '^[0-9]{4}$' } }
+        - { name: annualPay, in: query, required: true, description: Gross euro a year., schema: { type: string, pattern: '^[0-9]{1,7}(\.[0-9]{1,2})?$' } }
+        - { name: relevantDegree, in: query, required: true, schema: { enum: ['true', 'false'] } }
+        - { name: degreeAwardMonth, in: query, description: 'YYYY-MM, read only with a relevant degree.', schema: { type: string, pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$' } }
+        - { name: contractMonths, in: query, description: Absent for permanent or no end date., schema: { type: string, pattern: '^[0-9]{1,3}$' } }
+        - { name: weeklyHours, in: query, description: '1 to 60, default 39.', schema: { type: string, pattern: '^[0-9]{1,2}(\.[0-9]{1,2})?$' } }
+        - { name: title, in: query, description: 'The job title, only to tell a regulated role of a mixed code. Never stored.', schema: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        '200':
+          description: The answer.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [qualifies, reason, minimum, why, standingLine, rulesCheckedOn, registration]
+                properties:
+                  qualifies: { type: boolean }
+                  reason: { enum: [unknown_code, ineligible, contract_too_short, listed_degree, recent_graduate, non_list_route, below_minimum, degree_needed, non_list_route_blocked] }
+                  minimum: { type: [number, 'null'] }
+                  why: { type: string }
+                  standingLine: { type: string }
+                  rulesCheckedOn: { type: string }
+                  registration: { $ref: '#/components/schemas/Registration' }
+              example:
+                qualifies: true
+                reason: listed_degree
+                minimum: 38000
+                why: 'On the Critical Skills list with a relevant degree: the minimum is €38,000.'
+                standingLine: Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 1 November 2026.
+                rulesCheckedOn: '2026-11-01'
+                registration: null
+        '400': { $ref: '#/components/responses/PublicBadRequest' }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
   /api/contact:
     post:
       operationId: sendContactMessage
