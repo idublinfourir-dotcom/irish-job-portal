@@ -9,6 +9,8 @@ import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { approveAccount, claimReview } from "../src/account-review";
 import { main } from "../src/registers-cli";
+import { main as retention } from "../src/retention-cli";
+import { listOverdue } from "../src/staff-tools";
 import { importWrc, parseWrc, WRC_LAPSE } from "../src/wrc-import";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { fixtures } from "./fixtures";
@@ -139,6 +141,39 @@ describe.skipIf(!hasPdftotext)("the WRC import pauses an agency whose licence is
     expect((await portal.query("select private.answer_review($1, 'We renewed our licence last week.') r", [a.owner])).rows[0].r).toMatchObject({ status: "pending_review" }); // back to staff
     expect((await one("select detail->>'answer' a from review_item where queue = 'account_review' and organisation_id = $1 and status = 'open'", [a.org])).a).toBe("We renewed our licence last week.");
     for (const role of ["app_portal", "app_fetcher", "app_candidate"] as const) await expect(db.pool(role).query("select * from wrc_licence limit 1")).rejects.toThrow(/permission denied/);
+  });
+});
+
+describe("retention rule 13 skips a lapse pause (the engineer, 19 Nov 2026, option B)", () => {
+  it("past 30 days: the paused agency stays in needs_info with its item open; an ordinary registration is rejected, a DETE claim unclaimed; an approved agency is untouched", async () => {
+    const admin = db.pool("app_admin");
+    const staff = await F.staff();
+    await su("insert into staff_role(staff_user_id, role, seeded_by_owner) values ($1, 'account_reviewer', true), ($1, 'administrator', true)", [staff]);
+    const lapse = async (n: number) => { const a = await agency(n); await admin.query(WRC_LAPSE, [[`EA${8000 + n}`], "2026-11-19"]); return a; };
+    const itemOf = async (org: string) => (await one("select id::text, status from review_item where queue = 'account_review' and organisation_id = $1 order by id desc limit 1", [org]));
+    const paused = await lapse(30), approved = await lapse(31);
+    const cleared = (await itemOf(approved.org)).id;
+    await claimReview(admin, staff, cleared);
+    await approveAccount(admin, staff, cleared);
+    const ordinary = await agency(null, "needs_info", "employer"), claim = await agency(null, "needs_info", "employer");
+    await su("update organisation set signup_path = 'first_time' where id = $1", [ordinary.org]);
+    await su("update organisation set signup_path = 'dete_claim' where id = $1", [claim.org]);
+    for (const o of [ordinary.org, claim.org]) await su("insert into review_item(queue, organisation_id, reason) values ('account_review', $1, 'new organisation')", [o]);
+    await su("alter table organisation disable trigger organisation_guard");
+    await su("update organisation set status_changed_at = now() - interval '400 days' where id = any($1::bigint[])", [[paused.org, approved.org, ordinary.org, claim.org]]);
+    await su("alter table organisation enable trigger organisation_guard");
+    const lines: string[] = [];
+    expect(await retention([], { RETENTION_ADMIN_DATABASE_URL: urlFor(db.name, "app_admin"), DATABASE_SSL: "disable" }, (l) => void lines.push(l)), lines.join("\n")).toBe(0);
+    expect(lines.join("\n")).toMatch(/claim_needs_info: 2 done/);
+    expect(await status(paused.org)).toBe("needs_info");
+    expect(await itemOf(paused.org)).toMatchObject({ status: "open" });
+    expect(await status(ordinary.org)).toBe("rejected");
+    expect(await status(claim.org)).toBe("unclaimed");
+    expect(await status(approved.org)).toBe("verified");
+    expect(await itemOf(approved.org)).toMatchObject({ id: cleared, status: "done" });
+    // the overdue view still lists the paused agency's item
+    const overdue = await listOverdue(admin, staff, new Date(Date.now() + 864e5 * 10));
+    expect(JSON.stringify(overdue)).toContain(`"id":"${(await itemOf(paused.org)).id}"`);
   });
 });
 
