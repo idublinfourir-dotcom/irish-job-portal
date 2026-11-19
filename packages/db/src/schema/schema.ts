@@ -1606,6 +1606,7 @@ export const strike = pgTable("strike", {
 	appealDecidedByStaffUserId: text("appeal_decided_by_staff_user_id"),
 	appealDecidedAt: timestamp("appeal_decided_at", { withTimezone: true, mode: 'string' }),
 	banLiftedAt: timestamp("ban_lifted_at", { withTimezone: true, mode: 'string' }),
+	evidenceStorageKey: text("evidence_storage_key"),
 }, (table) => [
 	index("strike_appeal_entered_idx").using("btree", table.appealEnteredByStaffUserId.asc().nullsLast().op("text_ops")),
 	index("strike_appeal_idx").using("btree", table.appealDecidedByStaffUserId.asc().nullsLast().op("text_ops")),

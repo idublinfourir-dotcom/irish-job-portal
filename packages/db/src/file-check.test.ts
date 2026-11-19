@@ -1,6 +1,6 @@
 // No database: what an upload is (the bytes decide), the name label, and reading a multipart body with its cap. Hostile input included.
 import { describe, expect, it } from "vitest";
-import { checkUpload, cleanName, MAX_BODY, MAX_FILE, readUpload } from "./file-check";
+import { checkUpload, cleanName, keyKind, MAX_BODY, MAX_FILE, readUpload } from "./file-check";
 import { b, DOCX, EXE, JPEG, PDF, PNG, WEBP, zip } from "./file-fixture";
 
 const ALL = ["pdf", "docx", "jpeg", "png"] as const;
@@ -128,5 +128,14 @@ describe("readUpload: one field `file`, a byte cap", () => {
     const ms = performance.now() - t0;
     console.log(`file-check: 4 MB read and checked in ${ms.toFixed(1)} ms`);
     expect(ms).toBeLessThan(500);
+  });
+});
+
+describe("keyKind: the type of a staff upload's key (Q6, Q7)", () => {
+  it("reads the extension storeStaffDocument wrote, and nothing else", () => {
+    expect(keyKind("sponsor/0b1c.pdf")).toBe("pdf");
+    expect(keyKind("evidence/0b1c.jpg")).toBe("jpeg");
+    expect(keyKind("evidence/0b1c.png")).toBe("png");
+    for (const k of ["evidence/0b1c", "evidence/0b1c.docx", "evidence/0b1c.PNG", "evidence/x.toString", "evidence/x.__proto__", "", "evidence/x.pdf.exe"]) expect(keyKind(k), k).toBeNull();
   });
 });

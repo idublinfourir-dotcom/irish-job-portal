@@ -15,7 +15,7 @@ type Q = Pick<pg.Pool, "query">;
 type Db = Pick<pg.Pool, "query" | "connect">;
 export const MAX_SHOWN = 100; // ponytail: one answer, no cursor; add one if a list ever passes this (it says truncated)
 
-async function inTransaction<T>(db: Db, staff: string, roles: readonly string[], why: string, fn: (c: pg.PoolClient, held: string[]) => Promise<T>): Promise<T> {
+export async function inTransaction<T>(db: Db, staff: string, roles: readonly string[], why: string, fn: (c: pg.PoolClient, held: string[]) => Promise<T>): Promise<T> {
   const c = await db.connect();
   try {
     await c.query("begin");
@@ -115,7 +115,7 @@ export async function listOverdue(db: Q, staff: string, now = new Date()) {
 
 // ===== the two-person requests of Q14 and R2 =====
 const PROPOSE = "insert into approval_request(kind, target_table, target_id, change, reason) values ($1, $2, $3, $4::jsonb, $5) returning id::text as id";
-async function propose(c: pg.PoolClient, args: [string, string, string, string, string]): Promise<string> {
+export async function propose(c: pg.PoolClient, args: [string, string, string, string, string]): Promise<string> {
   try {
     return (await c.query<{ id: string }>(PROPOSE, args)).rows[0]!.id;
   } catch (e) {
@@ -124,22 +124,22 @@ async function propose(c: pg.PoolClient, args: [string, string, string, string, 
   }
 }
 const LOCK = "select id::text as id, target_id, change, status, proposed_by_staff_user_id as proposed_by from approval_request where id = $1::bigint and kind = $2 for update";
-type Locked = { id: string; target_id: string; change: Record<string, unknown>; status: string; proposed_by: string };
-async function lockRequest(c: pg.PoolClient, kind: string, requestId: unknown): Promise<Locked> {
+export type Locked = { id: string; target_id: string; change: Record<string, unknown>; status: string; proposed_by: string };
+export async function lockRequest(c: pg.PoolClient, kind: string, requestId: unknown): Promise<Locked> {
   const r = validId(requestId) ? (await c.query<Locked>(LOCK, [requestId, kind])).rows[0] : undefined;
   if (!r) throw new QueueRefused("not_found");
   if (r.status !== "pending") throw new QueueRefused("request_not_pending");
   return r;
 }
-const SET_STATUS = "update approval_request set status = $2 where id = $1::bigint and status = 'pending'";
+export const SET_STATUS = "update approval_request set status = $2 where id = $1::bigint and status = 'pending'";
 /** Ends a pending request: withdrawn by its proposer, refused by anyone else allowed (the staff route's rule). */
-async function endRequest(c: pg.PoolClient, staff: string, kind: string, requestId: unknown, type: string): Promise<void> {
+export async function endRequest(c: pg.PoolClient, staff: string, kind: string, requestId: unknown, type: string): Promise<void> {
   const r = await lockRequest(c, kind, requestId);
   const withdrawn = r.proposed_by === staff;
   await c.query(SET_STATUS, [r.id, withdrawn ? "withdrawn" : "refused"]);
   await audit(c, staff, `${kind}.${withdrawn ? "withdraw" : "refuse"}`, type, r.target_id, { request_id: r.id }, withdrawn ? null : r.proposed_by);
 }
-const PENDING_OF = "select id::text as id, target_id, change, proposed_by_staff_user_id as proposed_by, created_at::text as created_at from approval_request " +
+export const PENDING_OF = "select id::text as id, target_id, change, proposed_by_staff_user_id as proposed_by, created_at::text as created_at from approval_request " +
   "where kind = $1 and status = 'pending' order by id limit 200";
 
 // ===== Q14: the company seed (brand list) =====

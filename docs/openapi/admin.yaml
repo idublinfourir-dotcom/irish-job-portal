@@ -2062,6 +2062,139 @@ paths:
           description: "`company_not_postable`: not an employer or agency, merged, or rejected, closed, banned or suspended. `bad_state`: close of a post already closed or hidden."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: company_not_postable } } }
         '500': { $ref: '#/components/responses/ServerError' }
+  /api/manual-jobs/sponsor-confirmation:
+    get:
+      operationId: listSponsorConfirmations
+      summary: List the Sponsor confirmed requests waiting, or open one confirmation file
+      description: >-
+        Q6 (#16). Without `requestId`: the employer confirmations uploaded on manual posts that wait for an administrator (oldest first, at most
+        200). With `requestId`: 302 to a 60-second download link of that confirmation (a pending request, or a confirmed one whose statement
+        still holds the file) and one `data_access` audit row (`job.sponsor_confirmation_open`, the request id, the role in force). For the
+        manual posting viewers: account_reviewer, trust_and_safety, administrator. Only `requestId`, at most once.
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer, trust_and_safety, administrator]
+      x-rate-limit: none
+      parameters:
+        - { name: requestId, in: query, required: false, schema: { type: string }, example: '9001' }
+      responses:
+        '200':
+          description: The requests waiting (without `requestId`).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pending]
+                properties:
+                  pending:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [requestId, jobId, fileName, contentType, sizeBytes, proposedBy, createdAt]
+                      properties:
+                        requestId: { $ref: '#/components/schemas/Id' }
+                        jobId: { $ref: '#/components/schemas/Id' }
+                        fileName: { type: string }
+                        contentType: { type: string, enum: [pdf, jpeg, png] }
+                        sizeBytes: { type: integer }
+                        proposedBy: { $ref: '#/components/schemas/LoginId' }
+                        createdAt: { $ref: '#/components/schemas/DbTime' }
+              example: { pending: [{ requestId: '9001', jobId: '5501', fileName: sponsor-letter.pdf, contentType: pdf, sizeBytes: 182044, proposedBy: made-up-staff-id, createdAt: '2026-11-19 10:00:00.123456+00' }] }
+        '302':
+          description: "The download link (with `requestId`), valid 60 seconds; not cached, no referrer."
+          headers:
+            Location: { schema: { type: string, format: uri }, example: 'https://files.example.com/sponsor/made-up-key.pdf?signature=made-up' }
+        '400':
+          description: "`bad_query`: an unknown or repeated query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_manual_viewer`: none of the three roles."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_manual_viewer } } }
+        '404':
+          description: "`not_found`: no such request with a file (refused and withdrawn ones have none; also an id that is not an id)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503':
+          description: "`files_unavailable`: file storage is not set up. No audit row is written."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: files_unavailable } } }
+    post:
+      operationId: sponsorConfirmation
+      summary: Upload the employer's written confirmation on a manual post, or confirm or refuse it
+      description: |
+        Q6 (#16, 20c "Manual posting": the account reviewer edits, the administrator approves). Two bodies:
+        - `multipart/form-data` with `?jobId=` and exactly one field `file` (PDF, JPEG or PNG, found from the bytes; at most 4,194,304 bytes):
+          an account reviewer uploads the employer's written confirmation on a live manual post whose company is not restricted. It makes a
+          two-person request (`manual_post_sponsor_confirmed`); one at a time per post. Order: Origin, the `Content-Length` cap (before the
+          session), the session, the role and the post (before the body is read), then the file. A row write that fails removes the stored file.
+        - `application/json` `{ action: "confirm" | "refuse", requestId }`: a different administrator confirms (the `admin_on_behalf`
+          sponsorship statement is written with the file and the post shows Sponsor confirmed, in one transaction) or refuses; the proposer
+          may withdraw with `refuse`. A refused or withdrawn request's file is removed. Staff never sign for the employer (no signer).
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer (upload, withdraw own), administrator (confirm, refuse)]
+      x-rate-limit: none (one pending request per post)
+      x-body-cap: 4210688 bytes for the upload (4 MiB file plus 16 KiB of multipart wrapping), counted while reading; 1000 characters for the JSON body
+      parameters:
+        - { name: jobId, in: query, required: false, description: The manual post (the upload only)., schema: { type: string }, example: '5501' }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, additionalProperties: false, required: [file], properties: { file: { type: string, format: binary } } }
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, requestId]
+              properties:
+                action: { type: string, enum: [confirm, refuse] }
+                requestId: { $ref: '#/components/schemas/Id' }
+            example: { action: confirm, requestId: '9001' }
+      responses:
+        '200':
+          description: "Upload: `{ ok, requestId }`. Confirm: `{ ok, jobId, badge }`. Refuse: `{ ok }`."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean, const: true }
+                  requestId: { $ref: '#/components/schemas/Id' }
+                  jobId: { $ref: '#/components/schemas/Id' }
+                  badge: { type: string, const: sponsor_confirmed }
+              example: { ok: true, jobId: '5501', badge: sponsor_confirmed }
+        '400':
+          description: >-
+            `bad_input`: no `jobId` or one that is not an id. `bad_query`: an unknown or repeated query key. `bad_file`: not exactly one `file`
+            field. `empty_file`: the file has no bytes. `bad_body`, `bad_action`, `bad_request_id`: the JSON body.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_file } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: >-
+            `bad_origin`: not the admin site's Origin. `not_active_staff`. `not_account_reviewer`: the upload without that role.
+            `not_administrator`: confirm without the role, or refuse of another person's request without it. `not_sponsor_staff`: refuse
+            with neither role.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
+        '404':
+          description: "`not_found`: no manual post with that id, or no such request."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: >-
+            `job_not_live`: the post is a draft or closed. `already_confirmed`: it shows Sponsor confirmed already. `company_restricted`: its
+            company is restricted (strike 2). `decision_pending`: a request is already waiting. `request_not_pending`: decided already.
+            `same_person`: the proposer cannot confirm. `no_statement_text`: no sponsorship statement wording is saved yet.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: same_person } } }
+        '413':
+          description: "`file_too_large`: over the cap by header or while reading."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: file_too_large } } }
+        '415':
+          description: "`wrong_file_type`: the bytes are not a PDF, JPEG or PNG."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: wrong_file_type } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503':
+          description: "`files_unavailable`: file storage is not set up. Nothing is written."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: files_unavailable } } }
   /api/pay-floors:
     get:
       operationId: listFloorChecks
@@ -2441,6 +2574,7 @@ paths:
                               decidedByStaffUserId: { type: [string, 'null'] }
                               decidedAt: { $ref: '#/components/schemas/NullableTimestamp' }
                               caseId: { type: [string, 'null'] }
+                              evidenceFile: { type: boolean, description: "Q7: an evidence file is attached (GET /api/trust-safety/evidence?reportId=)." }
               example:
                 items: [{ id: '801', status: open, targetKind: job, reason: asks_for_money, createdText: '2026-11-18 09:30:00.123456+00', targetJobId: '5501', jobTitle: Staff Nurse, jobStatus: live, organisationId: '312', displayName: Example Recruitment Ltd }]
                 next: null
@@ -2550,7 +2684,7 @@ paths:
                           The case row in camel case (id, organisationId, caseKind, jobId, reportId, reasonCode, noticeSummary, level, stage,
                           outcome, the reply and appeal fields and who entered them, decidedBy and decidedAt, banLiftedAt, createdAt), the
                           company (displayName, organisationKind, organisationStatus, restrictedUntil, claimsRemovedAt), `pending` (the
-                          two-person requests), `bans` and `wrcReported`.
+                          two-person requests), `bans`, `wrcReported` and `evidenceFile`.
                         required: [id, organisationId, caseKind, stage, pending, bans, wrcReported]
                         properties:
                           id: { $ref: '#/components/schemas/Id' }
@@ -2560,6 +2694,7 @@ paths:
                           pending: { type: array, items: { type: object } }
                           bans: { type: array, items: { type: object } }
                           wrcReported: { type: boolean }
+                          evidenceFile: { type: boolean, description: "Q7: an evidence file is attached (GET /api/trust-safety/evidence?caseId=)." }
               example:
                 items: [{ id: '51', organisationId: '312', displayName: Example Recruitment Ltd, caseKind: instant_ban, reasonCode: asks_for_money, stage: case_open, outcome: null, level: null, replyDueAt: null, appealDueAt: null, createdAt: '2026-11-18T09:30:00.000Z' }]
                 next: null
@@ -2682,6 +2817,99 @@ paths:
             `window_closed`: the appeal's state. `not_agency_ban`, `already_marked`: mark_wrc on a case it does not apply to, or twice.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: reply_window_open } } }
         '500': { $ref: '#/components/responses/ServerError' }
+  /api/trust-safety/evidence:
+    get:
+      operationId: openTrustSafetyEvidence
+      summary: Open the evidence file of a report or a case
+      description: >-
+        Q7 (#91, #99). Exactly one of `reportId` and `caseId`: 302 to a 60-second download link of its evidence file and one `data_access`
+        audit row (`trust_safety.evidence_open`, object `report` or `strike`). trust_and_safety only. Whether a report or case has a file is
+        `evidenceFile` on `GET /api/trust-safety/reports?id=` and `GET /api/trust-safety/cases?id=`.
+      security: [{ staffSession: [] }]
+      x-roles: [trust_and_safety]
+      x-rate-limit: none
+      parameters:
+        - { name: reportId, in: query, required: false, schema: { type: string }, example: '801' }
+        - { name: caseId, in: query, required: false, schema: { type: string }, example: '51' }
+      responses:
+        '302':
+          description: "The download link, valid 60 seconds; not cached, no referrer."
+          headers:
+            Location: { schema: { type: string, format: uri }, example: 'https://files.example.com/evidence/made-up-key.png?signature=made-up' }
+          content: { application/json: { schema: { type: object }, example: {} } }
+        '400':
+          description: "`bad_query`: not exactly one of `reportId` and `caseId`, or an unknown or repeated key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_trust_and_safety`: the role is missing."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_trust_and_safety } } }
+        '404':
+          description: "`not_found`: no such report or case, or it has no evidence file (also an id that is not an id)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503':
+          description: "`files_unavailable`: file storage is not set up. No audit row is written."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: files_unavailable } } }
+    post:
+      operationId: attachTrustSafetyEvidence
+      summary: Attach the one evidence file to a report or a case
+      description: |
+        Q7 (#91, #99). `multipart/form-data` with exactly one of `?reportId=` and `?caseId=` and exactly one field `file` (PDF, JPEG or PNG, found
+        from the bytes; at most 4,194,304 bytes). trust_and_safety only. One file per report or case, never replaced; a report only while open or
+        job_hidden, a case until its appeal is decided. The file follows the row's retention (rules 21 to 23 delete it with the row). One
+        `trust_safety.evidence_attach` audit row (type and size only). Order: Origin, the `Content-Length` cap (before the session), the session,
+        the role and the target (before the body is read), then the file. A row write that fails (two at once) removes the stored file.
+        The reporter cannot attach a file: the report routes take a small JSON body (`POST /api/report`), not a file.
+      security: [{ staffSession: [] }]
+      x-roles: [trust_and_safety]
+      x-rate-limit: none (one file per report or case)
+      x-body-cap: 4210688 bytes (4 MiB file plus 16 KiB of multipart wrapping), counted while reading
+      parameters:
+        - { name: reportId, in: query, required: false, schema: { type: string }, example: '801' }
+        - { name: caseId, in: query, required: false, schema: { type: string }, example: '51' }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, additionalProperties: false, required: [file], properties: { file: { type: string, format: binary } } }
+      responses:
+        '200':
+          description: The file was stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ok, contentType, sizeBytes]
+                properties:
+                  ok: { type: boolean, const: true }
+                  contentType: { type: string, enum: [pdf, jpeg, png] }
+                  sizeBytes: { type: integer }
+              example: { ok: true, contentType: png, sizeBytes: 90211 }
+        '400':
+          description: "`bad_query`: not exactly one of `reportId` and `caseId`. `bad_file`: not multipart or not exactly one `file` field. `empty_file`: no bytes."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_file } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: not the admin site's Origin. `not_active_staff`. `not_trust_and_safety`: the role is missing."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_trust_and_safety } } }
+        '404':
+          description: "`not_found`: no such report or case (also an id that is not an id)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`already_attached`: it has its file already. `already_decided`: the report is decided, or the case's appeal is."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: already_attached } } }
+        '413':
+          description: "`file_too_large`: over the cap by header or while reading."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: file_too_large } } }
+        '415':
+          description: "`wrong_file_type`: the bytes are not a PDF, JPEG or PNG."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: wrong_file_type } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503':
+          description: "`files_unavailable`: file storage is not set up. Nothing is written."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: files_unavailable } } }
   /api/staff/me/export:
     get:
       operationId: exportMyStaffData

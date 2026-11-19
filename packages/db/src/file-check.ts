@@ -5,6 +5,12 @@ export const MIME: Record<Kind, string> = {
   pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", jpeg: "image/jpeg", png: "image/png", webp: "image/webp",
 };
 export const EXT: Record<Kind, string> = { pdf: "pdf", docx: "docx", jpeg: "jpg", png: "png", webp: "webp" };
+const KIND_OF_EXT: Record<string, Kind> = { pdf: "pdf", jpg: "jpeg", png: "png" };
+/** The type of a staff upload's key (`<prefix>/<uuid>.<ext>`, files.ts storeStaffDocument) from its extension, or null. */
+export function keyKind(key: string): Kind | null {
+  const ext = key.split(".").pop()!;
+  return Object.hasOwn(KIND_OF_EXT, ext) ? KIND_OF_EXT[ext]! : null;
+}
 export const MAX_FILE = 4 * 1024 * 1024; // 4,194,304 bytes, under Vercel's 4.5 MB request limit
 export const MAX_BODY = MAX_FILE + 16 * 1024; // the multipart wrapping (boundaries, headers, a 200-character name) is far under 16 kB
 export type Refusal = "EMPTY_FILE" | "FILE_TOO_LARGE" | "WRONG_FILE_TYPE";

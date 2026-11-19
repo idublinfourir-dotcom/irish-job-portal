@@ -8,6 +8,7 @@ import { getPool } from "./index";
 import { CANDIDATE_RATE, Refuse, withinRate, type CandidateEnv } from "./candidate-route";
 import { checkUpload, cleanName, EXT, MAX_BODY, MIME, readUpload, type Kind } from "./file-check";
 import { fileStore, FilesUnavailable } from "./file-store";
+import { QueueRefused } from "./admin-queue";
 import { validId } from "./search";
 
 export { FilesUnavailable, memoryStore, setFileStore, type FileStore, type MemoryStore } from "./file-store";
@@ -56,6 +57,29 @@ async function upload(request: Request, allowed: readonly Kind[], fallback: "cv"
   const c = checkUpload(up.bytes, allowed);
   if ("refused" in c) throw new Refuse(REFUSED_STATUS[c.refused]!, c.refused);
   return { bytes: up.bytes, kind: c.contentType, name: cleanName(up.name, c.contentType, fallback) };
+}
+
+// ===== staff uploads (Q6 the employer's written confirmation, Q7 trust and safety evidence; PDF, JPEG or PNG, the case documents' limits) =====
+// The admin routes check the size header before the session (MAX_UPLOAD_BODY) and the role before the body is read; the key keeps the type's extension,
+// so a download needs no other column. Refusals are QueueRefused codes for the admin routes.
+export { MAX_BODY as MAX_UPLOAD_BODY } from "./file-check";
+export type StoredDocument = { key: string; contentType: Kind; fileName: string; sizeBytes: number };
+
+/** Reads one uploaded file, stores it under `<prefix>/<uuid>.<ext>` and passes it to `save`; the stored file is removed when `save` throws. */
+export async function storeStaffDocument<T>(request: Request, prefix: "sponsor" | "evidence", save: (d: StoredDocument) => Promise<T>): Promise<T> {
+  let f;
+  try { f = await upload(request, ["pdf", "jpeg", "png"], "document"); } catch (e) {
+    throw e instanceof Refuse ? new QueueRefused(e.code === "BAD_REQUEST" ? "bad_file" : e.code.toLowerCase()) : e;
+  }
+  const key = `${prefix}/${randomUUID()}.${EXT[f.kind]}`;
+  const store = fileStore();
+  await store.put(key, f.bytes, MIME[f.kind]);
+  try {
+    return await save({ key, contentType: f.kind, fileName: f.name, sizeBytes: f.bytes.length });
+  } catch (e) {
+    await store.remove(key).catch(() => {});
+    throw e;
+  }
 }
 
 // ===== the CV (one per candidate, PDF or DOCX) =====

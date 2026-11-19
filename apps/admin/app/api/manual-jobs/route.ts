@@ -1,6 +1,6 @@
 // Manual posting (#232): GET lists the manual posts (account reviewers edit; the trust and safety officer and the administrator view); POST creates a post for an
 // existing employer or agency (listed only if it passes the employer post checks, otherwise a draft with the reason) or closes the staff member's own post.
-// There is no "Sponsor confirmed" on a staff post (step 14). The role check is inside each database call.
+// "Sponsor confirmed" comes later, through /api/manual-jobs/sponsor-confirmation (Q6). The role check is inside each database call.
 import { staffSettings } from "@portal/auth";
 import { closeManualPost, createManualPost, getPool, listManualPosts } from "@portal/db";
 import { checkOrigin } from "../../../lib/account-review";
