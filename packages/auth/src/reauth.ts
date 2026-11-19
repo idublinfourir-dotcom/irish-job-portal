@@ -35,9 +35,11 @@ export function verifiedPayload(token: string, secret: string, now = Date.now())
 }
 // Only a path on our own site gets the redirect: one leading "/", not followed by "/" or "\\", printable ASCII only (no space, tab, newline
 // or other control character, which the URL parser strips, so "/\t/evil.example" would become "//evil.example"), no backslash anywhere, at most
-// 1,000 characters, and it must still resolve to our own origin. Anything else gets the plain 409 instead (review of 07f9a8c: an open redirect).
+// 1,000 characters, no encoded "/" or "\\" (%2F, %5C, any case) before "?" or "#" (a later path cleanup can decode it into "//", the same
+// rule as Better Auth's own isSafeRelativeURL), and it must still resolve to our own origin. Anything else gets the plain 409 instead (review
+// of 07f9a8c: an open redirect).
 export const ownPath = (u: unknown, origin: string): u is string => {
-  if (typeof u !== "string" || u.length > 1000 || !/^\/(?![/\\])[!-~]*$/.test(u) || u.includes("\\")) return false;
+  if (typeof u !== "string" || u.length > 1000 || !/^\/(?![/\\])[!-~]*$/.test(u) || u.includes("\\") || /%(2f|5c)/i.test(u.split(/[?#]/)[0]!)) return false;
   try { return new URL(u, origin).origin === origin; } catch { return false; }
 };
 

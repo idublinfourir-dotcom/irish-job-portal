@@ -118,7 +118,7 @@ describe("email change", () => {
 });
 
 describe("callbackURL on verify-email (review of 07f9a8c: an open redirect)", () => {
-  const OFFSITE = ["//evil.example/x", "https://evil.example/x", "/\\evil.example", "/\t/evil.example", "/\n/x", "/x\\y", "https:evil.example"];
+  const OFFSITE = ["//evil.example/x", "https://evil.example/x", "/\\evil.example", "/\t/evil.example", "/\n/x", "/x\\y", "https:evil.example", "/%2F%2Fevil.example", "/%5c%5cevil.example"];
   const verify = (token: string, cb: string, raw = false) => click(`${BASE}/api/auth/portal/verify-email?token=${token}&callbackURL=${raw ? cb : encodeURIComponent(cb)}`);
   it("Better Auth itself refuses an off-site callbackURL on a plain sign-up link (403 INVALID_CALLBACK_URL, no Location, not confirmed)", async () => {
     const email = `fake.p4.cb${++n}@widgets.example.test`;

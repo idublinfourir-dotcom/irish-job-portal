@@ -124,7 +124,7 @@ describe("download my data (C4 gap round)", () => {
   });
 });
 
-const HOSTILE = ["//evil.example/x", "https://evil.example/x", "/\\evil.example", "/\t/evil.example", "/\n/x", "/ /evil.example", "/x\\y", "https:evil.example", "/" + "a".repeat(1999)];
+const HOSTILE = ["//evil.example/x", "https://evil.example/x", "/\\evil.example", "/\t/evil.example", "/\n/x", "/ /evil.example", "/x\\y", "https:evil.example", "/" + "a".repeat(1999), "/%2F%2Fevil.example", "/%5c%5cevil.example"];
 
 describe("Better Auth's own verify-email refuses an unsafe callbackURL on a plain (sign-up) link", () => {
   it("each hostile value is 403 INVALID_CALLBACK_URL with no Location, and the email stays unconfirmed; a safe one confirms", async () => {

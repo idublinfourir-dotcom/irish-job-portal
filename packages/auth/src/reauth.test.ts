@@ -43,11 +43,11 @@ describe("verifiedPayload (the email-change race check reads only tokens we sign
 describe("ownPath (the only callbackURL the EMAIL_TAKEN answer redirects to)", () => {
   const O = "https://www.example.ie";
   it("takes a plain path on our site, with a query", () => {
-    for (const u of ["/", "/account", "/account?tab=email", "/a/b-c_d.e~f"]) expect(ownPath(u, O), u).toBe(true);
+    for (const u of ["/", "/account", "/account?tab=email", "/a/b-c_d.e~f", "/account?next=%2Fx", "/account#%5C", "/a%20b"]) expect(ownPath(u, O), u).toBe(true);
   });
   it("refuses every other host, every whitespace or control character, any backslash, a long path and a non-string", () => {
     const bad = ["//evil.example/x", "https://evil.example/x", "/\\evil.example", "/\t/evil.example", "/\n/x", "/\r/x", "/ /evil.example", "/x\\y",
-      "https:evil.example", "evil.example", "", "/\u0000x", "/ x", "/é", "/" + "a".repeat(1000), 42, null, undefined];
+      "https:evil.example", "evil.example", "", "/\u0000x", "/ x", "/é", "/" + "a".repeat(1000), "/%2F%2Fevil.example", "/%2f%2fevil.example", "/%5C%5Cevil.example", "/%5cevil.example", "/x/%2F/y?z", 42, null, undefined];
     for (const u of bad) expect(ownPath(u, O), JSON.stringify(u)).toBe(false);
   });
 });

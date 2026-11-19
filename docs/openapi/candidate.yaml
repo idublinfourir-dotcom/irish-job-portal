@@ -513,7 +513,7 @@ paths:
           An address over 254 characters is 400 `INVALID_EMAIL`. 3 in 5 minutes per client address.
         - `link-social` (adding a Google account) needs a session from a sign-in in the last 10 minutes too, else 403 `REAUTH_REQUIRED`.
         - On `verify-email`, either link of an email change whose new address got an account in the meantime is refused and nothing
-          changes: a redirect to its `callbackURL` with `error=EMAIL_TAKEN` only when that is a plain path on this site (printable ASCII, no backslash, no whitespace, at most 1,000 characters), else 409 `{ code: EMAIL_TAKEN }` without one.
+          changes: a redirect to its `callbackURL` with `error=EMAIL_TAKEN` only when that is a plain path on this site (printable ASCII, no backslash, no whitespace, no encoded slash or backslash `%2F` or `%5C` before `?` or `#`, at most 1,000 characters), else 409 `{ code: EMAIL_TAKEN }` without one.
         - `revoke-sessions` (sign out everywhere) ends every session of this login at once; `revoke-other-sessions` ends all but this one. Any
           signed-in session may call them (no fresh sign-in needed); the next request with an ended session is 401.
       security: [{}, { candidateSession: [] }]

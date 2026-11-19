@@ -269,7 +269,7 @@ paths:
         login, or null) and `verify-email` (the confirmation link from the sign-up email, and the two links of an email change).
         Either email-change link whose new address got an account in the meantime is refused and nothing changes: a redirect to its
         `callbackURL` with `error=EMAIL_TAKEN` only when that is a plain path on this site (printable ASCII, no backslash, no whitespace,
-        at most 1,000 characters), else 409 `EMAIL_TAKEN` (the 4XX below). Shapes are Better Auth's own; this file
+        no encoded slash or backslash `%2F` or `%5C` before `?` or `#`, at most 1,000 characters), else 409 `EMAIL_TAKEN` (the 4XX below). Shapes are Better Auth's own; this file
         does not restate them. Email and password only, no Google sign-in. Sessions are read from the database each time.
       security: []
       x-roles: [anyone]
