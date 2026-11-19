@@ -365,6 +365,13 @@
       "when": 1794300053000,
       "tag": "0053_staff_notices",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1794300054000,
+      "tag": "0054_email_queue",
+      "breakpoints": true
     }
   ]
 }

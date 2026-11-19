@@ -1993,7 +1993,7 @@ export const emailOutbox = pgTable("email_outbox", {
 }, (table) => [
 	index("email_outbox_body_idx").using("btree", sql`COALESCE(sent_at, send_after)`).where(sql`((status = ANY (ARRAY['sending'::text, 'sent'::text, 'failed'::text, 'dropped'::text])) AND (params IS NOT NULL))`),
 	index("email_outbox_candidate_idx").using("btree", table.candidateUserId.asc().nullsLast().op("text_ops")).where(sql`(candidate_user_id IS NOT NULL)`),
-	index("email_outbox_pending_idx").using("btree", table.sendAfter.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'pending'::text)`),
+	index("email_outbox_pending_idx").using("btree", sql`(template = 'job_alert'::text)`, table.sendAfter.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`(status = 'pending'::text)`),
 	index("email_outbox_portal_idx").using("btree", table.portalUserId.asc().nullsLast().op("text_ops")).where(sql`(portal_user_id IS NOT NULL)`),
 	index("email_outbox_record_idx").using("btree", sql`COALESCE(sent_at, send_after)`).where(sql`(status = ANY (ARRAY['sending'::text, 'sent'::text, 'failed'::text, 'dropped'::text]))`),
 	unique("email_outbox_dedupe_key_key").on(table.dedupeKey),

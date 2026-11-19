@@ -1,4 +1,4 @@
-// The outbox sender (8.1b): sends the pending email_outbox rows through Brevo, oldest first, as app_admin (the admin app's DATABASE_URL).
+// The outbox sender (8.1b): sends the pending email_outbox rows through Brevo, every other row before job alerts and oldest first in each group (#275), as app_admin (the admin app's DATABASE_URL).
 //   DATABASE_URL=... BREVO_API_KEY=... EMAIL_FROM=... [ALERTS_EMAIL_FROM=...] SITE_URL=https://... PORTAL_SITE_URL=https://... node packages/db/src/outbox-cli.ts [--batch N]
 // A row is marked `sending` (attempts + 1) in its own committed statement BEFORE Brevo is called, so a crash never sends it twice; a row
 // left in `sending` by a crash is a human's call (look at it, then set it to pending or dropped). After MAX_ATTEMPTS failed tries a row is `failed`.
@@ -8,7 +8,8 @@
 // Every email is HTML plus text (E1): a notice says what happened and links to the right site (SITE_URL for a candidate, PORTAL_SITE_URL for
 // an employer or agency); both must be https when anything is pending. Job alerts go from ALERTS_EMAIL_FROM when it is set (else EMAIL_FROM):
 // Brevo adds its own List-Unsubscribe to every email and a click blocks that one sender, so an alert unsubscribe must not block the notices.
-// Logs hold counts and row ids only, never an address or the key.
+// Logs hold counts and row ids only, never an address or the key. #275: Brevo Free sends 300 a day, so after the run the rows still due and the
+// alerts dropped as too old go to a GitHub ::warning:: line and one audit_event row (email_outbox.run, counts only) that the staff digest reads.
 import { createHash, randomBytes } from "node:crypto";
 import pg from "pg";
 import { createBrevoMail, type SendMail } from "../../auth/src/brevo.ts";
@@ -22,7 +23,7 @@ export const MAX_BATCH = 200;
 export const ALERT_MAX_AGE_MS = 3 * 86_400_000; // D4: a job alert queued more than 3 days ago is stale, not sent
 
 export const CLAIM =
-  "with c as (select id from email_outbox where status = 'pending' and send_after <= now() order by send_after, id limit $1 for update skip locked) " +
+  "with c as (select id from email_outbox where status = 'pending' and send_after <= now() order by (template = 'job_alert'), send_after, id limit $1 for update skip locked) " +
   "update email_outbox o set status = 'sending', attempts = o.attempts + 1 from c where o.id = c.id returning o.id, o.template, o.attempts, o.send_after, o.candidate_user_id, case when o.template in ('job_alert', 'data_request_confirm', 'staff_digest') then o.params end as params, " +
   "case when o.candidate_user_id is not null then 'candidate' when o.portal_user_id is not null or o.membership_id is not null then 'portal' end as side";
 // The alerts of the claimed job_alert rows (still active) and the jobs they name (still live): two statements for the whole batch.
@@ -32,6 +33,10 @@ export const ALERTS =
 export const LIVE_JOBS =
   "select id::text as id, title, employer_name, county, salary_low, salary_high, pay_grade from job where id = any($1::bigint[]) and status = 'live' and not quota_full and closes_at > now()";
 export const PENDING = "select exists(select 1 from email_outbox where status = 'pending') as any";
+// After the run (#275): the rows still due, and one audit row with the run's counts (no address, no id). Both on email_outbox_pending_idx.
+export const LEFT = "select count(*)::int as n from email_outbox where status = 'pending' and send_after <= now()";
+export const RUN_AUDIT =
+  "insert into audit_event(kind, actor_system, action, after, source) values ('admin_action', 'outbox-cli by ' || session_user, 'email_outbox.run', $1::jsonb, 'scheduled_job')";
 export const ADDRESSES =
   "select o.id, coalesce(cu.email, pu.email, su.email, mu.email, m.invited_email, cm.from_email, " +
   // The deleted-account notice goes to a login that is already deleted, so its address is the one deleteAccount copied into params;
@@ -84,6 +89,8 @@ const DIGEST_LABELS: Record<string, string> = {
   post_strike_job_review: "Jobs to check after a strike", scam_flag: "Jobs flagged for scam wording", agency_client_check: "Agency client checks",
   data_request: "Data requests", scheduled_check: "Scheduled checks due", reportsOpen: "Open reports", reportsNew: "Reports in the last 24 hours",
   appeals: "Appeals to decide", contact: "Contact messages", approvals: "Requests waiting for a second person",
+  // #275, administrators (staff-digest-cli.ts emailLimit)
+  emailsLeft: "Emails left unsent by the last send run", alertsTooOld: "Job alerts dropped as too old in the last send run", alertSubscribers: "Active job alert subscribers",
 };
 /** The digest lines from a row's params. Pure. */
 export function digestLines(params: unknown): string[] {
@@ -124,18 +131,30 @@ export function noticeEmail(template: string, site: string | null, lines: string
   });
 }
 
-export type Result = { sent: number; retry: number; failed: number; dropped: number };
+/** `old`: the job alerts among `dropped` that were queued more than 3 days ago (D4); the rest had no address or nothing left to send. */
+export type Result = { sent: number; retry: number; failed: number; dropped: number; old: number };
+
+/** The send order (#275): every row that is not a job alert first, then oldest first, then by id. Pure; the claim's ORDER BY says the same. */
+export const sendOrder = (a: { template: string; send_after: Date; id: string }, b: typeof a) =>
+  Number(a.template === "job_alert") - Number(b.template === "job_alert") || +a.send_after - +b.send_after || Number(a.id) - Number(b.id);
+
+/** The GitHub warning line when the day's limit left rows unsent or an alert went stale (#275); null when all is well. Counts only. Pure. */
+export function limitWarning(r: Result, left: number): string | null {
+  return left > 0 || r.old > 0
+    ? `::warning::email outbox (#275, Brevo Free 300 a day): ${left} emails left unsent; dropped this run: ${r.old} job alerts too old (over 3 days), ${r.dropped - r.old} with no address or nothing to send`
+    : null;
+}
 
 type Claimed = { id: string; template: string; attempts: number; send_after: Date; candidate_user_id: string | null; params: unknown; side: "candidate" | "portal" | null };
 
 /** `siteUrl` and `portalUrl` are the candidate and employer sites (https); `sendAlert` sends job alerts (its own sender), default `send`. */
 export async function sendPending(c: pg.Pool | pg.Client, send: SendMail, batch = DEFAULT_BATCH, log: (line: string) => void = () => {}, siteUrl?: string,
   portalUrl?: string, sendAlert: SendMail = send): Promise<Result> {
-  const out: Result = { sent: 0, retry: 0, failed: 0, dropped: 0 };
+  const out: Result = { sent: 0, retry: 0, failed: 0, dropped: 0, old: 0 };
   const rows = (await c.query<Claimed>(CLAIM, [Math.min(Math.max(batch, 1), MAX_BATCH)])).rows;
   if (!rows.length) return out;
   const to = new Map((await c.query<{ id: string; email: string | null }>(ADDRESSES, [rows.map((r) => r.id)])).rows.map((r) => [r.id, r.email]));
-  rows.sort((a, b) => +a.send_after - +b.send_after || Number(a.id) - Number(b.id)); // update ... returning has no order
+  rows.sort(sendOrder); // update ... returning has no order
   const fresh = (r: Claimed) => Date.now() - +r.send_after <= ALERT_MAX_AGE_MS;
   const wanted = rows.filter((r) => r.template === "job_alert" && to.get(r.id) && fresh(r)).map((r) => ({ r, alerts: parseAlerts(r.params) }));
   const ids = (pick: (a: ReturnType<typeof parseAlerts>[number]) => string[]) => [...new Set(wanted.flatMap((w) => w.alerts.flatMap(pick)))];
@@ -164,7 +183,8 @@ export async function sendPending(c: pg.Pool | pg.Client, send: SendMail, batch 
       } else {
         const site = siteOrigin(siteUrl);
         if (!site) throw new Error("SITE_URL is not an https address");
-        const built = fresh(r) && r.candidate_user_id ? buildAlertEmail(r.candidate_user_id, alertsOf.get(r.id) ?? [], found, live, site) : null;
+        if (!fresh(r)) { await done(r.id, "dropped"); out.dropped++; out.old++; continue; }
+        const built = r.candidate_user_id ? buildAlertEmail(r.candidate_user_id, alertsOf.get(r.id) ?? [], found, live, site) : null;
         if (!built) { await done(r.id, "dropped"); out.dropped++; continue; }
         await sendAlert(email, built.subject, built.text, built.html, built.headers);
       }
@@ -202,6 +222,10 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: s
       return log("SITE_URL and PORTAL_SITE_URL must both be set to https:// addresses (email links go to them); nothing was sent"), 2;
     const r = await sendPending(client, mail, batch, log, env.SITE_URL, env.PORTAL_SITE_URL, sendAlert);
     log(`outbox: sent ${r.sent}, to retry ${r.retry}, failed for good ${r.failed}, dropped (no address, nothing to send or too old) ${r.dropped}`);
+    const left = (await client.query<{ n: number }>(LEFT)).rows[0]!.n;
+    await client.query(RUN_AUDIT, [JSON.stringify({ ...r, left })]);
+    const warn = limitWarning(r, left);
+    if (warn) log(warn);
     return r.retry + r.failed ? 1 : 0;
   } catch (e) {
     log(`refused: ${(e as Error).message}`);
