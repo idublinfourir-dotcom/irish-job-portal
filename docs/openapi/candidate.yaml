@@ -1446,7 +1446,7 @@ paths:
       operationId: putNotificationSettings
       tags: [account]
       summary: Change notification settings
-      description: At least one key; a key left out keeps its value. `account` may be sent only as true; any other key (such as the dropped `apply_reminders`, #260) is 400. Origin checked.
+      description: At least one key; a key left out keeps its value. `account` may be sent only as true; any other key (such as the dropped `apply_reminders`) is 400. Origin checked.
       security: [{ candidateSession: [] }]
       x-roles: [candidate]
       x-body-cap: 2048 characters
