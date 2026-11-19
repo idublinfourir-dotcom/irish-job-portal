@@ -98,5 +98,5 @@ Health registration bodies (S6, decision #269) stay in code for good: `packages/
 - LinkedIn: the adapter is ported (`runLinkedin`, with a retry on 429 and a request budget, both off by default), but its advert page answered 429 in the one recording pass, so its parser has never met a real page. It is not in the fetcher.
 - The AI second opinion runs in the daily fetch on a free OpenRouter model set in `.github/workflows/daily-fetch.yml`; the production model is not chosen yet.
 - A changed advert that the rules are now unsure about sends its live job back to the admin queue, even if an admin approved it before.
-- The same job on two boards is saved twice: there is no cross-source duplicate key yet.
+- The same job on two boards is saved twice: there is no cross-source duplicate key yet. (A fetched job that twins its employer's own posted job is hidden since migration 0057, see `docs/database.md`; two fetched copies of one job are not.)
 - Three packages each carry their own small helper that gives a JavaScript pattern Python's meaning (`readers/pyre.ts`, `employers/py-text.ts`, `matcher/src/rules/pyRegex.ts`). One shared copy would do.

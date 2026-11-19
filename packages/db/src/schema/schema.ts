@@ -237,6 +237,7 @@ export const job = pgTable("job", {
 	index("job_live_sector_salary").using("btree", sql`sector`, sql`((NOT quota_full))`, sql`salary_sort`, sql`id`, sql`quota_full`, sql`closes_at`).where(sql`(status = 'live'::text)`),
 	index("job_organisation_idx").using("btree", table.organisationId.asc().nullsLast().op("int8_ops"), table.postedAt.desc().nullsFirst().op("int8_ops"), table.id.desc().nullsFirst().op("int8_ops")),
 	index("job_pay_floor_idx").using("btree", table.payFloorId.asc().nullsLast().op("int8_ops")),
+	index("job_twin_idx").using("btree", sql`organisation_id`, sql`TRIM(BOTH FROM regexp_replace(lower(title), '[^a-z0-9]+'::text, ' '::text, 'g'::text))`).where(sql`(status = ANY (ARRAY['live'::text, 'hidden'::text]))`),
 	index("job_under_review_idx").using("btree", table.underReviewSince.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'under_review'::text)`),
 	foreignKey({
 			columns: [table.organisationId],
@@ -288,7 +289,7 @@ export const job = pgTable("job", {
 	check("job_hire_answer_check", sql`hire_answer = ANY (ARRAY['yes'::text, 'no'::text])`),
 	check("job_status_check", sql`status = ANY (ARRAY['draft'::text, 'in_review'::text, 'live'::text, 'under_review'::text, 'hidden'::text, 'closed'::text])`),
 	check("job_close_reason_check", sql`close_reason = ANY (ARRAY['expired'::text, 'closed'::text, 'removed'::text, 'under_review_expired'::text, 'abandoned'::text, 'recheck_failed'::text, 'source_stale'::text])`),
-	check("job_hidden_reason_check", sql`hidden_reason = ANY (ARRAY['report'::text, 'organisation_suspended'::text, 'admin'::text])`),
+	check("job_hidden_reason_check", sql`hidden_reason = ANY (ARRAY['report'::text, 'organisation_suspended'::text, 'admin'::text, 'duplicate'::text])`),
 	check("job_under_review_reason_check", sql`under_review_reason = ANY (ARRAY['pay_check'::text, 'GENERAL_RULES_NOT_SET'::text, 'OCCUPATION_INELIGIBLE'::text, 'QUOTA_FULL'::text, 'OCCUPATION_NOT_ON_LIST'::text, 'CONTRACT_TOO_SHORT'::text, 'RULES_FAILED'::text, 'PAY_REQUIRED'::text, 'PAY_BELOW_MINIMUM'::text, 'STATEMENT_REQUIRED'::text, 'NEEDS_REVIEW'::text, 'PAY_NOT_ON_SCALE'::text])`),
 	check("job_under_review_reason_check2", sql`(status = 'under_review'::text) = (under_review_reason IS NOT NULL)`),
 	check("job_permit_history_check", sql`permit_history = ANY (ARRAY['has_history'::text, 'first_time'::text, 'not_linked'::text])`),
