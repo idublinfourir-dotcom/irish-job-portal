@@ -1291,6 +1291,81 @@ paths:
         '400': { description: "`BAD_REQUEST`: `days` or `jobId` out of range, or an unknown or repeated query key.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
+  /api/portal/agency-jobs:
+    get:
+      operationId: portalAgencyJobs
+      summary: Jobs posted for my company by agencies
+      description: |
+        Read only (P11, #89). The live and under-review jobs that other companies (agencies) posted naming my company as the client, newest
+        first, 20 a page. A job counts only when its client name matched one of my company's names (`job.permit_employer_name_id`); an agency
+        job whose client name matched no company is listed to nobody. Only `after` is allowed; any other key is 400. Any active member, viewers too.
+      security: [{ portalSession: [] }]
+      x-roles: [any member]
+      parameters:
+        - { name: after, in: query, required: false, description: "The `next` token of the previous page (at most 200 characters).", schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobs, next]
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, title, agencyName, status, postedAt]
+                      properties:
+                        id: { $ref: '#/components/schemas/Id' }
+                        title: { type: string }
+                        agencyName: { type: string }
+                        status: { type: string, enum: [live, under_review] }
+                        postedAt: { $ref: '#/components/schemas/Timestamp' }
+                  next: { oneOf: [{ $ref: '#/components/schemas/Cursor' }, { type: 'null' }] }
+              example: { jobs: [{ id: '5501', title: Staff Nurse, agencyName: Fake Recruit Ltd, status: live, postedAt: '2026-11-18T09:30:00.000Z' }], next: null }
+        '400': { description: "`BAD_REQUEST`: a bad `after` token or an unknown or repeated query key.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+        '404': { description: "`NO_COMPANY`: the login has no company.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NO_COMPANY } } } }
+  /api/portal/agency-jobs/not-recognised:
+    post:
+      operationId: portalAgencyJobNotRecognised
+      summary: I don't recognise this agency job
+      description: |
+        On one job of the agency jobs list (P11, #89). Files a report with reason `not_recognised` to the staff reports queue and hides a live job at
+        once (a job under review is not public, so it is only reported). No strike, no email to the client; the agency's owner and the member who
+        posted it get the usual "job hidden" notice. One open report per job: a second press, by any owner of the company, answers the same and
+        writes nothing. Origin checked first.
+      security: [{ portalSession: [] }]
+      x-roles: [account_owner]
+      x-rate-limit: 10 reports per login per hour, shared with /api/portal/report
+      x-body-cap: 2048 characters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [jobId]
+              properties:
+                jobId: { $ref: '#/components/schemas/Id' }
+            example: { jobId: '5501' }
+      responses:
+        '200':
+          description: Reported (now or before).
+          content:
+            application/json:
+              schema: { type: object, required: [ok, hidden], properties: { ok: { const: true }, hidden: { type: boolean, description: "The job is hidden (it was live)." } } }
+              example: { ok: true, hidden: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login. `NOT_A_MEMBER`: no company. `NOT_OWNER`: not the account owner.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_OWNER } } } }
+        '404': { description: "`JOB_NOT_FOUND`: no live or under-review agency job posted for my company with that id.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: JOB_NOT_FOUND } } } }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/TooMany' }
   /api/portal/notices:
     get:
       operationId: portalNoticesList

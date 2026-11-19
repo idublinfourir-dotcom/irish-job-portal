@@ -31,6 +31,8 @@
     "portalJobAuthorityUpload": "POST /api/portal/jobs/{id}/authority (account_owner, recruiter, poster)",
     "portalJobAuthorityDownload": "GET /api/portal/jobs/{id}/authority/{docId} (account_owner, recruiter, poster)",
     "portalJobStats": "GET /api/portal/job-stats (any member)",
+    "portalAgencyJobs": "GET /api/portal/agency-jobs (any member)",
+    "portalAgencyJobNotRecognised": "POST /api/portal/agency-jobs/not-recognised (account_owner)",
     "portalNoticesList": "GET /api/portal/notices (any active portal login)",
     "portalNoticesMarkRead": "POST /api/portal/notices (any active portal login)",
     "portalNoticeSettingsGet": "GET /api/portal/notices/settings (any active portal login)",
