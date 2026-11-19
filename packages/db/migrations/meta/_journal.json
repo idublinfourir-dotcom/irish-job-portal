@@ -379,6 +379,13 @@
       "when": 1794300055000,
       "tag": "0055_pay_scales",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1794300056000,
+      "tag": "0056_report_company",
+      "breakpoints": true
     }
   ]
 }

@@ -1532,10 +1532,12 @@ export const report = pgTable("report", {
 	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
+	uniqueIndex("report_candidate_org_open_unique").using("btree", table.reporterCandidateUserId.asc().nullsLast().op("text_ops"), table.targetOrganisationId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
 	uniqueIndex("report_candidate_open_unique").using("btree", table.reporterCandidateUserId.asc().nullsLast().op("int8_ops"), table.targetJobId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
 	index("report_decided_idx").using("btree", table.decidedByStaffUserId.asc().nullsLast().op("text_ops")),
 	index("report_inbox_idx").using("btree", table.status.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
 	index("report_queue_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
+	uniqueIndex("report_portal_org_open_unique").using("btree", table.reporterPortalUserId.asc().nullsLast().op("text_ops"), table.targetOrganisationId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
 	uniqueIndex("report_portal_open_unique").using("btree", table.reporterPortalUserId.asc().nullsLast().op("text_ops"), table.targetJobId.asc().nullsLast().op("int8_ops")).where(sql`(status = ANY (ARRAY['open'::text, 'job_hidden'::text]))`),
 	index("report_reporter_candidate_idx").using("btree", table.reporterCandidateUserId.asc().nullsLast().op("text_ops")),
 	index("report_reporter_portal_idx").using("btree", table.reporterPortalUserId.asc().nullsLast().op("text_ops")),
@@ -1579,7 +1581,7 @@ export const report = pgTable("report", {
 			name: "report_decided_by_staff_user_id_fkey"
 		}),
 	check("report_target_kind_check", sql`target_kind = ANY (ARRAY['job'::text, 'organisation'::text, 'message'::text, 'profile'::text])`),
-	check("report_reason_check", sql`reason = ANY (ARRAY['asks_for_money'::text, 'no_sponsorship'::text, 'job_closed'::text, 'wrong_details'::text, 'other'::text])`),
+	check("report_reason_check", sql`CASE target_kind WHEN 'job'::text THEN (reason = ANY (ARRAY['asks_for_money'::text, 'no_sponsorship'::text, 'job_closed'::text, 'wrong_details'::text, 'other'::text])) WHEN 'organisation'::text THEN (reason = ANY (ARRAY['fake_company'::text, 'asks_for_money'::text, 'no_sponsorship'::text, 'other'::text])) ELSE (reason = ANY (ARRAY['asks_for_money'::text, 'no_sponsorship'::text, 'job_closed'::text, 'wrong_details'::text, 'other'::text])) END`),
 	check("report_status_check", sql`status = ANY (ARRAY['open'::text, 'job_hidden'::text, 'cleared'::text, 'upheld'::text])`),
 	check("report_check", sql`(target_wiped_at IS NOT NULL) OR (num_nonnulls(target_job_id, target_organisation_id, target_message_id, target_candidate_user_id) = 1)`),
 	check("report_check1", sql`CHECK (

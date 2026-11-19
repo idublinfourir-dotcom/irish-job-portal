@@ -378,14 +378,15 @@ components:
       properties:
         id: { $ref: '#/components/schemas/Id' }
         status: { type: string }
-        targetKind: { type: string }
+        targetKind: { type: string, description: "`job` or `organisation` (a company report, #102: no job; targetJobId, jobTitle and jobStatus are null)." }
         reason: { type: string }
         createdText: { $ref: '#/components/schemas/DbTime' }
         targetJobId: { type: [string, 'null'] }
         jobTitle: { type: [string, 'null'] }
         jobStatus: { type: [string, 'null'] }
-        organisationId: { type: [string, 'null'] }
+        organisationId: { type: [string, 'null'], description: "The job's company, or the reported company." }
         displayName: { type: [string, 'null'] }
+        organisationStatus: { type: [string, 'null'], description: "The company's status now (S11)." }
     CaseSummary:
       type: object
       required: [id, organisationId, displayName, caseKind, reasonCode, stage]
@@ -1330,7 +1331,8 @@ paths:
           description: >-
             `already_merged`: the absorbed company was merged already. `target_merged`: the survivor was merged into another.
             `not_mergeable`: one is rejected, closed, banned or suspended. `kind_mismatch`: not the same kind. `active_members`: the absorbed
-            company still has active members. `has_applications`: the absorbed company has applications.
+            company still has active members. `has_applications`: the absorbed company has applications. `open_reports`: the absorbed
+            company has open company reports (decide them first). A merge moves the absorbed company's decided company reports and strike cases too.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: kind_mismatch } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/companies/owner-reassign:
@@ -2566,10 +2568,11 @@ paths:
   /api/trust-safety/reports:
     get:
       operationId: listReports
-      summary: List open job reports, or show one
+      summary: List open job and company reports, or show one
       description: >-
-        Without `id`: the open and job_hidden reports, oldest first, 20 a page (no evidence text, no reporter). With `id`: one report with
-        its evidence, the job as reported and, until it is decided, who reported it. An unknown or repeated query key is 400 `bad_query`.
+        Without `id`: the open and job_hidden reports, job and company reports together, oldest first, 20 a page (no evidence text, no
+        reporter), each with its company. With `id`: one report with its evidence, the job or company as reported and, until it is decided,
+        who reported it. An unknown or repeated query key is 400 `bad_query`.
       security: [{ staffSession: [] }]
       x-roles: [trust_and_safety]
       x-rate-limit: none
@@ -2597,7 +2600,7 @@ paths:
                           - type: object
                             properties:
                               evidenceText: { type: [string, 'null'] }
-                              targetSnapshot: { description: The job as it was when reported (any JSON). }
+                              targetSnapshot: { description: The job or company as it was when reported (any JSON). }
                               reporterCandidateUserId: { type: [string, 'null'] }
                               reporterPortalUserId: { type: [string, 'null'] }
                               decidedByStaffUserId: { type: [string, 'null'] }
@@ -2622,8 +2625,9 @@ paths:
       operationId: actOnReport
       summary: Hide the reported job, clear the report, or uphold it
       description: >-
-        `hide` hides the live job at once. `clear` closes the report and the job comes back. `uphold` closes the report, the database closes
-        a hidden job, and a case opens on the job's company (`caseKind` and `reasonCode` must pair: false_claim with false_sponsorship,
+        `hide` hides the live job at once (a job report only; a company report is 409 `not_a_job_report`, as a report never hides a
+        company or its jobs by itself). `clear` closes the report and the job comes back. `uphold` closes the report, the database closes
+        a hidden job, and a case opens on the job's company, or on the reported company with no job (`caseKind` and `reasonCode` must pair: false_claim with false_sponsorship,
         false_pay_floor with false_pay_floor, instant_ban with asks_for_money, fake_company or fake_job). `noticeSummary` 1 to 1,000
         characters (line breaks and tabs allowed). The Origin header must be the admin app's origin.
       security: [{ staffSession: [] }]
@@ -2675,7 +2679,7 @@ paths:
           description: "`not_found`: no such report."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
         '409':
-          description: "`already_decided`: the report was cleared or upheld. `already_hidden`: hide of a job hidden already. `job_not_live`: hide of a job that is not live."
+          description: "`already_decided`: the report was cleared or upheld. `already_hidden`: hide of a job hidden already. `job_not_live`: hide of a job that is not live. `not_a_job_report`: hide of a company report."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: already_hidden } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/trust-safety/cases:

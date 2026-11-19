@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkReport, MAX_EVIDENCE, REPORT_REASONS } from "./report";
+import { checkReport, COMPANY_REASONS, MAX_EVIDENCE, REPORT_REASONS } from "./report";
 
 const ok = { jobId: "123", reason: "other" };
 describe("checkReport", () => {
@@ -23,5 +23,18 @@ describe("checkReport", () => {
   });
   it("does not accept a polluted prototype key", () => {
     expect(checkReport(JSON.parse('{"jobId":"1","reason":"other","__proto__":{"a":1}}'))).toBeNull();
+  });
+  it("a company report: companyId with a company reason (#102)", () => {
+    for (const reason of COMPANY_REASONS) expect(checkReport({ companyId: "7", reason })).toEqual({ companyId: "7", reason, evidence: null });
+    expect(checkReport({ companyId: "7", reason: "fake_company", evidence: "No such firm." })).toEqual({ companyId: "7", reason: "fake_company", evidence: "No such firm." });
+  });
+  it("exactly one target, and the reason must be that target's", () => {
+    const bad: unknown[] = [
+      { jobId: "1", companyId: "2", reason: "other" }, { companyId: "2", jobId: undefined, reason: "other", x: 1 },
+      { jobId: "1", reason: "fake_company" }, { companyId: "2", reason: "job_closed" }, { companyId: "2", reason: "wrong_details" },
+      { companyId: 2, reason: "other" }, { companyId: "", reason: "other" }, { companyId: null, reason: "other" }, { companyId: "-2", reason: "other" },
+      { companyId: "9223372036854775808", reason: "other" }, { jobId: null, companyId: "2", reason: "other" }, { companyId: "2" },
+    ];
+    for (const b of bad) expect(checkReport(b), JSON.stringify(b)).toBeNull();
   });
 });

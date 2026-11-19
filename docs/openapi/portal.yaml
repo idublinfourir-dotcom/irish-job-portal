@@ -747,26 +747,36 @@ paths:
   /api/portal/report:
     post:
       operationId: portalReport
-      summary: Report a live job
+      summary: Report a live job or a company
       description: |
         Any active portal login, with or without a company. The reporter is never shown to the employer. Order: bot check (403
-        `BOT_SUSPECTED`), Origin (403 `BAD_ORIGIN`), body cap, JSON and body, session, rate limit, then the job must be live.
+        `BOT_SUSPECTED`), Origin (403 `BAD_ORIGIN`), body cap, JSON and body, session, rate limit, then the job must be live or the
+        company must have a page (not rejected, closed or merged away; #102). Exactly one of `jobId` and `companyId`; the reason must be
+        one of that target's codes (placeholder codes). A report never hides anything by itself.
       security: [{ portalSession: [] }]
       x-roles: [any active portal login]
-      x-rate-limit: 10 reports per login per hour
+      x-rate-limit: 10 reports per login per hour (job and company reports together)
       x-body-cap: 4000 characters
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [jobId, reason]
-              properties:
-                jobId: { $ref: '#/components/schemas/Id' }
-                reason: { type: string, enum: [asks_for_money, no_sponsorship, job_closed, wrong_details, other] }
-                evidence: { type: string, minLength: 1, maxLength: 2000, description: "Line breaks and tabs allowed, no other control or format characters." }
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [jobId, reason]
+                  properties:
+                    jobId: { $ref: '#/components/schemas/Id' }
+                    reason: { type: string, enum: [asks_for_money, no_sponsorship, job_closed, wrong_details, other] }
+                    evidence: { type: string, minLength: 1, maxLength: 2000, description: "Line breaks and tabs allowed, no other control or format characters." }
+                - type: object
+                  additionalProperties: false
+                  required: [companyId, reason]
+                  properties:
+                    companyId: { $ref: '#/components/schemas/Id' }
+                    reason: { type: string, enum: [fake_company, asks_for_money, no_sponsorship, other] }
+                    evidence: { type: string, minLength: 1, maxLength: 2000, description: "Line breaks and tabs allowed, no other control or format characters." }
             example: { jobId: '5501', reason: asks_for_money, evidence: The advert asks candidates to pay a visa fee up front. }
       responses:
         '200':
@@ -778,8 +788,8 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BOT_SUSPECTED`: the bot check refused. `BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_ORIGIN } } } }
-        '404': { description: "`JOB_NOT_FOUND`: no live job with that id.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: JOB_NOT_FOUND } } } }
-        '409': { description: "`ALREADY_REPORTED`: this login already has an open report on this job.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: ALREADY_REPORTED } } } }
+        '404': { description: "`JOB_NOT_FOUND`: no live job with that id. `COMPANY_NOT_FOUND`: no company page with that id.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: JOB_NOT_FOUND } } } }
+        '409': { description: "`ALREADY_REPORTED`: this login already has an open report on this job or company.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: ALREADY_REPORTED } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
         '429': { $ref: '#/components/responses/TooMany' }
   /api/portal/review-answer:

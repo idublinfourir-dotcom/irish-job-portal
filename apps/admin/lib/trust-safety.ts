@@ -83,7 +83,7 @@ const STATUS = new Map<string, number>(Object.entries({
   no_session: 401, not_active: 401,
   bad_origin: 403, not_active_staff: 403, not_trust_and_safety: 403,
   not_found: 404,
-  already_decided: 409, already_hidden: 409, job_not_live: 409, job_not_in_organisation: 409, already_notified: 409, not_notified: 409,
+  already_decided: 409, already_hidden: 409, not_a_job_report: 409, job_not_live: 409, job_not_in_organisation: 409, already_notified: 409, not_notified: 409,
   reply_window_open: 409, decision_pending: 409, other_case_pending: 409, same_person: 409, entered_reply: 409, entered_appeal: 409, decided_case: 409,
   nothing_pending: 409, nothing_to_ban: 409, no_appeal_window: 409, already_appealed: 409, no_appeal: 409, appeal_decided: 409, window_closed: 409,
   no_ban: 409, not_agency_ban: 409, already_marked: 409,

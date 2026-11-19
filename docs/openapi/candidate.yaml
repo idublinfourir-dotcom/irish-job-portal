@@ -945,27 +945,37 @@ paths:
     post:
       operationId: reportJob
       tags: [public]
-      summary: Report a live job
+      summary: Report a live job or a company
       description: |
-        Files a report on one live job for trust and safety. Signed in only; the reporter is never shown to the employer. Order:
+        Files a report on one live job or one company (#102: a company with a page, not rejected, closed or merged away) for trust and safety.
+        Exactly one of `jobId` and `companyId`; the reason must be one of that target's codes (placeholder codes). A report never hides
+        anything by itself. Signed in only; the reporter is never shown to the employer. Order:
         bot check, Origin, body cap, JSON, field checks, session, rate limit (so a bad body is 400 even without a session).
         `evidence` may hold line breaks and tabs, no other control characters.
       security: [{ candidateSession: [] }]
       x-roles: [candidate]
       x-body-cap: 4000 characters
-      x-rate-limit: 10 reports an hour per login
+      x-rate-limit: 10 reports an hour per login (job and company reports together)
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [jobId, reason]
-              properties:
-                jobId: { $ref: '#/components/schemas/Id' }
-                reason: { enum: [asks_for_money, no_sponsorship, job_closed, wrong_details, other] }
-                evidence: { type: string, minLength: 1, maxLength: 2000 }
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [jobId, reason]
+                  properties:
+                    jobId: { $ref: '#/components/schemas/Id' }
+                    reason: { enum: [asks_for_money, no_sponsorship, job_closed, wrong_details, other] }
+                    evidence: { type: string, minLength: 1, maxLength: 2000 }
+                - type: object
+                  additionalProperties: false
+                  required: [companyId, reason]
+                  properties:
+                    companyId: { $ref: '#/components/schemas/Id' }
+                    reason: { enum: [fake_company, asks_for_money, no_sponsorship, other] }
+                    evidence: { type: string, minLength: 1, maxLength: 2000 }
             example: { jobId: '1042', reason: asks_for_money, evidence: The advert asks for a made-up fee. }
       responses:
         '200':
@@ -983,13 +993,13 @@ paths:
               schema: { $ref: '#/components/schemas/CodeError' }
               example: { code: BAD_ORIGIN }
         '404':
-          description: '`JOB_NOT_FOUND`: the job is not live.'
+          description: '`JOB_NOT_FOUND`: the job is not live. `COMPANY_NOT_FOUND`: no company page with that id (unknown, rejected, closed or merged away).'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CodeError' }
               example: { code: JOB_NOT_FOUND }
         '409':
-          description: '`ALREADY_REPORTED`: this login already has an open report on this job.'
+          description: '`ALREADY_REPORTED`: this login already has an open report on this job or company.'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CodeError' }

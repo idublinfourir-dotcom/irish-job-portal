@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { QueueRefused } from "../src/admin-queue";
 import { seedStaff } from "../src/staff-seed-cli";
 import { decideCase, listReports, openCase } from "../src/trust-safety";
+import { mergeCompanies } from "../src/merges";
 import { encodeIdCursor } from "../src/wire";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { fixtures } from "./fixtures";
@@ -183,6 +184,57 @@ describe("reports", () => {
     // a reason code that does not fit the case kind
     const r2 = await report((await company()).jobs[0]!);
     await no("ts1", "reports", { action: "uphold", reportId: r2, caseKind: "instant_ban", reasonCode: "false_sponsorship" }, 400, "bad_reason");
+  });
+});
+
+// ===== company reports (#102, S11) =====
+async function companyReport(org: string, reason = "fake_company") {
+  const who = await F.cand();
+  return (await db.query("app_candidate", "insert into report(target_kind, target_organisation_id, reporter_candidate_user_id, reason, evidence_text) values ('organisation', $1, $2, $3, 'Fake proof') returning id::text", [org, who, reason])).rows[0].id as string;
+}
+describe("company reports (#102)", () => {
+  it("the inbox shows a company report with its company; the trust and safety alert is queued; hide is refused and nothing is hidden; clear closes it", async () => {
+    const co = await company();
+    const hour = `staff_report_new:${staff.ts1}:`;
+    await su.query("delete from email_outbox where dedupe_key like $1", [`${hour}%`]);
+    const r = await companyReport(co.org);
+    expect((await su.query("select count(*)::int n from email_outbox where template = 'staff_report_new' and staff_user_id = $1", [staff.ts1])).rows[0].n).toBe(1);
+    const mine = (await call("ts1", "reports")).json.items.find((x: { id: string }) => x.id === r);
+    expect(mine).toMatchObject({ targetKind: "organisation", targetJobId: null, jobTitle: null, organisationId: co.org, displayName: "Fake Org", organisationStatus: "verified", reason: "fake_company" });
+    expect(JSON.stringify(mine)).not.toMatch(/Fake proof|reporter/);
+    expect((await call("ts1", "reports", undefined, { query: `?id=${r}` })).json.item).toMatchObject({ organisationId: co.org, evidenceText: "Fake proof", reporterCandidateUserId: expect.any(String) });
+    await no("ts1", "reports", { action: "hide", reportId: r }, 409, "not_a_job_report");
+    for (const who of ["reviewer", "fetched", "adminonly", "norole"]) expect((await call(who, "reports", { action: "clear", reportId: r })).status, who).toBe(403);
+    expect(await orgRow(co.org)).toMatchObject({ status: "verified" });
+    expect(await jobRow(co.jobs[0]!)).toMatchObject({ status: "live", hidden_reason: null });
+    await ok("ts2", "reports", { action: "clear", reportId: r });
+    expect(await one("select status, reporter_candidate_user_id, decided_by_staff_user_id from report where id = $1", [r])).toEqual({ status: "cleared", reporter_candidate_user_id: null, decided_by_staff_user_id: staff.ts2 });
+    expect(await jobRow(co.jobs[0]!)).toMatchObject({ status: "live" });
+  });
+  it("uphold opens a case on the reported company with no job; only the case can then act on the company", async () => {
+    const co = await company();
+    const r = await companyReport(co.org, "asks_for_money");
+    const { caseId } = await ok("ts1", "reports", { action: "uphold", reportId: r, caseKind: "false_claim", reasonCode: "false_sponsorship" });
+    expect(await caseRow(caseId)).toMatchObject({ organisation_id: co.org, job_id: null, report_id: r, case_kind: "false_claim", stage: "case_open" });
+    expect(await orgRow(co.org)).toMatchObject({ status: "verified" });
+    expect(await jobRow(co.jobs[0]!)).toMatchObject({ status: "live" });
+    await no("ts1", "reports", { action: "uphold", reportId: r, caseKind: "false_claim", reasonCode: "false_sponsorship" }, 409, "already_decided");
+  });
+  it("a merge waits for the open company reports; then the decided reports and the strike case move to the survivor, listed in the audit row (0056)", async () => {
+    const co = await company(), survivor = await company();
+    await su.query("update membership set status = 'removed', removed_at = now() where organisation_id = $1", [co.org]);
+    const r1 = await companyReport(co.org), r2 = await companyReport(co.org, "other");
+    expect(await refusal(mergeCompanies(admin(), staff.reviewer!, co.org, survivor.org))).toBe("open_reports");
+    const { caseId } = await ok("ts1", "reports", { action: "uphold", reportId: r1, caseKind: "false_claim", reasonCode: "false_sponsorship" });
+    expect(await refusal(mergeCompanies(admin(), staff.reviewer!, co.org, survivor.org))).toBe("open_reports");
+    await ok("ts1", "reports", { action: "clear", reportId: r2 });
+    // a case cannot be moved by hand to a company its own was not merged into
+    expect(await refusal(su.query("update strike set organisation_id = $2 where id = $1", [caseId, survivor.org]))).toMatch(/organisation of a case never changes/);
+    expect(await mergeCompanies(admin(), staff.reviewer!, co.org, survivor.org)).toMatchObject({ absorbed: co.org, survivor: survivor.org });
+    expect((await su.query("select target_organisation_id::text o from report where id = any($1::bigint[]) order by id", [[r1, r2]])).rows).toEqual([{ o: survivor.org }, { o: survivor.org }]);
+    expect(await caseRow(caseId)).toMatchObject({ organisation_id: survivor.org, report_id: r1 });
+    const audit = await one("select after from audit_event where action = 'organisation.merge' and object_id = $1", [co.org]);
+    expect(audit.after).toMatchObject({ report_ids: [Number(r1), Number(r2)], strike_ids: [Number(caseId)] });
   });
 });
 

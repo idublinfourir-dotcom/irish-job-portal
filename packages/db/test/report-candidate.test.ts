@@ -125,6 +125,53 @@ describe("report a job (candidate)", () => {
   });
 });
 
+describe("report a company (candidate, #102)", () => {
+  it("files a company report with the company snapshot, and hides nothing (K3)", async () => {
+    const p = await login(), c = await F.org({ name: "Fake Co Ltd" });
+    await su.query("update job set organisation_id=$1 where id=$2", [c, await job("live")]);
+    const r = await report({ companyId: c, reason: "fake_company", evidence: "No such firm." }, p);
+    expect([r.status, r.text]).toEqual([200, '{"ok":true}']);
+    const [row] = await rows(p.id);
+    expect(row).toMatchObject({ target_kind: "organisation", target_organisation_id: c, target_job_id: null, reason: "fake_company", status: "open", evidence_text: "No such firm.", reporter_portal_user_id: null });
+    expect(row.target_snapshot).toMatchObject({ display_name: "Fake Co Ltd", kind: "employer", status: "verified" });
+    expect((await su.query("select o.status, j.status as job_status from organisation o join job j on j.organisation_id=o.id where o.id=$1", [c])).rows).toEqual([{ status: "verified", job_status: "live" }]);
+  });
+  it("one open report per login and company; a job report of the same company is separate", async () => {
+    const p = await login(), c = await F.org();
+    expect((await report({ companyId: c, reason: "other" }, p)).status).toBe(200);
+    expect(await report({ companyId: c, reason: "asks_for_money" }, p)).toMatchObject({ status: 409, code: "ALREADY_REPORTED" });
+    expect((await report({ companyId: c, reason: "other" }, await login())).status).toBe(200);
+    expect((await report({ jobId: live, reason: "other" }, p)).status).toBe(200);
+  });
+  it("a rejected, closed, merged-away or unknown company is COMPANY_NOT_FOUND; a suspended or banned one may be reported", async () => {
+    const p = await login(), survivor = await F.org();
+    const merged = await F.org();
+    await su.query("update organisation set merged_into_id=$1 where id=$2", [survivor, merged]);
+    for (const c of [await F.org({ status: "rejected" }), await F.org({ status: "closed" }), merged, "999999999"])
+      expect(await report({ companyId: c, reason: "other" }, p), c).toMatchObject({ status: 404, code: "COMPANY_NOT_FOUND" });
+    expect(await rows(p.id)).toEqual([]);
+    for (const status of ["suspended", "banned", "unclaimed"]) expect((await report({ companyId: await F.org({ status }), reason: "other" }, p)).status, status).toBe(200);
+  });
+  it("refuses both targets, a job reason on a company, a bad id, and no session", async () => {
+    const p = await login(), c = await F.org();
+    for (const b of [{ companyId: c, jobId: live, reason: "other" }, { companyId: c, reason: "job_closed" }, { jobId: live, reason: "fake_company" }, { companyId: "1 or 1=1", reason: "other" }, { companyId: Number(c), reason: "other" }, { companyId: c, reason: "other", evidence: "a\u0000b" }])
+      expect(await report(b, p), JSON.stringify(b)).toMatchObject({ status: 400, code: "BAD_REQUEST" });
+    expect(await report({ companyId: c, reason: "other" }, {})).toMatchObject({ status: 401, code: "NO_SESSION" });
+    expect(await report({ companyId: c, reason: "other" }, { ...p, origin: "https://evil.example" })).toMatchObject({ status: 403, code: "BAD_ORIGIN" });
+    expect(await rows(p.id)).toEqual([]);
+  });
+  it("company reports count toward the same hourly limit as job reports", async () => {
+    const p = await login(), codes = [];
+    for (let i = 0; i < 11; i++) codes.push((await report(i % 2 ? { jobId: await job("live"), reason: "other" } : { companyId: await F.org(), reason: "other" }, p)).status);
+    expect(codes).toEqual([...Array(10).fill(200), 429]);
+  });
+  it("the database refuses a job reason on a company report and a company reason on a job report, whoever inserts", async () => {
+    const c = await F.org();
+    await expect(su.query("insert into report(target_kind, target_organisation_id, reason) values ('organisation', $1, 'job_closed')", [c])).rejects.toMatchObject({ code: "23514" });
+    await expect(su.query("insert into report(target_kind, target_job_id, reason) values ('job', $1, 'fake_company')", [live])).rejects.toMatchObject({ code: "23514" });
+  });
+});
+
 describe("security: what the candidate role can do to report", () => {
   it("cannot read report columns other than id", async () => {
     for (const col of ["reporter_candidate_user_id", "reason", "evidence_text", "status", "target_snapshot"])
@@ -158,6 +205,25 @@ describe("performance: one report call", () => {
     }
     const median = [...times].sort((a, b) => a - b)[4]!;
     console.log(`report-candidate: ${statements} statements, median ${median.toFixed(1)} ms`);
+    expect(statements).toBeLessThanOrEqual(BUDGET.statements);
+    expect(median).toBeLessThan(BUDGET.medianMs);
+  });
+});
+
+describe("performance: one company report call", () => {
+  it("stays inside the same statement count and time budget as a job report", async () => {
+    const p = await login(), times: number[] = [];
+    let statements = 0;
+    for (let i = 0; i < 9; i++) {
+      const c = await F.org();
+      const t = performance.now();
+      const [r, k] = await counted(() => report({ companyId: c, reason: "other", evidence: "x" }, p));
+      times.push(performance.now() - t);
+      expect(r.status).toBe(200);
+      statements = Math.max(statements, k);
+    }
+    const median = [...times].sort((a, b) => a - b)[4]!;
+    console.log(`report-candidate company: ${statements} statements, median ${median.toFixed(1)} ms`);
     expect(statements).toBeLessThanOrEqual(BUDGET.statements);
     expect(median).toBeLessThan(BUDGET.medianMs);
   });
