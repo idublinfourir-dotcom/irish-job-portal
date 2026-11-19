@@ -5,11 +5,13 @@
 // proposer) and setting_guard (a value changes only through a confirmed, unused 'setting' request naming that value, 0004).
 import type pg from "pg";
 import { QueueRefused } from "./admin-queue";
+import { CANDIDATE_DATA, exportData } from "./candidate";
 import { parseSeed, seedRows, type SeedResult, type SeedRow } from "./company-seed";
 import { fileStore } from "./file-store";
 import { validId } from "./search";
 import { requireRole } from "./staff-admin";
 import { AUDIT } from "./trust-safety";
+import { toWire } from "./wire";
 
 type Q = Pick<pg.Pool, "query">;
 type Db = Pick<pg.Pool, "query" | "connect">;
@@ -284,3 +286,98 @@ export async function confirmCandidateMerge(db: Db, staff: string, requestId: un
 
 export const refuseCandidateMerge = (db: Db, staff: string, requestId: unknown) =>
   inTransaction(db, staff, ["administrator"], "not_administrator", (c) => endRequest(c, staff, "candidate_merge", requestId, "candidate_user"));
+
+// ===== Q2: act on a data request (queue data_request) =====
+// Administrators only (20c: data requests are AD's). The account is the one whose email is the requester's email on the item's message
+// (private.data_request_account, 0050: refused no_account, several_accounts, sender_not_account). export: that person's own self-export (candidate.ts
+// exportData, or private.portal_user_data, the portal self-export's data), returned to the staff member only, never emailed; one data_access audit row.
+// erase: irreversible, so two administrators (as C6): private.data_request_erase (0050) runs the erase function and closes the item. close: ends an
+// item that needs nothing more (after an export). No reply is queued to the requester: there is no data-request email yet, and a stored address
+// would outlive the erase. ponytail: placeholder; staff answer by hand until a template exists.
+const DR_REFUSED = /^data request refused: ([a-z_]+)/;
+const drRefusal = (e: unknown) => {
+  const m = (e as { code?: string }).code === "P0001" ? DR_REFUSED.exec((e as Error).message) : null;
+  return m ? new QueueRefused(m[1]!) : e;
+};
+type Account = { kind: "candidate" | "portal"; userId: string };
+async function accountOf(c: Q, itemId: unknown): Promise<Account> {
+  if (!validId(itemId)) throw new QueueRefused("not_found");
+  try {
+    return (await c.query<{ a: Account }>("select private.data_request_account($1::bigint) a", [itemId])).rows[0]!.a;
+  } catch (e) {
+    throw drRefusal(e);
+  }
+}
+// Oldest first on review_item_queue_idx; the requester's email from the message (signedIn: the message came from a signed-in login).
+export const DATA_REQUESTS =
+  "select i.id::text as \"itemId\", i.status, i.created_at::text as \"createdAt\", m.surface, m.from_email as email, " +
+  "coalesce(m.candidate_user_id, m.portal_user_id) is not null as \"signedIn\" from review_item i join contact_message m on m.id = i.contact_message_id " +
+  `where i.queue = 'data_request' and i.status in ('open','claimed') order by i.created_at, i.id limit ${MAX_SHOWN + 1}`;
+export type DataRequestItem = { itemId: string; status: string; createdAt: string; surface: string; email: string | null; signedIn: boolean };
+
+/** The open data requests and the erasures waiting for a second administrator. */
+export async function listDataRequests(db: Q, staff: string) {
+  await requireRole(db, staff, ["administrator"], "not_administrator");
+  const [items, p] = await Promise.all([db.query<DataRequestItem>(DATA_REQUESTS), db.query(PENDING_OF, ["data_request_erase"])]);
+  return { ...page(items.rows), pending: p.rows.map((x) => ({ requestId: x.id, itemId: x.target_id, kind: x.change.kind, userId: x.change.userId, proposedBy: x.proposed_by, createdAt: x.created_at })) };
+}
+
+const STAFF_CANDIDATE_EXPORT = `select ${CANDIDATE_DATA} as data`;
+const DR_EXPORT_AUDIT =
+  "insert into audit_event(kind, actor_staff_user_id, action, object_type, object_id, subject_candidate_user_id, after, source) " +
+  "values ('data_access', $1, 'data_request.export', $2, $3, $4, $5::jsonb, 'panel')";
+
+/** The requester's own export, for the staff member to pass on by hand; the audit row is in the same transaction. */
+export async function exportDataRequest(db: Db, staff: string, itemId: unknown): Promise<Account & { data: Record<string, unknown> }> {
+  return inTransaction(db, staff, ["administrator"], "not_administrator", async (c) => {
+    const a = await accountOf(c, itemId);
+    const data = a.kind === "candidate" ? await exportData(c, a.userId, STAFF_CANDIDATE_EXPORT)
+      : (toWire({ exportedAt: new Date().toISOString(), ...(await c.query("select private.portal_user_data($1) r", [a.userId])).rows[0].r }) as Record<string, unknown>);
+    await c.query(DR_EXPORT_AUDIT, [staff, `${a.kind}_user`, a.userId, a.kind === "candidate" ? a.userId : null, JSON.stringify({ item_id: itemId })]);
+    return { ...a, data };
+  });
+}
+
+export const DR_CLOSE =
+  "with w as (update review_item set status = 'done', outcome = 'answered', decided_by_staff_user_id = $2, decided_at = now(), candidate_user_id = null, portal_user_id = null " +
+  "where id = $1::bigint and queue = 'data_request' and status in ('open','claimed') returning id) " +
+  "insert into audit_event(kind, actor_staff_user_id, action, object_type, object_id, source) select 'admin_action', $2, 'data_request.close', 'review_item', id::text, 'panel' from w";
+
+/** Closes an open item with nothing erased (the export was sent, or nothing more is needed). */
+export async function closeDataRequest(db: Db, staff: string, itemId: unknown): Promise<void> {
+  if (!validId(itemId)) throw new QueueRefused("not_found");
+  await inTransaction(db, staff, ["administrator"], "not_administrator", async (c) => {
+    if ((await c.query(DR_CLOSE, [itemId, staff])).rowCount !== 1) throw new QueueRefused("not_found");
+  });
+}
+
+export async function proposeDataRequestErase(db: Db, staff: string, itemId: unknown): Promise<Account & { requestId: string }> {
+  return inTransaction(db, staff, ["administrator"], "not_administrator", async (c) => {
+    const a = await accountOf(c, itemId);
+    const requestId = await propose(c, ["data_request_erase", "review_item", itemId as string, JSON.stringify(a), "data request erase"]);
+    await audit(c, staff, "data_request_erase.propose", "review_item", itemId as string, { request_id: requestId, kind: a.kind });
+    return { ...a, requestId };
+  });
+}
+
+/** A different administrator confirms: the erase runs at once. Refused (the request left pending) on an open case or report, or a changed match. */
+export async function confirmDataRequestErase(db: Db, staff: string, requestId: unknown): Promise<Account & { filesRemoved: number }> {
+  const out = await inTransaction(db, staff, ["administrator"], "not_administrator", async (c) => {
+    const r = await lockRequest(c, "data_request_erase", requestId);
+    if (r.proposed_by === staff) throw new QueueRefused("same_person");
+    await c.query(SET_STATUS, [r.id, "confirmed"]);
+    try {
+      return (await c.query<{ r: Account & { storage_keys: string[] } }>("select private.data_request_erase($1::bigint) r", [r.id])).rows[0]!.r;
+    } catch (e) {
+      throw drRefusal(e);
+    }
+  });
+  let filesRemoved = 0;
+  for (const k of out.storage_keys) {
+    try { await fileStore().remove(k); filesRemoved++; } catch { console.error("data request erase: stored file not removed, delete by hand:", JSON.stringify(k)); }
+  }
+  return { kind: out.kind, userId: out.userId, filesRemoved };
+}
+
+export const refuseDataRequestErase = (db: Db, staff: string, requestId: unknown) =>
+  inTransaction(db, staff, ["administrator"], "not_administrator", (c) => endRequest(c, staff, "data_request_erase", requestId, "review_item"));

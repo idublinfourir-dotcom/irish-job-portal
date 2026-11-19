@@ -13,7 +13,8 @@ const BUDGET = { statements: 4, medianMs: 60 }; // a full candidate (200 saved, 
 let db: TestDb, su: pg.Pool, F: { org(o?: object): Promise<string>; staff(): Promise<string>; portal(): Promise<string>; member(org: string, user: string): Promise<string> };
 let AUTH: (r: Request) => Promise<Response>, ROUTE: Record<string, (r: Request) => Promise<Response>>;
 let org: string, src: string;
-const ROLES = ["app_portal", "app_admin", "app_fetcher", "anon", "authenticated"] as const;
+// app_admin runs it too since 0050 (the staff export of a data request, data-requests.test.ts)
+const ROLES = ["app_portal", "app_fetcher", "anon", "authenticated"] as const;
 
 beforeAll(async () => {
   db = await createTestDb();

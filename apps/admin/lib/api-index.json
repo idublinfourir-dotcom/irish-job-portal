@@ -47,6 +47,8 @@
     "listSettings": "GET /api/settings (administrator)",
     "actOnSetting": "POST /api/settings (administrator)",
     "listCompanySeed": "GET /api/companies/seed (rules_data_editor, administrator)",
-    "actOnCompanySeed": "POST /api/companies/seed (rules_data_editor, administrator)"
+    "actOnCompanySeed": "POST /api/companies/seed (rules_data_editor, administrator)",
+    "listDataRequests": "GET /api/data-requests (administrator)",
+    "actOnDataRequest": "POST /api/data-requests (administrator)"
   }
 }

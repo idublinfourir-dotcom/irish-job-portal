@@ -56,6 +56,7 @@ const STATUS = new Map<string, number>(Object.entries({
   free_email_domain: 409, domain_owned_by_other: 409, already_added: 409, open_ban_case: 409, company_merged: 409,
   decision_pending: 409, no_change: 409,
   same_account: 400, kept_account_deleted: 409, open_services_case: 409, open_report: 409,
+  no_account: 409, several_accounts: 409, sender_not_account: 409, not_open: 409, account_changed: 409, owner_with_members: 409,
 }));
 
 /** A refusal as a short code and status; anything unknown is a plain 500 with the reason kept in the server log only. A failed rules check also names its stage. */
