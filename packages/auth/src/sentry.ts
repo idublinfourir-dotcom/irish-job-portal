@@ -3,13 +3,26 @@
 // is set here. The scrubbers below are the second guard: they strip the query and fragment from every URL (presigned S3 links and reset or
 // verify links carry secrets there), redact email addresses and drop cookies, headers, bodies and user data if anything set them anyway.
 // Never call Sentry.setUser: what it sets is sent whatever these options say.
-// Bounded parts keep this linear on hostile input (a 1 MB string of letters). %40 is an encoded @ in a path.
-const EMAIL = /[\w.%+-]{1,64}(?:@|%40)[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63}){1,8}/gi;
+// An email is found from its @ (or %40, an encoded @ in a path) and its domain; the local part is then walked back at most 64 characters. Starting
+// from the @ keeps this linear on hostile input: a regex starting at every letter of a 1 MB string took over a second.
+const AT_DOMAIN = /(?:@|%40)[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63}){1,8}/gi;
+const LOCAL = /[\w.%+-]/;
+function redactEmails(s: string): string {
+  let out = "", from = 0;
+  for (const m of s.matchAll(AT_DOMAIN)) {
+    let start = m.index;
+    while (start > from && m.index - start < 64 && LOCAL.test(s[start - 1]!)) start--;
+    if (start === m.index) continue; // no local part: not an address
+    out += s.slice(from, start) + "[email]";
+    from = m.index + m[0].length;
+  }
+  return out + s.slice(from);
+}
 // Keys dropped wherever they appear: cookies, headers, user data, query strings and fragments (event fields and span attributes).
 const DROP = /^(cookies?|headers|user|query_string|env)$|^user\.|header|cookie|(^|\.)(query|fragment)$/i;
 
 export function scrubText(s: string): string {
-  const out = s.includes("@") || s.includes("%40") ? s.replace(EMAIL, "[email]") : s;
+  const out = s.includes("@") || s.includes("%40") ? redactEmails(s) : s;
   // A token with a slash is a URL or a path: cut it at the first ? or #.
   return /[?#]/.test(out) ? out.replace(/\S+/g, (t) => (t.includes("/") ? t.replace(/[?#][\s\S]*/, "") : t)) : out;
 }
@@ -57,6 +70,8 @@ export function sentryOptions(dsn: string | undefined, env: Record<string, strin
       stackFrameVariables: false,
     },
     beforeSend: scrubEvent,
+    // Runs only for whole transaction events (traceLifecycle "static"); SDK 11 streams spans by default, and those go through beforeSendSpan.
+    beforeSendTransaction: scrubEvent,
     beforeBreadcrumb: <B>(b: B) => scrub(b),
     beforeSendSpan: <S>(span: S) => scrub(span),
     beforeSendLog: () => null,

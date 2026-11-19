@@ -20,6 +20,22 @@ const sent: string[] = [];
 const hosts: string[] = [];
 let base = "";
 let server: http.Server;
+let traced = false;
+let without = 0; // the health route's median before Sentry is set up
+// The extra time the real @sentry/nextjs server SDK adds to one health route call, median of 9. Measured on 19 Nov 2026: 1.3 to 2.6 ms extra
+// (1.0 to 1.4 ms without, 2.8 to 3.8 ms with). The budget is about 4 times the measure, for a busy machine.
+export const EXTRA_MS = 10;
+const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] as number;
+async function routeMedian() {
+  await fetch(`${base}/api/health`); // warm
+  const times: number[] = [];
+  for (let i = 0; i < 9; i++) {
+    const t = performance.now();
+    await (await fetch(`${base}/api/health`)).text();
+    times.push(performance.now() - t);
+  }
+  return median(times);
+}
 
 beforeAll(async () => {
   // Every connection and fetch is recorded, so a request to a sentry.io host fails the last test even if the SDK swallowed the error.
@@ -35,18 +51,14 @@ beforeAll(async () => {
     return realFetch(input, init);
   });
 
-  Sentry.init({
-    ...sentryOptions(DSN, { APP_VERSION: "abc1234", VERCEL_ENV: "preview" }),
-    transport: (o: BaseTransportOptions) => createTransport(o, async (req) => {
-      sent.push(typeof req.body === "string" ? req.body : new TextDecoder().decode(req.body));
-      return { statusCode: 200 };
-    }),
-  });
-
   server = http.createServer(async (req, res) => {
     let body = "";
     for await (const chunk of req) body += chunk;
     const url = new URL(req.url!, base);
+    if (!traced) {
+      res.writeHead((await GET()).status).end();
+      return;
+    }
     // The span Next's own tracing would open for the request, named with the raw URL to prove the scrubber.
     await Sentry.startSpan({ name: `${req.method} ${req.url}`, op: "http.server", attributes: { "url.full": url.href, "http.target": req.url, "url.query": url.search } }, async () => {
       const reply = await GET();
@@ -61,6 +73,16 @@ beforeAll(async () => {
   }).listen(0, "127.0.0.1");
   await new Promise((r) => server.once("listening", r));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  without = await routeMedian();
+
+  Sentry.init({
+    ...sentryOptions(DSN, { APP_VERSION: "abc1234", VERCEL_ENV: "preview" }),
+    transport: (o: BaseTransportOptions) => createTransport(o, async (req) => {
+      sent.push(typeof req.body === "string" ? req.body : new TextDecoder().decode(req.body));
+      return { statusCode: 200 };
+    }),
+  });
+  traced = true;
 });
 afterAll(() => {
   server.close();
@@ -72,6 +94,8 @@ const call = (p: string) => fetch(base + p, {
   headers: { cookie: "session=s3cret-cookie", authorization: "Bearer s3cret-auth", "content-type": "application/json" },
   body: JSON.stringify({ email: "jane.doe@example.com" }),
 });
+// Every test reads the full text of every envelope sent (all item types and headers), not one kind of item.
+const leaked = () => SECRETS.filter((s) => sent.some((e) => e.includes(s)));
 const items = () => sent.flatMap((e) => parseEnvelope(e)[1] as unknown as [{ type: string }, unknown][]);
 
 describe("Sentry server SDK with the shared options", () => {
@@ -88,8 +112,7 @@ describe("Sentry server SDK with the shared options", () => {
     expect(event.exception?.values?.[0]?.value).toBe(`insert failed for [email] at ${base}/boom`);
     expect(event.user).toBeUndefined();
     expect(event.request).toEqual({ url: `${base}/boom`, method: "POST" }); // set by the SDK's HTTP integration; only these two stay
-    const text = JSON.stringify(event);
-    for (const s of SECRETS) expect(text).not.toContain(s);
+    expect(leaked()).toEqual([]);
   });
 
   it("sends the traced request as spans whose names and URLs carry no query string", async () => {
@@ -103,17 +126,27 @@ describe("Sentry server SDK with the shared options", () => {
     expect(segment?.attributes["http.target"]?.value).toBe("/api/health");
     expect(segment?.attributes["url.query"]).toBeUndefined();
     expect(segment?.attributes["sentry.release"]?.value).toBe("abc1234");
-    const text = JSON.stringify(spans);
-    for (const s of SECRETS) expect(text).not.toContain(s);
+    expect(leaked()).toEqual([]);
   });
 
   it("sends no log, no replay and nothing to a sentry.io host", async () => {
     Sentry.logger.info("a log for jane.doe@example.com");
     await Sentry.flush(2000);
     expect(sent.length).toBeGreaterThan(0);
+    expect(leaked()).toEqual([]);
     const types = new Set(items().map(([h]) => h.type));
     for (const t of ["log", "replay_event", "replay_recording"]) expect(types.has(t)).toBe(false);
     expect(hosts.filter((h) => h.includes("sentry.io"))).toEqual([]);
+  });
+});
+
+describe("performance", () => {
+  it("Sentry adds less than the budget to one health route call (median of 9)", async () => {
+    const withSentry = await routeMedian();
+    await Sentry.flush(2000);
+    console.log(`health route median of 9: ${without.toFixed(2)} ms without Sentry, ${withSentry.toFixed(2)} ms with @sentry/nextjs (extra budget ${EXTRA_MS})`);
+    expect(withSentry - without).toBeLessThan(EXTRA_MS);
+    expect(leaked()).toEqual([]);
   });
 });
 

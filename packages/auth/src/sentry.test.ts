@@ -96,6 +96,24 @@ describe("scrubbers on hostile input", () => {
     });
   });
 
+  it("cleans a transaction event: name, request URL, tags and contexts", () => {
+    const o = sentryOptions("x", {});
+    expect(o.beforeSendTransaction).toBe(scrubEvent);
+    const out = o.beforeSendTransaction({
+      type: "transaction",
+      transaction: "/reset-password?token=secret-reset-token for jane@example.com",
+      request: { url: RESET, method: "GET", headers: { cookie: "c" } },
+      tags: { url: S3, who: "jane@example.com" },
+      contexts: { trace: { data: { "url.full": RESET, "url.query": "token=x" } } },
+      user: { email: "jane@example.com" },
+    });
+    expect(out.transaction).toBe("/reset-password for [email]");
+    expect(out.request).toEqual({ url: "https://jobs.example.ie/reset-password", method: "GET" });
+    expect(out.tags).toEqual({ url: "https://bucket.s3.eu-west-1.amazonaws.com/cv/1.pdf", who: "[email]" });
+    expect(out.contexts.trace.data).toEqual({ "url.full": "https://jobs.example.ie/reset-password" });
+    expect(JSON.stringify(out)).not.toMatch(/token|jane|X-Amz|cookie|user/);
+  });
+
   it("cuts objects nested deeper than 20 levels", () => {
     let deep: Record<string, unknown> = { url: RESET };
     for (let i = 0; i < 30; i++) deep = { next: deep };
