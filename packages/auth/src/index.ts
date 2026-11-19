@@ -8,7 +8,7 @@ import { emailLimitPlugin } from "./email-limit";
 
 export { readAnswers, readPortalAnswers, checkSignup, checkPortalSignup, currentTermsId, writeConsent, type Answers, type PortalAnswers } from "./signup";
 export { createFakeEmail, type FakeEmail } from "./fake-email";
-export { createMail, emailText } from "./mail";
+export { accountEmail, createMail } from "./mail";
 export { createBrevoMail, type SendMail } from "./brevo";
 export { EMAIL_LIMIT, emailLimitKey } from "./email-limit";
 

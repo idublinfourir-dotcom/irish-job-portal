@@ -8,22 +8,24 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { fixtures } from "./fixtures";
 import { main, sendPending, MAX_ATTEMPTS, ALERTS, LIVE_JOBS } from "../src/outbox-cli.ts";
+import { createBrevoMail, BREVO_URL } from "../../auth/src/brevo.ts";
 import { deleteAccount } from "../src/candidate.ts";
 import { socTitle } from "../../rules/src/soc.ts";
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 let db: TestDb, su: pg.Pool, admin: pg.Pool;
 let F: { cand(o?: object): Promise<string>; portal(o?: object): Promise<string>; staff(): Promise<string>; org(): Promise<number>; member(org: number, user: string | null, o?: object): Promise<number> };
-type Sent = { to: string; subject: string; text: string; headers?: Record<string, string> };
+type Sent = { to: string; subject: string; text: string; html: string; headers?: Record<string, string> };
 const fake = (fail: (to: string) => boolean = () => false) => {
   const sent: Sent[] = [];
-  return { sent, send: async (to: string, subject: string, text: string, headers?: Record<string, string>) => { if (fail(to)) throw new Error("Brevo send failed: HTTP 500"); sent.push({ to, subject, text, headers }); } };
+  return { sent, send: async (to: string, subject: string, text: string, html: string, headers?: Record<string, string>) => { if (fail(to)) throw new Error("Brevo send failed: HTTP 500"); sent.push({ to, subject, text, html, headers }); } };
 };
 let n = 0;
 const queue = async (cols: Record<string, unknown>) => {
   const k = Object.keys({ template: "t", dedupe_key: `k${++n}`, ...cols }), v = Object.values({ template: "t", dedupe_key: `k${n}`, ...cols });
   return Number((await su.query(`insert into email_outbox(${k.join(",")}) values(${k.map((_, i) => `$${i + 1}`).join(",")}) returning id`, v)).rows[0].id);
 };
+const CAND = "https://www.example.ie", EMPL = "https://employers.example.ie";
 const row = async (id: number) => (await su.query("select status, attempts, sent_at from email_outbox where id=$1", [id])).rows[0];
 
 beforeAll(async () => {
@@ -90,7 +92,7 @@ describe("outbox sender", () => {
     const c = await F.cand();
     for (let i = 0; i < 20; i++) await queue({ candidate_user_id: c });
     const f = fake();
-    const slow = async (...a: [string, string, string]) => { await new Promise((r) => setTimeout(r, 5)); return f.send(...a); };
+    const slow = async (...a: [string, string, string, string]) => { await new Promise((r) => setTimeout(r, 5)); return f.send(...a); };
     const [r1, r2] = await Promise.all([sendPending(admin, slow, 15), sendPending(admin, slow, 15)]);
     expect(r1.sent + r2.sent).toBe(20);
     expect(f.sent).toHaveLength(20);
@@ -133,14 +135,34 @@ describe("outbox sender", () => {
     for (const id of ids) expect((await row(id)).status).toBe("dropped");
     expect(f.sent).toHaveLength(0);
   });
-  it("wording is a generic placeholder and carries no stored params, and a hostile template name cannot inject anything", async () => {
-    const c = await F.cand();
+  it("a notice carries no stored params (not even a staff reason), and a hostile template name cannot inject anything", async () => {
+    const c = await F.cand(), p = await F.portal();
     await queue({ candidate_user_id: c, template: "evil\r\nBcc: x@y.test", params: JSON.stringify({ secret: "do-not-send-me" }) });
+    await queue({ portal_user_id: p, template: "account_needs_info", params: JSON.stringify({ organisationId: "1", reason: "STAFF-REASON-CODE", question: "Staff typed this <b>" }) });
     const f = fake();
-    await sendPending(admin, f.send);
-    expect(f.sent[0]!.text).toMatch(/PLACEHOLDER/);
-    expect(f.sent[0]!.text).not.toContain("do-not-send-me");
-    expect(f.sent[0]!.subject + f.sent[0]!.text).not.toMatch(/Bcc: /);
+    await sendPending(admin, f.send, 50, undefined, CAND, EMPL);
+    expect(f.sent).toHaveLength(2);
+    for (const m of f.sent) {
+      expect(m.subject + m.text + m.html).not.toMatch(/do-not-send-me|STAFF-REASON-CODE|Staff typed|Bcc: |PLACEHOLDER/);
+      expect(m.html).toContain("Sign in");
+    }
+  });
+  it("each notice links to the person's own site: a candidate to SITE_URL, an employer or a team member to PORTAL_SITE_URL, a staff or contact row to none", async () => {
+    const c = await F.cand(), p = await F.portal(), s = await F.staff(), o = await F.org(), m = await F.member(o, p);
+    const cm = Number((await su.query("insert into contact_message(surface,from_name,from_email,topic,body) values ('portal','Pat','pat2@example.test','general','Hi') returning id")).rows[0].id);
+    await queue({ candidate_user_id: c, template: "account_merged" });
+    await queue({ portal_user_id: p, template: "job_hidden" });
+    await queue({ membership_id: m, template: "team_removed" });
+    await queue({ staff_user_id: s, template: "t" });
+    await queue({ contact_message_id: cm, template: "t" });
+    const f = fake();
+    expect((await sendPending(admin, f.send, 50, undefined, CAND, EMPL)).sent).toBe(5);
+    const links = (to: string) => [...f.sent.filter((x) => x.to === to).flatMap((x) => [...x.html.matchAll(/href="([^"]+)"/g)].map((h) => h[1]))];
+    expect(new Set(links(`${c}@example.test`))).toEqual(new Set([`${CAND}/`]));
+    expect(new Set(links(`${p}@example.test`))).toEqual(new Set([`${EMPL}/`]));
+    expect(links(`${s}@example.test`)).toEqual([]);
+    expect(links("pat2@example.test")).toEqual([]);
+    expect(f.sent.find((x) => x.subject === "You have left a company team")).toBeDefined();
   });
 });
 
@@ -149,7 +171,7 @@ describe("outbox command (main)", () => {
     const c = await F.cand();
     await queue({ candidate_user_id: c });
     const lines: string[] = [];
-    const env = { DATABASE_URL: urlFor(db.name, "app_admin"), DATABASE_SSL: "disable" };
+    const env = { DATABASE_URL: urlFor(db.name, "app_admin"), DATABASE_SSL: "disable", SITE_URL: CAND, PORTAL_SITE_URL: EMPL };
     expect(await main([], env, (l) => lines.push(l), fake().send)).toBe(0);
     expect(lines.at(-1)).toBe("outbox: sent 1, to retry 0, failed for good 0, dropped (no address, nothing to send or too old) 0");
     await queue({ candidate_user_id: c });
@@ -208,7 +230,7 @@ describe("job alert email", () => {
     queue({ template: "job_alert", candidate_user_id: c, dedupe_key: `job_alert:${c}:${++n}`, params: JSON.stringify({ run_on: "2026-11-13", alerts: alerts.map(([a, j]) => ({ alert_id: Number(a), job_ids: j.map(Number) })) }), ...o });
   const tokenOf = async (a: string) => (await su.query("select unsubscribe_token t from alert where id=$1", [a])).rows[0].t as string;
 
-  it("sends one plain-text email for one alert: filters in words, a line and link per job, both unsubscribe links, the one-click headers", async () => {
+  it("sends one HTML and text email for one alert: filters in words, a line and link per job, both unsubscribe links, the one-click headers", async () => {
     const c = await F.cand(), [j1, j2] = await jobs(2);
     const a = await alertFor(c, { county: "Cork", occupation_code: "2134" }), t = await tokenOf(a);
     const id = await alertRow(c, [[a, [j2!, j1!]]]);
@@ -216,7 +238,8 @@ describe("job alert email", () => {
     expect(await sendPending(admin, f.send, 50, undefined, SITE)).toEqual({ sent: 1, retry: 0, failed: 0, dropped: 0 });
     const m = f.sent[0]!;
     expect(m.to).toBe(`${c}@example.test`);
-    expect(m.text).toContain("PLACEHOLDER WORDING.");
+    expect(m.text + m.html).not.toContain("PLACEHOLDER");
+    expect(m.html).toContain(`href="${SITE}/jobs/${j2}"`);
     expect(m.text).toContain(`occupation ${socTitle("2134")} (2134), county Cork (daily)`);
     expect(m.text).toContain(`- Cook 2, Fake Employer, Cork, €40,000 to €50,000\n  ${SITE}/jobs/${j2}`);
     expect(m.text.indexOf(`/jobs/${j2}`)).toBeLessThan(m.text.indexOf(`/jobs/${j1}`)); // the row's order (newest first) is kept
@@ -328,23 +351,24 @@ describe("job alert email", () => {
     expect(f.sent[0]!.text.match(/Your alert:/g)).toHaveLength(10); // 30 alerts in the row: only the first 10 are read (D1)
     expect(f.sent[0]!.text.match(/\/jobs\//g)).toHaveLength(10 * 20); // and 20 jobs each
   });
-  it("SITE_URL: the command refuses to start when a job_alert row is pending and it is unset or not https; with it set the row is sent", async () => {
+  it("SITE_URL and PORTAL_SITE_URL: the command refuses to start when a row is pending and either is unset or not https; with both set it sends", async () => {
     const c = await F.cand(), [j] = await jobs(1), a = await alertFor(c);
     const id = await alertRow(c, [[a, [j!]]]);
     const lines: string[] = [];
     const env = { DATABASE_URL: urlFor(db.name, "app_admin"), DATABASE_SSL: "disable" };
-    for (const SITE_URL of [undefined, "", "http://portal.example.ie", "portal.example.ie"]) {
-      const f = fake();
-      expect(await main([], { ...env, SITE_URL }, (l) => lines.push(l), f.send), String(SITE_URL)).toBe(2);
-      expect(f.sent).toHaveLength(0);
-      expect((await row(id)).status).toBe("pending");
+    for (const bad of [undefined, "", "http://portal.example.ie", "portal.example.ie", "https://user:pw@x.example.ie"]) {
+      for (const sites of [{ SITE_URL: bad, PORTAL_SITE_URL: EMPL }, { SITE_URL: SITE, PORTAL_SITE_URL: bad }]) {
+        const f = fake();
+        expect(await main([], { ...env, ...sites }, (l) => lines.push(l), f.send), JSON.stringify(sites)).toBe(2);
+        expect(f.sent).toHaveLength(0);
+        expect((await row(id)).status).toBe("pending");
+      }
     }
-    expect(lines.every((l) => /SITE_URL/.test(l) && !l.includes("@"))).toBe(true);
+    expect(lines.every((l) => /SITE_URL and PORTAL_SITE_URL/.test(l) && !l.includes("@"))).toBe(true);
     const f = fake();
-    expect(await main([], { ...env, SITE_URL: SITE }, (l) => lines.push(l), f.send)).toBe(0);
+    expect(await main([], { ...env, SITE_URL: SITE, PORTAL_SITE_URL: EMPL }, (l) => lines.push(l), f.send)).toBe(0);
     expect(f.sent).toHaveLength(1);
-    // with no job_alert row waiting, SITE_URL is not needed
-    await queue({ candidate_user_id: c });
+    // with nothing pending, neither is needed
     expect(await main([], env, (l) => lines.push(l), fake().send)).toBe(0);
   });
   it("a row sent without SITE_URL through sendPending is retried, not lost or sent with a bad link", async () => {
@@ -362,6 +386,35 @@ describe("job alert email", () => {
     await sendPending(admin, fake(() => true).send, 50, (l) => lines.push(l), SITE);
     expect(lines.join("\n")).toMatch(/row \d+ try 1/);
     expect(lines.join("\n")).not.toMatch(/@|example|SecretTitle|tok\d/);
+  });
+  it("through the real Brevo sender with a faked fetch: notices and the job alert go as HTML plus text with the sender name, the alert from its own sender", async () => {
+    const c = await F.cand(), p = await F.portal(), [j] = await jobs(1, { title: '<script>alert(1)</script>"><img src=x onerror=1>' }), a = await alertFor(c);
+    await alertRow(c, [[a, [j!]]]);
+    await queue({ candidate_user_id: c, template: "inactive-warning" });
+    await queue({ portal_user_id: p, template: "owner_transferred" });
+    const calls: { url: string; body: Record<string, unknown> }[] = [];
+    const fetchFake = (async (url: string, init: RequestInit) => (calls.push({ url, body: JSON.parse(init.body as string) }), new Response("{}", { status: 201 }))) as unknown as typeof fetch;
+    const notices = createBrevoMail({ apiKey: "xkeysib-test", from: "no-reply@account.example.ie", fetch: fetchFake });
+    const alertsMail = createBrevoMail({ apiKey: "xkeysib-test", from: "no-reply@alerts.example.ie", fetch: fetchFake });
+    expect(await sendPending(admin, notices, 50, undefined, SITE, EMPL, alertsMail)).toEqual({ sent: 3, retry: 0, failed: 0, dropped: 0 });
+    expect(calls).toHaveLength(3);
+    for (const { url, body } of calls) {
+      expect(url).toBe(BREVO_URL);
+      expect((body.sender as { name: string }).name).toBe("irishworkpermit.ie");
+      expect(String(body.htmlContent)).toMatch(/^<!doctype html>/);
+      expect(String(body.textContent).length).toBeGreaterThan(50);
+      expect(String(body.htmlContent)).not.toMatch(/<script|<img/);
+      expect(Object.keys(body.headers ?? {}).every((k) => /^List-Unsubscribe(-Post)?$/.test(k))).toBe(true); // nothing the sender refuses
+    }
+    const alert = calls.find((x) => x.body.subject === "New jobs matching your job alerts")!;
+    expect((alert.body.sender as { email: string }).email).toBe("no-reply@alerts.example.ie");
+    expect(String(alert.body.htmlContent)).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(alert.body.headers).toMatchObject({ "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" });
+    for (const n of calls.filter((x) => x !== alert)) {
+      expect((n.body.sender as { email: string }).email).toBe("no-reply@account.example.ie");
+      expect(n.body).not.toHaveProperty("headers");
+    }
+    expect(String(calls.find((x) => x.body.subject === "You are now the account owner")!.body.htmlContent)).toContain(`href="${EMPL}/"`);
   });
   it("performance: a batch of 200 alert rows is read in two statements and sent within the budget", async () => {
     const cs = await Promise.all(Array.from({ length: 20 }, () => F.cand()));

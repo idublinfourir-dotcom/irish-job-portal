@@ -82,6 +82,8 @@ it("sends the queued emails every day after the alerts are queued and before ret
   expect(s).toMatch(/BREVO_API_KEY: \$\{\{ secrets\.BREVO_API_KEY \}\}/);
   expect(s).toMatch(/EMAIL_FROM: \$\{\{ vars\.EMAIL_FROM \}\}/);
   expect(s).toMatch(/SITE_URL: \$\{\{ vars\.SITE_URL \}\}/);
+  expect(s).toMatch(/PORTAL_SITE_URL: \$\{\{ vars\.PORTAL_SITE_URL \}\}/); // E1: notice links go to the employer site
+  expect(s).toMatch(/ALERTS_EMAIL_FROM: \$\{\{ vars\.ALERTS_EMAIL_FROM \}\}/); // E1: job alerts from their own sender
   expect(s).toMatch(/if \[ -z "\$BREVO_API_KEY" \]; then echo "email is off \(no BREVO_API_KEY secret\): nothing sent"; exit 0; fi/);
   expect(s).toMatch(/node packages\/db\/src\/outbox-cli\.ts --batch 200$/m);
   expect(s).not.toMatch(/FETCHER_/);

@@ -1,7 +1,8 @@
 // The Brevo sender and the switch, with an injected fetch. No test reaches the network (vitest.setup.ts blocks it as well).
 import { describe, expect, it, vi } from "vitest";
-import { createBrevoMail, BREVO_URL } from "./brevo";
-import { createMail, emailText } from "./mail";
+import { createBrevoMail, BREVO_URL, SENDER_NAME } from "./brevo";
+import { SITE_NAME } from "./email-layout";
+import { createMail } from "./mail";
 
 const KEY = "xkeysib-SECRET-KEY-123";
 const ok = (status = 201) => vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ messageId: "<1@x>" }), { status }));
@@ -9,14 +10,14 @@ const thrown = (p: Promise<unknown>) => p.then(() => { throw new Error("did not 
 const mailWith = (f: typeof fetch, timeoutMs?: number) => createBrevoMail({ apiKey: KEY, from: "no-reply@example.com", fetch: f, timeoutMs });
 
 describe("createBrevoMail", () => {
-  it("posts the documented request: url, api-key header only, sender, to, subject, textContent", async () => {
+  it("posts the documented request: url, api-key header only, sender with name, to, subject, htmlContent, textContent", async () => {
     const f = ok();
-    await mailWith(f as unknown as typeof fetch)("pat@example.com", "Hi", "Body text");
+    await mailWith(f as unknown as typeof fetch)("pat@example.com", "Hi", "Body text", "<p>Body</p>");
     const [url, init] = f.mock.calls[0]!;
     expect(url).toBe(BREVO_URL);
     expect(init!.method).toBe("POST");
     expect(init!.headers).toMatchObject({ "api-key": KEY, "content-type": "application/json" });
-    expect(JSON.parse(init!.body as string)).toEqual({ sender: { email: "no-reply@example.com" }, to: [{ email: "pat@example.com" }], subject: "Hi", textContent: "Body text" });
+    expect(JSON.parse(init!.body as string)).toEqual({ sender: { name: "irishworkpermit.ie", email: "no-reply@example.com" }, to: [{ email: "pat@example.com" }], subject: "Hi", htmlContent: "<p>Body</p>", textContent: "Body text" });
     expect(String(init!.body)).not.toContain(KEY);
     expect(String(url)).not.toContain(KEY);
     expect(init!.redirect).toBe("error");
@@ -25,9 +26,9 @@ describe("createBrevoMail", () => {
     const f = ok();
     const send = mailWith(f as unknown as typeof fetch);
     const h = { "List-Unsubscribe": "<https://x.example.ie/api/alerts/unsubscribe?token=abc&scope=all>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" };
-    await send("pat@example.com", "s", "t", h);
-    await send("pat@example.com", "s", "t");
-    await send("pat@example.com", "s", "t", {});
+    await send("pat@example.com", "s", "t", "<p>t</p>", h);
+    await send("pat@example.com", "s", "t", "<p>t</p>");
+    await send("pat@example.com", "s", "t", "<p>t</p>", {});
     expect(JSON.parse(f.mock.calls[0]![1]!.body as string).headers).toEqual(h);
     expect(JSON.parse(f.mock.calls[0]![1]!.body as string).textContent).toBe("t");
     expect(JSON.parse(f.mock.calls[1]![1]!.body as string)).not.toHaveProperty("headers");
@@ -38,32 +39,32 @@ describe("createBrevoMail", () => {
     const f = ok();
     const send = mailWith(f as unknown as typeof fetch);
     for (const bad of [{ "X-A\r\nBcc": "v" }, { "X A": "v" }, { "": "v" }, { "X-A": "v\r\nBcc: x@y.com" }, { "X-A": "v\nBcc" }, { "1X": "v" }] as Record<string, string>[])
-      await expect(send("pat@example.com", "s", "t", bad), JSON.stringify(bad)).rejects.toThrow("header");
+      await expect(send("pat@example.com", "s", "t", "<p>t</p>", bad), JSON.stringify(bad)).rejects.toThrow("header");
     expect(f).not.toHaveBeenCalled();
   });
   it("accepts 201 and 202", async () => {
-    await expect(mailWith(ok(202) as unknown as typeof fetch)("pat@example.com", "s", "t")).resolves.toBeUndefined();
+    await expect(mailWith(ok(202) as unknown as typeof fetch)("pat@example.com", "s", "t", "<p>t</p>")).resolves.toBeUndefined();
   });
   it("turns an error status into a thrown error with the status and code, never the key or the address", async () => {
     const f = vi.fn(async () => new Response(JSON.stringify({ code: "unauthorized", message: `bad key ${KEY} for pat@example.com` }), { status: 401 }));
-    const e = await thrown(mailWith(f as unknown as typeof fetch)("pat@example.com", "s", "t"));
+    const e = await thrown(mailWith(f as unknown as typeof fetch)("pat@example.com", "s", "t", "<p>t</p>"));
     expect(e.message).toBe("Brevo send failed: HTTP 401 unauthorized");
     expect(e.message).not.toContain(KEY);
     const g = vi.fn(async () => new Response("<html>gateway</html>", { status: 502 }));
-    await expect(mailWith(g as unknown as typeof fetch)("pat@example.com", "s", "t")).rejects.toThrow("Brevo send failed: HTTP 502");
+    await expect(mailWith(g as unknown as typeof fetch)("pat@example.com", "s", "t", "<p>t</p>")).rejects.toThrow("Brevo send failed: HTTP 502");
   });
   it("turns a network error and a timeout into thrown errors that hold no secret", async () => {
     const down = vi.fn(async () => { throw Object.assign(new Error(`connect failed with ${KEY}`), { name: "TypeError" }); });
-    const e = await thrown(mailWith(down as unknown as typeof fetch)("pat@example.com", "s", "t"));
+    const e = await thrown(mailWith(down as unknown as typeof fetch)("pat@example.com", "s", "t", "<p>t</p>"));
     expect(e.message).toBe("Brevo send failed: network error");
     const hang = vi.fn((_u: unknown, init?: RequestInit) => new Promise<Response>((_, rej) => init!.signal!.addEventListener("abort", () => rej(init!.signal!.reason))));
-    await expect(mailWith(hang as unknown as typeof fetch, 20)("pat@example.com", "s", "t")).rejects.toThrow("Brevo send failed: timeout");
+    await expect(mailWith(hang as unknown as typeof fetch, 20)("pat@example.com", "s", "t", "<p>t</p>")).rejects.toThrow("Brevo send failed: timeout");
   });
   it("refuses hostile recipients before any request", async () => {
     const f = ok();
     const send = mailWith(f as unknown as typeof fetch);
     for (const bad of ["", "no-at", "a@b.com,c@d.com", "a@b.com\r\nBcc: x@y.com", "Pat <a@b.com>", "a b@c.com", "a@b.com;c@d.com", '"a"@b.com', "a@b.com>", "x".repeat(300) + "@b.com"])
-      await expect(send(bad, "s", "t"), JSON.stringify(bad)).rejects.toThrow("recipient");
+      await expect(send(bad, "s", "t", "<p>t</p>"), JSON.stringify(bad)).rejects.toThrow("recipient");
     expect(f).not.toHaveBeenCalled();
   });
   it("refuses an empty key or a bad sender address at construction", () => {
@@ -93,22 +94,26 @@ describe("createMail (the switch)", () => {
   it("uses Brevo when both are set (also on Vercel), keeping nothing in memory", async () => {
     const f = ok();
     const m = createMail("https://portal.example.com", { BREVO_API_KEY: KEY, EMAIL_FROM: "no-reply@example.com", VERCEL: "1", NODE_ENV: "production" }, print, f as unknown as typeof fetch);
-    await m.send("candidate", "reset", "pat@example.com", "https://x.example.com/reset?t=abc");
+    await m.send("candidate", "reset", "pat@example.com", "https://portal.example.com/api/auth/candidate/reset-password/abc?callbackURL=");
     const body = JSON.parse(f.mock.calls[0]![1]!.body as string);
     expect(body.subject).toBe("Reset your password");
-    expect(body.textContent).toContain("https://x.example.com/reset?t=abc");
+    expect(body.sender).toEqual({ name: SITE_NAME, email: "no-reply@example.com" });
+    expect(body.textContent).toContain("https://portal.example.com/api/auth/candidate/reset-password/abc?callbackURL=");
+    expect(body.htmlContent).toContain('href="https://portal.example.com/api/auth/candidate/reset-password/abc?callbackURL="');
+    expect(body).not.toHaveProperty("headers"); // account emails add no header of ours
     expect(m.outbox).toEqual([]);
   });
-  it("has wording for verify, reset and invite", () => {
-    for (const k of ["verify", "reset", "invite"] as const) {
-      const [s, t] = emailText(k, "https://l.example.com/a");
-      expect(s.length).toBeGreaterThan(5);
-      expect(t).toContain("https://l.example.com/a");
-    }
-  });
+  it("the sender name is the site name (one brand constant each side, held equal here)", () => expect(SENDER_NAME).toBe(SITE_NAME));
   it("a Brevo failure reaches the caller as a thrown error (the portal turns it into EMAIL_FAILED)", async () => {
     const f = vi.fn(async () => new Response("{}", { status: 500 }));
     const m = createMail(local, { BREVO_API_KEY: KEY, EMAIL_FROM: "a@b.com" }, print, f as unknown as typeof fetch);
     await expect(m.send("portal", "invite", "pat@example.com", "http://localhost:3000/i")).rejects.toThrow("HTTP 500");
+  });
+  it("refuses to send a link that is not on the app's own origin, before any request", async () => {
+    const f = ok();
+    const m = createMail("https://portal.example.com", { BREVO_API_KEY: KEY, EMAIL_FROM: "a@b.com" }, print, f as unknown as typeof fetch);
+    for (const bad of ["https://evil.example/x", "http://portal.example.com/x", "https://portal.example.com.evil.example/x", "javascript:alert(1)"])
+      await expect(m.send("portal", "verify", "pat@example.com", bad), bad).rejects.toThrow();
+    expect(f).not.toHaveBeenCalled();
   });
 });
