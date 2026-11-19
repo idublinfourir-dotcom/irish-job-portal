@@ -43,10 +43,11 @@ const one = async (sql: string, args: unknown[] = []) => (await su.query(sql, ar
 const notes = async (u: string) => (await su.query("select template_key t, category, organisation_id::text org, params from notification where portal_user_id = $1 order by id", [u])).rows;
 const mails = async (u: string) => (await su.query("select template t, params, status from email_outbox where portal_user_id = $1 order by id", [u])).rows;
 const candMails = async (u: string) => (await su.query("select template t, params, status from email_outbox where candidate_user_id = $1 order by id", [u])).rows;
-const failing = async <T>(template: string, p: Promise<T>) => {
+// `run` is called only after the failure switch is on: a promise passed in would already be running and could reach its email insert first.
+const failing = async <T>(template: string, run: () => Promise<T>) => {
   await su.query("insert into fail_templates values ($1)", [template]);
   try {
-    await expect(p).rejects.toThrow(/fake outbox failure/);
+    await expect(run()).rejects.toThrow(/fake outbox failure/);
   } finally {
     await su.query("delete from fail_templates");
   }
@@ -83,13 +84,13 @@ describe("team removal and owner transfer (0036)", () => {
     await expect(fn("select private.team_remove($1, $2) r", [t.ur, t.viewer])).rejects.toThrow(/NOT_OWNER/);
     await expect(fn("select private.team_remove($1, $2) r", [t.uv, t.rec])).rejects.toThrow(/NOT_OWNER/);
     await expect(fn("select private.team_remove($1, $2) r", [t.uo, other.rec])).rejects.toThrow(/MEMBER_NOT_FOUND/);
-    await failing("team_removed", fn("select private.team_remove($1, $2) r", [t.uo, t.rec]));
+    await failing("team_removed", () => fn("select private.team_remove($1, $2) r", [t.uo, t.rec]));
     expect((await one("select status from membership where id = $1", [t.rec])).status).toBe("active");
     for (const u of [t.ur, t.uv, other.ur]) expect(await notes(u)).toEqual([]);
   });
   it("a hand-over by the owner tells the new owner; a failed email undoes it", async () => {
     const t = await company();
-    await failing("owner_transferred", fn("select private.team_transfer($1, $2) r", [t.uo, t.rec]));
+    await failing("owner_transferred", () => fn("select private.team_transfer($1, $2) r", [t.uo, t.rec]));
     expect((await one("select role from membership where id = $1", [t.owner])).role).toBe("account_owner");
     expect(await notes(t.ur)).toEqual([]);
     await fn("select private.team_transfer($1, $2) r", [t.uo, t.rec]);
@@ -104,7 +105,7 @@ describe("team removal and owner transfer (0036)", () => {
     expect(await notes(t.uo)).toEqual([]);
     expect((await mails(t.uo)).map((m) => m.t)).toEqual(["owner_reassign_notice"]);
     await su.query("update owner_reassign set requested_at = requested_at - interval '8 days', completes_after = now() - interval '1 day' where id = $1", [r.requestId]);
-    await failing("owner_reassign_done", completeOwnerReassign(admin, staff.account_reviewer!, r.requestId));
+    await failing("owner_reassign_done", () => completeOwnerReassign(admin, staff.account_reviewer!, r.requestId));
     expect(await one("select status from owner_reassign where id = $1", [r.requestId])).toEqual({ status: "open" });
     expect(await notes(t.ur)).toEqual([]);
     await completeOwnerReassign(admin, staff.account_reviewer!, r.requestId);
@@ -152,7 +153,7 @@ describe("pay floor decisions", () => {
     expect(await notes(t.ur)).toEqual([]);
     const gone = await floor(t);
     await su.query("update membership set status = 'removed', removed_at = now() where id = $1", [t.rec]);
-    await failing("pay_floor_rejected", rejectFloor(admin, staff.administrator!, gone, "no_evidence"));
+    await failing("pay_floor_rejected", () => rejectFloor(admin, staff.administrator!, gone, "no_evidence"));
     expect((await one("select status from pay_floor where id = $1", [gone])).status).toBe("pending_check");
     expect((await notes(t.uo)).length).toBe(1);
     await rejectFloor(admin, staff.administrator!, gone, "no_evidence");
@@ -225,10 +226,10 @@ describe("a job hidden by a report, and the outcome to the reporter", () => {
     const j = await job(t, t.rec);
     const r = await report(j, "portal");
     await expect(hideReportedJob(admin, staff.account_reviewer!, r.id)).rejects.toThrow();
-    await failing("job_hidden", hideReportedJob(admin, staff.trust_and_safety!, r.id));
+    await failing("job_hidden", () => hideReportedJob(admin, staff.trust_and_safety!, r.id));
     expect(await one("select status from job where id = $1", [j])).toEqual({ status: "live" });
     expect(await notes(t.uo)).toEqual([]);
-    await failing("report_outcome", clearReport(admin, staff.trust_and_safety!, r.id));
+    await failing("report_outcome", () => clearReport(admin, staff.trust_and_safety!, r.id));
     expect(await one("select status, reporter_portal_user_id u from report where id = $1", [r.id])).toEqual({ status: "open", u: r.who });
     expect(await notes(r.who)).toEqual([]);
     await clearReport(admin, staff.trust_and_safety!, r.id);
