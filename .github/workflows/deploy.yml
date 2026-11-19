@@ -41,7 +41,7 @@ jobs:
           deploy() { # <app> <project id> <token>
             if [ -z "$3" ]; then echo "$1: its token secret is not set: skipped"; return 0; fi
             local copy="$RUNNER_TEMP/$1"; mkdir -p "$copy"; git archive HEAD | tar -x -C "$copy"
-            (cd "$copy" && VERCEL_TOKEN="$3" VERCEL_PROJECT_ID="$2" npx -y vercel@65.14.0 deploy --prod --yes) || { echo "$1: deploy FAILED"; failed=1; }
+            (cd "$copy" && VERCEL_TOKEN="$3" VERCEL_PROJECT_ID="$2" npx -y vercel@65.14.0 deploy --prod --yes --env APP_VERSION="${GITHUB_SHA::7}") || { echo "$1: deploy FAILED"; failed=1; }
           }
           deploy admin prj_d4UD3QwfTfojpF7tFp1KZtYdGmP1 "$TOKEN_ADMIN"
           deploy candidate prj_ihOGwSmteseWB7oWfpFkMk4QD5Ut "$TOKEN_CANDIDATE"

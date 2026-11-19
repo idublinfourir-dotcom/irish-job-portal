@@ -429,6 +429,45 @@ components:
           schema: { $ref: '#/components/schemas/ErrorBody' }
           example: { error: server_error }
 paths:
+  /api:
+    get:
+      operationId: getApiIndex
+      summary: Index of this app's routes
+      description: >-
+        This app's name, the deployed commit (`version`, set per deploy; `local` on a developer machine), the environment, the time and
+        every route of the admin site as `METHOD /path (who may call it)`, keyed by operationId; "(anyone)" is left out. Made from this file
+        (decision #265): the sync test fails when `lib/api-index.json` differs from it. Any active staff member only, so the staff routes are not a public map. It takes no query key: any key is 400 `bad_query`.
+      security: [{ staffSession: [] }]
+      x-roles: [any active staff member]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The index.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, name, version, environment, timestamp, routes]
+                additionalProperties: false
+                properties:
+                  success: { const: true }
+                  name: { type: string }
+                  version: { type: string, description: "The first 7 characters of the deployed commit, or `local`." }
+                  environment: { type: string, enum: [production, preview, development] }
+                  timestamp: { type: string, format: date-time }
+                  routes: { type: object, additionalProperties: { type: string } }
+              example:
+                success: true
+                name: Admin API (staff)
+                version: 31e144d
+                environment: production
+                timestamp: '2026-11-19T06:20:00.000Z'
+                routes: { getHealth: GET /api/health, listRules: 'GET /api/rules (any active staff member)' }
+        '400':
+          description: "`bad_query`: any query key (this GET takes none)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /api/health:
     get:
       operationId: getHealth

@@ -26,6 +26,7 @@ it("deploys each app to its own project, from a plain copy, with a pinned CLI", 
   expect(step).toMatch(/git archive HEAD \| tar -x -C "\$copy"/);
   expect(step).toMatch(/npx -y vercel@65\.14\.0 deploy --prod --yes/);
   expect(step).not.toMatch(/--token/); // the token goes in VERCEL_TOKEN, never on the command line
+  expect(step).toMatch(/deploy --prod --yes --env APP_VERSION="\$\{GITHUB_SHA::7\}"\)/); // GET /api shows the deployed commit (#265)
 });
 it("skips an app whose token is not set, and fails the run when any deploy fails", () => {
   expect(step).toMatch(/if \[ -z "\$3" \]; then echo "\$1: its token secret is not set: skipped"; return 0; fi/);

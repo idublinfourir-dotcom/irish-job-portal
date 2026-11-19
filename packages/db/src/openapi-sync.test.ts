@@ -1,11 +1,12 @@
 // The OpenAPI files stay in sync with the route files (decision #248): every apps/<app>/app/api/**/route.ts and each method it exports is in
 // docs/openapi/<app>.yaml, the file has no path or method without a route, and each operation has a summary, a 4xx (or x-no-4xx with a reason)
-// and a success example. Files only, no network. Budget: the whole check, the three real files included, runs in under 2 seconds; the
+// and a success example; each app's GET /api index (lib/api-index.json, decision #265) equals the one made from its file. Files only, no network. Budget: the whole check, the three real files included, runs in under 2 seconds; the
 // lint run (npm run lint:api) is budgeted at 15 seconds and measured here too.
 import { execFileSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { appRoutes, APPS, exportedMethods, loadSpec, replyProblems, ROOT, routePath, schemaProblems, syncProblems, type Spec } from "../test/openapi";
+import { apiIndex, appRoutes, APPS, exportedMethods, loadSpec, replyProblems, ROOT, routePath, schemaProblems, syncProblems, type Spec } from "../test/openapi";
 
 const BUDGET = { syncMs: 2000, lintMs: 15_000 };
 
@@ -72,6 +73,18 @@ describe("syncProblems on a fixture", () => {
   });
 });
 
+describe("apiIndex (decision #265)", () => {
+  it("lists each operation as METHOD /path (who), keyed by operationId, leaving out (anyone); refuses a missing or repeated id", () => {
+    const spec = { info: { title: "Fake API" }, paths: {
+      "/api/a": { get: { operationId: "listA", "x-roles": ["anyone"] }, post: { operationId: "makeA", "x-roles": ["candidate", "administrator"] } },
+      "/api/b/{id}": { parameters: [], delete: { operationId: "dropB" } },
+    } };
+    expect(apiIndex(spec)).toEqual({ name: "Fake API", routes: { listA: "GET /api/a", makeA: "POST /api/a (candidate, administrator)", dropB: "DELETE /api/b/{id}" } });
+    expect(() => apiIndex({ paths: { "/api/a": { get: {} } } })).toThrow("no or repeated operationId: GET /api/a");
+    expect(() => apiIndex({ paths: { "/api/a": { get: { operationId: "x" }, put: { operationId: "x" } } } })).toThrow("PUT /api/a");
+  });
+});
+
 describe("schemaProblems", () => {
   const spec: Spec = { components: { schemas: { Id: { type: "string", pattern: "^[1-9][0-9]{0,18}$" } } } };
   const schema = {
@@ -93,6 +106,14 @@ describe("the real files", () => {
     console.log(`openapi sync: ${ms.toFixed(0)} ms for ${APPS.length} apps (budget ${BUDGET.syncMs} ms)`);
     expect(problems).toEqual([]);
     expect(ms).toBeLessThan(BUDGET.syncMs);
+  });
+
+  it("each app's GET /api index (lib/api-index.json) equals the one made from its OpenAPI file; API_INDEX_WRITE=1 rewrites it", () => {
+    for (const app of APPS) {
+      const file = join(ROOT, "apps", app, "lib", "api-index.json"), want = JSON.stringify(apiIndex(loadSpec(app)), null, 2) + "\n";
+      if (process.env.API_INDEX_WRITE === "1") writeFileSync(file, want);
+      expect(readFileSync(file, "utf8"), `${app}: run API_INDEX_WRITE=1 npx vitest run packages/db/src/openapi-sync.test.ts`).toBe(want);
+    }
   });
 
   it("the shared Conventions text is the same in all three files", () => {

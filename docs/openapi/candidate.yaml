@@ -356,6 +356,42 @@ tags:
   - name: ops
     description: Health check.
 paths:
+  /api:
+    get:
+      operationId: candidateApiIndex
+      tags: [ops]
+      summary: Index of this app's routes
+      description: >-
+        This app's name, the deployed commit (`version`, set per deploy; `local` on a developer machine), the environment, the time and
+        every route of the candidate site as `METHOD /path (who may call it)`, keyed by operationId; "(anyone)" is left out. Made from this file
+        (decision #265): the sync test fails when `lib/api-index.json` differs from it. Anyone may read it (these routes are visible in any browser anyway). It reads no request input and no database, so no Origin check.
+      security: []
+      x-roles: [anyone]
+      x-rate-limit: none
+      x-no-4xx: The route reads nothing from the request and needs no session, so it has no client error.
+      responses:
+        '200':
+          description: The index.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, name, version, environment, timestamp, routes]
+                additionalProperties: false
+                properties:
+                  success: { const: true }
+                  name: { type: string }
+                  version: { type: string, description: "The first 7 characters of the deployed commit, or `local`." }
+                  environment: { type: string, enum: [production, preview, development] }
+                  timestamp: { type: string, format: date-time }
+                  routes: { type: object, additionalProperties: { type: string } }
+              example:
+                success: true
+                name: Candidate API (job seekers and visitors)
+                version: 31e144d
+                environment: production
+                timestamp: '2026-11-19T06:20:00.000Z'
+                routes: { candidateHealth: GET /api/health, candidateApiIndex: GET /api }
   /api/health:
     get:
       operationId: candidateHealth
