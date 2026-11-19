@@ -9,7 +9,7 @@
     "dev:portal": "npm run dev -w @portal/portal",
     "dev:admin": "npm run dev -w @portal/admin",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p apps/tsconfig.json",
     "lint": "eslint . --max-warnings 0",
     "lint:api": "REDOCLY_TELEMETRY=off REDOCLY_SUPPRESS_UPDATE_NOTICE=true redocly lint docs/openapi/candidate.yaml docs/openapi/portal.yaml docs/openapi/admin.yaml",
     "db:pull": "npm run db:pull -w @portal/db",

@@ -13,6 +13,7 @@
     "@portal/db": "*",
     "@portal/matcher": "*",
     "@portal/rules": "*",
+    "@sentry/nextjs": "11.14.0",
     "botid": "1.5.13",
     "next": "16.4.5",
     "react": "19.3.1",
