@@ -51,7 +51,7 @@ describe("notice emails", () => {
       const links = [...m.html.matchAll(/href="([^"]+)"/g)].map((x) => x[1]!);
       expect(links.every((l) => l === `${SITE}/`), t).toBe(true);
       if (t === "account_deleted") expect(links, t).toEqual([]);
-      else { expect(links, t).toHaveLength(2); expect(m.text, t).toContain(`Sign in: ${SITE}/`); }
+      else { expect(links, t).toHaveLength(1); expect(m.text, t).toContain(`Sign in: ${SITE}/`); }
     }
     expect(subjects.size).toBe(NOTICE_TEMPLATES.length);
   });

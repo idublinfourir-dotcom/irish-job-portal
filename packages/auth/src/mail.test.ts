@@ -14,7 +14,7 @@ describe("accountEmail", () => {
     ["invite", "You are invited to join a company team on irishworkpermit.ie", "7 days", "Accept the invitation"],
   ] as const;
   for (const [kind, subject, expiry, button] of cases)
-    it(`${kind}: subject, what to do, how long the link works, the ignore line, one button and the link written out`, () => {
+    it(`${kind}: subject, what to do, how long the link works, the ignore line, one button and no raw link in the HTML`, () => {
       const m = accountEmail(kind, LINK, BASE);
       expect(m.subject).toBe(subject);
       for (const part of [m.text, m.html]) {
@@ -25,7 +25,8 @@ describe("accountEmail", () => {
       }
       expect(m.text).toContain(`${button}: ${LINK}`);
       expect(m.html).toContain(`>${button}</a>`);
-      expect(m.html.match(new RegExp(`href="${esc(LINK).replace(/[.?]/g, "\\$&")}"`, "g"))).toHaveLength(2); // the button and the fallback link
+      expect(m.html.match(new RegExp(`href="${esc(LINK).replace(/[.?]/g, "\\$&")}"`, "g"))).toHaveLength(1); // the button only; the raw link is only in the text version
+      expect(m.html).not.toContain(`>${esc(LINK)}<`);
       expect(m.html).toContain("You got this email because");
       expect(m.html).not.toMatch(/<script|onerror|javascript:/i);
     });

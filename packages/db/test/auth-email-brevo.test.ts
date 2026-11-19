@@ -44,7 +44,7 @@ describe("auth emails through the Brevo sender (fetch fake)", () => {
         expect(body).not.toHaveProperty("headers"); // no header of ours on an account email
         const html = String(body.htmlContent), text = String(body.textContent);
         const links = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]!.replace(/&amp;/g, "&"));
-        expect(links).toHaveLength(2); // the button and the link written out
+        expect(links).toHaveLength(1); // the button only, no raw link in the HTML
         expect(links.every((l) => l.startsWith(`${BASE}/api/auth/${pool}/`))).toBe(true);
         expect(text).toContain(links[0]!);
         expect(html + text).toContain("1 hour");

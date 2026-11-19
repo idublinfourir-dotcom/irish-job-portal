@@ -1,6 +1,6 @@
 // The one email layout (E1): every email is HTML plus plain text saying the same thing. No template engine: a table layout with inline CSS
 // (Gmail, Outlook and Apple Mail), system fonts, at most 560 px wide, a plain text header (no logo until the designs exist), one heading,
-// short paragraphs, one button for the main link with the link written out below it, and a footer saying why the person got the email.
+// short paragraphs, one button for the main link (no raw link in the HTML: the engineer, 19 Nov; the text version keeps it), and a footer saying why the person got the email.
 // Every value is HTML-escaped here; callers pass only https links on our own origins (each caller checks its origin).
 // Stands alone (no imports) so the outbox command can load it with plain node.
 export const SITE_NAME = "irishworkpermit.ie"; // the brand is not decided (#G9): the domain is honest; brevo.ts SENDER_NAME is the same (a test holds them equal)
@@ -26,7 +26,7 @@ export function render(subject: string, { heading, paragraphs, button, footer, e
   const btn = button
     ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 16px"><tr><td class="btn" style="border-radius:6px;background:#0b5394">` +
       `<a href="${href(button.url)}" style="display:inline-block;padding:12px 24px;font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:6px;${FONT}">${esc(button.label)}</a>` +
-      `</td></tr></table>${pHtml("If the button does not work, copy this link into your browser:", SMALL)}<p style="${SMALL}">${linkHtml(button.url)}</p>`
+      `</td></tr></table>`
     : "";
   const html =
     `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
