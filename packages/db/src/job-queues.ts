@@ -10,14 +10,17 @@ import { PAGE_SIZE, validId } from "./search";
 type Db = Pick<pg.Pool, "query" | "connect">;
 
 /** Each queue and the role that decides it. */
-export const JOB_QUEUES = { scam_flag: "trust_and_safety", post_strike_job_review: "account_reviewer", agency_client_check: "account_reviewer" } as const;
+// licence_lapse_job (P9, #278): a LIVE job of an agency whose licence was not found on the WRC list (wrc-import.ts WRC_LAPSE); the others hold in_review jobs.
+export const JOB_QUEUES = {
+  scam_flag: "trust_and_safety", post_strike_job_review: "account_reviewer", agency_client_check: "account_reviewer", licence_lapse_job: "account_reviewer",
+} as const;
 export type JobQueue = keyof typeof JOB_QUEUES;
 export const isJobQueue = (q: unknown): q is JobQueue => typeof q === "string" && Object.hasOwn(JOB_QUEUES, q);
 /** May a staff member holding these roles read and decide this queue? Its own role, or administrator. Pure. */
 export const mayAct = (roles: readonly string[], q: JobQueue): boolean => roles.includes(JOB_QUEUES[q]) || roles.includes("administrator");
 const anyQueue = (roles: readonly string[]) => (Object.keys(JOB_QUEUES) as JobQueue[]).some((q) => mayAct(roles, q));
 
-const Q = "('scam_flag','post_strike_job_review','agency_client_check')";
+const Q = "('scam_flag','post_strike_job_review','agency_client_check','licence_lapse_job')";
 // Only employer and agency jobs: the fetcher may write scam_flag items on fetched jobs, which this queue never releases.
 const JOINS = "from review_item r join job j on j.id = r.job_id join organisation o on o.id = j.organisation_id";
 const COLS =
@@ -144,8 +147,19 @@ export async function releaseJobItem(db: Db, staffUserId: string, itemId: string
 function checkDecider(r: Locked, staffUserId: string): void {
   if (r.status !== "claimed") throw new QueueRefused(r.status === "open" ? "not_claimed" : "already_decided");
   if (r.claimed_by_staff_user_id !== staffUserId) throw new QueueRefused("not_claimer");
-  if (r.job_status !== "in_review") throw new QueueRefused("job_not_in_review");
+  if (r.queue === "licence_lapse_job" ? r.job_status === "closed" : r.job_status !== "in_review") throw new QueueRefused("job_not_in_review");
 }
+
+// P9: a licence_lapse_job item. $1 job, $2 item, $3 staff, $4 action, $5 outcome (approved: the job stays as it is; rejected: it closes as removed),
+// $6 reason code, $7 the job's status as locked. One audit row on the job.
+export const LAPSE_DECIDE =
+  "with r as (update review_item set status = 'done', decided_by_staff_user_id = $3, decided_at = now(), outcome = $5 " +
+  "where id = $2::bigint and status = 'claimed' and claimed_by_staff_user_id = $3 returning id) " +
+  "insert into audit_event(kind, actor_staff_user_id, action, object_type, object_id, changed_columns, before, after, reason_code, source) " +
+  "select 'admin_action', $3, $4, 'job', $1::text, case when $5::text = 'rejected' then '{status,close_reason}'::text[] else '{}'::text[] end, " +
+  "jsonb_build_object('status', $7::text), case when $5::text = 'rejected' then '{\"status\":\"closed\",\"close_reason\":\"removed\"}'::jsonb " +
+  "else jsonb_build_object('status', $7::text) end, $6, 'panel' from r";
+export const LAPSE_CLOSE = "update job set status = 'closed', closed_at = now(), close_reason = 'removed' where id = $1::bigint and status <> 'closed'";
 
 // $1 job, $2 item, $3 staff, $4 action. The item is done; the job goes live only when no other open or claimed item of the three queues is left on
 // it (the job row is locked, so a second approver waits and then sees this item done). One audit row on the job either way.
@@ -163,6 +177,10 @@ export const JOBQ_APPROVE =
 export async function approveJobItem(db: Db, staffUserId: string, itemId: string | number): Promise<{ jobId: string; jobStatus: string }> {
   return acting(db, staffUserId, itemId, async (c, id, r) => {
     checkDecider(r, staffUserId);
+    if (r.queue === "licence_lapse_job") {
+      await c.query(LAPSE_DECIDE, [r.job_id, id, staffUserId, `${r.queue}.approve`, "approved", "approved", r.job_status]);
+      return { jobId: r.job_id, jobStatus: r.job_status };
+    }
     try {
       const w = await c.query<{ job_status: string }>(JOBQ_APPROVE, [r.job_id, id, staffUserId, `${r.queue}.approve`]);
       return { jobId: r.job_id, jobStatus: w.rows[0]!.job_status };
@@ -189,6 +207,11 @@ export async function rejectJobItem(db: Db, staffUserId: string, itemId: string 
   if (typeof reason !== "string" || !REASON.test(reason)) throw new QueueRefused("bad_reason");
   await acting(db, staffUserId, itemId, async (c, id, r) => {
     checkDecider(r, staffUserId);
+    if (r.queue === "licence_lapse_job") {
+      await c.query(LAPSE_DECIDE, [r.job_id, id, staffUserId, `${r.queue}.reject`, "rejected", reason, r.job_status]);
+      await c.query(LAPSE_CLOSE, [r.job_id]);
+      return;
+    }
     await c.query(JOBQ_REJECT, [r.job_id, id, staffUserId, `${r.queue}.reject`, reason]);
     await c.query(JOBQ_CLOSE, [r.job_id]);
   });

@@ -7,6 +7,7 @@ import { createTestDb, type TestDb } from "./db";
 import { loadSpec, replyProblems } from "./openapi";
 import { fixtures } from "./fixtures";
 import { memoryStore, setFileStore, type MemoryStore } from "../src/file-store";
+import { WRC_LAPSE } from "../src/wrc-import";
 import { BASE, counted, median, ROLE_NAMES, staffHarness, type Route } from "./staff-routes-harness";
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
@@ -189,6 +190,52 @@ describe("approve and reject", () => {
     await no(act(winner, "release", { itemId: item }), 409, "not_claimed");
     await no(act(other, "approve", { itemId: item }), 409, "not_claimed");
     await ok(act(other, "claim", { itemId: item }));
+  });
+});
+
+describe("licence_lapse_job (P9, #278)", () => {
+  // An agency whose licence was just lapsed by the WRC import's own statement (as app_admin), with one live job and one held job.
+  let nl = 0;
+  async function lapsed() {
+    const wrc = `EA77${++nl}`;
+    const org = await F.org({ kind: "agency", wrc });
+    const mem = await F.member(org, await F.portal(), { role: "recruiter" });
+    const live = await post({ org, mem }, { client: null });
+    const held = await post({ org, mem });
+    expect([live.status, held.status]).toEqual(["live", "in_review"]);
+    expect((await db.pool("app_admin").query(WRC_LAPSE, [[wrc], "2026-11-19"])).rows[0]).toEqual({ paused: 1, jobs: 1 });
+    return { org, live: live.id, held: held.id, item: await itemOf(live.id, "licence_lapse_job") };
+  }
+  it("only the live job gets an item; account_reviewer and an administrator list it, other roles cannot; approve keeps the job live and audits once", async () => {
+    const a = await lapsed();
+    expect((await items(a.held)).map((i) => i.queue)).toEqual(["agency_client_check"]);
+    const page = await ok(get("only_account_reviewer", "?queue=licence_lapse_job"));
+    expect(page.items.find((i: { id: string }) => i.id === a.item)).toMatchObject({ queue: "licence_lapse_job", jobStatus: "live", companyStatus: "needs_info", reason: "agency licence not found" });
+    await ok(get("only_administrator", "?queue=licence_lapse_job"));
+    for (const r of ROLE_NAMES.filter((x) => x !== "account_reviewer" && x !== "administrator")) {
+      await no(get(`only_${r}`, "?queue=licence_lapse_job"), 403, "not_reviewer");
+      await no(get(`only_${r}`, `?id=${a.item}`), 403, "not_reviewer");
+      await no(act(`only_${r}`, "claim", { itemId: a.item }), 403, "not_reviewer");
+    }
+    await no(get(null, "?queue=licence_lapse_job"), 401, "no_session");
+    await no(get("disabled", "?queue=licence_lapse_job"), 401, "not_active");
+    await ok(act("only_account_reviewer", "claim", { itemId: a.item }));
+    await no(act("ar2", "approve", { itemId: a.item }), 409, "not_claimer");
+    expect(await ok(act("only_account_reviewer", "approve", { itemId: a.item }))).toEqual({ ok: true, jobId: a.live, jobStatus: "live" });
+    expect((await jobRow(a.live)).status).toBe("live");
+    await no(act("only_account_reviewer", "approve", { itemId: a.item }), 409, "already_decided");
+    const au = (await su.query("select action, changed_columns c, before, after from audit_event where object_type = 'job' and object_id = $1", [a.live])).rows;
+    expect(au).toEqual([{ action: "licence_lapse_job.approve", c: [], before: { status: "live" }, after: { status: "live" } }]);
+  });
+  it("reject closes the live job as removed; an agency closing its own job drops the item", async () => {
+    const a = await lapsed();
+    await ok(act("only_administrator", "claim", { itemId: a.item }));
+    await ok(act("only_administrator", "reject", { itemId: a.item, reason: "licence_lapsed" }));
+    expect(await jobRow(a.live)).toMatchObject({ status: "closed", close_reason: "removed" });
+    expect((await items(a.live)).find((i) => i.id === a.item)).toMatchObject({ status: "done", outcome: "rejected" });
+    const b = await lapsed();
+    await portal.query("update job set status = 'closed', closed_at = now(), close_reason = 'closed' where id = $1", [b.live]);
+    expect((await items(b.live)).find((i) => i.id === b.item)).toMatchObject({ status: "dropped", outcome: "job_closed" });
   });
 });
 

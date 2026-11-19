@@ -7,8 +7,11 @@ const never = { query: () => { throw new Error("the database was called"); }, co
 const why = async (p: Promise<unknown>) => p.then(() => "accepted", (e) => (e instanceof QueueRefused ? e.why : String(e)));
 
 describe("queues and roles", () => {
-  it("names exactly the three held-job queues", () => {
-    expect(Object.keys(JOB_QUEUES).sort()).toEqual(["agency_client_check", "post_strike_job_review", "scam_flag"]);
+  it("names exactly the four job queues (the three held-job queues and P9's licence_lapse_job)", () => {
+    expect(Object.keys(JOB_QUEUES).sort()).toEqual(["agency_client_check", "licence_lapse_job", "post_strike_job_review", "scam_flag"]);
+    expect(mayAct(["account_reviewer"], "licence_lapse_job")).toBe(true);
+    expect(mayAct(["administrator"], "licence_lapse_job")).toBe(true);
+    for (const r of ["trust_and_safety", "fetched_job_reviewer", "rules_data_editor", "services_case_handler", "content_editor"]) expect(mayAct([r], "licence_lapse_job"), r).toBe(false);
     for (const q of ["fetched_job", "account_review", "", "toString", "__proto__", "SCAM_FLAG", null, 5]) expect(isJobQueue(q), String(q)).toBe(false);
   });
   it("scam_flag is trust_and_safety's, the other two account_reviewer's, an administrator may act on all three, no other role on any", () => {

@@ -263,7 +263,7 @@ components:
       required: [id, queue, status, jobId, jobStatus, title, organisationId, company]
       properties:
         id: { $ref: '#/components/schemas/Id' }
-        queue: { type: string, enum: [scam_flag, post_strike_job_review, agency_client_check] }
+        queue: { type: string, enum: [scam_flag, post_strike_job_review, agency_client_check, licence_lapse_job] }
         status: { type: string }
         claimedBy: { type: [string, 'null'] }
         reason: { type: [string, 'null'] }
@@ -1671,15 +1671,16 @@ paths:
       operationId: listEmployerJobQueue
       summary: List a held employer or agency job queue, or show one item
       description: >-
-        Without `id`: the open and claimed items of one queue (`queue` required), oldest first, 20 a page. With `id`: one item of the three
-        queues with its advert text, whatever its status. scam_flag is for trust_and_safety, post_strike_job_review and agency_client_check
-        for account_reviewer; an administrator may read and act on all three. Only `id`, `queue` and `after`, each at most once (anything
+        Without `id`: the open and claimed items of one queue (`queue` required), oldest first, 20 a page. With `id`: one item of the four
+        queues with its advert text, whatever its status. scam_flag is for trust_and_safety, post_strike_job_review, agency_client_check and
+        licence_lapse_job (P9: a live job of an agency whose licence was not found on the WRC list) for account_reviewer; an administrator may
+        read and act on all four. Only `id`, `queue` and `after`, each at most once (anything
         else is `bad_query`).
       security: [{ staffSession: [] }]
-      x-roles: [trust_and_safety (scam_flag), account_reviewer (post_strike_job_review, agency_client_check), administrator (all three)]
+      x-roles: [trust_and_safety (scam_flag), account_reviewer (post_strike_job_review, agency_client_check, licence_lapse_job), administrator (all four)]
       x-rate-limit: none
       parameters:
-        - { name: queue, in: query, required: false, description: "Required without `id`.", schema: { type: string, enum: [scam_flag, post_strike_job_review, agency_client_check] } }
+        - { name: queue, in: query, required: false, description: "Required without `id`.", schema: { type: string, enum: [scam_flag, post_strike_job_review, agency_client_check, licence_lapse_job] } }
         - { name: id, in: query, required: false, schema: { type: string }, example: '2201' }
         - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Cursor' } }
       responses:
@@ -1719,9 +1720,10 @@ paths:
       description: >-
         `claim` takes an open item (or a stale claim of someone else). Only the claimer releases, approves or rejects. `approve` closes the
         item; the job goes live only when no other open item of the three queues holds it and the company may go live. `reject` closes the
-        item and closes the job as removed (it never comes back), dropping its other items. The Origin header must be the admin app's origin.
+        item and closes the job as removed (it never comes back), dropping its other items. A licence_lapse_job item holds a job that is not
+        in review: `approve` closes the item and leaves the job as it is, `reject` closes the job as removed. The Origin header must be the admin app's origin.
       security: [{ staffSession: [] }]
-      x-roles: [trust_and_safety (scam_flag), account_reviewer (post_strike_job_review, agency_client_check), administrator (all three)]
+      x-roles: [trust_and_safety (scam_flag), account_reviewer (post_strike_job_review, agency_client_check, licence_lapse_job), administrator (all four)]
       x-rate-limit: none
       x-body-cap: 300
       requestBody:
@@ -1755,7 +1757,7 @@ paths:
                 properties:
                   ok: { const: true }
                   jobId: { $ref: '#/components/schemas/Id' }
-                  jobStatus: { type: string, enum: [live, in_review] }
+                  jobStatus: { type: string, enum: [live, in_review, under_review, hidden] }
               example: { ok: true, jobId: '5501', jobStatus: live }
         '400':
           description: "`bad_body`: not one JSON object, an unknown or missing field, or over 300 characters. `bad_action`: unknown action. `bad_item_id`: not an id. `bad_reason`: not a reason code."

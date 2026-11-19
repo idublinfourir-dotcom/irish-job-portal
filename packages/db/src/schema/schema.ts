@@ -2092,7 +2092,7 @@ export const reviewItem = pgTable("review_item", {
 			foreignColumns: [staffUser.id],
 			name: "review_item_decided_by_staff_user_id_fkey"
 		}),
-	check("review_item_queue_check", sql`queue = ANY (ARRAY['fetched_job'::text, 'account_review'::text, 'pay_floor_check'::text, 'post_strike_job_review'::text, 'scam_flag'::text, 'agency_client_check'::text, 'data_request'::text, 'scheduled_check'::text])`),
+	check("review_item_queue_check", sql`queue = ANY (ARRAY['fetched_job'::text, 'account_review'::text, 'pay_floor_check'::text, 'post_strike_job_review'::text, 'scam_flag'::text, 'agency_client_check'::text, 'data_request'::text, 'scheduled_check'::text, 'licence_lapse_job'::text])`),
 	check("review_item_status_check", sql`status = ANY (ARRAY['open'::text, 'claimed'::text, 'done'::text, 'dropped'::text])`),
 	check("review_item_check", sql`(status = ANY (ARRAY['done'::text, 'dropped'::text])) OR (
 CASE

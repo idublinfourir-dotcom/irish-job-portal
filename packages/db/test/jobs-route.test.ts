@@ -3,7 +3,9 @@
 import { readFileSync } from "node:fs";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { approveAccount, claimReview } from "../src/account-review";
 import { CLOSE_UNDER_REVIEW } from "../src/job-expiry-cli";
+import { WRC_LAPSE } from "../src/wrc-import";
 import { savePostingTexts } from "../src/posting-texts-cli";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { loadSpec, replyProblems } from "./openapi";
@@ -198,6 +200,25 @@ describe("POST /api/portal/jobs", () => {
     const before = await jobCount(c.org);
     expect((await post(c.poster.cookie, { ...good, statement: signed })).json).toEqual({ code: "NOT_A_SIGNER" }); // a poster without the switch
     expect(await jobCount(c.org)).toBe(before); // the job went with the refused statement
+  });
+  it("P9 (#278): an agency the WRC import paused cannot publish; its live job stays live and listed without register content; staff clearing it lets it publish", async () => {
+    const a = await company({ kind: "agency", name: "Fake Lapsed Recruitment Limited" });
+    const live = await post(a.owner.cookie, good);
+    expect(live.json!.status).toBe("live");
+    const wrc = (await one("select wrc_licence_number w from organisation where id = $1", [a.org])).w;
+    expect((await db.pool("app_admin").query(WRC_LAPSE, [[wrc], "2026-11-19"])).rows[0]).toEqual({ paused: 1, jobs: 1 });
+    const before = await jobCount(a.org);
+    expect([(await post(a.owner.cookie, good)).status, (await post(a.recruiter.cookie, good)).json]).toEqual([403, { code: "COMPANY_NOT_ACTIVE" }]);
+    expect(await jobCount(a.org)).toBe(before);
+    const mine = await list(a.owner.cookie);
+    expect(mine.json!.jobs.find((x: { id: string }) => x.id === live.json!.jobId)).toMatchObject({ status: "live" });
+    expect(mine.text).not.toMatch(/licence|wrc|register/i);
+    const staff = String((await one("insert into staff_user(id,name,email,email_verified,created_at,updated_at) values ('s-p9-jobs','Fake Staff','s-p9@example.test',true,now(),now()) returning id")).id);
+    await su.query("insert into staff_role(staff_user_id, role, seeded_by_owner) values ($1, 'account_reviewer', true)", [staff]);
+    const item = (await one("select id::text from review_item where queue = 'account_review' and organisation_id = $1 and status = 'open'", [a.org])).id;
+    await claimReview(db.pool("app_admin"), staff, item);
+    await approveAccount(db.pool("app_admin"), staff, item);
+    expect((await post(a.owner.cookie, good)).json!.status).toBe("live");
   });
   it("an agency posts for a client with written authority; an employer cannot name a client", async () => {
     await seedTexts();

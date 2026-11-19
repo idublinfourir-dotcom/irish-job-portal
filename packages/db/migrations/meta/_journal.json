@@ -390,6 +390,13 @@
     {
       "idx": 55,
       "version": "7",
+      "when": 1794300058000,
+      "tag": "0058_licence_lapse",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
       "when": 1794300059000,
       "tag": "0059_client_agency_jobs",
       "breakpoints": true

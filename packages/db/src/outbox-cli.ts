@@ -88,7 +88,7 @@ const N: Record<string, [subject: string, line: string, x?: "x"]> = {
 // The staff digest's numbers (staff-counts.ts digestParams): a fixed label per known key, and only whole numbers above zero; anything else in params is ignored.
 const DIGEST_LABELS: Record<string, string> = {
   fetched_job: "Fetched jobs to review", account_review: "Company accounts to review", pay_floor_check: "Pay floors to check",
-  post_strike_job_review: "Jobs to check after a strike", scam_flag: "Jobs flagged for scam wording", agency_client_check: "Agency client checks",
+  post_strike_job_review: "Jobs to check after a strike", scam_flag: "Jobs flagged for scam wording", agency_client_check: "Agency client checks", licence_lapse_job: "Agency jobs to check after a licence lapse",
   data_request: "Data requests", scheduled_check: "Scheduled checks due", reportsOpen: "Open reports", reportsNew: "Reports in the last 24 hours",
   appeals: "Appeals to decide", contact: "Contact messages", approvals: "Requests waiting for a second person",
   // #275, administrators (staff-digest-cli.ts emailLimit)
