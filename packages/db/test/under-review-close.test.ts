@@ -83,7 +83,7 @@ describe("the daily 30-day close", () => {
     await underReview(c, 31);
     const lines: string[] = [];
     expect(await expiryMain([], { EXPIRY_ADMIN_DATABASE_URL: urlFor(db.name, "app_admin"), DATABASE_SSL: "disable" }, (l) => lines.push(l))).toBe(0);
-    expect(lines.at(-1)).toMatch(/, 1 jobs closed after 30 days under review$/);
+    expect(lines.at(-1)).toMatch(/, 1 jobs closed after 30 days under review, \d+ pay floors ended, \d+ pay floor reminders queued$/);
     const due = await underReview(c, 31); // the other roles' tries all fail: the portal and candidate sites cannot read the column, the fetcher's write is refused by job_guard
     for (const role of ["app_portal", "app_candidate", "app_fetcher"] as const) await rule({ refuse: () => db.query(role, CLOSE_UNDER_REVIEW) });
     expect((await state(due)).status).toBe("under_review");
@@ -100,7 +100,7 @@ describe("the daily 30-day close", () => {
     expect(ids).not.toContain(still);
   });
   it("the log line", () => {
-    expect(expiryLine({ closed: 2, reminded: 3, underReviewClosed: 4 })).toBe("2 employer jobs closed as expired, 3 expiry reminders queued, 4 jobs closed after 30 days under review");
+    expect(expiryLine({ closed: 2, reminded: 3, underReviewClosed: 4, floorsEnded: 5, floorsReminded: 6 })).toBe("2 employer jobs closed as expired, 3 expiry reminders queued, 4 jobs closed after 30 days under review, 5 pay floors ended, 6 pay floor reminders queued");
   });
 });
 

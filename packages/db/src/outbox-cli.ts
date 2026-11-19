@@ -74,6 +74,8 @@ const N: Record<string, [subject: string, line: string, x?: "x"]> = {
   pay_floor_approved: ["Your pay rate request is approved", "We have approved your company's request about a pay rate."],
   pay_floor_rejected: ["Your pay rate request was not approved", "We have looked at your company's request about a pay rate and could not approve it."],
   pay_floor_expired: ["An approved pay rate has ended", "An approved pay rate for your company has ended because the work permit rules changed."],
+  pay_floor_lapsed: ["An approved pay rate has run out", "An approved pay rate for your company has reached the end of its 12 months. You can sign a new one."],
+  pay_floor_expiring: ["An approved pay rate ends soon", "An approved pay rate for your company ends within 30 days. To keep it, please sign it again before then."],
   strike_case_opened: ["We have opened a case about your company", "We have opened a case about your company's account and would like your reply."],
   strike_case_cleared: ["A case about your company is closed", "We have closed a case about your company's account with no action."],
   strike_decided: ["A decision about your company", "We have made a decision on a case about your company's account."],
