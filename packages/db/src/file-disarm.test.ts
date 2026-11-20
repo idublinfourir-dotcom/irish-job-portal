@@ -62,6 +62,58 @@ describe("the PDF check (U2): standard library only", () => {
     expect(pdfRefusal(pdf(objStm(["<< >>"], { raw: Buffer.from("not zlib at all") })))).toBe("FILE_ACTIVE_CONTENT");
     expect(pdfRefusal(pdf(objStm(["<< >>"], { filter: "[ /FlateDecode ]" })))).toBeNull();
   });
+  it("gap round: objects hidden in any stream's raw bytes are refused (an image, a Flate content stream, an unfiltered one)", () => {
+    const hidden = "9 0 obj << /Type /Catalog /OpenAction 10 0 R >> endobj\n10 0 obj << /S /JavaScript /JS (app.alert(1)) >> endobj\n";
+    for (const dict of ["/Subtype /Image /Filter /DCTDecode", "/Filter /FlateDecode", "/Subtype /Image", "/Filter /ASCII85Decode"])
+      expect(pdfRefusal(pdf(`6 0 obj << ${dict} /Length ${hidden.length} >>\nstream\n${hidden}\nendstream\nendobj\n`)), dict).toBe("FILE_ACTIVE_CONTENT");
+    expect(pdfRefusal(pdf("6 0 obj << /Subtype /Image /Filter /DCTDecode /Length 12 >>\nstream\nxx endobj xx\nendstream\nendobj\n"))).toBe("FILE_ACTIVE_CONTENT");
+    expect(pdfRefusal(pdf("6 0 obj << /Subtype /Image /Filter /DCTDecode /Length 12 >>\nstream\nobj 12 objec\nendstream\nendobj\n"))).toBeNull(); // only a real header counts
+  });
+  it("gap round: the stream dictionary is the real one; strings, comments and nested dictionaries cannot hide its keys", () => {
+    const js = ["<< /S /JavaScript /JS (app.alert(1)) >>"];
+    const dz = (extra: string) => {
+      const head = "10 0\n", body = `${js[0]}\n`, data = deflateSync(Buffer.from(head + body, "latin1"));
+      return pdf(Buffer.concat([Buffer.from(`5 0 obj << ${extra.replace("LEN", String(data.length))} >>\nstream\n`, "latin1"), data, Buffer.from("\nendstream\nendobj\n", "latin1")]));
+    };
+    for (const extra of [
+      "/Type /ObjStm /N 1 /First 5 /X (obj) /Filter /FlateDecode /Length LEN", // "obj" in a string
+      "/X (9 0 obj) /Type /ObjStm /N 1 /First 5 /Filter /FlateDecode /Length LEN",
+      "/Type /ObjStm % >> obj comment\n /N 1 /First 5 /Filter /FlateDecode /Length LEN", // ">>" and "obj" in a comment
+      "/X (a (nested) \\) obj) /Type /ObjStm /N 1 /First 5 /Filter /FlateDecode /Length LEN",
+      "/DecodeParms << /Columns 4 /Predictor 1 >> /Type /ObjStm /N 1 /First 5 /Filter /FlateDecode /Length LEN", // a nested dictionary
+      "/Type /ObjStm /Subtype /Image /N 1 /First 5 /Filter /FlateDecode /Length LEN", // an object stream that says it is an image
+      "/Subtype /Image /First 5 /N 1 /Filter /FlateDecode /Length LEN", // /First alone makes it an object stream
+      "/Type /ObjStm /N 1 /First 5 /X <41424344> /Filter /FlateDecode /Length LEN",
+    ]) expect(pdfRefusal(dz(extra)), extra).toBe("FILE_ACTIVE_CONTENT");
+    // /First inside a string is not a key: a Flate content stream stays unread
+    const content = deflateSync(Buffer.from("BT (Hello) Tj ET"));
+    expect(pdfRefusal(pdf(`6 0 obj << /X (/First 3 /Type /ObjStm) /Filter /FlateDecode /Length ${content.length} >>\nstream\n`, content, "\nendstream\nendobj\n"))).toBeNull();
+    // what a reader could take another way is refused: an unterminated string, a stream keyword inside a string or after a comment, a bad hex string
+    expect(pdfRefusal(pdf("3 0 obj << /X (open >> endobj\n"))).toBe("FILE_ACTIVE_CONTENT");
+    expect(pdfRefusal(pdf("3 0 obj << /X (a stream\nb) >> endobj\n"))).toBe("FILE_ACTIVE_CONTENT");
+    expect(pdfRefusal(pdf("3 0 obj << /X 1 >> % stream\nendobj\n"))).toBe("FILE_ACTIVE_CONTENT");
+    expect(pdfRefusal(pdf("3 0 obj << /X <4G> >> endobj\n"))).toBe("FILE_ACTIVE_CONTENT");
+    expect(pdfRefusal(pdf(`3 0 obj ${"[".repeat(100)}${"]".repeat(100)} endobj\n`))).toBe("FILE_ACTIVE_CONTENT"); // nesting past 64
+    expect(pdfRefusal(pdf("3 0 obj (x) endobj\nstream\nabc\nendstream\n"))).toBe("FILE_ACTIVE_CONTENT"); // a stream with no dictionary
+  });
+  it("gap round: a clean multi-page PDF with a Flate image, Flate page content and bookmarks (/First in plain objects) passes", () => {
+    const img = deflateSync(Buffer.from(Array.from({ length: 3000 }, (_, i) => (i * 37) % 256)));
+    const page = (n: number) => deflateSync(Buffer.from(`q 100 0 0 100 50 50 cm /Im1 Do Q BT /F1 12 Tf 72 720 Td (Page ${n} \\(of 2\\)) Tj ET`));
+    const [c1, c2] = [page(1), page(2)];
+    const file = buf("%PDF-1.7\n%\xe2\xe3\xcf\xd3\n",
+      "1 0 obj << /Type /Catalog /Pages 2 0 R /Outlines 7 0 R /PageMode /UseOutlines >> endobj\n",
+      "2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >> endobj\n",
+      "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Im1 6 0 R >> /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> /Contents 5 0 R >> endobj\n",
+      "4 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 10 0 R >> endobj\n",
+      `5 0 obj << /Length ${c1.length} /Filter /FlateDecode >>\nstream\n`, c1, "\nendstream\nendobj\n",
+      `6 0 obj << /Type /XObject /Subtype /Image /Width 50 /Height 20 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /DecodeParms << /Predictor 15 /Colors 3 /Columns 50 >> /Length ${img.length} >>\nstream\n`, img, "\nendstream\nendobj\n",
+      "7 0 obj << /Type /Outlines /First 8 0 R /Last 9 0 R /Count 2 >> endobj\n",
+      "8 0 obj << /Title (Chapter 1 \\(start\\)) /Parent 7 0 R /Next 9 0 R /Dest [3 0 R /Fit] >> endobj\n",
+      "9 0 obj << /Title <FEFF0043> /Parent 7 0 R /Prev 8 0 R /Dest [4 0 R /Fit] >> endobj\n",
+      `10 0 obj << /Length ${c2.length} /Filter [/FlateDecode] >>\nstream\n`, c2, "\nendstream\nendobj\n",
+      "xref\n0 11\n0000000000 65535 f \ntrailer << /Root 1 0 R /Size 11 /ID [<0011aabb> <0011aabb>] >>\nstartxref\n0\n%%EOF\n");
+    expect(pdfRefusal(file)).toBeNull();
+  });
   it("a PDF and HTML polyglot: HTML first is not a PDF at all; a PDF holding HTML passes and is only ever served as application/pdf with nosniff", () => {
     expect(pdfRefusal(buf("<html><script>alert(1)</script></html>\n%PDF-1.7\n%%EOF\n"))).toBe("WRONG_FILE_TYPE");
     expect(pdfRefusal(pdf("% <html><script>alert(1)</script></html>\n"))).toBeNull(); // see staff-file-view.test.ts for the headers
