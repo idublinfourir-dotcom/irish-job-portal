@@ -11,7 +11,12 @@ export const MAX_PIXELS = 40_000_000;
 // The total a PDF's object streams may inflate to: real object streams are kilobytes; a decompression bomb is refused.
 export const MAX_INFLATE = 16 * 1024 * 1024;
 
-const ACTIVE = /\/(?:JavaScript|JS|OpenAction|AA|Launch|EmbeddedFiles?|RichMedia|XFA|Encrypt)(?=[\s/<>[\]()%{}]|$)/;
+// PDF whitespace (ISO 32000 7.2.3): NUL included, which JavaScript's \s does not match. Every pattern that decides a refusal uses this class.
+const PDF_WS = String.raw`\0\t\n\f\r `;
+const ACTIVE = new RegExp(String.raw`\/(?:JavaScript|JS|OpenAction|AA|Launch|EmbeddedFiles?|RichMedia|XFA|Encrypt)(?=[${PDF_WS}/<>[\]()%{}]|$)`);
+const OBJ_HEADER = new RegExp(String.raw`\d+[${PDF_WS}]+\d+[${PDF_WS}]+obj\b`);
+const COMMENT_STREAM = new RegExp(String.raw`stream[${PDF_WS}]*$`);
+const HEX = new RegExp(String.raw`^[0-9A-Fa-f${PDF_WS}]*$`);
 const unescape = (s: string) => s.replace(/#([0-9a-fA-F]{2})/g, (_, h: string) => String.fromCharCode(parseInt(h, 16)));
 
 // A small forward reader of PDF syntax (ISO 32000 7.2 and 7.3): comments, literal strings (nested parentheses, backslash escapes), hex
@@ -29,7 +34,7 @@ function skip(s: string, i: number): number {
     if (s[i] !== "%") return i;
     let j = i;
     while (j < s.length && s[j] !== "\n" && s[j] !== "\r") j++;
-    if (/stream\s*$/.test(s.slice(i, j))) throw new Unsafe();
+    if (COMMENT_STREAM.test(s.slice(i, j))) throw new Unsafe();
     i = j;
   }
 }
@@ -74,7 +79,7 @@ function parse(s: string, i: number, depth: number): [V, number] {
   }
   if (c === "<") {
     const j = s.indexOf(">", i);
-    if (j < 0 || !/^[0-9A-Fa-f\s]*$/.test(s.slice(i + 1, j))) throw new Unsafe();
+    if (j < 0 || !HEX.test(s.slice(i + 1, j))) throw new Unsafe();
     return [{ k: "str" }, j + 1];
   }
   if (c === "[") {
@@ -133,7 +138,7 @@ export function pdfRefusal(bytes: Uint8Array, maxInflate = MAX_INFLATE): DisarmR
       if (active(text.slice(outsideFrom, start))) return "FILE_ACTIVE_CONTENT";
       outsideFrom = i = stop;
       const raw = text.slice(start, stop);
-      if (/\d+\s+\d+\s+obj\b/.test(raw) || raw.includes("endobj")) return "FILE_ACTIVE_CONTENT"; // objects hidden in stream data
+      if (OBJ_HEADER.test(raw) || raw.includes("endobj")) return "FILE_ACTIVE_CONTENT"; // objects hidden in stream data
       const holdsObjects = isName(dict.get("Type"), "ObjStm") || dict.has("First");
       const filter = dict.get("Filter");
       if (!filter) {

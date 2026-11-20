@@ -69,6 +69,19 @@ describe("the PDF check (U2): standard library only", () => {
     expect(pdfRefusal(pdf("6 0 obj << /Subtype /Image /Filter /DCTDecode /Length 12 >>\nstream\nxx endobj xx\nendstream\nendobj\n"))).toBe("FILE_ACTIVE_CONTENT");
     expect(pdfRefusal(pdf("6 0 obj << /Subtype /Image /Filter /DCTDecode /Length 12 >>\nstream\nobj 12 objec\nendstream\nendobj\n"))).toBeNull(); // only a real header counts
   });
+  it("gap round 2: NUL is PDF whitespace: a name or an object header separated by NUL is still caught", () => {
+    for (const n of NAMES) {
+      expect(pdfRefusal(pdf(`3 0 obj << /${n}\0 4 0 R >> endobj\n`)), `plain ${n}`).toBe("FILE_ACTIVE_CONTENT");
+      expect(pdfRefusal(pdf(`3 0 obj << /${n}\0(x) >> endobj\n`)), `plain ${n} then a string`).toBe("FILE_ACTIVE_CONTENT");
+      expect(pdfRefusal(pdf(`3 0 obj << /${n}#00 4 0 R >> endobj\n`)), `escaped NUL after ${n}`).toBe("FILE_ACTIVE_CONTENT");
+      expect(pdfRefusal(pdf(objStm([`<< /Type /Action /${n}\0(x) >>`]))), `object stream ${n}`).toBe("FILE_ACTIVE_CONTENT");
+      expect(pdfRefusal(pdf(`6 0 obj << /Length 12 >>\nstream\n/${n}\0\nendstream\nendobj\n`)), `unfiltered stream ${n}`).toBe("FILE_ACTIVE_CONTENT");
+    }
+    expect(pdfRefusal(pdf("6 0 obj << /Subtype /Image /Filter /DCTDecode /Length 40 >>\nstream\n5\x000\x00obj << /OpenAction 10 0 R >>\nendstream\nendobj\n"))).toBe("FILE_ACTIVE_CONTENT");
+    expect(pdfRefusal(pdf("6 0 obj << /Subtype /Image /Filter /DCTDecode /Length 12 >>\nstream\n5\x00\t0\x00\x00obj\nendstream\nendobj\n"))).toBe("FILE_ACTIVE_CONTENT");
+    expect(pdfRefusal(pdf("3 0 obj << /X 1 >> % stream\0\nendobj\n"))).toBe("FILE_ACTIVE_CONTENT"); // a comment ending in stream and NUL
+    expect(pdfRefusal(pdf("3 0 obj << /ID <00\0FF> >> endobj\n"))).toBeNull(); // NUL in a hex string is whitespace
+  });
   it("gap round: the stream dictionary is the real one; strings, comments and nested dictionaries cannot hide its keys", () => {
     const js = ["<< /S /JavaScript /JS (app.alert(1)) >>"];
     const dz = (extra: string) => {
