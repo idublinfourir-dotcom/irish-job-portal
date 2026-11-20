@@ -7,7 +7,7 @@ import type pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { fixtures } from "./fixtures";
-import { main, sendPending, MAX_ATTEMPTS, ALERTS, LIVE_JOBS } from "../src/outbox-cli.ts";
+import { main, sendPending, MAX_ATTEMPTS, ALERTS, LIVE_JOBS, reservedAddress } from "../src/outbox-cli.ts";
 import { writeDigest } from "../src/staff-digest-cli.ts";
 import { createBrevoMail, BREVO_URL } from "../../auth/src/brevo.ts";
 import { deleteAccount } from "../src/candidate.ts";
@@ -476,6 +476,24 @@ describe("job alert email", () => {
     expect(m.text).toContain("Emails left unsent by the last send run: 2");
     expect(m.text).toContain(`Active job alert subscribers: ${subscribers}`);
     for (const c of cs) expect(m.text + m.html).not.toContain(c);
+  });
+  it("E2: the real run drops a reserved address (the dev staff dev-admin@portal.invalid, .test, example.com) and never sends it; counts say dropped", async () => {
+    await su.query("update email_outbox set status = 'dropped' where status = 'pending'");
+    const dev = await F.staff(), real = await F.staff();
+    await su.query("update staff_user set email = 'dev-admin@portal.invalid' where id = $1", [dev]);
+    await su.query("update staff_user set email = 'fake-staff@gmail.com' where id = $1", [real]); // a real-looking domain, still only the fake sender
+    await su.query("insert into staff_role(staff_user_id, role, seeded_by_owner) values ($1, 'administrator', true), ($2, 'administrator', true)", [dev, real]);
+    await writeDigest(admin);
+    const ids = async (s: string) => (await su.query("select id from email_outbox where template = 'staff_digest' and staff_user_id = $1", [s])).rows.map((r) => r.id);
+    expect((await ids(dev)).length).toBe(1);
+    const f = fake(), lines: string[] = [];
+    expect(await main([], ENV(), (l) => lines.push(l), f.send, undefined, reservedAddress)).toBe(0); // the drop rule the real run uses by default
+    expect(f.sent.map((x) => x.to)).not.toContain("dev-admin@portal.invalid");
+    expect(f.sent.map((x) => x.to)).toContain("fake-staff@gmail.com");
+    expect(f.sent.every((x) => !reservedAddress(x.to))).toBe(true); // every other fake person on example.test was dropped too
+    expect((await su.query("select status from email_outbox where id = any($1)", [await ids(dev)])).rows).toEqual([{ status: "dropped" }]);
+    expect(lines.at(-1)).toMatch(/^outbox: sent \d+, to retry 0, failed for good 0, dropped \(no address, nothing to send or too old\) [1-9]\d*$/);
+    expect(lines.join("\n")).not.toContain("portal.invalid"); // no address in the log
   });
   it("performance: a batch of 200 alert rows is read in two statements and sent within the budget", async () => {
     const cs = await Promise.all(Array.from({ length: 20 }, () => F.cand()));

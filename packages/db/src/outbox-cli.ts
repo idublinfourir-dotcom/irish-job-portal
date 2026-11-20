@@ -2,7 +2,7 @@
 //   DATABASE_URL=... BREVO_API_KEY=... EMAIL_FROM=... [ALERTS_EMAIL_FROM=...] SITE_URL=https://... PORTAL_SITE_URL=https://... node packages/db/src/outbox-cli.ts [--batch N]
 // A row is marked `sending` (attempts + 1) in its own committed statement BEFORE Brevo is called, so a crash never sends it twice; a row
 // left in `sending` by a crash is a human's call (look at it, then set it to pending or dropped). After MAX_ATTEMPTS failed tries a row is `failed`.
-// A row with no address (person erased or deleted, invite gone) is `dropped`; account_deleted uses params.email. Two runs at once share the work (skip locked).
+// A row with no address (person erased or deleted, invite gone) or a reserved one (E2) is `dropped`; account_deleted uses params.email. Two runs at once share the work (skip locked).
 // A `job_alert` row (step 11, one per candidate per run) is built at send time: each alert in its params that is still active and belongs to the row's
 // candidate, with its jobs that are still live (job-alert-email.ts). Nothing left, or a row older than 3 days (D4): `dropped`. It needs SITE_URL (https).
 // Every email is HTML plus text (E1): a notice says what happened and links to the right site (SITE_URL for a candidate, PORTAL_SITE_URL for
@@ -58,6 +58,8 @@ const N: Record<string, [subject: string, line: string, x?: "x"]> = {
   account_deleted: ["Your account has been deleted", `Your account on ${SITE_NAME} has been deleted. You can sign up again at any time.`, "x"],
   account_merged: ["Your accounts have been joined", "Two accounts with your details have been joined into one."],
   report_outcome: ["We have reviewed your report", "Thank you for reporting a job. We have looked at it and made a decision."],
+  // both sides (SV-B2, M5): the services case notice; no details, the reader signs in to see the timeline
+  case_update: ["Your case has an update", "There is an update on your services case."],
   // employers and agencies (employers site)
   job_expiry_reminder: ["One of your jobs closes soon", "A job your company posted reaches its closing date soon. After that it is no longer shown."],
   job_hidden: ["One of your jobs is hidden for now", "One of your company's jobs has been taken off the site while we look into a report about it."],
@@ -91,6 +93,7 @@ const DIGEST_LABELS: Record<string, string> = {
   post_strike_job_review: "Jobs to check after a strike", scam_flag: "Jobs flagged for scam wording", agency_client_check: "Agency client checks", licence_lapse_job: "Agency jobs to check after a licence lapse",
   data_request: "Data requests", scheduled_check: "Scheduled checks due", reportsOpen: "Open reports", reportsNew: "Reports in the last 24 hours",
   appeals: "Appeals to decide", contact: "Contact messages", approvals: "Requests waiting for a second person",
+  casesUnassigned: "Services cases nobody holds", casesMine: "Services cases assigned to you", // SV-B2
   // #275, administrators (staff-digest-cli.ts emailLimit)
   emailsLeft: "Emails left unsent by the last send run", alertsTooOld: "Job alerts dropped as too old in the last send run", alertSubscribers: "Active job alert subscribers",
 };
@@ -147,11 +150,16 @@ export function limitWarning(r: Result, left: number): string | null {
     : null;
 }
 
+// E2: an address on a reserved name (RFC 2606, RFC 6761: .invalid, .test, .example, .localhost; example.com, .net, .org) can never be delivered,
+// so it is dropped, never sent (the dev staff logins are dev-admin@portal.invalid). Pure.
+export const reservedAddress = (email: string): boolean =>
+  /(?:\.|^)(?:invalid|test|example|localhost|example\.com|example\.net|example\.org)\.?$/i.test(email.slice(email.lastIndexOf("@") + 1));
 type Claimed = { id: string; template: string; attempts: number; send_after: Date; candidate_user_id: string | null; params: unknown; side: "candidate" | "portal" | null };
 
-/** `siteUrl` and `portalUrl` are the candidate and employer sites (https); `sendAlert` sends job alerts (its own sender), default `send`. */
+/** `siteUrl` and `portalUrl` are the candidate and employer sites (https); `sendAlert` sends job alerts (its own sender), default `send`; `drop`: an
+ *  address never sent to (main passes reservedAddress). */
 export async function sendPending(c: pg.Pool | pg.Client, send: SendMail, batch = DEFAULT_BATCH, log: (line: string) => void = () => {}, siteUrl?: string,
-  portalUrl?: string, sendAlert: SendMail = send): Promise<Result> {
+  portalUrl?: string, sendAlert: SendMail = send, drop: (email: string) => boolean = () => false): Promise<Result> {
   const out: Result = { sent: 0, retry: 0, failed: 0, dropped: 0, old: 0 };
   const rows = (await c.query<Claimed>(CLAIM, [Math.min(Math.max(batch, 1), MAX_BATCH)])).rows;
   if (!rows.length) return out;
@@ -169,7 +177,7 @@ export async function sendPending(c: pg.Pool | pg.Client, send: SendMail, batch 
   const done = (id: string, status: string) => c.query("update email_outbox set status = $2::text, sent_at = case when $2::text = 'sent' then now() end where id = $1 and status = 'sending'", [id, status]);
   for (const r of rows) {
     const email = to.get(r.id);
-    if (!email) { await done(r.id, "dropped"); out.dropped++; continue; }
+    if (!email || drop(email)) { await done(r.id, "dropped"); out.dropped++; continue; }
     try {
       if (r.template === "data_request_confirm") {
         const site = siteOrigin(r.side === "candidate" ? siteUrl : portalUrl);
@@ -207,7 +215,9 @@ export function parseBatch(argv: string[]): number | undefined {
   return argv.length === 2 && argv[0] === "--batch" && /^\d{1,3}$/.test(argv[1]!) && n >= 1 && n <= MAX_BATCH ? n : undefined;
 }
 
-export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: string) => void, send?: SendMail, sendAlert?: SendMail): Promise<number> {
+/** A test that brings its own sender (its fake people are on example.test) also chooses `drop`; the real run always drops reserved addresses. */
+export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: string) => void, send?: SendMail, sendAlert?: SendMail,
+  drop: (email: string) => boolean = send ? () => false : reservedAddress): Promise<number> {
   const batch = parseBatch(argv);
   if (batch === undefined) return log(`usage: outbox-cli.ts [--batch 1..${MAX_BATCH}]`), 2;
   if (!env.DATABASE_URL) return log("DATABASE_URL is not set (the admin app's login, app_admin)"), 2;
@@ -222,7 +232,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: s
     await client.connect();
     if ((await client.query<{ any: boolean }>(PENDING)).rows[0]!.any && !(siteOrigin(env.SITE_URL) && siteOrigin(env.PORTAL_SITE_URL)))
       return log("SITE_URL and PORTAL_SITE_URL must both be set to https:// addresses (email links go to them); nothing was sent"), 2;
-    const r = await sendPending(client, mail, batch, log, env.SITE_URL, env.PORTAL_SITE_URL, sendAlert);
+    const r = await sendPending(client, mail, batch, log, env.SITE_URL, env.PORTAL_SITE_URL, sendAlert, drop);
     log(`outbox: sent ${r.sent}, to retry ${r.retry}, failed for good ${r.failed}, dropped (no address, nothing to send or too old) ${r.dropped}`);
     const left = (await client.query<{ n: number }>(LEFT)).rows[0]!.n;
     await client.query(RUN_AUDIT, [JSON.stringify({ ...r, left })]);

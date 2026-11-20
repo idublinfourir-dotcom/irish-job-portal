@@ -1280,6 +1280,68 @@ export const staffRole = pgTable("staff_role", {
 	check("staff_role_check", sql`(approval_request_id IS NOT NULL) OR (seeded_by_owner IS TRUE)`),
 ]);
 
+export const referralSolicitor = pgTable("referral_solicitor", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "referral_solicitor_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	firm: text().notNull(),
+	contact: text().notNull(),
+	active: boolean().default(true).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdByStaffUserId: text("created_by_staff_user_id").notNull(),
+}, (table) => [
+	index("referral_solicitor_staff_idx").using("btree", table.createdByStaffUserId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.createdByStaffUserId],
+			foreignColumns: [staffUser.id],
+			name: "referral_solicitor_created_by_staff_user_id_fkey"
+		}),
+	check("referral_solicitor_contact_check", sql`(contact = btrim(contact)) AND ((length(contact) >= 1) AND (length(contact) <= 300)) AND (contact !~ '[[:cntrl:]]'::text)`),
+	check("referral_solicitor_firm_check", sql`(firm = btrim(firm)) AND ((length(firm) >= 1) AND (length(firm) <= 200)) AND (firm !~ '[[:cntrl:]]'::text)`),
+]);
+
+export const caseEvent = pgTable("case_event", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "case_event_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	caseId: bigint("case_id", { mode: "number" }).notNull(),
+	at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	kind: text().notNull(),
+	status: text().notNull(),
+	detail: jsonb().default({}).notNull(),
+	staffUserId: text("staff_user_id"),
+	candidateUserId: text("candidate_user_id"),
+	portalUserId: text("portal_user_id"),
+}, (table) => [
+	index("case_event_candidate_idx").using("btree", table.candidateUserId.asc().nullsLast().op("text_ops")),
+	index("case_event_case_idx").using("btree", table.caseId.asc().nullsLast().op("int8_ops"), table.at.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	index("case_event_portal_idx").using("btree", table.portalUserId.asc().nullsLast().op("text_ops")),
+	index("case_event_staff_idx").using("btree", table.staffUserId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.candidateUserId],
+			foreignColumns: [candidateUser.id],
+			name: "case_event_candidate_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.caseId],
+			foreignColumns: [servicesCase.id],
+			name: "case_event_case_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.portalUserId],
+			foreignColumns: [portalUser.id],
+			name: "case_event_portal_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.staffUserId],
+			foreignColumns: [staffUser.id],
+			name: "case_event_staff_user_id_fkey"
+		}),
+	check("case_event_check", sql`num_nonnulls(staff_user_id, candidate_user_id, portal_user_id) <= 1`),
+	check("case_event_detail_check", sql`private.case_event_detail_ok(detail)`),
+	check("case_event_kind_check", sql`kind = ANY (ARRAY['received'::text, 'assigned'::text, 'status_changed'::text, 'documents_needed'::text, 'decision'::text, 'closed'::text, 'referred'::text, 'withdrawn'::text])`),
+	check("case_event_status_check", sql`status = ANY (ARRAY['received'::text, 'documents_needed'::text, 'waiting_for_employer'::text, 'submitted'::text, 'decision'::text, 'closed'::text])`),
+]);
+
 export const servicesCase = pgTable("services_case", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "services_case_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -1304,6 +1366,10 @@ export const servicesCase = pgTable("services_case", {
 	assignedStaffUserId: text("assigned_staff_user_id"),
 	dedupeKey: text("dedupe_key"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	decisionOutcome: text("decision_outcome"),
+	documentsNeeded: text("documents_needed").array().default(sql`'{}'::text[]`).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	referralSolicitorId: bigint("referral_solicitor_id", { mode: "number" }),
 }, (table) => [
 	index("services_case_board_idx").using("btree", table.status.asc().nullsLast().op("int8_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("text_ops")).where(sql`(status <> 'closed'::text)`),
 	index("services_case_candidate_idx").using("btree", table.candidateUserId.asc().nullsLast().op("text_ops")),
@@ -1314,27 +1380,18 @@ export const servicesCase = pgTable("services_case", {
 	index("services_case_job_idx").using("btree", table.jobId.asc().nullsLast().op("int8_ops")),
 	index("services_case_org_idx").using("btree", table.organisationId.asc().nullsLast().op("int8_ops")),
 	index("services_case_portal_idx").using("btree", table.portalUserId.asc().nullsLast().op("text_ops")),
+	index("services_case_referral_idx").using("btree", table.referralSolicitorId.asc().nullsLast().op("int8_ops")),
 	index("services_case_staff_idx").using("btree", table.assignedStaffUserId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.assignedStaffUserId],
+			foreignColumns: [staffUser.id],
+			name: "services_case_assigned_staff_user_id_fkey"
+		}),
 	foreignKey({
 			columns: [table.candidateUserId],
 			foreignColumns: [candidateUser.id],
 			name: "services_case_candidate_user_id_fkey"
 		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.portalUserId],
-			foreignColumns: [portalUser.id],
-			name: "services_case_portal_user_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.organisationId],
-			foreignColumns: [organisation.id],
-			name: "services_case_organisation_id_fkey"
-		}),
-	foreignKey({
-			columns: [table.jobId],
-			foreignColumns: [job.id],
-			name: "services_case_job_id_fkey"
-		}),
 	foreignKey({
 			columns: [table.consentRecordId],
 			foreignColumns: [consentRecord.id],
@@ -1346,16 +1403,36 @@ export const servicesCase = pgTable("services_case", {
 			name: "services_case_employer_contact_consent_record_id_fkey"
 		}),
 	foreignKey({
-			columns: [table.assignedStaffUserId],
-			foreignColumns: [staffUser.id],
-			name: "services_case_assigned_staff_user_id_fkey"
+			columns: [table.jobId],
+			foreignColumns: [job.id],
+			name: "services_case_job_id_fkey"
 		}),
-	check("services_case_payer_check", sql`payer = ANY (ARRAY['employer'::text, 'agency'::text])`),
-	check("services_case_status_check", sql`status = ANY (ARRAY['received'::text, 'documents_needed'::text, 'waiting_for_employer'::text, 'submitted'::text, 'decision'::text, 'closed'::text])`),
-	check("services_case_close_reason_check", sql`close_reason = ANY (ARRAY['decided'::text, 'employer_not_engaged'::text, 'withdrawn'::text, 'referred_to_solicitor'::text, 'no_reply'::text])`),
+	foreignKey({
+			columns: [table.organisationId],
+			foreignColumns: [organisation.id],
+			name: "services_case_organisation_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.portalUserId],
+			foreignColumns: [portalUser.id],
+			name: "services_case_portal_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.referralSolicitorId],
+			foreignColumns: [referralSolicitor.id],
+			name: "services_case_referral_solicitor_id_fkey"
+		}),
 	check("services_case_check", sql`(num_nonnulls(candidate_user_id, portal_user_id) = 1) OR (requester_erased_at IS NOT NULL)`),
 	check("services_case_check1", sql`(portal_user_id IS NULL) OR (dedupe_key IS NOT NULL)`),
 	check("services_case_check2", sql`(status <> 'closed'::text) OR ((closed_at IS NOT NULL) AND (close_reason IS NOT NULL))`),
+	check("services_case_close_reason_check", sql`close_reason = ANY (ARRAY['decided'::text, 'employer_not_engaged'::text, 'withdrawn'::text, 'referred_to_solicitor'::text, 'no_reply'::text])`),
+	check("services_case_decision_outcome_check", sql`decision_outcome = ANY (ARRAY['granted'::text, 'refused'::text])`),
+	check("services_case_documents_needed_check", sql`private.case_codes_ok(documents_needed)`),
+	check("services_case_outcome_closed", sql`(decision_outcome IS NULL) OR (status <> 'closed'::text) OR (close_reason = ANY (ARRAY['decided'::text, 'referred_to_solicitor'::text]))`),
+	check("services_case_outcome_status", sql`(decision_outcome IS NULL) OR (status = ANY (ARRAY['decision'::text, 'closed'::text]))`),
+	check("services_case_payer_check", sql`payer = ANY (ARRAY['employer'::text, 'agency'::text])`),
+	check("services_case_referral_reason", sql`(referral_solicitor_id IS NULL) OR (NOT (close_reason IS DISTINCT FROM 'referred_to_solicitor'::text))`),
+	check("services_case_status_check", sql`status = ANY (ARRAY['received'::text, 'documents_needed'::text, 'waiting_for_employer'::text, 'submitted'::text, 'decision'::text, 'closed'::text])`),
 ]);
 
 export const caseNote = pgTable("case_note", {
@@ -2151,7 +2228,11 @@ export const candidateServicesCase = pgView("candidate_services_case", {	// You 
 	assignedStaffUserId: text("assigned_staff_user_id"),
 	dedupeKey: text("dedupe_key"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
-}).with({"securityBarrier":true,"checkOption":"cascaded"}).as(sql`SELECT id, candidate_user_id, portal_user_id, requester_erased_at, organisation_id, job_id, permit_type, offer_details, payer, status, decided_at, closed_at, close_reason, consent_record_id, employer_contact_consent_record_id, assigned_staff_user_id, dedupe_key, created_at FROM services_case WHERE candidate_user_id IS NOT NULL`);
+	decisionOutcome: text("decision_outcome"),
+	documentsNeeded: text("documents_needed").array(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	referralSolicitorId: bigint("referral_solicitor_id", { mode: "number" }),
+}).with({"securityBarrier":true,"checkOption":"cascaded"}).as(sql`SELECT id, candidate_user_id, portal_user_id, requester_erased_at, organisation_id, job_id, permit_type, offer_details, payer, status, decided_at, closed_at, close_reason, consent_record_id, employer_contact_consent_record_id, assigned_staff_user_id, dedupe_key, created_at, decision_outcome, documents_needed, referral_solicitor_id FROM services_case WHERE candidate_user_id IS NOT NULL`);
 
 export const portalServicesCase = pgView("portal_services_case", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }),
@@ -2176,7 +2257,11 @@ export const portalServicesCase = pgView("portal_services_case", {	// You can us
 	assignedStaffUserId: text("assigned_staff_user_id"),
 	dedupeKey: text("dedupe_key"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
-}).with({"securityBarrier":true,"checkOption":"cascaded"}).as(sql`SELECT id, candidate_user_id, portal_user_id, requester_erased_at, organisation_id, job_id, permit_type, offer_details, payer, status, decided_at, closed_at, close_reason, consent_record_id, employer_contact_consent_record_id, assigned_staff_user_id, dedupe_key, created_at FROM services_case WHERE portal_user_id IS NOT NULL`);
+	decisionOutcome: text("decision_outcome"),
+	documentsNeeded: text("documents_needed").array(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	referralSolicitorId: bigint("referral_solicitor_id", { mode: "number" }),
+}).with({"securityBarrier":true,"checkOption":"cascaded"}).as(sql`SELECT id, candidate_user_id, portal_user_id, requester_erased_at, organisation_id, job_id, permit_type, offer_details, payer, status, decided_at, closed_at, close_reason, consent_record_id, employer_contact_consent_record_id, assigned_staff_user_id, dedupe_key, created_at, decision_outcome, documents_needed, referral_solicitor_id FROM services_case WHERE portal_user_id IS NOT NULL`);
 
 export const candidateCaseDocument = pgView("candidate_case_document", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }),

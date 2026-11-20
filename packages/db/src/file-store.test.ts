@@ -2,16 +2,16 @@
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { disposition, memoryStore, s3Settings, s3Store, SETTINGS, type S3Settings } from "./file-store";
+import { disposition, memoryStore, s3Settings, s3Store, SCAN_TAG, SETTINGS, type S3Settings } from "./file-store";
 
 type Seen = { method: string; url: string; headers: IncomingMessage["headers"]; body: Buffer };
 const seen: Seen[] = [];
-let answer = 200;
+let answer = 200, reply: { body?: Buffer | string; headers?: Record<string, string> } = {};
 const server = createServer((req, res) => {
   const parts: Buffer[] = [];
   req.on("data", (c) => parts.push(c)).on("end", () => {
     seen.push({ method: req.method!, url: req.url!, headers: req.headers, body: Buffer.concat(parts) });
-    res.writeHead(answer).end();
+    res.writeHead(answer, reply.headers).end(reply.body);
   });
 });
 let s: S3Settings;
@@ -61,6 +61,36 @@ describe("s3Store, against a fake S3 on 127.0.0.1", () => {
     expect(new URL(await s3Store(s).link("k", { fileName: "a", contentType: "image/png", seconds: 300 })).searchParams.get("X-Amz-Expires")).toBe("300");
     for (const seconds of [0, 301, 1.5]) await expect(s3Store(s).link("k", { fileName: "a", contentType: "image/png", seconds })).rejects.toThrow(/1 to 300 seconds/);
   });
+  it("get: one signed GET; the bytes and type; 404 is null; over the cap (by header or while reading) throws; other errors name only the status", async () => {
+    answer = 200; reply = { body: Buffer.from([1, 2, 3]), headers: { "content-type": "application/pdf" } };
+    expect(await s3Store(s).get("case/abc", 10)).toEqual({ bytes: new Uint8Array([1, 2, 3]), contentType: "application/pdf" });
+    expect([last().method, last().url]).toEqual(["GET", "/case/abc"]);
+    expect(last().headers.authorization).toMatch(/^AWS4-HMAC-SHA256 /);
+    await expect(s3Store(s).get("case/abc", 2)).rejects.toThrow(/^file store: object over the cap$/); // the header says 3
+    reply = { body: Buffer.alloc(100, 1), headers: { "transfer-encoding": "chunked" } }; // no length header: counted while reading
+    await expect(s3Store(s).get("case/abc", 50)).rejects.toThrow(/over the cap/);
+    answer = 404; reply = {};
+    expect(await s3Store(s).get("case/gone", 10)).toBeNull();
+    answer = 403;
+    await expect(s3Store(s).get("case/abc", 10)).rejects.toThrow(/^file store: GET answered 403$/);
+    answer = 200; reply = {};
+  });
+  it("scanStatus: GET ?tagging; the GuardDutyMalwareScanStatus value, null without it or for a missing object", async () => {
+    const tagging = (tags: [string, string][]) => `<?xml version="1.0" encoding="UTF-8"?><Tagging xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><TagSet>${
+      tags.map(([k, v]) => `<Tag><Key>${k}</Key><Value>${v}</Value></Tag>`).join("")}</TagSet></Tagging>`;
+    answer = 200; reply = { body: tagging([["other", "x"], [SCAN_TAG, "NO_THREATS_FOUND"]]) };
+    expect(await s3Store(s).scanStatus("case/abc")).toBe("NO_THREATS_FOUND");
+    expect([last().method, last().url]).toEqual(["GET", "/case/abc?tagging"]);
+    reply = { body: tagging([[SCAN_TAG, "THREATS_FOUND"]]) };
+    expect(await s3Store(s).scanStatus("case/abc")).toBe("THREATS_FOUND");
+    reply = { body: tagging([]) };
+    expect(await s3Store(s).scanStatus("case/abc")).toBeNull();
+    answer = 404; reply = {};
+    expect(await s3Store(s).scanStatus("case/gone")).toBeNull();
+    answer = 403;
+    await expect(s3Store(s).scanStatus("case/abc")).rejects.toThrow(/^file store: GET tagging answered 403$/);
+    answer = 200; reply = {};
+  });
   it("the real address is virtual-hosted in the bucket's region, and the network guard refuses it in tests", async () => {
     const { endpoint, ...real } = s;
     expect(endpoint).toBeDefined();
@@ -103,6 +133,18 @@ describe("disposition", () => {
 });
 
 describe("memoryStore", () => {
+  it("get and scanStatus: the bytes, the cap, a set tag, null for no tag, scanDefault for the rest, null for a missing object", async () => {
+    const m = memoryStore();
+    await m.put("k", new Uint8Array([1, 2]), "image/png");
+    expect(await m.get("k", 2)).toEqual({ bytes: new Uint8Array([1, 2]), contentType: "image/png" });
+    await expect(m.get("k", 1)).rejects.toThrow(/over the cap/);
+    expect(await m.get("none", 9)).toBeNull();
+    expect(await m.scanStatus("k")).toBe("NO_THREATS_FOUND");
+    m.tags.set("k", "THREATS_FOUND"); expect(await m.scanStatus("k")).toBe("THREATS_FOUND");
+    m.tags.set("k", null); expect(await m.scanStatus("k")).toBeNull();
+    m.tags.delete("k"); m.scanDefault = null; expect(await m.scanStatus("k")).toBeNull();
+    expect(await m.scanStatus("none")).toBeNull();
+  });
   it("keeps, links and removes; a missing object removes fine; failNext fails one call", async () => {
     const m = memoryStore();
     await m.put("k", new Uint8Array([7]), "image/png");

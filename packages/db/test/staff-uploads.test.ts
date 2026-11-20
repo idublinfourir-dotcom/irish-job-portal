@@ -55,7 +55,7 @@ afterAll(async () => {
 
 // ===== calls =====
 const form = (bytes: Uint8Array, name = "letter.pdf", field = "file") => { const f = new FormData(); f.append(field, new Blob([bytes as Uint8Array<ArrayBuffer>]), name); return f; };
-type Reply = { status: number; json: Record<string, any>; location: string | null }; // eslint-disable-line @typescript-eslint/no-explicit-any
+type Reply = { status: number; json: Record<string, any>; location: string | null; type: string | null; bytes: Uint8Array }; // eslint-disable-line @typescript-eslint/no-explicit-any
 async function send(route: Route, path: string, who: string | null, o: { query?: string; body?: BodyInit; json?: unknown; origin?: string | null; length?: string } = {}): Promise<Reply> {
   const headers: Record<string, string> = {};
   if (who) headers.cookie = h.signedIn(who);
@@ -66,8 +66,9 @@ async function send(route: Route, path: string, who: string | null, o: { query?:
   const res = await (post ? route.POST! : route.GET)(new Request(`${BASE}${path}${o.query ?? ""}`, {
     method: post ? "POST" : "GET", headers, body: o.json !== undefined ? JSON.stringify(o.json) : o.body,
   }));
-  const text = await res.text();
-  return { status: res.status, json: text ? JSON.parse(text) : {}, location: res.headers.get("location") };
+  const bytes = new Uint8Array(await res.arrayBuffer()), type = res.headers.get("content-type");
+  const text = /json/.test(type ?? "") ? new TextDecoder().decode(bytes) : "";
+  return { status: res.status, json: text ? JSON.parse(text) : {}, location: res.headers.get("location"), type, bytes };
 }
 const is = (r: Reply, status: number, error: string) => expect([r.status, r.json.error], JSON.stringify(r.json)).toEqual([status, error]);
 const okay = (r: { status: number; json: Reply["json"] }) => { expect(r.status, JSON.stringify(r.json)).toBe(200); return r.json; };
@@ -111,8 +112,8 @@ describe("sponsor confirmation on a manual post (Q6)", () => {
     expect(replyProblems(loadSpec("admin"), "GET", S, 200, list)).toEqual([]);
     expect(list.pending).toContainEqual(expect.objectContaining({ requestId: up.requestId, jobId: job, fileName: "letter.pdf", contentType: "pdf", sizeBytes: PDF.length, proposedBy: h.staff.account_reviewer }));
     const open = await send(sponsor, S, "administrator", { query: `?requestId=${up.requestId}` });
-    expect(open.status).toBe(302);
-    expect(open.location).toContain(`https://files.example.test/${key}?`);
+    expect([open.status, open.type, open.location]).toEqual([200, "application/pdf", null]); // the file itself, never a link (S-Q6)
+    expect(open.bytes).toEqual(PDF);
     expect(await one("select role_in_force, kind from audit_event where action = 'job.sponsor_confirmation_open' and object_id = $1", [up.requestId])).toEqual({ role_in_force: "administrator", kind: "data_access" });
 
     is(await decide("administrator", "confirm", up.requestId), 409, "no_statement_text"); // no sponsorship statement wording saved yet: nothing changes
@@ -129,7 +130,7 @@ describe("sponsor confirmation on a manual post (Q6)", () => {
     expect(await one("select actor_staff_user_id, second_staff_user_id from audit_event where action = 'job.sponsor_confirmed' and object_id = $1", [job]))
       .toEqual({ actor_staff_user_id: h.staff.administrator, second_staff_user_id: h.staff.account_reviewer });
     // the confirmed file stays readable (the statement holds it); the post cannot be confirmed twice
-    expect((await send(sponsor, S, "account_reviewer", { query: `?requestId=${up.requestId}` })).status).toBe(302);
+    expect((await send(sponsor, S, "account_reviewer", { query: `?requestId=${up.requestId}` })).status).toBe(200);
     is(await upload("account_reviewer", job), 409, "already_confirmed");
     is(await decide("ad2", "confirm", up.requestId), 409, "request_not_pending");
   });
@@ -159,7 +160,7 @@ describe("sponsor confirmation on a manual post (Q6)", () => {
       is(await send(sponsor, S, who), 403, "not_manual_viewer");
       is(await send(sponsor, S, who, { query: `?requestId=${requestId}` }), 403, "not_manual_viewer");
     }
-    for (const who of ["account_reviewer", "trust_and_safety", "administrator"]) expect((await send(sponsor, S, who, { query: `?requestId=${requestId}` })).status).toBe(302);
+    for (const who of ["account_reviewer", "trust_and_safety", "administrator"]) expect((await send(sponsor, S, who, { query: `?requestId=${requestId}` })).status).toBe(200);
     is(await send(sponsor, S, null), 401, "no_session");
     is(await send(sponsor, S, "disabled"), 401, "not_active");
     expect(await one("select status from approval_request where id = $1", [requestId])).toEqual({ status: "pending" });
@@ -245,7 +246,8 @@ describe("sponsor confirmation on a manual post (Q6)", () => {
 
   it("file storage off: 503, nothing written", async () => {
     const { job } = await manualPost();
-    setFileStore({ put: async () => { throw new FilesUnavailable("off"); }, remove: async () => {}, link: async () => { throw new FilesUnavailable("off"); } });
+    const off = async () => { throw new FilesUnavailable("off"); };
+    setFileStore({ put: off, remove: async () => {}, link: off, get: off, scanStatus: off });
     try {
       is(await upload("account_reviewer", job), 503, "files_unavailable");
       expect(await one("select count(*)::int n from approval_request where target_id = $1", [job])).toEqual({ n: 0 });
@@ -270,8 +272,8 @@ describe("evidence on a report or a strike case (Q7)", () => {
     expect(okay(await send(reports, "/api/trust-safety/reports", "trust_and_safety", { query: `?id=${rep}` })).item.evidenceFile).toBe(true);
     expect(okay(await send(cases, "/api/trust-safety/cases", "trust_and_safety", { query: `?id=${cs}` })).item.evidenceFile).toBe(true);
     const o = await send(evidence, E, "trust_and_safety", { query: `?caseId=${cs}` });
-    expect(o.status).toBe(302);
-    expect(decodeURIComponent(o.location!)).toContain("image/jpeg");
+    expect([o.status, o.type]).toEqual([200, "image/jpeg"]);
+    expect(o.bytes).toEqual(JPEG);
     expect(await one("select kind, role_in_force from audit_event where action = 'trust_safety.evidence_open' and object_type = 'strike' and object_id = $1", [cs]))
       .toEqual({ kind: "data_access", role_in_force: "trust_and_safety" });
     expect(await one("select after from audit_event where action = 'trust_safety.evidence_attach' and object_type = 'report' and object_id = $1", [rep]))
@@ -347,6 +349,38 @@ describe("evidence on a report or a strike case (Q7)", () => {
 });
 
 // ===== retention =====
+describe("the staff file view (S-Q6, S-Q7 A) on both opens", () => {
+  it("the file itself with fixed headers once the scan passed; pending, blocked or a missing object is refused with no audit row", async () => {
+    const { org, job } = await manualPost();
+    const up = okay(await upload("account_reviewer", job, form(PDF, "letter.html")));
+    const key = (await one("select change->>'key' k from approval_request where id = $1", [up.requestId])).k as string;
+    const cs = await strike(org);
+    okay(await attach("trust_and_safety", `?caseId=${cs}`));
+    const ek = (await one("select evidence_storage_key k from strike where id = $1", [cs])).k as string;
+    const opens = [[sponsor, S, "administrator", `?requestId=${up.requestId}`, key, "job.sponsor_confirmation_open", "application/pdf", "confirmation.pdf"],
+      [evidence, E, "trust_and_safety", `?caseId=${cs}`, ek, "trust_safety.evidence_open", "image/png", "evidence.png"]] as const;
+    const rows = async (action: string) => (await one("select count(*)::int n from audit_event where action = $1", [action])).n as number;
+    for (const [route, path, who, query, k, action, type, name] of opens) {
+      store.objects.get(k)!.contentType = "text/html"; // whatever the store says, the type comes from the stored kind
+      const r = await (route.GET)(new Request(`${BASE}${path}${query}`, { headers: { cookie: h.signedIn(who) } }));
+      expect([r.status, r.headers.get("content-type"), r.headers.get("content-disposition"), r.headers.get("x-content-type-options"), r.headers.get("cache-control"),
+        r.headers.get("content-security-policy"), r.headers.get("location")]).toEqual([200, type, `inline; filename*=UTF-8''${name}`, "nosniff", "no-store", "frame-ancestors 'self'", null]);
+      expect(new Uint8Array(await r.arrayBuffer())).toEqual(store.objects.get(k)!.bytes);
+      const n = await rows(action);
+      for (const [tag, code] of [[null, "scan_pending"], ["THREATS_FOUND", "file_blocked"], ["UNSUPPORTED", "file_blocked"], ["ACCESS_DENIED", "file_blocked"], ["FAILED", "file_blocked"]] as const) {
+        store.tags.set(k, tag);
+        is(await send(route, path, who, { query }), 409, code);
+      }
+      store.tags.delete(k);
+      const keep = store.objects.get(k)!;
+      store.objects.delete(k);
+      is(await send(route, path, who, { query }), 409, "scan_pending"); // a missing object has no tag either: never opened
+      store.objects.set(k, keep);
+      expect(await rows(action)).toBe(n); // no refused open wrote a row
+    }
+  });
+});
+
 describe("retention removes the stored files with their rows (0052)", () => {
   const admin = () => db.pool("app_admin");
   const run = async (rule: string, target: string | null) => {
@@ -398,7 +432,7 @@ describe("budgets", () => {
       uploadMs: await median(async (i) => { ids.push(okay(await upload("account_reviewer", posts[(i % 9) + 1]!.job)).requestId); }),
       confirmMs: await median(async (i) => { okay(await decide("administrator", "confirm", ids[i])); }),
       listMs: await median(async () => { okay(await send(sponsor, S, "administrator")); }),
-      openMs: await median(async () => { expect((await send(evidence, E, "trust_and_safety", { query: `?reportId=${reps[0]}` })).status).toBe(302); }),
+      openMs: await median(async () => { expect((await send(evidence, E, "trust_and_safety", { query: `?reportId=${reps[0]}` })).status).toBe(200); }),
       attachMs: await median(async (i) => { okay(await attach("trust_and_safety", `?reportId=${reps[(i % 9) + 1]}`)); }),
     };
     console.log("staff uploads budgets:", JSON.stringify({ ...got, ...Object.fromEntries(Object.entries(med).map(([k, v]) => [k, Math.round(v * 10) / 10])) }));

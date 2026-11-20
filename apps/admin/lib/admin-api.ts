@@ -47,6 +47,8 @@ const STATUS = new Map<string, number>(Object.entries({
   bad_occupation_code: 400, bad_salary: 400, bad_user_id: 400, bad_message_id: 400, bad_queue: 400, bad_domain: 400, bad_organisation_id: 400,
   bad_text: 400, bad_data: 400, bad_key: 400, bad_value: 400, bad_email: 400,
   bad_name: 400, bad_page: 400, bad_version: 400,
+  bad_case_id: 400, bad_codes: 400, bad_outcome: 400, bad_solicitor_id: 400, bad_firm: 400, bad_contact: 400, not_case_staff: 403, not_assigned: 403, // not_case_handler and own_case: with SV-B1 below
+  bad_move: 409, case_closed: 409, bad_assignee: 409, not_at_decision: 409, not_decided: 409, outcome_recorded: 409, bad_solicitor: 409, // services board (SV-B2)
   no_session: 401, not_active: 401,
   reauth_required: 403, bad_origin: 403, not_contact_staff: 403, not_contact_reader: 403, not_active_staff: 403, not_administrator: 403, not_content_staff: 403, not_content_editor: 403, not_rules_data_editor: 403, not_publisher: 403, not_reviewer: 403, not_domain_staff: 403, not_legal_staff: 403,
   not_scheduled_staff: 403, not_seed_staff: 403, not_dete_link_staff: 403, not_dete_link_viewer: 403, not_sample_staff: 403, not_decision_staff: 403, no_role: 403,
@@ -57,6 +59,7 @@ const STATUS = new Map<string, number>(Object.entries({
   free_email_domain: 409, domain_owned_by_other: 409, already_added: 409, open_ban_case: 409, company_merged: 409, version_taken: 409,
   decision_pending: 409, no_change: 409, linked_elsewhere: 409, name_taken: 409, not_linked: 409, email_taken: 409, password_set: 409,
   too_many_resends: 429,
+  scan_pending: 409, file_blocked: 409, not_case_handler: 403, own_case: 403, case_not_found: 404, document_not_found: 404,
   same_account: 400, kept_account_deleted: 409, open_services_case: 409, open_report: 409,
   no_account: 409, several_accounts: 409, sender_not_account: 409, not_open: 409, account_changed: 409, owner_with_members: 409, close_company_first: 409, not_confirmed: 409, account_deleted: 409, email_not_confirmed: 409, bad_purpose: 400,
 }));

@@ -236,6 +236,23 @@ describe("company reports (#102)", () => {
     const audit = await one("select after from audit_event where action = 'organisation.merge' and object_id = $1", [co.org]);
     expect(audit.after).toMatchObject({ report_ids: [Number(r1), Number(r2)], strike_ids: [Number(caseId)] });
   });
+  it("a merge moves the absorbed company's services cases, open and closed, to the survivor, listed in the audit row (0061)", async () => {
+    const co = await company(), survivor = await company(), bystander = await company();
+    await su.query("update membership set status = 'removed', removed_at = now() where organisation_id = $1", [co.org]);
+    const text = (await one("insert into consent_text(purpose, version, body) values ('services_request', $1, 'Fake wording') returning id", [id("v")])).id;
+    const servicesCase = async (org: string, closed: boolean) => {
+      const cand = await F.cand();
+      const consent = (await one("insert into consent_record(candidate_user_id, consent_text_id) values ($1, $2) returning id", [cand, text])).id;
+      return (await one(`insert into services_case(candidate_user_id, organisation_id, consent_record_id${closed ? ", status, closed_at, close_reason" : ""})
+        values ($1, $2, $3${closed ? ", 'closed', now(), 'withdrawn'" : ""}) returning id::text`, [cand, org, consent])).id as string;
+    };
+    const open = await servicesCase(co.org, false), closed = await servicesCase(co.org, true), other = await servicesCase(bystander.org, false);
+    await mergeCompanies(admin(), staff.reviewer!, co.org, survivor.org);
+    expect((await su.query("select id::text, organisation_id::text o from services_case where id = any($1::bigint[]) order by id", [[open, closed, other]])).rows)
+      .toEqual([{ id: open, o: survivor.org }, { id: closed, o: survivor.org }, { id: other, o: bystander.org }]);
+    const audit = await one("select after from audit_event where action = 'organisation.merge' and object_id = $1", [co.org]);
+    expect(audit.after.case_ids).toEqual([Number(open), Number(closed)]);
+  });
 });
 
 // ===== strikes =====

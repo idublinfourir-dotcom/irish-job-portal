@@ -5,6 +5,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import pg from "pg";
 import { createTestDb, urlFor, type TestDb } from "../db";
 import { CV_SQL, docSql, type Side } from "../../src/files";
+import { CASE_FILES_SQL } from "../../src/staff-case-files";
 import { assertPageBudget, measurePages, type Statement } from "./pages";
 
 vi.setConfig({ testTimeout: 600_000, hookTimeout: 600_000 });
@@ -12,6 +13,8 @@ vi.setConfig({ testTimeout: 600_000, hookTimeout: 600_000 });
 export const CV_PAGES = 40; // key + upsert (the upload), get, key (the download)
 export const DOC_PAGES = 130; // case + insert (the upload), case + list, one (the link)
 export const MS_LIMIT = 50;
+// M4 (staff-case-files.ts), measured on 20 Nov 2026 (printed by the test); the budget is about 3 times the measure.
+export const STAFF_DOC_PAGES = 90; // 29 pages measured: case (assignment and own-case check), list, one, the audit row
 
 const CANDIDATES = 20_000, CASES = 5_000, DOCS = 60_000;
 let db: TestDb;
@@ -42,11 +45,12 @@ beforeAll(async () => {
 });
 afterAll(() => db.drop());
 
-async function measure(role: string, statements: Statement[]) {
+async function measure(role: string, statements: Statement[], staff?: string) {
   const c = new pg.Client({ connectionString: urlFor(db.name, role) });
   await c.connect();
   try {
     await c.query("begin"); // the inserts and updates run twice under EXPLAIN ANALYZE: rolled back after
+    if (staff) await c.query("select set_config('app.staff_user_id', $1, true)", [staff]); // as requireRole does
     const costs = await measurePages(c, statements);
     await c.query("rollback");
     return costs;
@@ -86,3 +90,24 @@ for (const side of ["candidate", "portal"] as Side[]) {
     expect(ms).toBeLessThan(MS_LIMIT);
   });
 }
+
+it("the staff view of a case's copies (M4) stays inside its page and time budget", async () => {
+  const k = new pg.Client({ connectionString: urlFor(db.name) });
+  await k.connect();
+  await k.query("insert into staff_user(id, name, email, email_verified, created_at, updated_at) values ('perf-s', 'Fake', 'perf-s@example.test', true, now(), now()) on conflict do nothing");
+  const { id } = (await k.query("select id::text from services_case where portal_user_id is not null order by id limit 1 offset 100")).rows[0];
+  await k.query("update services_case set assigned_staff_user_id = 'perf-s' where id = $1", [id]);
+  const doc = (await k.query("select id::text from case_document where services_case_id = $1 limit 1", [id])).rows[0].id;
+  await k.query("analyze services_case");
+  await k.end();
+  const costs = await measure("app_admin", [
+    { text: CASE_FILES_SQL.case, values: [id, "perf-s"] },
+    { text: CASE_FILES_SQL.list, values: [id] },
+    { text: CASE_FILES_SQL.one, values: [id, doc] },
+    { text: CASE_FILES_SQL.audit, values: ["perf-s", doc, `services_case:${id}`] },
+  ], "perf-s");
+  const pages = costs.reduce((s, c) => s + c.pages, 0), ms = costs.reduce((s, c) => s + c.ms, 0);
+  process.stdout.write(`files perf, staff case documents: ${pages} pages, ${ms.toFixed(2)} ms (${costs.map((c) => `${c.pages} ${c.scans}`).join("; ")})\n`);
+  assertPageBudget("staff case document routes", costs, STAFF_DOC_PAGES);
+  expect(ms).toBeLessThan(MS_LIMIT);
+});

@@ -17,9 +17,12 @@ export function zip(names: string[], deflate = false): Uint8Array {
   e.writeUInt32LE(0x06054b50, 0); e.writeUInt16LE(names.length, 8); e.writeUInt16LE(names.length, 10); e.writeUInt32LE(dir.length, 12); e.writeUInt32LE(off, 16);
   return new Uint8Array(Buffer.concat([...locals, dir, e]));
 }
-export const PDF = b("%PDF-1.7\n%fake\n");
-export const PNG = b([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], "fake");
-export const JPEG = b([0xff, 0xd8, 0xff, 0xe0], "fake");
-export const WEBP = b("RIFF", [0x10, 0, 0, 0], "WEBPVP8 fake");
+// A tiny real PDF (one empty page) and 2 by 2 pixel images as sharp writes them, so disarm at upload (file-disarm.ts) stores them unchanged.
+export const PDF = b("%PDF-1.7\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n",
+  "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >> endobj\ntrailer << /Root 1 0 R /Size 4 >>\n%%EOF\n");
+const b64 = (s: string) => new Uint8Array(Buffer.from(s, "base64"));
+export const PNG = b64("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQImWM4wcV1gouLAUIBABsWA3F0RrYQAAAAAElFTkSuQmCC");
+export const JPEG = b64("/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAACAAIDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABgf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCXADS2v//Z");
+export const WEBP = b64("UklGRjwAAABXRUJQVlA4IDAAAADQAQCdASoCAAIAAUAmJaACdLoB+AADsAD+9hNf/izkYjs83/4E78Cd+BO/8AAAAAA=");
 export const EXE = b("MZ", [0x90, 0], "fake program"); // a Windows program, whatever its name says
 export const DOCX = zip(["[Content_Types].xml", "_rels/.rels", "word/document.xml"], true);

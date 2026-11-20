@@ -6,8 +6,9 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { getPool } from "./index";
 import { CANDIDATE_RATE, Refuse, withinRate, type CandidateEnv } from "./candidate-route";
-import { checkUpload, cleanName, EXT, MAX_BODY, MIME, readUpload, type Kind } from "./file-check";
-import { fileStore, FilesUnavailable } from "./file-store";
+import { checkUpload, cleanName, EXT, MAX_BODY, MAX_FILE, MIME, readUpload, type Kind } from "./file-check";
+import { disarm } from "./file-disarm";
+import { disposition, fileStore, FilesUnavailable } from "./file-store";
 import { QueueRefused } from "./admin-queue";
 import { validId } from "./search";
 
@@ -22,9 +23,39 @@ export type FilesEnv = CandidateEnv & { side: Side };
 const no = (status: number, code: string) => Response.json({ code }, { status });
 const download = (url: string) => new Response(null, { status: 302, headers: { location: url, "cache-control": "no-store", "referrer-policy": "no-referrer" } });
 const mime = (t: string) => MIME[t as Kind] ?? "application/octet-stream";
-/** A 60-second download link to a stored copy (the staff read of written authority, job-queues.ts). Throws FilesUnavailable when storage is off. */
-export const fileLink = (key: string, fileName: string, kind: string) => fileStore().link(key, { fileName, contentType: mime(kind), seconds: LINK_SECONDS });
-const REFUSED_STATUS: Record<string, number> = { EMPTY_FILE: 400, FILE_TOO_LARGE: 413, WRONG_FILE_TYPE: 415 };
+
+// ===== the one staff file view (S-Q6, S-Q7 A): never a presigned link; the bytes through our admin route, after the malware scan =====
+/** The GuardDuty Malware Protection tag as a gate: only NO_THREATS_FOUND opens; no tag yet is "pending"; anything else is "blocked". Pure. */
+export const scanGate = (tag: string | null): "ok" | "pending" | "blocked" => (tag === "NO_THREATS_FOUND" ? "ok" : tag === null ? "pending" : "blocked");
+// No fetch directives (default-src): Chrome, Edge and Safari have refused to show a PDF framed under default-src 'none', and Firefox's viewer takes
+// the page's CSP; sandbox makes Chrome refuse the PDF outright. The content type is fixed and nosniff is set, so nothing renders as HTML anyway;
+// frame-ancestors only stops another site framing the file.
+export const STAFF_VIEW_CSP = "frame-ancestors 'self'";
+/** The stored copy itself, for a staff route, called inside the caller's role check and transaction (the caller writes its data_access row after
+ *  this returns). The content type comes from the stored kind, never the uploader. QueueRefused scan_pending or file_blocked (409) before the scan
+ *  passes, not_found when the object is missing; FilesUnavailable when storage is off. */
+export async function staffFileView(key: string, kind: string, fileName: string): Promise<Response> {
+  if (!Object.hasOwn(MIME, kind)) throw new Error("staff file view: unknown stored kind");
+  const store = fileStore();
+  const gate = scanGate(await store.scanStatus(key));
+  if (gate !== "ok") throw new QueueRefused(gate === "pending" ? "scan_pending" : "file_blocked");
+  const o = await store.get(key, MAX_FILE); // 4 MiB, under Vercel's 4.5 MB response limit
+  if (!o) throw new QueueRefused("not_found");
+  return new Response(o.bytes as Uint8Array<ArrayBuffer>, { status: 200, headers: {
+    "content-type": MIME[kind as Kind], "content-length": String(o.bytes.length), "content-disposition": disposition(fileName, "inline"),
+    "x-content-type-options": "nosniff", "cache-control": "no-store", "content-security-policy": STAFF_VIEW_CSP, "referrer-policy": "no-referrer",
+    "cross-origin-resource-policy": "same-origin",
+  } });
+}
+const REFUSED_STATUS: Record<string, number> = { EMPTY_FILE: 400, FILE_TOO_LARGE: 413, WRONG_FILE_TYPE: 415, FILE_ACTIVE_CONTENT: 422 };
+/** The type check, then disarm (file-disarm.ts): the bytes to store, or a Refuse. Every upload passes here (CV, case documents, authority, staff, logo). */
+async function checked(bytes: Uint8Array, allowed: readonly Kind[], max = MAX_FILE): Promise<{ bytes: Uint8Array; kind: Kind }> {
+  const c = checkUpload(bytes, allowed, max);
+  if ("refused" in c) throw new Refuse(REFUSED_STATUS[c.refused]!, c.refused);
+  const d = await disarm(bytes, c.contentType, max);
+  if ("refused" in d) throw new Refuse(REFUSED_STATUS[d.refused]!, d.refused);
+  return { bytes: d.bytes, kind: c.contentType };
+}
 
 type Mode = "read" | "write" | "upload";
 // Origin (writes), the size header (uploads, before any read), the session, the rate limits, then the work. A Refuse is a short code, a missing
@@ -54,9 +85,8 @@ async function fileRoute(request: Request, env: FilesEnv, mode: Mode, work: (db:
 async function upload(request: Request, allowed: readonly Kind[], fallback: "cv" | "document") {
   const up = await readUpload(request);
   if ("code" in up) throw new Refuse(up.status, up.code);
-  const c = checkUpload(up.bytes, allowed);
-  if ("refused" in c) throw new Refuse(REFUSED_STATUS[c.refused]!, c.refused);
-  return { bytes: up.bytes, kind: c.contentType, name: cleanName(up.name, c.contentType, fallback) };
+  const c = await checked(up.bytes, allowed);
+  return { ...c, name: cleanName(up.name, c.kind, fallback) };
 }
 
 // ===== staff uploads (Q6 the employer's written confirmation, Q7 trust and safety evidence; PDF, JPEG or PNG, the case documents' limits) =====
@@ -196,11 +226,10 @@ export const logoPut = (r: Request, env: FilesEnv) => fileRoute(r, env, "upload"
   if (!(await db.query(OWNER, [userId])).rowCount) throw new Refuse(403, "NOT_OWNER");
   const up = await readUpload(r);
   if ("code" in up) throw new Refuse(up.status, up.code);
-  const c = checkUpload(up.bytes, ["png", "jpeg", "webp"], MAX_LOGO);
-  if ("refused" in c) throw new Refuse(REFUSED_STATUS[c.refused]!, c.refused);
-  const key = `logo/${randomUUID()}.${EXT[c.contentType]}`;
+  const c = await checked(up.bytes, ["png", "jpeg", "webp"], MAX_LOGO);
+  const key = `logo/${randomUUID()}.${EXT[c.kind]}`;
   const store = fileStore();
-  await store.put(key, up.bytes, MIME[c.contentType]);
+  await store.put(key, c.bytes, MIME[c.kind]);
   let old: string | null;
   try { old = (await db.query("select private.company_logo($1, $2) r", [userId, key])).rows[0].r.oldKey; } catch (e) {
     await store.remove(key).catch(() => {});
@@ -208,7 +237,7 @@ export const logoPut = (r: Request, env: FilesEnv) => fileRoute(r, env, "upload"
   }
   // ponytail: a failed removal leaves the old file in the bucket unreferenced; a sweep of logo/ keys not in organisation.logo_key would clear it
   if (old) await store.remove(old).catch(() => {});
-  return { logo: { contentType: MIME[c.contentType], sizeBytes: up.bytes.length } };
+  return { logo: { contentType: MIME[c.kind], sizeBytes: c.bytes.length } };
 }, MAX_LOGO + 16 * 1024);
 
 // ===== the client's written authority on an agency job (P8: optional, beside the tick; PDF, JPEG or PNG, the case documents' limits) =====

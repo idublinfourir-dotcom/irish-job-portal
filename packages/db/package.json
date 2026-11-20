@@ -9,7 +9,8 @@
     "./rules-data": "./src/rules-data.ts",
     "./staff-tools": "./src/staff-tools.ts",
     "./legal-texts": "./src/legal-texts.ts",
-    "./staff-uploads": "./src/staff-uploads.ts"
+    "./staff-uploads": "./src/staff-uploads.ts",
+    "./staff-case-files": "./src/staff-case-files.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -28,7 +29,8 @@
     "better-auth": "1.7.17",
     "botid": "1.5.13",
     "drizzle-orm": "0.45.4",
-    "pg": "8.23.1"
+    "pg": "8.23.1",
+    "sharp": "0.35.5"
   },
   "devDependencies": {
     "@types/pg": "8.23.1",

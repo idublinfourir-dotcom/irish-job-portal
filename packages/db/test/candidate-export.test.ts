@@ -129,7 +129,7 @@ describe("what the file holds", () => {
   it("a new candidate gets every section as an empty list or null, never a missing key", async () => {
     const p = await login();
     const f = JSON.parse(await (await get(p.cookie)).text());
-    for (const k of ["emailsWeSent", "whoAccessedOrReceivedYourData", "savedJobs", "tracker", "didYouApply", "alerts", "notificationSettings", "notifications", "cv", "applications", "contactRequests"]) expect(f[k], k).toEqual([]);
+    for (const k of ["emailsWeSent", "whoAccessedOrReceivedYourData", "savedJobs", "tracker", "didYouApply", "alerts", "notificationSettings", "notifications", "cv", "applications", "contactRequests", "servicesCases", "documentsYouUploaded"]) expect(f[k], k).toEqual([]);
     expect(f.profile).toBeNull();
     expect(f.consents).toHaveLength(1);
     expect(f.yourActionsOnTheSite).toEqual([expect.objectContaining({ action: "candidate.export" })]); // only this export
@@ -141,6 +141,43 @@ describe("what the file holds", () => {
     await su.query("update job set status='closed', closed_at=now(), close_reason='expired' where id=$1", [j]);
     const f = JSON.parse(await (await get(p.cookie)).text());
     expect(f.savedJobs).toEqual([expect.objectContaining({ title: "Closed later", employerName: "Employer of Closed later" })]);
+  });
+});
+
+describe("permit services cases (G1, 20d right of access)", () => {
+  it("holds the candidate's own cases with codes, labels, the timeline and their own copies; never a staff id, name, note, staff copy or the firm", async () => {
+    const p = await login();
+    const staff = await F.staff(), text = await (F as unknown as { text(p: string): Promise<string> }).text("services_request");
+    const job1 = await job("Fake Case Job");
+    const k = (await one("insert into consent_record(candidate_user_id, consent_text_id) values ($1, $2) returning id", [p.id, text]))[0].id;
+    const c = String((await one(`insert into services_case(candidate_user_id, consent_record_id, job_id, organisation_id, payer, permit_type, offer_details, assigned_staff_user_id)
+      values ($1, $2, $3, $4, 'employer', 'critical_skills', $5, $6) returning id`, [p.id, k, job1, org, JSON.stringify({ details: { notes: "My own offer note" }, freeCheck: null }), staff]))[0].id);
+    const firm = (await one("insert into referral_solicitor(firm, contact, created_by_staff_user_id) values ('Hidden Firm Name', 'hidden@example.test', $1) returning id", [staff]))[0].id;
+    await su.query("insert into case_event(case_id, kind, status, candidate_user_id) values ($1, 'received', 'received', $2)", [c, p.id]);
+    await su.query(`insert into case_event(case_id, kind, status, staff_user_id, detail) values ($1, 'assigned', 'received', $2, $3), ($1, 'documents_needed', 'received', $2, $4),
+      ($1, 'decision', 'decision', $2, '{"outcome":"refused"}'), ($1, 'referred', 'closed', $2, $5)`,
+      [c, staff, JSON.stringify({ assignedStaffUserId: staff }), JSON.stringify({ documentsNeeded: ["passport_copy"] }), JSON.stringify({ referralSolicitorId: Number(firm) })]);
+    await su.query(`update services_case set documents_needed = '{passport_copy}', status = 'closed', decided_at = now(), decision_outcome = 'refused', closed_at = now(),
+      close_reason = 'referred_to_solicitor', referral_solicitor_id = $2 where id = $1`, [c, firm]);
+    await su.query("insert into case_note(services_case_id, author_staff_user_id, body) values ($1, $2, 'Secret staff note')", [c, staff]);
+    await su.query(`insert into case_document(services_case_id, storage_key, file_name, content_type, byte_size, candidate_user_id) values ($1, 'case/x-mine', 'my-passport.png', 'png', 10, $2)`, [c, p.id]);
+    await su.query(`insert into case_document(services_case_id, storage_key, file_name, content_type, byte_size, staff_user_id) values ($1, 'case/x-staff', 'staff-scan.pdf', 'pdf', 20, $2)`, [c, staff]);
+    const res = await get(p.cookie);
+    expect(res.status).toBe(200);
+    const raw = await res.text(), f = JSON.parse(raw);
+    expect(f.servicesCases).toEqual([{ id: c, permitType: "critical_skills", jobId: job1, jobTitle: "Fake Case Job", status: "closed", decisionOutcome: "refused",
+      documentsNeeded: [{ code: "passport_copy", label: "Passport copy" }], payer: "employer", createdAt: expect.any(String), decidedAt: expect.any(String), closedAt: expect.any(String),
+      closeReason: "referred_to_solicitor", offerDetails: { details: { notes: "My own offer note" }, freeCheck: null },
+      timeline: [{ at: expect.any(String), kind: "received", status: "received" }, { at: expect.any(String), kind: "assigned", status: "received" },
+        { at: expect.any(String), kind: "documents_needed", status: "received", documentsNeeded: [{ code: "passport_copy", label: "Passport copy" }] },
+        { at: expect.any(String), kind: "decision", status: "decision", outcome: { code: "refused", label: "Permit refused" } },
+        { at: expect.any(String), kind: "referred", status: "closed", referral: { code: "referred_to_solicitor" } }] }]);
+    expect(f.documentsYouUploaded).toEqual([{ caseId: c, fileName: "my-passport.png", contentType: "png", byteSize: 10, uploadedAt: expect.any(String), copyDeletedAt: null }]);
+    for (const bad of [staff, "Fake Staff", "Secret staff note", "staff-scan.pdf", "case/x-", "Hidden Firm Name", "hidden@example.test", "assignedStaffUserId", "referralSolicitorId", "consent_record"])
+      expect(raw, bad).not.toContain(bad);
+    // another candidate's export holds none of it
+    const other = await login();
+    expect(JSON.parse(await (await get(other.cookie)).text())).toMatchObject({ servicesCases: [], documentsYouUploaded: [] });
   });
 });
 

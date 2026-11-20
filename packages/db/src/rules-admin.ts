@@ -8,7 +8,6 @@ import { cleanEmployerName } from "@portal/rules";
 import { QueueRefused } from "./admin-queue";
 import { FLOOR_ACT } from "./pay-floors";
 import { validId } from "./search";
-import { AUDIT } from "./trust-safety";
 import { BadRulesData, cleanData, entriesOf, IN_FORCE, RULES_KINDS, validDate, type BigName, type VersionData, type RulesKind } from "./rules-data";
 
 type Q = Pick<pg.Pool, "query">;
@@ -48,8 +47,16 @@ async function acting<T>(db: Db, staff: string, need: Need, fn: (c: pg.PoolClien
     c.release();
   }
 }
-const audit = (c: pg.PoolClient, staff: string, action: string, type: string, id: string, after: object, second: string | null = null) =>
-  c.query(AUDIT, [staff, `rules.${action}`, type, id, JSON.stringify(after), null, second, null]);
+// role_in_force: the role that allowed the action (SV-A, 20 Nov: no rules row had set it since 11 Nov). A proposal and its withdrawal are the rules
+// data editor's (the proposer's), a confirm or refuse the administrator's.
+export const RULES_ROLE: Record<string, "rules_data_editor" | "administrator"> = {
+  propose: "rules_data_editor", propose_flag: "rules_data_editor", withdraw: "rules_data_editor",
+  confirm: "administrator", confirm_flag: "administrator", refuse: "administrator",
+};
+const RULES_AUDIT = "insert into audit_event(kind, actor_staff_user_id, role_in_force, action, object_type, object_id, after, second_staff_user_id, source) " +
+  "values ('admin_action', $1, $2, $3, $4, $5, $6::jsonb, $7, 'panel')";
+const audit = (c: pg.PoolClient, staff: string, action: keyof typeof RULES_ROLE, type: string, id: string, after: object, second: string | null = null) =>
+  c.query(RULES_AUDIT, [staff, RULES_ROLE[action], `rules.${action}`, type, id, JSON.stringify(after), second]);
 
 // ===== the change against the version in force =====
 export type Change = { added: Record<string, unknown>; removed: Record<string, unknown>; changed: Record<string, { before: unknown; after: unknown }> };

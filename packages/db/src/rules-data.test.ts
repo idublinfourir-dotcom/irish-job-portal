@@ -21,7 +21,7 @@ describe("the seed gives exactly today's values", () => {
   it("the two occupation lists, put back together, are the file; the public pay employers are the file", () => {
     const file = JSON.parse(readFileSync(new URL("../../fetcher/data/occupation-lists.json", import.meta.url), "utf8"));
     expect([...(s.critical_skills_list as unknown[]), ...(s.ineligible_list as unknown[])]).toEqual(file);
-    expect((s.critical_skills_list as unknown[]).length).toBe(60);
+    expect((s.critical_skills_list as unknown[]).length).toBe(59);
     expect((s.ineligible_list as unknown[]).length).toBe(188);
     expect(s.public_pay_employers).toEqual(JSON.parse(readFileSync(new URL("../../fetcher/data/L2/public_employers_candidates.json", import.meta.url), "utf8")));
   });

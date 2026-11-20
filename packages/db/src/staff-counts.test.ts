@@ -8,21 +8,21 @@ import { QueueRefused } from "./admin-queue";
 
 const recorder = () => {
   const params: unknown[][] = [];
-  const db = { query: async (_sql: string, p: unknown[]) => (params.push(p), { rows: [{ queues: {}, reports_open: null, reports_new: null, appeals: null, contact: null, approvals: null }] }) };
+  const db = { query: async (_sql: string, p: unknown[]) => (params.push(p), { rows: [{ queues: {}, reports_open: null, reports_new: null, appeals: null, contact: null, approvals: null, cases_unassigned: null, cases_mine: null }] }) };
   return { db: db as never, params };
 };
 
 describe("staffCounts: what each role's counts cover", () => {
   it("passes each role only its own queues and flags", async () => {
     const seen = async (roles: string[]) => { const r = recorder(); await staffCounts(r.db, "s1", roles); return r.params[0]!; };
-    expect(await seen(["trust_and_safety"])).toEqual([["scam_flag"], ["trust_and_safety"], true, true, false, false, "s1"]);
-    expect(await seen(["fetched_job_reviewer"])).toEqual([["fetched_job", "scheduled_check"], ["fetched_job_reviewer"], false, false, false, false, "s1"]);
-    expect(await seen(["content_editor"])).toEqual([[], ["content_editor"], false, false, true, false, "s1"]);
+    expect(await seen(["trust_and_safety"])).toEqual([["scam_flag"], ["trust_and_safety"], true, true, false, false, "s1", false]);
+    expect(await seen(["fetched_job_reviewer"])).toEqual([["fetched_job", "scheduled_check"], ["fetched_job_reviewer"], false, false, false, false, "s1", false]);
+    expect(await seen(["content_editor"])).toEqual([[], ["content_editor"], false, false, true, false, "s1", false]);
     // an administrator: every queue but the two that need their own role, every reminder, appeals, contact and approvals, but not the report inbox
     const a = await seen(["administrator"]);
     expect(a[0]).toEqual(Object.keys(QUEUE_ROLES).filter((q) => q !== "fetched_job" && q !== "account_review"));
-    expect(a.slice(1)).toEqual([QUEUE_ROLES.scheduled_check, false, true, true, true, "s1"]);
-    expect(await seen([])).toEqual([[], [], false, false, false, false, "s1"]);
+    expect(a.slice(1)).toEqual([QUEUE_ROLES.scheduled_check, false, true, true, true, "s1", false]);
+    expect(await seen([])).toEqual([[], [], false, false, false, false, "s1", false]);
   });
   it("every role in the map is a real role", () => {
     for (const roles of Object.values(QUEUE_ROLES)) for (const r of roles) expect(STAFF_ROLE_LIST).toContain(r);
@@ -31,9 +31,9 @@ describe("staffCounts: what each role's counts cover", () => {
 
 describe("digestParams", () => {
   it("keeps only counts above zero, flat", () => {
-    expect(digestParams({ queues: { scam_flag: 2, fetched_job: 0 }, reportsOpen: 3, reportsNew: 0, appeals: null, contact: 1, approvals: null }))
-      .toEqual({ scam_flag: 2, reportsOpen: 3, contact: 1 });
-    expect(digestParams({ queues: {}, reportsOpen: null, reportsNew: null, appeals: 0, contact: null, approvals: null })).toEqual({});
+    expect(digestParams({ queues: { scam_flag: 2, fetched_job: 0 }, reportsOpen: 3, reportsNew: 0, appeals: null, contact: 1, approvals: null, casesUnassigned: 2, casesMine: 0 }))
+      .toEqual({ scam_flag: 2, reportsOpen: 3, contact: 1, casesUnassigned: 2 });
+    expect(digestParams({ queues: {}, reportsOpen: null, reportsNew: null, appeals: 0, contact: null, approvals: null, casesUnassigned: null, casesMine: null })).toEqual({});
   });
 });
 

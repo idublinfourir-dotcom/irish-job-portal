@@ -125,7 +125,8 @@ describe("download my data", () => {
     await su.query("insert into contact_message(surface, portal_user_id, from_name, from_email, topic, body) values ('portal', $1, 'Fake', $2, 'general', 'My own question')", [c.recruiter.id, c.recruiter.email]);
     await su.query("insert into contact_message(surface, portal_user_id, from_name, from_email, topic, body) values ('portal', $1, 'Fake', $2, 'general', 'The owner''s question')", [c.owner.id, c.owner.email]);
     await su.query("insert into report(target_kind, target_organisation_id, reporter_portal_user_id, reason, evidence_text) values ('organisation', $1, $2, 'other', 'My own report')", [c.org, c.recruiter.id]);
-    await caseFor(c.recruiter.id, "closed");
+    const sc = await caseFor(c.recruiter.id, "closed");
+    await su.query(`update services_case set decided_at = now(), decision_outcome = 'refused', close_reason = 'decided', offer_details = '{"details":{"notes":"Candidate Name Here"}}' where id = $1`, [sc]);
     const r = await call("GET", c.recruiter, undefined, { query: `?id=${c.owner.id}` }); // the query string is ignored
     expect(r.status).toBe(200);
     expect(r.headers.get("cache-control")).toBe("no-store");
@@ -137,7 +138,9 @@ describe("download my data", () => {
     expect(d.consents.length).toBeGreaterThanOrEqual(2); // the sign-up terms and the case's consent
     expect(d.messagesYouSent).toEqual([expect.objectContaining({ body: "My own question" })]);
     expect(d.reportsYouMade).toEqual([expect.objectContaining({ evidenceText: "My own report", reason: "other" })]);
-    expect(d.servicesRequests).toHaveLength(1);
+    // G2: the outcome and the close reason; never the offer details (they may name a candidate)
+    expect(d.servicesRequests).toEqual([{ id: sc, permitType: null, status: "closed", createdAt: expect.any(String), closedAt: expect.any(String), decisionOutcome: "refused", closeReason: "decided" }]);
+    expect(r.text).not.toContain("Candidate Name Here");
     expect(d.yourActions[0]).toMatchObject({ kind: "data_access", action: "portal_user.export" });
     for (const k of ["notificationSettings", "emailsWeSent", "documentsYouUploaded"]) expect(Array.isArray(d[k])).toBe(true);
     // nothing of the owner's: email, id, notice or message

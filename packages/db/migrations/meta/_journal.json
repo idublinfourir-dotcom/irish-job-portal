@@ -414,6 +414,34 @@
       "when": 1794300060000,
       "tag": "0060_dete_watch",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1794300061000,
+      "tag": "0061_services_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1794300062000,
+      "tag": "0062_services_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1794300063000,
+      "tag": "0063_services_board",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1794300064000,
+      "tag": "0064_services_gaps",
+      "breakpoints": true
     }
   ]
 }

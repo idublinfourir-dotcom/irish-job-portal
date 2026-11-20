@@ -7,6 +7,8 @@ import fs from "node:fs";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { exportData } from "../src/candidate";
+import { caseTimeline } from "../src/services-board";
+import { TRACKER_SQL } from "../src/services-request";
 import { memoryStore, setFileStore, type MemoryStore } from "../src/file-store";
 import { createTestDb, type TestDb } from "./db";
 import { fixtures, in30 } from "./fixtures";
@@ -112,7 +114,7 @@ describe("a full merge: every clash, the kept account's rows win", () => {
   });
   it("replies with what moved and the files removed; the request is used once", async () => {
     expect(reply).toEqual({ ok: true, keep: K, drop: D, filesRemoved: 2,
-      moved: { savedJobs: 1, alerts: 1, tracker: 1, hiddenOrganisations: 1, profile: 0, cv: 0, applications: 1, contactRequests: 1 } });
+      moved: { savedJobs: 1, alerts: 1, tracker: 1, hiddenOrganisations: 1, profile: 0, cv: 0, applications: 1, contactRequests: 1, servicesCases: 0, servicesCaseIds: [] } });
     expect(await status(req)).toEqual({ status: "confirmed", used: true });
     expect(await exists(D)).toBe(false);
   });
@@ -178,6 +180,36 @@ describe("the kept account has no profile or CV: the dropped one's move, and its
     expect((await h.ok(confirm(await propose(K, D)))).moved.savedJobs).toBe(1);
     const gone = await F.cand({ deleted: new Date() });
     await h.no(call("ad1", { action: "merge_propose", keep: gone, drop: await F.cand() }), 409, "kept_account_deleted");
+  });
+});
+
+describe("the dropped account's closed services cases move to the kept account (G4)", () => {
+  it("the case, its consent records, the person's own copy and events move before the erase; the kept account's tracker and timeline show it", async () => {
+    const K = await F.cand(), D = await F.cand(), staff = (await one("select id from staff_user where id = $1", [h.staff.ad1])).id;
+    const k1 = await consent(D, await F.text("services_request")), k2 = await consent(D, await F.text("employer_contact"));
+    const c = await ins("postgres", "services_case", { candidate_user_id: D, consent_record_id: k1, employer_contact_consent_record_id: k2, status: "closed", closed_at: new Date(),
+      close_reason: "no_reply" });
+    await su.query("insert into case_event(case_id, kind, status, candidate_user_id) values ($1, 'received', 'received', $2)", [c, D]);
+    await su.query("insert into case_event(case_id, kind, status, staff_user_id) values ($1, 'closed', 'closed', $2)", [c, staff]);
+    await store.put("case/d-copy", new Uint8Array([3]), "image/png");
+    await su.query("insert into case_document(services_case_id, storage_key, file_name, content_type, byte_size, candidate_user_id) values ($1, 'case/d-copy', 'mine.png', 'png', 1, $2)", [c, D]);
+    const req = await propose(K, D);
+    const r = await h.ok(confirm(req));
+    expect(r.moved).toMatchObject({ servicesCases: 1, servicesCaseIds: [c] });
+    expect(r.filesRemoved).toBe(0);
+    expect(await exists(D)).toBe(false);
+    expect(store.objects.has("case/d-copy")).toBe(true);
+    expect(await one("select candidate_user_id, requester_erased_at from services_case where id = $1", [c])).toEqual({ candidate_user_id: K, requester_erased_at: null });
+    expect((await rows("select candidate_user_id from consent_record where id = any($1)", [[k1, k2]])).map((x) => x.candidate_user_id)).toEqual([K, K]);
+    expect(await one("select candidate_user_id, storage_key from case_document where services_case_id = $1", [c])).toEqual({ candidate_user_id: K, storage_key: "case/d-copy" });
+    expect(await rows("select candidate_user_id, staff_user_id from case_event where case_id = $1 order by id", [c])).toEqual([{ candidate_user_id: K, staff_user_id: null }, { candidate_user_id: null, staff_user_id: staff }]);
+    // the kept account reads it through the candidate login's own reader and timeline (the routes' functions)
+    const cand = db.pool("app_candidate");
+    expect((await cand.query(TRACKER_SQL.candidate.one, [K, c])).rows[0]).toMatchObject({ id: c, status: "closed", documentCount: 1 });
+    expect((await caseTimeline(cand, "candidate", K, c))!.events.map((e) => e.kind)).toEqual(["received", "closed"]);
+    expect((await exportData(cand, K)).servicesCases.map((x: any) => x.id)).toEqual([c]);
+    // the audit row lists the moved case ids
+    expect((await one("select after from audit_event where action = 'candidate_merge.confirm' and after->>'request_id' = $1", [req])).after.moved).toMatchObject({ servicesCases: 1, servicesCaseIds: [c] });
   });
 });
 
