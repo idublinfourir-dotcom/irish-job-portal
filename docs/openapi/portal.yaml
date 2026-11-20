@@ -176,6 +176,51 @@ components:
         code: { type: string, enum: [GENERAL_RULES_NOT_SET, OCCUPATION_INELIGIBLE, QUOTA_FULL, OCCUPATION_NOT_ON_LIST, CONTRACT_TOO_SHORT, RULES_FAILED, PAY_REQUIRED, PAY_BELOW_MINIMUM, PAY_NOT_ON_SCALE, STATEMENT_REQUIRED] }
         stage: { type: string }
         exception: { type: string }
+    ServicesCase:
+      type: object
+      description: One permit services case as the requester side sees it. Never a note, a staff name or a staff id.
+      required: [id, status, decisionOutcome, permitType, jobId, jobTitle, createdAt, lastChangeAt, documentCount]
+      additionalProperties: false
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        status: { enum: [received, documents_needed, waiting_for_employer, submitted, decision, closed] }
+        decisionOutcome: { enum: [granted, refused, null], description: Set by staff at decision. }
+        permitType: { enum: [critical_skills, general] }
+        jobId: { oneOf: [{ $ref: '#/components/schemas/Id' }, { type: 'null' }] }
+        jobTitle: { type: [string, 'null'] }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        lastChangeAt: { $ref: '#/components/schemas/Timestamp', description: The newest timeline event, or the creation time. }
+        documentCount: { type: integer, minimum: 0, description: Stored copies this side uploaded (deleted copies not counted). }
+    FreeCheck:
+      type: [object, 'null']
+      description: The eligibility checker (GET /api/checker on the candidate site, the rules in force) run on the offer details; null when the offer lacks occupationCode, annualPay or relevantDegree.
+      required: [qualifies, reason, minimum, why, standingLine, rulesCheckedOn, registration]
+      properties:
+        qualifies: { type: boolean }
+        reason: { type: string }
+        minimum: { type: [number, 'null'] }
+        why: { type: string }
+        standingLine: { type: string }
+        rulesCheckedOn: { type: string }
+        registration: { type: [object, 'null'] }
+    OfferDetails:
+      type: object
+      description: >-
+        The offer as the requester types it: any of these keys, each a string of 1 to 500 characters after trimming, with no control or
+        format characters. When occupationCode, annualPay and relevantDegree are all given, they (with the other checker keys) must have
+        the checker's own shapes (GET /api/checker), else 400.
+      additionalProperties: false
+      properties:
+        occupationCode: { type: string, minLength: 1, maxLength: 500 }
+        annualPay: { type: string, minLength: 1, maxLength: 500 }
+        relevantDegree: { type: string, minLength: 1, maxLength: 500 }
+        degreeAwardMonth: { type: string, minLength: 1, maxLength: 500 }
+        contractMonths: { type: string, minLength: 1, maxLength: 500 }
+        weeklyHours: { type: string, minLength: 1, maxLength: 500 }
+        title: { type: string, minLength: 1, maxLength: 500 }
+        employerName: { type: string, minLength: 1, maxLength: 500 }
+        startDate: { type: string, minLength: 1, maxLength: 500 }
+        notes: { type: string, minLength: 1, maxLength: 500 }
     CaseDocument:
       type: object
       required: [id, fileName, contentType, sizeBytes, uploadedAt, copyDeleted]
@@ -416,6 +461,182 @@ paths:
             Retry-After: { $ref: '#/components/headers/RetryAfter' }
           content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: TOO_MANY_REQUESTS } } }
 
+  /api/portal/cases:
+    get:
+      operationId: listPortalServicesCases
+      tags: [services]
+      summary: Permit services cases one may read
+      description: >-
+        The cases this login asked for, plus, for an Owner or Recruiter, every portal case of the company, newest first, 20 a page. A candidate's case that names a company is never the company's (20d:109).
+      security: [{ portalSession: [] }]
+      x-roles: [the requester, account_owner and recruiter of the same company]
+      parameters:
+        - { name: after, in: query, description: The `next` of the page before., schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: One page of cases.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cases, next]
+                additionalProperties: false
+                properties:
+                  cases: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/ServicesCase' } }
+                  next: { oneOf: [{ $ref: '#/components/schemas/Cursor' }, { type: 'null' }] }
+              example: { cases: [{ id: '31', status: received, decisionOutcome: null, permitType: critical_skills, jobId: '1042', jobTitle: Fake Developer, createdAt: '2026-11-20T08:00:00.000Z', lastChangeAt: '2026-11-20T08:00:00.000Z', documentCount: 0 }], next: null }
+        '400':
+          description: '`BAD_REQUEST`: an unknown or repeated query key, or a forged or changed paging token.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: BAD_REQUEST }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+    post:
+      operationId: requestPortalServicesCase
+      tags: [services]
+      summary: Ask for help with a permit
+      description: >-
+        An active Owner or Recruiter of a verified company asks for help with a permit for a hire, on one of the company's own live jobs or none. In one transaction: the services_request consent record, the case (the company's, payer from its kind), the received event, and the free check on the offer details, kept with the case and returned. Several hires on one job are allowed; the idempotency key makes ten taps one case. At most 5 open cases per requester. The employer side has no HR-contact tick. Origin checked.
+      security: [{ portalSession: [] }]
+      x-roles: [account_owner, recruiter]
+      x-body-cap: 2048 characters
+      x-rate-limit: 20 case requests and withdrawals in 10 minutes per login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [permitType, offerDetails, servicesConsent, idempotencyKey]
+              additionalProperties: false
+              properties:
+                permitType: { enum: [critical_skills, general] }
+                jobId: { oneOf: [{ $ref: '#/components/schemas/Id' }, { type: 'null' }] }
+                offerDetails: { $ref: '#/components/schemas/OfferDetails' }
+                servicesConsent: { const: true, description: The services_request consent (placeholder wording until the real text). }
+                idempotencyKey: { type: string, pattern: '^[A-Za-z0-9_-]{16,64}$', description: 'Made by the client once per request: a replay with the same key from the same login answers the same case (replayed true) and writes nothing.' }
+            example: { permitType: critical_skills, jobId: '1042', offerDetails: { occupationCode: '2231', annualPay: '45000', relevantDegree: 'true' }, servicesConsent: true, idempotencyKey: 3f9c2a7e-hire-0001 }
+      responses:
+        '200':
+          description: The case (or, on a replayed key, the case made the first time), with the free check (null on a replay).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [case, freeCheck, replayed]
+                additionalProperties: false
+                properties:
+                  case: { $ref: '#/components/schemas/ServicesCase' }
+                  freeCheck: { $ref: '#/components/schemas/FreeCheck' }
+                  replayed: { type: boolean }
+              example: { case: { id: '31', status: received, decisionOutcome: null, permitType: critical_skills, jobId: '1042', jobTitle: Fake Developer, createdAt: '2026-11-20T08:00:00.000Z', lastChangeAt: '2026-11-20T08:00:00.000Z', documentCount: 0 }, freeCheck: { qualifies: true, reason: listed_degree, minimum: 40904, why: 'On the Critical Skills list with a relevant degree: the minimum is EUR 40,904.', standingLine: Rules checked on 12 November 2026., rulesCheckedOn: '2026-11-12', registration: null }, replayed: false }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403':
+          description: '`BAD_ORIGIN`: the Origin is not the portal. `ROLE_REFUSED`: not an active Owner or Recruiter of a verified company (a Poster, a Viewer, no company). `REFUSED`: blocked or deleted, or a database rule refused it.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: ROLE_REFUSED }
+        '404':
+          description: '`JOB_NOT_FOUND`: the job does not exist, is not live, or is not this company''s.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: JOB_NOT_FOUND }
+        '409':
+          description: '`CASE_LIMIT`: 5 open cases by this login already.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: CASE_LIMIT }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/TooMany' }
+        '503':
+          description: '`SERVICES_UNAVAILABLE`: the services consent texts are not in the database yet (services-texts-cli.ts has not run).'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: SERVICES_UNAVAILABLE }
+  /api/portal/cases/{id}:
+    parameters:
+      - { name: id, in: path, required: true, description: The services case id; anything that is not an id is 404., schema: { type: string } }
+    get:
+      operationId: getPortalServicesCase
+      tags: [services]
+      summary: One permit services case
+      description: >-
+        The case, read through the side's reader rule. A case the caller may not read, a missing case and a bad id are all 404 (never 403). The timeline and the documents needed are a separate route.
+      security: [{ portalSession: [] }]
+      x-roles: [the requester, account_owner and recruiter of the same company]
+      responses:
+        '200':
+          description: The case.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [case]
+                additionalProperties: false
+                properties:
+                  case: { $ref: '#/components/schemas/ServicesCase' }
+              example: { case: { id: '31', status: received, decisionOutcome: null, permitType: critical_skills, jobId: '1042', jobTitle: Fake Developer, createdAt: '2026-11-20T08:00:00.000Z', lastChangeAt: '2026-11-20T08:00:00.000Z', documentCount: 0 } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+        '404':
+          description: '`CASE_NOT_FOUND`: not a case this login may read, no such case, or not an id.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: CASE_NOT_FOUND }
+  /api/portal/cases/{id}/withdraw:
+    parameters:
+      - { name: id, in: path, required: true, description: The services case id; anything that is not an id is 404., schema: { type: string } }
+    post:
+      operationId: withdrawPortalServicesCase
+      tags: [services]
+      summary: Withdraw one's own open case
+      description: >-
+        The requester closes an open case (no decision outcome yet) as withdrawn, and the withdrawn event is written (migration 0062). Any body is ignored. Origin checked.
+      security: [{ portalSession: [] }]
+      x-roles: [the requester]
+      x-body-cap: 2048 characters
+      x-rate-limit: 20 case requests and withdrawals in 10 minutes per login
+      responses:
+        '200':
+          description: The closed case.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [case]
+                additionalProperties: false
+                properties:
+                  case: { $ref: '#/components/schemas/ServicesCase' }
+              example: { case: { id: '31', status: closed, decisionOutcome: null, permitType: critical_skills, jobId: '1042', jobTitle: Fake Developer, createdAt: '2026-11-20T08:00:00.000Z', lastChangeAt: '2026-11-20T08:00:00.000Z', documentCount: 0 } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403':
+          description: '`BAD_ORIGIN`: the Origin is not this site. `NOT_REQUESTER`: an Owner or Recruiter who reads the case but did not ask for it. `REFUSED`: blocked or deleted.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: BAD_ORIGIN }
+        '404':
+          description: '`CASE_NOT_FOUND`: not a case this login may read, no such case, or not an id.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: CASE_NOT_FOUND }
+        '409':
+          description: '`CASE_NOT_OPEN`: the case is closed or has a decision outcome.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: CASE_NOT_OPEN }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/TooMany' }
   /api/portal/cases/{id}/documents:
     parameters:
       - { name: id, in: path, required: true, description: The services case id. Not an id is 400., schema: { $ref: '#/components/schemas/Id' } }

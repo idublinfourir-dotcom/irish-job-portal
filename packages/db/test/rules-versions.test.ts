@@ -249,8 +249,8 @@ describe("propose, confirm, refuse", () => {
     const r = await ok(call("ed2"));
     expect(r.upcoming.map((v: { versionId: string }) => v.versionId)).toContain(c.versionId);
     expect(r.inForce.find((v: { kind: string }) => v.kind === "ineligible_list").versionId).not.toBe(c.versionId);
-    const audits = (await su.query("select action, actor_staff_user_id a, second_staff_user_id s from audit_event where action like 'rules.%' and after->>'request_id' = $1 order by id", [p.requestId])).rows;
-    expect(audits).toEqual([{ action: "rules.propose", a: staff.ed1, s: null }, { action: "rules.confirm", a: staff.ad1, s: staff.ed1 }]);
+    const audits = (await su.query("select action, actor_staff_user_id a, second_staff_user_id s, role_in_force r from audit_event where action like 'rules.%' and after->>'request_id' = $1 order by id", [p.requestId])).rows;
+    expect(audits).toEqual([{ action: "rules.propose", a: staff.ed1, s: null, r: "rules_data_editor" }, { action: "rules.confirm", a: staff.ad1, s: staff.ed1, r: "administrator" }]);
   });
   it("the proposer cannot confirm or refuse, even holding both roles; a refused or decided request cannot be decided again", async () => {
     const { requestId } = await ok(propose("both", "minimums", addDays(today, 500), { ...M, graduate: 37000 }));
@@ -350,6 +350,18 @@ describe("the big-company flag (#230)", () => {
     const q = await ok(call("ed1", { action: "propose_flag", organisationId: String(alias) })); // matched by its name row, not its display name
     await ok(decide("ed1", "withdraw", q.requestId));
     expect((await one("select is_big_company b from organisation where id = $1", [alias])).b).toBe(false);
+    // role_in_force (SV-A): the role that allowed each action, on every rules row
+    const roles = (await su.query("select action, role_in_force r from audit_event where action like 'rules.%' and after->>'request_id' = any($1) order by id", [[p.requestId, q.requestId]])).rows;
+    expect(roles).toEqual([{ action: "rules.propose_flag", r: "rules_data_editor" }, { action: "rules.confirm_flag", r: "administrator" }, { action: "rules.propose_flag", r: "rules_data_editor" }, { action: "rules.withdraw", r: "rules_data_editor" }]);
+  });
+  it("a refusal names the administrator's role and a withdrawal the editor's (role_in_force, SV-A)", async () => {
+    const a = await ok(propose("ed1", "minimums", addDays(today, 700), { ...M, graduate: 37100 }));
+    await ok(decide("ad1", "refuse", a.requestId));
+    const b = await ok(propose("ed1", "minimums", addDays(today, 701), { ...M, graduate: 37200 }));
+    await ok(decide("ed1", "withdraw", b.requestId));
+    const rows = (await su.query("select action, role_in_force r from audit_event where action like 'rules.%' and after->>'request_id' = any($1) order by id", [[a.requestId, b.requestId]])).rows;
+    expect(rows).toEqual([{ action: "rules.propose", r: "rules_data_editor" }, { action: "rules.refuse", r: "administrator" }, { action: "rules.propose", r: "rules_data_editor" }, { action: "rules.withdraw", r: "rules_data_editor" }]);
+    expect((await one("select count(*)::int n from audit_event where action like 'rules.%' and actor_staff_user_id is not null and role_in_force is null")).n).toBe(0);
   });
 });
 

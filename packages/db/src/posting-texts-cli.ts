@@ -13,13 +13,16 @@ export const POSTING_TEXTS = {
 } as const;
 
 /** Returns the purposes it saved now (empty when both already had a text). */
-export async function savePostingTexts(client: pg.ClientBase): Promise<string[]> {
+export const savePostingTexts = (client: pg.ClientBase) => saveTexts(client, POSTING_TEXTS, POSTING_TEXT_VERSION);
+
+/** Saves each purpose's text unless the purpose already has one; one transaction. Also the services texts (services-texts-cli.ts). */
+export async function saveTexts(client: pg.ClientBase, texts: Record<string, string>, version: string): Promise<string[]> {
   await client.query("begin");
   try {
     const made: string[] = [];
-    for (const [purpose, body] of Object.entries(POSTING_TEXTS)) {
+    for (const [purpose, body] of Object.entries(texts)) {
       if ((await client.query("select 1 from consent_text where purpose = $1", [purpose])).rowCount) continue;
-      await client.query("insert into consent_text(purpose, version, body) values ($1, $2, $3)", [purpose, POSTING_TEXT_VERSION, body]);
+      await client.query("insert into consent_text(purpose, version, body) values ($1, $2, $3)", [purpose, version, body]);
       made.push(purpose);
     }
     await client.query("commit");
@@ -30,14 +33,17 @@ export async function savePostingTexts(client: pg.ClientBase): Promise<string[]>
   }
 }
 
-export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: string) => void): Promise<number> {
-  if (argv.length) return log("usage: posting-texts-cli.ts (no arguments)"), 2;
+export const main = (argv: string[], env: NodeJS.ProcessEnv, log: (line: string) => void) => runSeed("posting-texts-cli.ts", savePostingTexts, POSTING_TEXT_VERSION, argv, env, log);
+
+/** The command line of a text seed: no arguments, the admin login in DATABASE_URL, then `save`. */
+export async function runSeed(name: string, save: (c: pg.ClientBase) => Promise<string[]>, version: string, argv: string[], env: NodeJS.ProcessEnv, log: (line: string) => void): Promise<number> {
+  if (argv.length) return log(`usage: ${name} (no arguments)`), 2;
   if (!env.DATABASE_URL) return log("DATABASE_URL is not set (the admin app's login, app_admin)"), 2;
   const client = new pg.Client({ connectionString: env.DATABASE_URL, ssl: sslOptions(env) });
   try {
     await client.connect();
-    const made = await savePostingTexts(client);
-    log(made.length ? `saved the placeholder ${made.join(" and ")} text (${POSTING_TEXT_VERSION})` : "both texts are already there; nothing was written");
+    const made = await save(client);
+    log(made.length ? `saved the placeholder ${made.join(" and ")} text (${version})` : "both texts are already there; nothing was written");
     return 0;
   } catch (e) {
     log(`refused: ${(e as Error).message}`);

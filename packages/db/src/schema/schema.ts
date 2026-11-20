@@ -2228,7 +2228,11 @@ export const candidateServicesCase = pgView("candidate_services_case", {	// You 
 	assignedStaffUserId: text("assigned_staff_user_id"),
 	dedupeKey: text("dedupe_key"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
-}).with({"securityBarrier":true,"checkOption":"cascaded"}).as(sql`SELECT id, candidate_user_id, portal_user_id, requester_erased_at, organisation_id, job_id, permit_type, offer_details, payer, status, decided_at, closed_at, close_reason, consent_record_id, employer_contact_consent_record_id, assigned_staff_user_id, dedupe_key, created_at FROM services_case WHERE candidate_user_id IS NOT NULL`);
+	decisionOutcome: text("decision_outcome"),
+	documentsNeeded: text("documents_needed").array(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	referralSolicitorId: bigint("referral_solicitor_id", { mode: "number" }),
+}).with({"securityBarrier":true,"checkOption":"cascaded"}).as(sql`SELECT id, candidate_user_id, portal_user_id, requester_erased_at, organisation_id, job_id, permit_type, offer_details, payer, status, decided_at, closed_at, close_reason, consent_record_id, employer_contact_consent_record_id, assigned_staff_user_id, dedupe_key, created_at, decision_outcome, documents_needed, referral_solicitor_id FROM services_case WHERE candidate_user_id IS NOT NULL`);
 
 export const portalServicesCase = pgView("portal_services_case", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }),
@@ -2253,7 +2257,11 @@ export const portalServicesCase = pgView("portal_services_case", {	// You can us
 	assignedStaffUserId: text("assigned_staff_user_id"),
 	dedupeKey: text("dedupe_key"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
-}).with({"securityBarrier":true,"checkOption":"cascaded"}).as(sql`SELECT id, candidate_user_id, portal_user_id, requester_erased_at, organisation_id, job_id, permit_type, offer_details, payer, status, decided_at, closed_at, close_reason, consent_record_id, employer_contact_consent_record_id, assigned_staff_user_id, dedupe_key, created_at FROM services_case WHERE portal_user_id IS NOT NULL`);
+	decisionOutcome: text("decision_outcome"),
+	documentsNeeded: text("documents_needed").array(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	referralSolicitorId: bigint("referral_solicitor_id", { mode: "number" }),
+}).with({"securityBarrier":true,"checkOption":"cascaded"}).as(sql`SELECT id, candidate_user_id, portal_user_id, requester_erased_at, organisation_id, job_id, permit_type, offer_details, payer, status, decided_at, closed_at, close_reason, consent_record_id, employer_contact_consent_record_id, assigned_staff_user_id, dedupe_key, created_at, decision_outcome, documents_needed, referral_solicitor_id FROM services_case WHERE portal_user_id IS NOT NULL`);
 
 export const candidateCaseDocument = pgView("candidate_case_document", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }),

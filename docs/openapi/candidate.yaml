@@ -227,6 +227,51 @@ components:
       required: [alert]
       properties:
         alert: { $ref: '#/components/schemas/Alert' }
+    ServicesCase:
+      type: object
+      description: One permit services case as the requester side sees it. Never a note, a staff name or a staff id.
+      required: [id, status, decisionOutcome, permitType, jobId, jobTitle, createdAt, lastChangeAt, documentCount]
+      additionalProperties: false
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        status: { enum: [received, documents_needed, waiting_for_employer, submitted, decision, closed] }
+        decisionOutcome: { enum: [granted, refused, null], description: Set by staff at decision. }
+        permitType: { enum: [critical_skills, general] }
+        jobId: { oneOf: [{ $ref: '#/components/schemas/Id' }, { type: 'null' }] }
+        jobTitle: { type: [string, 'null'] }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        lastChangeAt: { $ref: '#/components/schemas/Timestamp', description: The newest timeline event, or the creation time. }
+        documentCount: { type: integer, minimum: 0, description: Stored copies this side uploaded (deleted copies not counted). }
+    FreeCheck:
+      type: [object, 'null']
+      description: The eligibility checker (GET /api/checker on the candidate site, the rules in force) run on the offer details; null when the offer lacks occupationCode, annualPay or relevantDegree.
+      required: [qualifies, reason, minimum, why, standingLine, rulesCheckedOn, registration]
+      properties:
+        qualifies: { type: boolean }
+        reason: { type: string }
+        minimum: { type: [number, 'null'] }
+        why: { type: string }
+        standingLine: { type: string }
+        rulesCheckedOn: { type: string }
+        registration: { type: [object, 'null'] }
+    OfferDetails:
+      type: object
+      description: >-
+        The offer as the requester types it: any of these keys, each a string of 1 to 500 characters after trimming, with no control or
+        format characters. When occupationCode, annualPay and relevantDegree are all given, they (with the other checker keys) must have
+        the checker's own shapes (GET /api/checker), else 400.
+      additionalProperties: false
+      properties:
+        occupationCode: { type: string, minLength: 1, maxLength: 500 }
+        annualPay: { type: string, minLength: 1, maxLength: 500 }
+        relevantDegree: { type: string, minLength: 1, maxLength: 500 }
+        degreeAwardMonth: { type: string, minLength: 1, maxLength: 500 }
+        contractMonths: { type: string, minLength: 1, maxLength: 500 }
+        weeklyHours: { type: string, minLength: 1, maxLength: 500 }
+        title: { type: string, minLength: 1, maxLength: 500 }
+        employerName: { type: string, minLength: 1, maxLength: 500 }
+        startDate: { type: string, minLength: 1, maxLength: 500 }
+        notes: { type: string, minLength: 1, maxLength: 500 }
     CaseDocument:
       type: object
       required: [id, fileName, contentType, sizeBytes, uploadedAt, copyDeleted]
@@ -376,6 +421,8 @@ tags:
     description: Job alerts and the unsubscribe link.
   - name: files
     description: The CV and services case documents.
+  - name: services
+    description: Permit services requests and the case tracker.
   - name: auth
     description: Better Auth's own routes.
   - name: ops
@@ -2116,6 +2163,182 @@ paths:
         '404': *cvNotFound
         '503': { $ref: '#/components/responses/FilesUnavailable' }
 
+  /api/candidate/cases:
+    get:
+      operationId: listCandidateServicesCases
+      tags: [services]
+      summary: Permit services cases one may read
+      description: >-
+        This candidate's cases, newest first, 20 a page. A candidate's case that names a company is never the company's (20d:109).
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate who owns the case]
+      parameters:
+        - { name: after, in: query, description: The `next` of the page before., schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: One page of cases.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cases, next]
+                additionalProperties: false
+                properties:
+                  cases: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/ServicesCase' } }
+                  next: { oneOf: [{ $ref: '#/components/schemas/Cursor' }, { type: 'null' }] }
+              example: { cases: [{ id: '31', status: received, decisionOutcome: null, permitType: critical_skills, jobId: '1042', jobTitle: Fake Developer, createdAt: '2026-11-20T08:00:00.000Z', lastChangeAt: '2026-11-20T08:00:00.000Z', documentCount: 0 }], next: null }
+        '400':
+          description: '`BAD_REQUEST`: an unknown or repeated query key, or a forged or changed paging token.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: BAD_REQUEST }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+    post:
+      operationId: requestCandidateServicesCase
+      tags: [services]
+      summary: Ask for help with a permit
+      description: >-
+        A verified candidate asks for help with a permit. In one transaction: the services_request consent record (and the employer_contact one when ticked), the case (payer from the job's company kind; no job: no company and no payer yet), the received event, and the free check on the offer details, kept with the case and returned. At most one open case per job (and one with no job), and 5 open cases. With `employerContact` (only on a request that names a job) a second consent record lets our team contact the employer's HR (S-Q2 A); without it staff never do. Origin checked.
+      security: [{ candidateSession: [] }]
+      x-roles: [verified candidate]
+      x-body-cap: 2048 characters
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [permitType, offerDetails, servicesConsent]
+              additionalProperties: false
+              properties:
+                permitType: { enum: [critical_skills, general] }
+                jobId: { oneOf: [{ $ref: '#/components/schemas/Id' }, { type: 'null' }] }
+                offerDetails: { $ref: '#/components/schemas/OfferDetails' }
+                servicesConsent: { const: true, description: The services_request consent (placeholder wording until the real text). }
+                employerContact: { type: boolean, default: false, description: 'The HR-contact tick (S-Q2 A): only with jobId. Without it staff never contact the employer and the case stays a free check.' }
+            example: { permitType: critical_skills, jobId: '1042', offerDetails: { occupationCode: '2136', annualPay: '50000', relevantDegree: 'true', title: Fake Developer }, servicesConsent: true, employerContact: true }
+      responses:
+        '200':
+          description: The case (or, on a replayed key, the case made the first time), with the free check (null on a replay).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [case, freeCheck, replayed]
+                additionalProperties: false
+                properties:
+                  case: { $ref: '#/components/schemas/ServicesCase' }
+                  freeCheck: { $ref: '#/components/schemas/FreeCheck' }
+                  replayed: { type: boolean }
+              example: { case: { id: '31', status: received, decisionOutcome: null, permitType: critical_skills, jobId: '1042', jobTitle: Fake Developer, createdAt: '2026-11-20T08:00:00.000Z', lastChangeAt: '2026-11-20T08:00:00.000Z', documentCount: 0 }, freeCheck: { qualifies: true, reason: listed_degree, minimum: 40904, why: 'On the Critical Skills list with a relevant degree: the minimum is EUR 40,904.', standingLine: Rules checked on 12 November 2026., rulesCheckedOn: '2026-11-12', registration: null }, replayed: false }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403':
+          description: '`BAD_ORIGIN`: the Origin is not the candidate site. `NOT_VERIFIED`: the email is not confirmed. `REFUSED`: suspended or deleted, or a database rule refused it.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: NOT_VERIFIED }
+        '404':
+          description: '`JOB_NOT_FOUND`: the job does not exist or is not live.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: JOB_NOT_FOUND }
+        '409':
+          description: '`CASE_ALREADY_OPEN`: an open case on this job (or with no job) already. `CASE_LIMIT`: 5 open cases already.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: CASE_LIMIT }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/WriteTooMany' }
+        '503':
+          description: '`SERVICES_UNAVAILABLE`: the services consent texts are not in the database yet (services-texts-cli.ts has not run).'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: SERVICES_UNAVAILABLE }
+  /api/candidate/cases/{id}:
+    parameters:
+      - { name: id, in: path, required: true, description: The services case id; anything that is not an id is 404., schema: { type: string } }
+    get:
+      operationId: getCandidateServicesCase
+      tags: [services]
+      summary: One permit services case
+      description: >-
+        The case, read through the side's reader rule. A case the caller may not read, a missing case and a bad id are all 404 (never 403). The timeline and the documents needed are a separate route.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate who owns the case]
+      responses:
+        '200':
+          description: The case.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [case]
+                additionalProperties: false
+                properties:
+                  case: { $ref: '#/components/schemas/ServicesCase' }
+              example: { case: { id: '31', status: received, decisionOutcome: null, permitType: critical_skills, jobId: '1042', jobTitle: Fake Developer, createdAt: '2026-11-20T08:00:00.000Z', lastChangeAt: '2026-11-20T08:00:00.000Z', documentCount: 0 } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+        '404':
+          description: '`CASE_NOT_FOUND`: not a case this login may read, no such case, or not an id.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: CASE_NOT_FOUND }
+  /api/candidate/cases/{id}/withdraw:
+    parameters:
+      - { name: id, in: path, required: true, description: The services case id; anything that is not an id is 404., schema: { type: string } }
+    post:
+      operationId: withdrawCandidateServicesCase
+      tags: [services]
+      summary: Withdraw one's own open case
+      description: >-
+        The requester closes an open case (no decision outcome yet) as withdrawn, and the withdrawn event is written (migration 0062). Any body is ignored. Origin checked.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate who owns the case]
+      x-body-cap: 2048 characters
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      responses:
+        '200':
+          description: The closed case.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [case]
+                additionalProperties: false
+                properties:
+                  case: { $ref: '#/components/schemas/ServicesCase' }
+              example: { case: { id: '31', status: closed, decisionOutcome: null, permitType: critical_skills, jobId: '1042', jobTitle: Fake Developer, createdAt: '2026-11-20T08:00:00.000Z', lastChangeAt: '2026-11-20T08:00:00.000Z', documentCount: 0 } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403':
+          description: '`BAD_ORIGIN`: the Origin is not this site. `REFUSED`: suspended or deleted.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: BAD_ORIGIN }
+        '404':
+          description: '`CASE_NOT_FOUND`: not a case this login may read, no such case, or not an id.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: CASE_NOT_FOUND }
+        '409':
+          description: '`CASE_NOT_OPEN`: the case is closed or has a decision outcome.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: CASE_NOT_OPEN }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/WriteTooMany' }
   /api/candidate/cases/{id}/documents:
     parameters:
       - { name: id, in: path, required: true, description: The services case id., schema: { $ref: '#/components/schemas/Id' } }

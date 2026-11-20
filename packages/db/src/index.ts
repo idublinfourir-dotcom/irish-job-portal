@@ -72,6 +72,7 @@ export * from "./public-read";
 export * from "./candidate";
 export * from "./files";
 export { sharpWorks } from "./file-disarm";
+export * from "./services-request";
 
 export * from "./pay-floors";
 export * from "./job-stats";
