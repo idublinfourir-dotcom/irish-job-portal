@@ -22,6 +22,11 @@ describe("mapping (pure)", () => {
     expect(jiLocation(LIST.data[1]!)).toBe("Mayo, Ireland"); // the saved card's city is "N/A"
     expect(jiLocation({ location: { COUNTRY: "CTY109", CITY: "Ennis" } })).toBe("Ennis, Ireland");
     expect(jiLocation({ location: { COUNTRY: "CTY109", CITY: "Dublin", COUNTY: "Dublin" } })).toBe("Dublin, Ireland");
+    // a whole address in CITY: split, Eircode and "Ireland" dropped, repeats dropped case ignored
+    expect(jiLocation({ location: { COUNTRY: "CTY109", CITY: "Cork, CORK, T12 R6FK, Ireland", COUNTY: "Cork" } })).toBe("Cork, Ireland");
+    expect(jiLocation({ location: { COUNTRY: "CTY109", CITY: "Ranelagh, Dublin 6W, D6W XY12" } })).toBe("Ranelagh, Dublin 6W, Ireland");
+    expect(jiLocation({ location: { COUNTRY: "CTY109", CITY: ", , IRELAND, n/a" } })).toBe("Ireland");
+    expect(jiLocation({ location: { COUNTRY: "CTY109", CITY: "a,".repeat(5000) } })!.length).toBeLessThanOrEqual(300);
     expect(jiLocation({})).toBe("Ireland");
     expect(jiLocation({ location: null })).toBe("Ireland");
     expect(jiLocation({ location: { COUNTRY: "CTY22", CITY: "Madrid" } })).toBeNull();
