@@ -165,8 +165,9 @@ export const fetchPhenom: SourceAdapter<PhenomBoard> = (b, known, fetch, opts) =
  * `pattern` keeps the Irish job URLs (its first group is the id when `idFrom` is "url"). "page": the id is the JobPosting's identifier (Citi's URL number is not the Workday id), so every Irish page is read each run.
  * D1-B: `query` is added to a job URL to read its page (iCIMS: "?in_iframe=1"; the advert keeps the plain URL). `place: "url"` (Rezoomo, whose
  * JobPosting has no address): the title and place come from the sitemap URL (`titlePlace`), the employer and salary from the page.
+ * `maxPages` ("url" boards): at most this many page reads a run; the jobs over it count as seen (nothing closes) and are read on later runs.
  */
-export type SitemapBoard = { employer: string; board: string; origin: string; sitemap: string; pattern: string; idFrom: "url" | "page"; query?: string; place?: "url" };
+export type SitemapBoard = { employer: string; board: string; origin: string; sitemap: string; pattern: string; idFrom: "url" | "page"; query?: string; place?: "url"; maxPages?: number };
 export const MAX_SITEMAPS = 20; // files under one index
 export const MAX_URLS = 100_000; // all files together (the protocol allows 50,000 a file; Citi has about 7,000)
 const LOC = /<loc>\s*(?:<!\[CDATA\[)?([^<]*?)(?:\]\]>)?\s*<\/loc>/g; // Rezoomo writes <loc><![CDATA[...]]></loc>
@@ -214,6 +215,8 @@ export const fetchSitemap: SourceAdapter<SitemapBoard> = (b, known, fetch, opts)
     safeName(b.board, b.board);
     checkSite(b.board, b.origin, b.sitemap);
     if (!/^(\?[A-Za-z0-9_=&-]{1,100})?$/.test(b.query ?? "")) throw new FetchFailedError(b.board, "bad board page query");
+    if (b.maxPages !== undefined && !(Number.isInteger(b.maxPages) && b.maxPages >= 1 && b.maxPages <= 10_000)) throw new FetchFailedError(b.board, "bad board page cap");
+    let reads = 0;
     const call = makeCaller(b.board, fetch, b.origin, { ...opts, gapMs: PACE.siteCallGapMs, text: true });
     const re = new RegExp(b.pattern);
     const seen = new Set<string>();
@@ -238,6 +241,10 @@ export const fetchSitemap: SourceAdapter<SitemapBoard> = (b, known, fetch, opts)
       const id = `sitemap:${b.board}:${ext}`;
       if (known.has(id) || seen.has(id)) {
         seen.add(id);
+        continue;
+      }
+      if (reads++ >= (b.maxPages ?? Infinity)) {
+        seen.add(id); // over the run's cap: read on a later run
         continue;
       }
       const p = await read(url);

@@ -203,7 +203,8 @@
    "^https://www\\.rezoomo\\.com/job/(\\d+)/\\?",
    "url",
    {
-    "place": "url"
+    "place": "url",
+    "maxPages": 180
    }
   ],
   [

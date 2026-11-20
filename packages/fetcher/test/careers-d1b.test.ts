@@ -46,8 +46,8 @@ describe("D1-B boards on the real database", () => {
   it("day 1: Republic Rezoomo jobs, Irish iCIMS jobs and all 20 Eightfold jobs are saved; the Rezoomo salary reaches the job", async () => {
     const c = counting(db.pool("app_fetcher"));
     const { by } = await run(undefined, c.db);
-    expect(Object.fromEntries(Object.entries(by).map(([b, r]) => [b, [r.ok, r.seen]]))).toEqual({ rezoomo: [true, 2], hsedne: [true, 16], dawnmeats: [true, 18], microsoft: [true, 10], qualcomm: [true, 10] });
-    expect(await saved("rezoomo")).toEqual(["sitemap:rezoomo:105422 live", "sitemap:rezoomo:68522 in_review"]); // 68522: the Dublin page's stub text, no contract
+    expect(Object.fromEntries(Object.entries(by).map(([b, r]) => [b, [r.ok, r.seen]]))).toEqual({ rezoomo: [true, 3], hsedne: [true, 16], dawnmeats: [true, 18], microsoft: [true, 10], qualcomm: [true, 10] });
+    expect(await saved("rezoomo")).toEqual(["sitemap:rezoomo:100118 live", "sitemap:rezoomo:105422 live", "sitemap:rezoomo:68522 in_review"]); // 100118: Bray (G1); 68522: no contract
     expect((await saved("hsedne")).map((x) => x.split(" ")[0])).toEqual(["sitemap:hsedne:5359"]);
     expect(await saved("microsoft")).toHaveLength(10);
     const [j] = await su("select j.title, j.employer_name, j.county, j.salary_low, j.salary_high from job j join fetched_advert f on f.id = j.fetched_advert_id where f.external_id = 'sitemap:rezoomo:105422'");
@@ -75,10 +75,26 @@ describe("D1-B boards on the real database", () => {
       if (url.startsWith("https://careers-dawnmeats.icims.com/sitemap.xml")) return page("down", 503);
       return undefined;
     });
-    expect(by.rezoomo).toMatchObject({ ok: true, seen: 1, closed: 1 });
+    expect(by.rezoomo).toMatchObject({ ok: true, seen: 1, closed: 2 }); // 105422 and 100118 (Bray) were live
     expect(await saved("rezoomo")).toContain("sitemap:rezoomo:105422 closed");
     expect(by.microsoft).toMatchObject({ ok: true, seen: 10, closed: 0 });
     expect(by.dawnmeats).toMatchObject({ ok: false, closed: 0 });
     expect((await saved("dawnmeats")).every((x) => x.endsWith(" live") || x.endsWith(" in_review") || x.endsWith(" -"))).toBe(true);
+  });
+
+  it("gap round G2: a capped Rezoomo row saves maxPages jobs a run and the rest on the next run", async () => {
+    const row = BOARDS.sitemap![0]!;
+    const capped: BoardsFile = { sitemap: [[row[0], "rezoomo-cap", row[2], row[3], row[4], row[5], { place: "url", maxPages: 1 }]] };
+    const once = async () => {
+      const tasks = atsTasks(capped, (async (input: string | URL | Request) => sites()({ url: String(input), method: "GET" })) as Fetch, () => {}, async () => {}).map((t) => ({ ...t, rereadDays: undefined }));
+      const [r] = await runBoards(deps(db.pool("app_fetcher"), tasks, { checkBatch: fakeModel().checkBatch, now: () => new Date(NOW.getTime() + ++day * 86_400_000) }));
+      return r!;
+    };
+    expect(await once()).toMatchObject({ ok: true, seen: 3, closed: 0 });
+    expect(await saved("rezoomo-cap")).toHaveLength(1);
+    expect(await once()).toMatchObject({ ok: true, seen: 3, closed: 0 });
+    expect(await saved("rezoomo-cap")).toHaveLength(2);
+    await once();
+    expect((await saved("rezoomo-cap")).map((x) => x.split(" ")[0])).toEqual(["sitemap:rezoomo-cap:100118", "sitemap:rezoomo-cap:105422", "sitemap:rezoomo-cap:68522"]);
   });
 });
