@@ -5,7 +5,8 @@
 // built by packages/sources/scripts/towns-ie.py from GeoNames (CC BY 4.0, https://creativecommons.org/licenses/by/4.0/), read 20 Nov 2026:
 // https://download.geonames.org/export/dump/cities500.zip (country IE, which is the Republic only; 500 people or more) and
 // https://download.geonames.org/export/dump/admin2Codes.txt (the county of each place). Northern Ireland is never in it: a name GeoNames
-// also has in Northern Ireland (Newcastle, Dundrum, Crumlin) is left out, so it maps to no county. 2,739 names (main and other names).
+// also has in Northern Ireland (Newcastle, Dundrum, Crumlin) is left out, so it maps to no county. 602 names: each place's `name` and
+// `asciiname`, plus only other names labelled English (language "en" or the English Wikipedia title, from alternatenames/IE.zip).
 import TOWNS from "./towns-ie.json" with { type: "json" };
 const COUNTIES = [
   "Carlow", "Cavan", "Clare", "Cork", "Donegal", "Dublin", "Galway", "Kerry", "Kildare", "Kilkenny", "Laois", "Leitrim", "Limerick",
@@ -15,7 +16,7 @@ const FIND = new RegExp(`(?<![a-z])(${COUNTIES.join("|")})(?![a-z])`, "i");
 
 const TOWN = new Map(Object.entries(TOWNS as Record<string, string>));
 const FIRST = new Set([...TOWN.keys()].map((k) => k.split(" ")[0]!)); // a word no name starts with costs one lookup
-const LONGEST = Math.max(...[...TOWN.keys()].map((k) => k.split(" ").length)); // words in the longest name (9)
+const LONGEST = Math.max(...[...TOWN.keys()].map((k) => k.split(" ").length)); // words in the longest name (3)
 
 export function countyOf(location: string): string | null {
   const text = location.slice(0, 2000);

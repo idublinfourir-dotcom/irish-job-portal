@@ -44,6 +44,10 @@ describe("Republic towns (gap round G1: countyOf with the GeoNames town table)",
     expect(countyOf("Bray, Ireland")).toBe("Wicklow");
     expect(countyOf("Naas Road, Dublin 12")).toBe("Dublin"); // a county named wins over a town
     expect(countyOf("Athlone and Bray")).toBe("Westmeath"); // the first town in the text
+    // only main names and English-labelled ones: other-language forms GeoNames lists (Chinese "a dai er" for Adare, "Abbifil", "Atlona") give nothing
+    for (const foreign of ["a dai er", "Abbifil", "Atlona", "Brejus", "Nurse a bi fei er"]) expect(countyOf(foreign), foreign).toBeNull();
+    expect(titlePlace(rz("Care Assistant - Atlona"))).toBeNull();
+    expect(countyOf("Adare")).toBe("Limerick");
     for (const ni of ["Belfast", "Newtownabbey", "Derry", "Londonderry", "Lisburn", "Newry", "Newcastle", "Dundrum", "Crumlin", "Peamount Hospital", "Ford Road"]) expect(countyOf(ni), ni).toBeNull();
   });
   it("hostile text: 2,000 characters read at most, under 200 ms per 1,000 locations of 2,000 characters", () => {
