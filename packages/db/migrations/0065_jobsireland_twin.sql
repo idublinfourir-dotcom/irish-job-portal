@@ -17,20 +17,25 @@ set role portal_owner;
 -- (a fetched job of another board, an employer's own or a staff job; never an agency's), and the first. Two scans of the two partial indexes of 0057, so a company with many live jobs costs no more.
 create function private.twin_matches(p_org bigint, p_key text, p_src bigint, p_county text) returns table(n bigint, first_id bigint) language sql stable as $$
   select count(*), min(id) from (
-    select e.id from public.job e where e.organisation_id = p_org and e.source = 'fetched' and e.status = 'live' and e.title_key = p_key and e.job_source_id is distinct from p_src
-      and (e.county is null or p_county is null or e.county = p_county)
+    (select e.id from public.job e where e.organisation_id = p_org and e.source = 'fetched' and e.status = 'live' and e.title_key = p_key and e.job_source_id is distinct from p_src
+      and (e.county is null or p_county is null or e.county = p_county) limit 2)
     union all
-    select e.id from public.job e where e.organisation_id = p_org and e.source in ('employer','admin_manual') and e.status = 'live' and e.title_key = p_key
-      and (e.county is null or p_county is null or e.county = p_county)) m
+    (select e.id from public.job e where e.organisation_id = p_org and e.source in ('employer','admin_manual') and e.status = 'live' and e.title_key = p_key
+      and (e.county is null or p_county is null or e.county = p_county) limit 2)) m -- only "exactly one" matters: each side stops at 2
 $$;
 
+-- 0065: live fetched jobs by board, company and title, so a job of another source finds its JobsIreland twin by the JobsIreland board alone, at a
+-- cost that does not grow with the company's other same-title jobs (a bulk insert of 20,000 same-title jobs was quadratic without it).
+create index job_twin_board_idx on job(job_source_id, organisation_id, title_key) where source = 'fetched' and status = 'live';
+
 create or replace function private.job_twin() returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
-declare pair_owner bigint; pair_twin bigint; ji boolean := false; n bigint; twin_src bigint; twin_county text; -- 0065: ji, n, twin_src, twin_county
+declare pair_owner bigint; pair_twin bigint; ji boolean := false; n bigint; twin_src bigint; twin_county text; ji_src bigint[]; -- 0065: ji to ji_src
 begin
   if tg_op = 'UPDATE' and row(new.status, new.title, new.county, new.own_page_url) is not distinct from row(old.status, old.title, old.county, old.own_page_url) then return null; end if;
   if new.source = 'fetched' then
     if new.status = 'live' then -- 0065: no early return, so the restore below also runs for a fetched holder
-      ji := exists (select 1 from job_source s where s.id = new.job_source_id and s.kind = 'jobsireland'); -- 0065
+      ji_src := array(select s.id from job_source s where s.kind = 'jobsireland'); -- 0065: the JobsIreland boards (one)
+      ji := new.job_source_id = any(ji_src);
       -- a live employer job of the organisation with no twin yet, whose link is this advert's, else whose only same-title fetched job this is
       select e.id into pair_owner from job e
        where e.organisation_id = new.organisation_id and e.status = 'live' and e.source in ('employer','admin_manual')
@@ -69,11 +74,18 @@ begin
   end if;
   -- 0065: a live job of another source with no twin hides the one live JobsIreland job of its organisation with its title, when this is that job's only match
   if new.status = 'live' and pair_owner is null and not ji and new.source <> 'agency' and new.organisation_id is not null then -- pair_owner: this job was just hidden
-    select min(f.id), count(*), min(f.job_source_id), min(f.county) into pair_twin, n, twin_src, twin_county from job f
-     where f.organisation_id = new.organisation_id and f.source = 'fetched' and f.status = 'live' and f.title_key = new.title_key
-       and (f.county is null or new.county is null or f.county = new.county)
-       and f.job_source_id in (select s.id from job_source s where s.kind = 'jobsireland');
-    if n <> 1 or (select m.n from private.twin_matches(new.organisation_id, new.title_key, twin_src, twin_county) m) <> 1 then pair_twin := null; end if;
+    if ji_src is null then ji_src := array(select s.id from job_source s where s.kind = 'jobsireland'); end if;
+    -- from each JobsIreland board (one) through job_twin_board_idx, at most 2 rows: none, or two, is no twin. No board: no query.
+    n := 0;
+    foreach twin_src in array ji_src loop
+      select min(f.id), count(*), min(f.county) into pair_twin, n, twin_county from (
+        select f.id, f.county from job f
+         where f.job_source_id = twin_src and f.organisation_id = new.organisation_id and f.title_key = new.title_key and f.source = 'fetched' and f.status = 'live'
+           and (f.county is null or new.county is null or f.county = new.county) limit 2) f;
+      exit when n > 0;
+    end loop;
+    if n <> 1 then pair_twin := null;
+    elsif (select m.n from private.twin_matches(new.organisation_id, new.title_key, twin_src, twin_county) m) <> 1 then pair_twin := null; end if;
     -- checked only on a hit (rare): a new row holds no twin, and one that already holds one takes no second
     if pair_twin is not null and not exists (select 1 from job t where t.twin_of_job_id = new.id and t.hidden_reason = 'duplicate') then
       update job set status = 'hidden', hidden_reason = 'duplicate', twin_of_job_id = new.id where id = pair_twin;
