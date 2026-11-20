@@ -5,6 +5,7 @@
 // Every id is the employer's requisition id, the same one Workday shows, so the Workday rows can be moved over (db/src/workday-move.ts).
 import { FetchFailedError, type BoardFetch, type SourceAdapter } from "../types";
 import type { SlugBoard } from "../ats/adapters";
+import { countyOf } from "../county";
 import { MAX_PAGES, PACE, RATE_LIMITED, asArr, asNum, asObj, asStr, at, get, guard, htmlUnescape, isObj, job, makeCaller, safeName, text, type Caller, type Obj } from "../ats/shared";
 
 const objs = (v: unknown) => asArr(v).map(asObj);
@@ -50,7 +51,16 @@ export function jobPosting(html: string): Obj | null {
 }
 
 const IRISH_COUNTRY = new Set(["ireland", "ie", "irl", "republic of ireland"]);
-export type Posting = { id: string; title: string; description: string; datePosted: string; location: string; irish: boolean; employmentType: string; url: string };
+export type Posting = { id: string; title: string; description: string; datePosted: string; location: string; irish: boolean; employmentType: string; url: string; org: string; salary: string };
+
+const pay = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 1_000 && v <= 1_000_000 ? `\u20ac${v.toLocaleString("en-IE")}` : "");
+/** A yearly euro baseSalary as text the salary reader takes ("€38,908 - €56,948 a year"); anything else (another currency, an hourly rate, an absurd number) is empty. Pure. */
+function salaryText(s: unknown): string {
+  const v = isObj(s) ? get(s, "value") : undefined;
+  if (!isObj(s) || get(s, "currency") !== "EUR" || !isObj(v) || get(v, "unitText") !== "YEAR") return "";
+  const [lo, hi] = [pay(get(v, "minValue") ?? get(v, "value")), pay(get(v, "maxValue"))];
+  return lo ? `${lo}${hi && hi !== lo ? ` - ${hi}` : ""} a year` : "";
+}
 
 /** The fields the fetcher keeps. `irish`: one of the places has an Irish addressCountry; `location` lists those places only. Pure. */
 export function readPosting(o: Obj): Posting {
@@ -62,6 +72,7 @@ export function readPosting(o: Obj): Posting {
   });
   // Phenom sends the description HTML escaped once more (&lt;p&gt;): unescape it once so text() finds the tags
   const d = str(get(o, "description"));
+  const org = get(o, "hiringOrganization");
   return {
     id: str(isObj(ident) ? get(ident, "value") : ident),
     title: text(str(get(o, "title"))),
@@ -71,6 +82,8 @@ export function readPosting(o: Obj): Posting {
     irish: irish.length > 0,
     employmentType: [get(o, "employmentType")].flat().map(str).filter(Boolean).join(", "),
     url: str(get(o, "url")),
+    org: text(str(isObj(org) ? get(org, "name") : "")).slice(0, 200),
+    salary: salaryText(get(o, "baseSalary")),
   };
 }
 
@@ -148,11 +161,35 @@ export const fetchPhenom: SourceAdapter<PhenomBoard> = (b, known, fetch, opts) =
   });
 
 // ---- Sitemap ---------------------------------------------------------------------------------------------------------
-/** `pattern` keeps the Irish job URLs (its first group is the id when `idFrom` is "url"). "page": the id is the JobPosting's identifier (Citi's URL number is not the Workday id), so every Irish page is read each run. */
-export type SitemapBoard = { employer: string; board: string; origin: string; sitemap: string; pattern: string; idFrom: "url" | "page" };
+/**
+ * `pattern` keeps the Irish job URLs (its first group is the id when `idFrom` is "url"). "page": the id is the JobPosting's identifier (Citi's URL number is not the Workday id), so every Irish page is read each run.
+ * D1-B: `query` is added to a job URL to read its page (iCIMS: "?in_iframe=1"; the advert keeps the plain URL). `place: "url"` (Rezoomo, whose
+ * JobPosting has no address): the title and place come from the sitemap URL (`titlePlace`), the employer and salary from the page.
+ * `maxPages` ("url" boards): at most this many page reads a run; the jobs over it count as seen (nothing closes) and are read on later runs.
+ */
+export type SitemapBoard = { employer: string; board: string; origin: string; sitemap: string; pattern: string; idFrom: "url" | "page"; query?: string; place?: "url"; maxPages?: number };
 export const MAX_SITEMAPS = 20; // files under one index
 export const MAX_URLS = 100_000; // all files together (the protocol allows 50,000 a file; Citi has about 7,000)
-const LOC = /<loc>([^<]*)<\/loc>/g;
+const LOC = /<loc>\s*(?:<!\[CDATA\[)?([^<]*?)(?:\]\]>)?\s*<\/loc>/g; // Rezoomo writes <loc><![CDATA[...]]></loc>
+
+const NOT_REPUBLIC = /northern ireland|\b(?:ni|uk|united kingdom|gb)\b/i;
+/**
+ * Rezoomo: a sitemap job URL ends in its title and place, "/job/105268/?Maintenance%20Opportunities%20%2D%20Craigavon". The place is the
+ * text after the last " - ". Kept only when every part of it ("Cork and Kerry", "Dublin / Belfast") names a county of the Republic
+ * (`countyOf`) and nothing says Northern Ireland or the UK; a town alone ("Bray"), "Ireland" or no place is null. Pure.
+ */
+export function titlePlace(url: string): { title: string; place: string } | null {
+  let t: string;
+  try {
+    t = decodeURIComponent(new URL(url).search.slice(1)).slice(0, 500);
+  } catch {
+    return null;
+  }
+  const cut = t.lastIndexOf(" - ");
+  const place = cut < 0 ? "" : text(t.slice(cut + 3));
+  const parts = place.split(/\s*(?:[/&,;]|\band\b|\bor\b)\s*/i).filter(Boolean);
+  return parts.length && !NOT_REPUBLIC.test(place) && parts.every((p) => countyOf(p)) ? { title: text(t.slice(0, cut)), place } : null;
+}
 
 /** Every URL of a sitemap or of a sitemap index (one level: an index inside an index is refused). Over the caps the board fails. */
 async function sitemapUrls(board: string, call: Caller, url: string): Promise<string[]> {
@@ -177,31 +214,42 @@ export const fetchSitemap: SourceAdapter<SitemapBoard> = (b, known, fetch, opts)
   guard(b.board, async () => {
     safeName(b.board, b.board);
     checkSite(b.board, b.origin, b.sitemap);
+    if (!/^(\?[A-Za-z0-9_=&-]{1,100})?$/.test(b.query ?? "")) throw new FetchFailedError(b.board, "bad board page query");
+    if (b.maxPages !== undefined && !(Number.isInteger(b.maxPages) && b.maxPages >= 1 && b.maxPages <= 10_000)) throw new FetchFailedError(b.board, "bad board page cap");
+    let reads = 0;
     const call = makeCaller(b.board, fetch, b.origin, { ...opts, gapMs: PACE.siteCallGapMs, text: true });
     const re = new RegExp(b.pattern);
     const seen = new Set<string>();
     const adverts: BoardFetch["adverts"] = [];
-    const add = (ext: string, p: Posting, url: string) => {
+    const add = (ext: string, p: Posting, url: string, employer = b.employer, salary = "") => {
       const id = `sitemap:${b.board}:${ext}`;
-      if (!seen.has(id) && !known.has(id)) adverts.push(job("sitemap", b.board, ext, b.employer, p.title, p.location, p.description, url, p.employmentType));
+      if (!seen.has(id) && !known.has(id)) adverts.push(job("sitemap", b.board, ext, employer, p.title, p.location, p.description, url, p.employmentType, salary));
       seen.add(id);
     };
+    const read = (url: string) => page(call, url + (b.query ?? ""));
     for (const url of new Set((await sitemapUrls(b.board, call, b.origin + b.sitemap)).filter((u) => u.startsWith(b.origin + "/") && re.test(u)))) {
       if (b.idFrom === "page") {
         // ponytail: a page that fails leaves its job unseen here, so a known job closes and comes back on the next good read
-        const p = await page(call, url);
+        const p = await read(url);
         if (p?.irish && SAFE_ID.test(p.id)) add(p.id, p, url);
         continue;
       }
       const ext = re.exec(url)?.[1] ?? "";
       if (!SAFE_ID.test(ext)) continue;
+      const tp = b.place === "url" ? titlePlace(url) : undefined;
+      if (tp === null) continue; // not in the Republic: no page call, never seen
       const id = `sitemap:${b.board}:${ext}`;
       if (known.has(id) || seen.has(id)) {
         seen.add(id);
         continue;
       }
-      const p = await page(call, url);
+      if (reads++ >= (b.maxPages ?? Infinity)) {
+        seen.add(id); // over the run's cap: read on a later run
+        continue;
+      }
+      const p = await read(url);
       if (!p) seen.add(id); // a page that fails closes nothing
+      else if (tp) add(ext, { ...p, title: tp.title, location: `${tp.place}, Ireland` }, url, p.org || b.employer, p.salary);
       else if (p.irish) add(ext, p, url);
     }
     return { seen: [...seen], adverts };
@@ -230,12 +278,13 @@ export const fetchSalesforce: SourceAdapter<SlugBoard> = ({ slug: board, employe
 // ---- Eightfold -------------------------------------------------------------------------------------------------------
 // W1e: Applied Materials. The site's own search call (robots.txt allows /api/pcsx), then each new job's details for its text.
 export type EightfoldBoard = { employer: string; board: string; origin: string; domain: string };
-const IRL_PLACE = /^(.+),\s*IRL$/;
+// The shapes of an Irish place in `locations`: "Leixlip,IRL" (Applied Materials), "Cork, Ireland" (Qualcomm), "Ireland, Dublin, Dublin" (Microsoft, D1-B)
+const IRL_PLACES = [/^(.+),\s*IRL$/, /^(.+),\s*Ireland$/, /^Ireland,\s*([^,]+)/];
 
 /** The Irish places of a listed job ("Leixlip,IRL" is "Leixlip, Ireland"), joined; empty when it lists none. Pure. */
 export const eightfoldIrish = (j: Obj) =>
   [...new Set([get(j, "locations")].flat().slice(0, 50).flatMap((l) => {
-    const m = IRL_PLACE.exec(str(l));
+    const m = IRL_PLACES.map((re) => re.exec(str(l))).find(Boolean);
     return m ? [`${text(m[1]!)}, Ireland`] : [];
   }))].join(" / ");
 

@@ -194,6 +194,40 @@
    "/sitemap.xml",
    "^https://jobs\\.fidelity\\.com/ie/jobs/(\\d+)/[^/]+/$",
    "url"
+  ],
+  [
+   "Rezoomo",
+   "rezoomo",
+   "https://www.rezoomo.com",
+   "/sitemap.xml",
+   "^https://www\\.rezoomo\\.com/job/(\\d+)/\\?",
+   "url",
+   {
+    "place": "url",
+    "maxPages": 180
+   }
+  ],
+  [
+   "HSE Dublin and North East",
+   "hsedne",
+   "https://careers-hsedne.icims.com",
+   "/sitemap.xml",
+   "^https://careers-hsedne\\.icims\\.com/jobs/(\\d+)/[^/]+/job$",
+   "url",
+   {
+    "query": "?in_iframe=1"
+   }
+  ],
+  [
+   "Dawn Meats",
+   "dawnmeats",
+   "https://careers-dawnmeats.icims.com",
+   "/sitemap.xml",
+   "^https://careers-dawnmeats\\.icims\\.com/jobs/(\\d+)/[^/]+/job$",
+   "url",
+   {
+    "query": "?in_iframe=1"
+   }
   ]
  ],
  "salesforce": [
@@ -208,6 +242,24 @@
    "amat",
    "https://careers.appliedmaterials.com",
    "appliedmaterials.com"
+  ],
+  [
+   "Microsoft",
+   "microsoft",
+   "https://apply.careers.microsoft.com",
+   "microsoft.com"
+  ],
+  [
+   "Qualcomm",
+   "qualcomm",
+   "https://careers.qualcomm.com",
+   "qualcomm.com"
+  ]
+ ],
+ "jobsireland": [
+  [
+   "jobsireland",
+   500
   ]
  ]
 }

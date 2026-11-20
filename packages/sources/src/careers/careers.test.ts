@@ -28,7 +28,7 @@ describe("JSON-LD JobPosting reader", () => {
     expect(posting("fidelity-2136526.html")).toMatchObject({ id: "2136526", title: "Data Engineer", location: "Galway, Ireland", irish: true, employmentType: "OTHER" });
   });
   it("missing fields are empty, never a throw; no JobPosting is null", () => {
-    expect(readPosting({ "@type": "JobPosting" })).toEqual({ id: "", title: "", description: "", datePosted: "", location: "", irish: false, employmentType: "", url: "" });
+    expect(readPosting({ "@type": "JobPosting" })).toEqual({ id: "", title: "", description: "", datePosted: "", location: "", irish: false, employmentType: "", url: "", org: "", salary: "" });
     expect(readPosting({ "@type": "JobPosting", identifier: 42, title: ["x"], jobLocation: "Dublin", employmentType: [null, "FULL_TIME"] })).toMatchObject({ id: "42", title: "", irish: false, employmentType: "FULL_TIME" });
     expect(jobPosting("<html>no scripts</html>")).toBeNull();
     expect(jobPosting(ld('{"@type":"WebPage"}', '{"@type":"BreadcrumbList"}'))).toBeNull();
