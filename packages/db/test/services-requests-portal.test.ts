@@ -148,6 +148,26 @@ describe("request (M1)", () => {
     expect(new Set(all.map((x) => x.json.case.id)).size).toBe(1);
     expect(all.filter((x) => !x.json.replayed)).toHaveLength(1);
   });
+  it("at 4 open cases, six requests at once on six live jobs: exactly one passes, five are CASE_LIMIT (the lock per login holds the cap)", async () => {
+    const c = await company();
+    for (let i = 0; i < 4; i++) expect((await ask(c.owner)).status).toBe(200);
+    const jobs = await Promise.all(Array.from({ length: 6 }, () => job(c.org)));
+    const all = await Promise.all(jobs.map((j) => ask(c.owner, { jobId: j })));
+    expect(all.map((x) => x.status).sort()).toEqual([200, 409, 409, 409, 409, 409]);
+    expect(all.filter((x) => x.status === 409).map((x) => x.code)).toEqual(Array(5).fill("CASE_LIMIT"));
+    expect(await one("select count(*)::int n from services_case where portal_user_id = $1 and status <> 'closed'", [c.owner.id])).toEqual([{ n: 5 }]);
+  });
+  it("the requester's own events notify only through 0063's trigger: received and withdrawn each give one in-app notice (the requester only) and no email", async () => {
+    const c = await company();
+    const id = (await ask(c.recruiter)).json.case.id as string;
+    const notes = () => one("select portal_user_id, params->>'kind' kind from notification where params->>'caseId' = $1 order by id", [id]);
+    const mails = () => one("select template from email_outbox where params->>'caseId' = $1 or portal_user_id = any($2)", [id, [c.owner.id, c.recruiter.id]]);
+    expect(await notes()).toEqual([{ portal_user_id: c.recruiter.id, kind: "received" }]);
+    expect(await mails()).toEqual([]);
+    expect((await call(R.withdraw, "POST", c.recruiter, { params: { id } })).status).toBe(200);
+    expect(await notes()).toEqual([{ portal_user_id: c.recruiter.id, kind: "received" }, { portal_user_id: c.recruiter.id, kind: "withdrawn" }]);
+    expect(await mails()).toEqual([]);
+  });
 });
 
 describe("tracker (M2) and withdraw (S-Q1 B)", () => {

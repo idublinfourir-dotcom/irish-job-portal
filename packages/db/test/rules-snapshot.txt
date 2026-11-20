@@ -25,6 +25,10 @@ check candidate_profile_visible_to_employers_check on candidate_profile: CHECK (
 check candidate_profile_years_experience_check on candidate_profile: CHECK (((years_experience >= 0) AND (years_experience <= 60)))
 check case_document_check on case_document: CHECK ((num_nonnulls(candidate_user_id, portal_user_id, staff_user_id) <= 1))
 check case_document_check1 on case_document: CHECK (((storage_key IS NULL) = (copy_deleted_at IS NOT NULL)))
+check case_event_check on case_event: CHECK ((num_nonnulls(staff_user_id, candidate_user_id, portal_user_id) <= 1))
+check case_event_detail_check on case_event: CHECK (private.case_event_detail_ok(detail))
+check case_event_kind_check on case_event: CHECK ((kind = ANY (ARRAY['received'::text, 'assigned'::text, 'status_changed'::text, 'documents_needed'::text, 'decision'::text, 'closed'::text, 'referred'::text, 'withdrawn'::text])))
+check case_event_status_check on case_event: CHECK ((status = ANY (ARRAY['received'::text, 'documents_needed'::text, 'waiting_for_employer'::text, 'submitted'::text, 'decision'::text, 'closed'::text])))
 check case_quote_amount_eur_check on case_quote: CHECK ((amount_eur > 0))
 check case_quote_status_check on case_quote: CHECK ((status = ANY (ARRAY['draft'::text, 'sent'::text, 'accepted'::text, 'declined'::text, 'invoiced'::text, 'paid'::text, 'cancelled'::text])))
 check consent_record_check on consent_record: CHECK (((num_nonnulls(candidate_user_id, portal_user_id) = 1) OR (subject_erased_at IS NOT NULL)))
@@ -124,6 +128,8 @@ check pay_floor_floor_eur_check on pay_floor: CHECK ((floor_eur > 0))
 check pay_floor_role_family_check on pay_floor: CHECK ((role_family ~ '^[0-9]{4}$'::text))
 check pay_floor_status_check on pay_floor: CHECK ((status = ANY (ARRAY['pending_check'::text, 'active'::text, 'expired'::text, 'replaced'::text, 'withdrawn'::text, 'rejected'::text, 'found_false'::text])))
 check portal_user_status_check on portal_user: CHECK ((status = ANY (ARRAY['active'::text, 'blocked'::text])))
+check referral_solicitor_contact_check on referral_solicitor: CHECK (((contact = btrim(contact)) AND ((length(contact) >= 1) AND (length(contact) <= 300)) AND (contact !~ '[[:cntrl:]]'::text)))
+check referral_solicitor_firm_check on referral_solicitor: CHECK (((firm = btrim(firm)) AND ((length(firm) >= 1) AND (length(firm) <= 200)) AND (firm !~ '[[:cntrl:]]'::text)))
 check register_import_row_count_check on register_import: CHECK ((row_count >= 0))
 check register_import_source_check on register_import: CHECK ((source = ANY (ARRAY['cro'::text, 'wrc'::text])))
 check report_check on report: CHECK (((target_wiped_at IS NOT NULL) OR (num_nonnulls(target_job_id, target_organisation_id, target_message_id, target_candidate_user_id) = 1)))
@@ -144,7 +150,12 @@ check services_case_check on services_case: CHECK (((num_nonnulls(candidate_user
 check services_case_check1 on services_case: CHECK (((portal_user_id IS NULL) OR (dedupe_key IS NOT NULL)))
 check services_case_check2 on services_case: CHECK (((status <> 'closed'::text) OR ((closed_at IS NOT NULL) AND (close_reason IS NOT NULL))))
 check services_case_close_reason_check on services_case: CHECK ((close_reason = ANY (ARRAY['decided'::text, 'employer_not_engaged'::text, 'withdrawn'::text, 'referred_to_solicitor'::text, 'no_reply'::text])))
+check services_case_decision_outcome_check on services_case: CHECK ((decision_outcome = ANY (ARRAY['granted'::text, 'refused'::text])))
+check services_case_documents_needed_check on services_case: CHECK (private.case_codes_ok(documents_needed))
+check services_case_outcome_closed on services_case: CHECK (((decision_outcome IS NULL) OR (status <> 'closed'::text) OR (close_reason = ANY (ARRAY['decided'::text, 'referred_to_solicitor'::text]))))
+check services_case_outcome_status on services_case: CHECK (((decision_outcome IS NULL) OR (status = ANY (ARRAY['decision'::text, 'closed'::text]))))
 check services_case_payer_check on services_case: CHECK ((payer = ANY (ARRAY['employer'::text, 'agency'::text])))
+check services_case_referral_reason on services_case: CHECK (((referral_solicitor_id IS NULL) OR (NOT (close_reason IS DISTINCT FROM 'referred_to_solicitor'::text))))
 check services_case_status_check on services_case: CHECK ((status = ANY (ARRAY['received'::text, 'documents_needed'::text, 'waiting_for_employer'::text, 'submitted'::text, 'decision'::text, 'closed'::text])))
 check setting_unit_check on setting: CHECK ((unit = ANY (ARRAY['days'::text, 'months'::text, 'count'::text])))
 check setting_value_check on setting: CHECK (((value IS NULL) OR (value >= 0)))
@@ -191,6 +202,7 @@ rights app_admin on candidate_session: table[delete] columns[select(id,user_id)]
 rights app_admin on candidate_user: table[select] columns[update(deleted_at,suspended_at)]
 rights app_admin on candidate_verification: table[] columns[]
 rights app_admin on case_document: table[select] columns[insert(byte_size,content_type,file_name,services_case_id,staff_user_id,storage_key) update(copy_deleted_at,file_name,storage_key)]
+rights app_admin on case_event: table[insert,select] columns[]
 rights app_admin on case_note: table[delete,insert,select,update] columns[]
 rights app_admin on case_quote: table[delete,insert,select,update] columns[]
 rights app_admin on consent_record: table[select] columns[]
@@ -232,6 +244,7 @@ rights app_admin on portal_session: table[delete] columns[select(id,user_id)]
 rights app_admin on portal_user: table[select] columns[update(blocked_at,blocked_reason_code,deleted_at,status)]
 rights app_admin on portal_verification: table[] columns[]
 rights app_admin on published_content_page: table[] columns[]
+rights app_admin on referral_solicitor: table[insert,select,update] columns[]
 rights app_admin on register_import: table[insert,select,update] columns[]
 rights app_admin on report: table[delete,insert,select,update] columns[]
 rights app_admin on review_item: table[insert,select,update] columns[]
@@ -270,6 +283,7 @@ rights app_candidate on candidate_session: table[delete,insert,select,update] co
 rights app_candidate on candidate_user: table[insert,select] columns[update(deleted_at,email,email_verified,image,last_active_at,name,updated_at)]
 rights app_candidate on candidate_verification: table[delete,insert,select,update] columns[]
 rights app_candidate on case_document: table[] columns[]
+rights app_candidate on case_event: table[] columns[insert(candidate_user_id,case_id,kind,status)]
 rights app_candidate on case_note: table[] columns[]
 rights app_candidate on case_quote: table[] columns[]
 rights app_candidate on consent_record: table[] columns[]
@@ -311,6 +325,7 @@ rights app_candidate on portal_session: table[] columns[]
 rights app_candidate on portal_user: table[] columns[]
 rights app_candidate on portal_verification: table[] columns[]
 rights app_candidate on published_content_page: table[select] columns[]
+rights app_candidate on referral_solicitor: table[] columns[]
 rights app_candidate on register_import: table[] columns[]
 rights app_candidate on report: table[] columns[insert(evidence_text,reason,reporter_candidate_user_id,target_job_id,target_kind,target_organisation_id,target_snapshot) select(id)]
 rights app_candidate on review_item: table[] columns[]
@@ -349,6 +364,7 @@ rights app_fetcher on candidate_session: table[] columns[]
 rights app_fetcher on candidate_user: table[] columns[]
 rights app_fetcher on candidate_verification: table[] columns[]
 rights app_fetcher on case_document: table[] columns[]
+rights app_fetcher on case_event: table[] columns[]
 rights app_fetcher on case_note: table[] columns[]
 rights app_fetcher on case_quote: table[] columns[]
 rights app_fetcher on consent_record: table[] columns[]
@@ -390,6 +406,7 @@ rights app_fetcher on portal_session: table[] columns[]
 rights app_fetcher on portal_user: table[] columns[]
 rights app_fetcher on portal_verification: table[] columns[]
 rights app_fetcher on published_content_page: table[] columns[]
+rights app_fetcher on referral_solicitor: table[] columns[]
 rights app_fetcher on register_import: table[insert,select,update] columns[]
 rights app_fetcher on report: table[] columns[]
 rights app_fetcher on review_item: table[] columns[insert(detail,job_id,queue,reason) select(job_id,queue,status)]
@@ -428,6 +445,7 @@ rights app_portal on candidate_session: table[] columns[]
 rights app_portal on candidate_user: table[] columns[]
 rights app_portal on candidate_verification: table[] columns[]
 rights app_portal on case_document: table[] columns[]
+rights app_portal on case_event: table[] columns[insert(case_id,kind,portal_user_id,status)]
 rights app_portal on case_note: table[] columns[]
 rights app_portal on case_quote: table[] columns[select(amount_eur,id,invoice_number,invoiced_at,organisation_id,paid_at,sent_at,services_case_id,status)]
 rights app_portal on consent_record: table[] columns[]
@@ -469,6 +487,7 @@ rights app_portal on portal_session: table[delete,insert,select,update] columns[
 rights app_portal on portal_user: table[insert,select] columns[update(deleted_at,email,email_verified,image,last_active_at,name,updated_at)]
 rights app_portal on portal_verification: table[delete,insert,select,update] columns[]
 rights app_portal on published_content_page: table[select] columns[]
+rights app_portal on referral_solicitor: table[] columns[]
 rights app_portal on register_import: table[] columns[]
 rights app_portal on report: table[] columns[insert(evidence_text,reason,reporter_portal_user_id,target_job_id,target_kind,target_organisation_id,target_snapshot) select(id)]
 rights app_portal on review_item: table[] columns[]
@@ -499,6 +518,8 @@ trigger ban_matches_case on ban: CREATE TRIGGER ban_matches_case BEFORE INSERT O
 trigger candidate_user_active on candidate_user: CREATE TRIGGER candidate_user_active BEFORE UPDATE OF last_active_at ON public.candidate_user FOR EACH ROW EXECUTE FUNCTION private.candidate_user_active()
 trigger candidate_user_resume_alerts on candidate_user: CREATE TRIGGER candidate_user_resume_alerts AFTER UPDATE OF last_active_at ON public.candidate_user FOR EACH ROW WHEN (((new.last_active_at IS DISTINCT FROM old.last_active_at) AND (new.deleted_at IS NULL))) EXECUTE FUNCTION private.alert_resume_dormant()
 trigger case_document_guard on case_document: CREATE TRIGGER case_document_guard BEFORE INSERT OR UPDATE OF services_case_id, candidate_user_id, portal_user_id ON public.case_document FOR EACH ROW EXECUTE FUNCTION private.case_document_guard()
+trigger case_event_guard on case_event: CREATE TRIGGER case_event_guard BEFORE INSERT ON public.case_event FOR EACH ROW EXECUTE FUNCTION private.case_event_guard()
+trigger case_event_notice on case_event: CREATE TRIGGER case_event_notice AFTER INSERT ON public.case_event FOR EACH ROW EXECUTE FUNCTION private.case_event_notice()
 trigger consent_record_guard on consent_record: CREATE TRIGGER consent_record_guard BEFORE UPDATE OF withdrawn_at ON public.consent_record FOR EACH ROW EXECUTE FUNCTION private.consent_record_guard()
 trigger consent_text_approval on consent_text: CREATE TRIGGER consent_text_approval BEFORE INSERT ON public.consent_text FOR EACH ROW EXECUTE FUNCTION private.approval_check()
 trigger contact_message_queue on contact_message: CREATE TRIGGER contact_message_queue AFTER INSERT ON public.contact_message FOR EACH ROW EXECUTE FUNCTION private.contact_message_queue()

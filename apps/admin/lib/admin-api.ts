@@ -47,7 +47,7 @@ const STATUS = new Map<string, number>(Object.entries({
   bad_occupation_code: 400, bad_salary: 400, bad_user_id: 400, bad_message_id: 400, bad_queue: 400, bad_domain: 400, bad_organisation_id: 400,
   bad_text: 400, bad_data: 400, bad_key: 400, bad_value: 400, bad_email: 400,
   bad_name: 400, bad_page: 400, bad_version: 400,
-  bad_case_id: 400, bad_codes: 400, bad_outcome: 400, bad_solicitor_id: 400, bad_firm: 400, bad_contact: 400, not_case_staff: 403, not_case_handler: 403, own_case: 403, not_assigned: 403,
+  bad_case_id: 400, bad_codes: 400, bad_outcome: 400, bad_solicitor_id: 400, bad_firm: 400, bad_contact: 400, not_case_staff: 403, not_assigned: 403, // not_case_handler and own_case: with SV-B1 below
   bad_move: 409, case_closed: 409, bad_assignee: 409, not_at_decision: 409, not_decided: 409, outcome_recorded: 409, bad_solicitor: 409, // services board (SV-B2)
   no_session: 401, not_active: 401,
   reauth_required: 403, bad_origin: 403, not_contact_staff: 403, not_contact_reader: 403, not_active_staff: 403, not_administrator: 403, not_content_staff: 403, not_content_editor: 403, not_rules_data_editor: 403, not_publisher: 403, not_reviewer: 403, not_domain_staff: 403, not_legal_staff: 403,
