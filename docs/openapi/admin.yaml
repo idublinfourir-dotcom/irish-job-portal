@@ -702,7 +702,7 @@ paths:
                       moved:
                         type: object
                         additionalProperties: false
-                        required: [savedJobs, alerts, tracker, hiddenOrganisations, profile, cv, applications, contactRequests]
+                        required: [savedJobs, alerts, tracker, hiddenOrganisations, profile, cv, applications, contactRequests, servicesCases, servicesCaseIds]
                         properties:
                           savedJobs: { type: integer }
                           alerts: { type: integer }
@@ -712,6 +712,8 @@ paths:
                           cv: { type: integer }
                           applications: { type: integer }
                           contactRequests: { type: integer }
+                          servicesCases: { type: integer, description: "the dropped account's closed services cases moved to the kept one (0064)" }
+                          servicesCaseIds: { type: array, items: { $ref: '#/components/schemas/Id' } }
                   - type: object
                     additionalProperties: false
                     required: [ok]
@@ -3591,7 +3593,7 @@ paths:
         text). `assign`: a handler takes an unassigned case or passes on their own to another handler; an administrator may reassign any open
         case; the assignee must be an active handler who is not the requester. Every other action is for the assigned handler only (an
         administrator gets `not_case_handler`). `status`: received to documents_needed, waiting_for_employer or submitted; documents_needed and
-        waiting_for_employer to each other or submitted; submitted to decision. `documents`: codes from the fixed list (passport_copy,
+        waiting_for_employer to each other or submitted; submitted to documents_needed (DETE may ask for more documents after submission) or decision. `documents`: codes from the fixed list (passport_copy,
         offer_letter, contract, degree, registration, payslip, cv, other), before the decision. `decision`: granted or refused, at decision only.
         `close`: decided (needs an outcome), employer_not_engaged or no_reply (not once an outcome is recorded). `refer`: closes as
         referred_to_solicitor, optionally naming an active firm from the solicitor list. `note`: 1 to 2000 characters, newlines and tabs only,

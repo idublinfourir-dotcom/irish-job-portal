@@ -186,6 +186,20 @@ describe("the actions", () => {
       "services_case.assign", "services_case.status", "services_case.documents", "services_case.status", "services_case.status", "services_case.status", "services_case.decision", "services_case.close"]);
   });
 
+  it("after submission DETE may ask for more: submitted goes back to documents_needed, the documents action works at submitted, and on to decision (G3)", async () => {
+    const a = await candidateCase();
+    await h.ok(act("h1", { action: "assign", caseId: a.c, staffUserId: h.staff.h1 }));
+    await h.ok(act("h1", { action: "status", caseId: a.c, status: "submitted" }));
+    await h.ok(act("h1", { action: "documents", caseId: a.c, codes: ["payslip"] }));
+    await h.ok(act("h1", { action: "status", caseId: a.c, status: "documents_needed" }));
+    await h.no(act("h1", { action: "status", caseId: a.c, status: "decision" }), 409, "bad_move");
+    await h.ok(act("h1", { action: "status", caseId: a.c, status: "submitted" }));
+    await h.ok(act("h1", { action: "status", caseId: a.c, status: "decision" }));
+    await h.no(act("h1", { action: "status", caseId: a.c, status: "documents_needed" }), 409, "bad_move");
+    expect((await events(a.c)).slice(2).map((e) => [e.kind, e.status])).toEqual([["status_changed", "submitted"], ["documents_needed", "submitted"],
+      ["status_changed", "documents_needed"], ["status_changed", "submitted"], ["status_changed", "decision"]]);
+  });
+
   it("every case action is refused to an unassigned handler, an administrator (handler only), every other role and signed out; a handler on their own case", async () => {
     const a = await candidateCase();
     await h.ok(act("h1", { action: "assign", caseId: a.c, staffUserId: h.staff.h1 }));
@@ -345,8 +359,9 @@ describe("notices (M5) and what the requester sees", () => {
     expect(mine.map((x) => x.subject)).toEqual(["Your case has an update"]);
     for (const bad of [a.c, "degree", "Degree", h.staff.h1!, "Fake h1", "Secret", "documents_needed"]) {
       expect(mine[0]!.text).not.toContain(bad);
-      expect(mine[0]!.html).not.toContain(bad);
+      if (bad !== a.c) expect(mine[0]!.html).not.toContain(bad);
     }
+    expect(mine[0]!.html).not.toMatch(new RegExp(`(?<![0-9#])${a.c}(?![0-9]|px)`)); // the case id as a number of its own: the style has sizes like 20px
     expect(mine[0]!.text).toContain("https://www.example.test/");
   });
 

@@ -5,10 +5,10 @@ import { CASE_DOCUMENT_CODES, documentLabels, isCaseDocumentCode } from "./case-
 import { canMove, CASE_MOVES, noteOk, OPEN_STATUSES, solicitorText, STAFF_CLOSE_REASONS, timelineEvents, timelineSql } from "./services-board";
 
 describe("status moves", () => {
-  it("allows exactly the moves of services-plan-check.md section 4; closing is never a move", () => {
+  it("allows exactly the moves of services-plan-check.md section 4 plus submitted back to documents_needed (DETE asks for more); closing is never a move", () => {
     const allowed = OPEN_STATUSES.flatMap((f) => [...OPEN_STATUSES, "closed"].filter((t) => canMove(f, t)).map((t) => `${f}>${t}`));
     expect(allowed).toEqual(["received>documents_needed", "received>waiting_for_employer", "received>submitted", "documents_needed>waiting_for_employer",
-      "documents_needed>submitted", "waiting_for_employer>documents_needed", "waiting_for_employer>submitted", "submitted>decision"]);
+      "documents_needed>submitted", "waiting_for_employer>documents_needed", "waiting_for_employer>submitted", "submitted>documents_needed", "submitted>decision"]);
     expect(canMove("closed", "received")).toBe(false);
     expect(canMove("__proto__", "constructor")).toBe(false);
     expect(Object.keys(CASE_MOVES)).toEqual([...OPEN_STATUSES]);

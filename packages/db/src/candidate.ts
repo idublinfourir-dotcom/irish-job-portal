@@ -4,6 +4,8 @@
 import type pg from "pg";
 import { hasControl, inTransaction, isObject, only, Refuse } from "./candidate-route";
 import { validId } from "./search";
+import { documentLabels } from "./case-document-codes";
+import { REFERRAL_FIRM_SHOWN, timelineEvents } from "./services-board";
 
 // ===== profile (#88, #105, #108) =====
 // Stamps as the Immigration Service Delivery site lists them (irishimmigration.ie, read 12 November 2026). Any stamp starting with 4 allows work without a permit.
@@ -280,6 +282,8 @@ const NOT_INCLUDED = ["contactFormMessages", "reportsYouMade"].map((section) => 
 }));
 const list = (select: string, from: string, order: string) => `(select coalesce(jsonb_agg(to_jsonb(t) order by ${order}), '[]') from (select ${select} from ${from}) t)`;
 // Every statement part filters by $1, the signed-in candidate. Left out on purpose: password and token columns, unsubscribe tokens, dedupe keys, storage keys.
+// servicesCases: the candidate's own permit services cases (G1, 20d right of access), each with its timeline through the candidate's wrapper (0061):
+// at, kind, status and codes only, never a staff id, name or note; exportData adds the labels, and the firm only when REFERRAL_FIRM_SHOWN ($2).
 export const EXPORT_SQL = `with logged as (
   insert into audit_event(kind, actor_candidate_user_id, action, object_type, object_id, subject_candidate_user_id, source)
   values ('data_access', $1, 'candidate.export', 'candidate_user', $1, $1, 'site') returning 1)
@@ -295,10 +299,20 @@ select (select count(*) from logged) as logged, jsonb_build_object(
   'consents', ${list('x.purpose, x.version as "textVersion", c.given_at as "givenAt", c.withdrawn_at as "withdrawnAt", c.details, o.display_name as "organisation"', "candidate_consent_record c join consent_text x on x.id = c.consent_text_id left join organisation o on o.id = c.organisation_id where c.candidate_user_id = $1", '"givenAt"')},
   'notificationSettings', ${list("p.category, p.channel, p.enabled", "candidate_notification_preference p where p.candidate_user_id = $1", "category, channel")},
   'notifications', ${list('n.category, n.template_key as "templateKey", n.params, n.created_at as "createdAt", n.read_at as "readAt"', "candidate_notification n where n.candidate_user_id = $1", '"createdAt" desc')},
+  'documentsYouUploaded', ${list('d.services_case_id::text as "caseId", d.file_name as "fileName", d.content_type as "contentType", d.byte_size as "byteSize", d.uploaded_at as "uploadedAt", d.copy_deleted_at as "copyDeletedAt"', "candidate_case_document d where d.candidate_user_id = $1", '"uploadedAt" desc')},
+  'servicesCases', (select coalesce(jsonb_agg(jsonb_build_object('id', c.id::text, 'permitType', c.permit_type, 'jobId', c.job_id::text, 'jobTitle', j.title, 'status', c.status,
+      'decisionOutcome', c.decision_outcome, 'documentsNeeded', to_jsonb(c.documents_needed), 'payer', c.payer, 'createdAt', c.created_at, 'decidedAt', c.decided_at,
+      'closedAt', c.closed_at, 'closeReason', c.close_reason, 'offerDetails', c.offer_details,
+      'firm', case when $2::boolean then private.candidate_case_referral_firm($1, c.id) end,
+      'events', (select coalesce(jsonb_agg(jsonb_build_object('at', t.at, 'kind', t.kind, 'status', t.status, 'detail', t.detail)), '[]') from private.candidate_case_timeline($1, c.id) t))
+      order by c.created_at desc, c.id desc), '[]') from candidate_services_case c left join job j on j.id = c.job_id where c.candidate_user_id = $1),
   'applications', '[]'::jsonb, 'contactRequests', '[]'::jsonb) as data`;
-
+type ExportCase = { firm: string | null; events: Parameters<typeof timelineEvents>[0]; documentsNeeded: string[] } & Record<string, unknown>;
 export async function exportData(db: Pick<pg.Pool, "query">, userId: string) {
-  const r = await db.query(EXPORT_SQL, [userId]);
+  const r = await db.query(EXPORT_SQL, [userId, REFERRAL_FIRM_SHOWN]);
+  const data = r.rows[0].data;
+  data.servicesCases = data.servicesCases.map(({ firm, events, documentsNeeded, ...c }: ExportCase) =>
+    ({ ...c, documentsNeeded: documentLabels(documentsNeeded), timeline: timelineEvents(events, firm) }));
   const x = await db.query("select private.candidate_export_extras($1) as extras", [userId]);
-  return { exportedAt: new Date().toISOString(), ...r.rows[0].data, ...x.rows[0].extras, notIncluded: NOT_INCLUDED };
+  return { exportedAt: new Date().toISOString(), ...data, ...x.rows[0].extras, notIncluded: NOT_INCLUDED };
 }

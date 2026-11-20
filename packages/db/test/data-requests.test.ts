@@ -133,6 +133,8 @@ describe("the owner confirms by email (decision #271): staff never get the data"
     const c = await F.cand(), mail = await emailOf("candidate_user", c);
     await su.query("insert into saved_job(candidate_user_id, job_id) values ($1,$2)", [c, await job()]);
     await su.query("insert into candidate_profile(candidate_user_id, full_name) values ($1,'Fake Person')", [c]);
+    const k = (await one("insert into consent_record(candidate_user_id, consent_text_id) values ($1, $2) returning id", [c, await F.text("services_request")])).id;
+    const sc = String((await one("insert into services_case(candidate_user_id, consent_record_id, status, closed_at, close_reason) values ($1, $2, 'closed', now(), 'no_reply') returning id", [c, k])).id);
     const { item: i1 } = await request(mail.toUpperCase()); // a visitor typed the address in capitals
     const r = await sendConfirm(i1, "export");
     expect(r.json).toEqual({ ok: true, kind: "candidate", userId: c, purpose: "export" });
@@ -153,6 +155,7 @@ describe("the owner confirms by email (decision #271): staff never get the data"
     const own = await exportData(db.pool("app_candidate"), c);
     expect(Object.keys(p.json).sort()).toEqual(Object.keys(own).sort());
     expect([p.json.account.email, p.json.profile.fullName, p.json.savedJobs.length]).toEqual([mail, "Fake Person", 1]);
+    expect(p.json.servicesCases.map((x: any) => [x.id, x.status, x.closeReason])).toEqual([[sc, "closed", "no_reply"]]); // G1: the staff path is the same export
     expect((await site("candidate", "POST", m.token)).json).toEqual({ code: "INVALID_LINK" }); // once only
     expect((await site("candidate", "GET", m.token)).status).toBe(404);
     expect(await rows("select kind, actor_candidate_user_id a, after from audit_event where action = 'data_request.confirm' and object_id = $1", [i1]))

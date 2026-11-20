@@ -1784,7 +1784,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [exportedAt, account, profile, cv, savedJobs, tracker, didYouApply, alerts, consents, notificationSettings, notifications, applications, contactRequests, notIncluded]
+                required: [exportedAt, account, profile, cv, savedJobs, tracker, didYouApply, alerts, consents, notificationSettings, notifications, documentsYouUploaded, servicesCases, applications, contactRequests, notIncluded]
                 properties:
                   exportedAt: { $ref: '#/components/schemas/Timestamp' }
                   account: { type: [object, 'null'] }
@@ -1797,6 +1797,11 @@ paths:
                   consents: { type: array }
                   notificationSettings: { type: array }
                   notifications: { type: array }
+                  documentsYouUploaded: { type: array, description: 'The copies you uploaded to your permit services cases: caseId, fileName, contentType, byteSize, uploadedAt, copyDeletedAt.' }
+                  servicesCases:
+                    type: array
+                    description: "Your permit services cases: id, permitType, jobId, jobTitle, status, decisionOutcome, documentsNeeded (code and label), payer, createdAt, decidedAt, closedAt, closeReason, your offerDetails, and the timeline (at, kind, status, document labels, outcome, a referral; never a staff id, name or note; the firm only when shown)."
+                    items: { type: object }
                   applications: { type: array, maxItems: 0 }
                   contactRequests: { type: array, maxItems: 0 }
                   notIncluded: { type: array, items: { type: object, properties: { section: { type: string }, reason: { type: string } } } }
@@ -1813,6 +1818,8 @@ paths:
                 consents: []
                 notificationSettings: []
                 notifications: []
+                documentsYouUploaded: []
+                servicesCases: []
                 applications: []
                 contactRequests: []
                 notIncluded: [{ section: contactFormMessages, reason: 'not available in this file yet; ask for it through the contact form (topic: data request)' }]

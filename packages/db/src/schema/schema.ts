@@ -1337,7 +1337,7 @@ export const caseEvent = pgTable("case_event", {
 			name: "case_event_staff_user_id_fkey"
 		}),
 	check("case_event_check", sql`num_nonnulls(staff_user_id, candidate_user_id, portal_user_id) <= 1`),
-	check("case_event_detail_check", sql`CHECK (private.case_event_detail_ok(detail`),
+	check("case_event_detail_check", sql`private.case_event_detail_ok(detail)`),
 	check("case_event_kind_check", sql`kind = ANY (ARRAY['received'::text, 'assigned'::text, 'status_changed'::text, 'documents_needed'::text, 'decision'::text, 'closed'::text, 'referred'::text, 'withdrawn'::text])`),
 	check("case_event_status_check", sql`status = ANY (ARRAY['received'::text, 'documents_needed'::text, 'waiting_for_employer'::text, 'submitted'::text, 'decision'::text, 'closed'::text])`),
 ]);
@@ -1367,7 +1367,7 @@ export const servicesCase = pgTable("services_case", {
 	dedupeKey: text("dedupe_key"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	decisionOutcome: text("decision_outcome"),
-	documentsNeeded: text("documents_needed").array().default([""]).notNull(),
+	documentsNeeded: text("documents_needed").array().default(sql`'{}'::text[]`).notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	referralSolicitorId: bigint("referral_solicitor_id", { mode: "number" }),
 }, (table) => [
@@ -1427,7 +1427,7 @@ export const servicesCase = pgTable("services_case", {
 	check("services_case_check2", sql`(status <> 'closed'::text) OR ((closed_at IS NOT NULL) AND (close_reason IS NOT NULL))`),
 	check("services_case_close_reason_check", sql`close_reason = ANY (ARRAY['decided'::text, 'employer_not_engaged'::text, 'withdrawn'::text, 'referred_to_solicitor'::text, 'no_reply'::text])`),
 	check("services_case_decision_outcome_check", sql`decision_outcome = ANY (ARRAY['granted'::text, 'refused'::text])`),
-	check("services_case_documents_needed_check", sql`CHECK (private.case_codes_ok(documents_needed`),
+	check("services_case_documents_needed_check", sql`private.case_codes_ok(documents_needed)`),
 	check("services_case_outcome_closed", sql`(decision_outcome IS NULL) OR (status <> 'closed'::text) OR (close_reason = ANY (ARRAY['decided'::text, 'referred_to_solicitor'::text]))`),
 	check("services_case_outcome_status", sql`(decision_outcome IS NULL) OR (status = ANY (ARRAY['decision'::text, 'closed'::text]))`),
 	check("services_case_payer_check", sql`payer = ANY (ARRAY['employer'::text, 'agency'::text])`),

@@ -2141,7 +2141,7 @@ paths:
                   yourActions: { type: array }
                   reportsYouMade: { type: array }
                   messagesYouSent: { type: array }
-                  servicesRequests: { type: array }
+                  servicesRequests: { type: array, description: 'Your requests: id, permitType, status, createdAt, closedAt, decisionOutcome, closeReason. Offer details are left out: they may name a candidate.' }
                   documentsYouUploaded: { type: array }
                 additionalProperties: false
               example:

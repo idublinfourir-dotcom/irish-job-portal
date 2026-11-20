@@ -26,7 +26,7 @@ export const CASE_MOVES: Record<string, readonly string[]> = {
   received: ["documents_needed", "waiting_for_employer", "submitted"],
   documents_needed: ["waiting_for_employer", "submitted"],
   waiting_for_employer: ["documents_needed", "submitted"],
-  submitted: ["decision"],
+  submitted: ["documents_needed", "decision"], // DETE can ask for more documents after submission (its portal FAQ, read 20 Nov 2026)
   decision: [],
 };
 export const canMove = (from: string, to: string) => Object.hasOwn(CASE_MOVES, from) && CASE_MOVES[from]!.includes(to);
