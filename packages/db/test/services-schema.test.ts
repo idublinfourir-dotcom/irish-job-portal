@@ -195,41 +195,54 @@ describe("case_event", () => {
 });
 
 describe("the reader rule and the timeline", () => {
-  const readable = async (role: "app_candidate" | "app_portal", side: string, user: string | null, c: string | null) =>
-    (await q(role, "select private.case_readable_by($1, $2, $3) r", [side, user, c])).rows[0].r;
+  // Each app reaches the rule only through its own side's wrapper (the side is bound to the login by grants).
+  const readable = async (role: "app_candidate" | "app_portal", user: string | null, c: string | null) =>
+    (await q(role, `select private.${role === "app_candidate" ? "candidate" : "portal"}_case_readable($1, $2) r`, [user, c])).rows[0].r;
+  const WRAPPERS = { app_candidate: ["candidate_case_readable", "candidate_case_timeline"], app_portal: ["portal_case_readable", "portal_case_timeline"] } as const;
 
-  it("case_readable_by: the requester, an Owner and a Recruiter of the company; not a Poster, a Viewer, another company or another candidate", async () => {
+  it("case_readable_by through the wrappers: the requester, an Owner and a Recruiter of the company; not a Poster, a Viewer, another company or another candidate", async () => {
     const p = await portalCase(), p2 = await portalCase();
     const { c, cand } = await candidateCase(p.org);
     const other = await F.cand();
+    expect(await readable("app_candidate", cand, c)).toBe(true);
+    expect(await readable("app_candidate", other, c)).toBe(false);
+    expect(await readable("app_candidate", p.requester, p.c)).toBe(false); // a portal case, through the candidate side
+    expect(await readable("app_portal", p.requester, p.c)).toBe(true);
+    expect(await readable("app_portal", p.owner, p.c)).toBe(true);
+    expect(await readable("app_portal", p.recruiter, p.c)).toBe(true);
+    for (const who of [p.poster, p.viewer, p2.owner, p2.recruiter]) expect(await readable("app_portal", who, p.c)).toBe(false);
+    // a candidate's case that names the company is not the company's to read (20d:109)
+    expect(await readable("app_portal", p.owner, c)).toBe(false);
+    expect(await readable("app_portal", p.recruiter, c)).toBe(false);
+    expect(await readable("app_portal", cand, c)).toBe(false);
     for (const role of ["app_candidate", "app_portal"] as const) {
-      expect(await readable(role, "candidate", cand, c)).toBe(true);
-      expect(await readable(role, "candidate", other, c)).toBe(false);
-      expect(await readable(role, "portal", p.requester, p.c)).toBe(true);
-      expect(await readable(role, "portal", p.owner, p.c)).toBe(true);
-      expect(await readable(role, "portal", p.recruiter, p.c)).toBe(true);
-      for (const who of [p.poster, p.viewer, p2.owner, p2.recruiter]) expect(await readable(role, "portal", who, p.c)).toBe(false);
-      // a candidate's case that names the company is not the company's to read (20d:109)
-      expect(await readable(role, "portal", p.owner, c)).toBe(false);
-      expect(await readable(role, "portal", p.recruiter, c)).toBe(false);
-      expect(await readable(role, "candidate", p.requester, p.c)).toBe(false); // wrong side
-      expect(await readable(role, "portal", cand, c)).toBe(false);
-      for (const side of ["", "admin", "Candidate", " candidate"]) expect(await readable(role, side, cand, c), side).toBe(false);
-      expect(await refusal(() => readable(role, "candidate\u0000", cand, c))).toMatch(/0x00|invalid byte/);
-      expect(await refusal(() => readable(role, "candidate", cand, "1 or 1=1"))).toMatch(/invalid input syntax/);
-      expect(await readable(role, "candidate", null, c)).toBe(false);
-      expect(await readable(role, "candidate", cand, null)).toBe(false);
-      expect(await readable(role, "candidate", cand, "999999999")).toBe(false);
-      expect(await readable(role, "candidate", "x".repeat(10000), c)).toBe(false);
+      const me = role === "app_candidate" ? cand : p.requester, mine = role === "app_candidate" ? c : p.c;
+      expect(await refusal(() => readable(role, "x\u0000", mine))).toMatch(/0x00|invalid byte/);
+      expect(await refusal(() => readable(role, me, "1 or 1=1"))).toMatch(/invalid input syntax/);
+      expect(await readable(role, null, mine)).toBe(false);
+      expect(await readable(role, me, null)).toBe(false);
+      expect(await readable(role, me, "999999999")).toBe(false);
+      expect(await readable(role, "x".repeat(10000), mine)).toBe(false);
     }
-    // a member who left, or one awaiting approval, reads no more
+    // a member who left reads no more
     await su.query("update membership set status = 'removed', removed_at = now() where portal_user_id = $1", [p.owner]);
-    expect(await readable("app_portal", "portal", p.owner, p.c)).toBe(false);
-    for (const role of ["app_admin", "app_fetcher", "app_backup"] as const)
-      expect(await refusal(() => q(role, "select private.case_readable_by('candidate', $1, $2)", [cand, c])), role).toMatch(/permission denied/);
+    expect(await readable("app_portal", p.owner, p.c)).toBe(false);
   });
 
-  it("case_timeline: the requester's view, in order; never staff_user_id, assignee or a note; empty for a stranger", async () => {
+  it("each login executes only its own side's wrappers; no app role executes the side-taking functions", async () => {
+    const p = await portalCase();
+    const { c, cand } = await candidateCase();
+    const call = (role: string, fn: string) => () => q(role as "app_admin", fn.endsWith("timeline") ? `select * from private.${fn}($1, $2)` : `select private.${fn}($1, $2)`, [cand, c]);
+    for (const [role, other] of [["app_candidate", "app_portal"], ["app_portal", "app_candidate"]] as const) {
+      for (const fn of WRAPPERS[other]) expect(await refusal(call(role, fn)), `${role} ${fn}`).toMatch(/^42501 permission denied/);
+      expect(await refusal(() => q(role, "select private.case_readable_by('portal', $1, $2)", [p.owner, p.c])), role).toMatch(/^42501 permission denied/);
+      expect(await refusal(() => q(role, "select * from private.case_timeline('candidate', $1, $2)", [cand, c])), role).toMatch(/^42501 permission denied/);
+    }
+    for (const role of ["app_admin", "app_fetcher", "app_backup"] as const)
+      for (const fn of [...WRAPPERS.app_candidate, ...WRAPPERS.app_portal]) expect(await refusal(call(role, fn)), `${role} ${fn}`).toMatch(/^42501 permission denied/);
+  });
+
+  it("case_timeline through the wrappers: the requester's view, in order; never staff_user_id, assignee or a note; empty for a stranger", async () => {
     const p = await portalCase();
     const staff = await F.staff();
     await su.query("insert into case_note(services_case_id, author_staff_user_id, body) values ($1, $2, 'INTERNALNOTE')", [p.c, staff]);
@@ -237,25 +250,27 @@ describe("the reader rule and the timeline", () => {
     await event(p.c, "assigned", "received", { assignedStaffUserId: staff }, staff)();
     await event(p.c, "documents_needed", "documents_needed", { documentsNeeded: ["passport"] }, staff)();
     await event(p.c, "decision", "decision", { outcome: "granted" }, staff)();
-    const tl = async (side: string, user: string, c = p.c, role: "app_candidate" | "app_portal" = "app_portal") =>
-      (await q(role, "select * from private.case_timeline($1, $2, $3)", [side, user, c])).rows;
-    const rows = await tl("portal", p.owner);
+    const tl = async (role: "app_candidate" | "app_portal", user: string, c = p.c) =>
+      (await q(role, `select * from private.${role === "app_candidate" ? "candidate" : "portal"}_case_timeline($1, $2)`, [user, c])).rows;
+    const rows = await tl("app_portal", p.owner);
     expect(rows.map((r) => [r.kind, r.status, r.detail])).toEqual([
       ["received", "received", {}], ["assigned", "received", {}], ["documents_needed", "documents_needed", { documentsNeeded: ["passport"] }], ["decision", "decision", { outcome: "granted" }]]);
     expect(Object.keys(rows[0]!).sort()).toEqual(["at", "detail", "kind", "status"]);
     expect(JSON.stringify(rows)).not.toMatch(new RegExp(`${staff}|INTERNALNOTE|${p.requester}`));
-    expect(await tl("portal", p.requester)).toHaveLength(4);
-    expect(await tl("portal", p.recruiter, p.c, "app_candidate")).toHaveLength(4);
-    for (const who of [p.poster, p.viewer, (await portalCase()).owner]) expect(await tl("portal", who)).toEqual([]);
-    expect(await tl("candidate", p.requester)).toEqual([]);
-    expect(await tl("portal", p.requester, "999999999")).toEqual([]);
-    for (const role of ["app_admin", "app_fetcher"] as const)
-      expect(await refusal(() => q(role, "select * from private.case_timeline('portal', $1, $2)", [p.owner, p.c])), role).toMatch(/permission denied/);
+    expect(await tl("app_portal", p.requester)).toHaveLength(4);
+    expect(await tl("app_portal", p.recruiter)).toHaveLength(4);
+    for (const who of [p.poster, p.viewer, (await portalCase()).owner]) expect(await tl("app_portal", who)).toEqual([]);
+    expect(await tl("app_candidate", p.requester)).toEqual([]); // the candidate app cannot read a portal case
+    expect(await tl("app_portal", p.requester, "999999999")).toEqual([]);
+    const { c, cand } = await candidateCase();
+    await q("app_candidate", "insert into case_event(case_id, kind, status, candidate_user_id) values ($1, 'received', 'received', $2)", [c, cand]);
+    expect((await tl("app_candidate", cand, c)).map((r) => r.kind)).toEqual(["received"]);
+    expect(await tl("app_portal", cand, c)).toEqual([]);
   });
 });
 
 describe("grants", () => {
-  it("every role's rights on referral_solicitor and case_event, and on the two functions", async () => {
+  it("every role's rights on referral_solicitor and case_event, and on the six functions", async () => {
     const all = [...ROLES, "anon", "authenticated"];
     const rights = async (table: string) => Object.fromEntries((await su.query(
       `select r, array_remove(array[case when has_table_privilege(r, $1, 'select') then 'select' end, case when has_table_privilege(r, $1, 'insert') then 'insert' end,
@@ -269,12 +284,18 @@ describe("grants", () => {
     const cols = async (role: string) => (await su.query("select column_name::text c from information_schema.column_privileges where table_name = 'case_event' and grantee = $1 and privilege_type = 'INSERT' order by 1", [role])).rows.map((x) => x.c);
     expect(await cols("app_candidate")).toEqual(["candidate_user_id", "case_id", "kind", "status"]);
     expect(await cols("app_portal")).toEqual(["case_id", "kind", "portal_user_id", "status"]);
-    for (const fn of ["private.case_readable_by(text, text, bigint)", "private.case_timeline(text, text, bigint)"]) {
+    const fns: Record<string, string[]> = {
+      "private.case_readable_by(text, text, bigint)": ["portal_owner"], "private.case_timeline(text, text, bigint)": ["portal_owner"],
+      "private.candidate_case_readable(text, bigint)": ["app_candidate", "portal_owner"], "private.candidate_case_timeline(text, bigint)": ["app_candidate", "portal_owner"],
+      "private.portal_case_readable(text, bigint)": ["app_portal", "portal_owner"], "private.portal_case_timeline(text, bigint)": ["app_portal", "portal_owner"] };
+    for (const [fn, want] of Object.entries(fns)) {
       const can = (await su.query("select r from unnest($2::text[]) r where has_function_privilege(r, $1, 'execute') order by r", [fn, all])).rows.map((x) => x.r);
-      expect(can, fn).toEqual(["app_candidate", "app_portal", "portal_owner"]);
+      expect(can, fn).toEqual(want);
     }
-    const def = (await one("select bool_and(prosecdef) d, bool_and(provolatile = 's') s, bool_and(proconfig @> '{\"search_path=public, pg_temp\"}') p from pg_proc where proname in ('case_readable_by', 'case_timeline')"));
-    expect(def).toEqual({ d: true, s: true, p: true });
+    const def = (await su.query("select proname, prosecdef d, provolatile = 's' s, proconfig @> '{\"search_path=public, pg_temp\"}' p from pg_proc where proname = any($1) order by proname",
+      [["case_readable_by", "case_timeline", "candidate_case_readable", "candidate_case_timeline", "portal_case_readable", "portal_case_timeline"]])).rows;
+    expect(def).toHaveLength(6);
+    for (const r of def) expect(r, r.proname).toMatchObject({ d: true, s: true, p: true });
   });
 });
 
@@ -298,7 +319,7 @@ describe("perf", () => {
         c.release();
       }
     };
-    const T = "select * from private.case_timeline('portal', $1, $2)", R = "select private.case_readable_by('portal', $1, $2)";
+    const T = "select * from private.portal_case_timeline($1, $2)", R = "select private.portal_case_readable($1, $2)";
     expect((await q("app_portal", T, [p.owner, p.c])).rows).toHaveLength(200);
     const tp = await pages(T, [p.owner, p.c]), rp = await pages(R, [p.owner, p.c]);
     const tms = await median(() => q("app_portal", T, [p.owner, p.c])), rms = await median(() => q("app_portal", R, [p.owner, p.c]));

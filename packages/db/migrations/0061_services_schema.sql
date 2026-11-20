@@ -7,10 +7,11 @@
 --      closed as referred_to_solicitor. app_admin selects, inserts and updates; no app role deletes; candidate and portal nothing.
 --   4. case_event (S-Q9): the ticket-style timeline. detail holds codes and ids only (private.case_event_detail_ok names the keys). app_admin
 --      selects and inserts; the requester roles insert only received or withdrawn on a case they can read (case_event_guard) and read only
---      through private.case_timeline. A requester event names its writer (candidate_user_id or portal_user_id, as case_document does). No update or delete for any app role. An app role cannot set `at`: it is always now().
---   5. private.case_readable_by (S-Q1 B): the one reader rule for every requester read of this wave. The company branch covers portal cases
+--      through private.candidate_case_timeline or private.portal_case_timeline. A requester event names its writer (candidate_user_id or portal_user_id, as case_document does). No update or delete for any app role. An app role cannot set `at`: it is always now().
+--   5. private.case_readable_by (S-Q1 B): the one reader rule for every requester read of this wave, internal; each app reaches it only through
+--      its own side's wrapper (private.candidate_case_readable for app_candidate, private.portal_case_readable for app_portal). The company branch covers portal cases
 --      only: a candidate's case that names a company is never the company's to read (20d:109).
---   6. private.case_timeline: the requester's view of the events; never staff_user_id, never a note; empty when not readable.
+--   6. private.case_timeline (internal; wrappers private.candidate_case_timeline and private.portal_case_timeline): the requester's view of the events; never staff_user_id, never a note; empty when not readable.
 --   7. private.merge_organisations (last defined in 0056, copied exactly; lines marked 0061 added): the absorbed company's services cases,
 --      open or closed, move to the survivor, ids in the audit row (case_ids).
 set role portal_owner;
@@ -83,11 +84,19 @@ language sql stable security definer set search_path = public, pg_temp as $$
         and m.organisation_id = s.organisation_id and m.status = 'active' and m.role in ('account_owner','recruiter')))
     end from services_case s where s.id = p_case), false)
 $$;
-grant execute on function private.case_readable_by(text, text, bigint) to app_candidate, app_portal;
+-- Each side gets its own wrapper, executable by its own login only, so the candidate app cannot read a portal case (and back); the side-taking
+-- functions stay internal (no app role executes them).
+create function private.candidate_case_readable(p_user text, p_case bigint) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$ select private.case_readable_by('candidate', p_user, p_case) $$;
+create function private.portal_case_readable(p_user text, p_case bigint) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$ select private.case_readable_by('portal', p_user, p_case) $$;
+grant execute on function private.candidate_case_readable(text, bigint) to app_candidate;
+grant execute on function private.portal_case_readable(text, bigint) to app_portal;
 
 -- The requester side writes received and withdrawn only, on a case it can read, with no detail and no staff id; `at` is always now().
--- Invoker's rights, so current_user is the app role (case_readable_by itself runs with the owner's rights).
+-- Invoker's rights, so current_user is the app role, which then reaches only its own side's wrapper.
 create function private.case_event_guard() returns trigger language plpgsql set search_path = public, pg_temp as $$
+declare ok boolean;
 begin
   if current_user like 'app\_%' then new.at := now(); end if;
   if current_user in ('app_candidate','app_portal') then
@@ -95,9 +104,13 @@ begin
       raise exception 'case event guard: the requester writes only received or withdrawn' using errcode = 'P0001'; end if;
     if new.status <> (case new.kind when 'received' then 'received' else 'closed' end) or new.detail <> '{}'::jsonb or new.staff_user_id is not null then
       raise exception 'case event guard: received is at status received, withdrawn at closed, with no detail' using errcode = 'P0001'; end if;
-    if not coalesce(case current_user when 'app_candidate' then new.portal_user_id is null and private.case_readable_by('candidate', new.candidate_user_id, new.case_id)
-                                       else new.candidate_user_id is null and private.case_readable_by('portal', new.portal_user_id, new.case_id) end, false) then
-      raise exception 'case event guard: not a case of this login' using errcode = 'P0001'; end if;
+    -- two statements, not one CASE: Postgres checks execute rights on every function of an expression, taken branch or not
+    if current_user = 'app_candidate' then
+      ok := new.portal_user_id is null and private.candidate_case_readable(new.candidate_user_id, new.case_id);
+    else
+      ok := new.candidate_user_id is null and private.portal_case_readable(new.portal_user_id, new.case_id);
+    end if;
+    if not coalesce(ok, false) then raise exception 'case event guard: not a case of this login' using errcode = 'P0001'; end if;
   end if;
   return new;
 end $$;
@@ -115,7 +128,12 @@ language sql stable security definer set search_path = public, pg_temp as $$
     from case_event e where e.case_id = p_case and private.case_readable_by(p_side, p_user, p_case)
    order by e.at, e.id
 $$;
-grant execute on function private.case_timeline(text, text, bigint) to app_candidate, app_portal;
+create function private.candidate_case_timeline(p_user text, p_case bigint) returns table(at timestamptz, kind text, status text, detail jsonb)
+language sql stable security definer set search_path = public, pg_temp as $$ select * from private.case_timeline('candidate', p_user, p_case) $$;
+create function private.portal_case_timeline(p_user text, p_case bigint) returns table(at timestamptz, kind text, status text, detail jsonb)
+language sql stable security definer set search_path = public, pg_temp as $$ select * from private.case_timeline('portal', p_user, p_case) $$;
+grant execute on function private.candidate_case_timeline(text, bigint) to app_candidate;
+grant execute on function private.portal_case_timeline(text, bigint) to app_portal;
 
 -- ===== 7. merges (0056 text, lines marked 0061 added)
 create or replace function private.merge_organisations(p_staff text, p_absorbed bigint, p_survivor bigint) returns jsonb
