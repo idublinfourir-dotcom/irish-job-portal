@@ -1,0 +1,103 @@
+{
+ "id": "0807d31115dd4490b8dd006b013ae956",
+ "positionTitle": "Meals on Wheels Driver ",
+ "occupation": {
+  "id": "0c408028-c48f-4df8-ba5d-c3d3be15f5a2",
+  "name": "Car and van delivery driver"
+ },
+ "openPositionCount": 2,
+ "location": {
+  "COUNTRY": "CTY109",
+  "CITY": "Castleblayney",
+  "POSTAL_CODE": "A75 HK09",
+  "COUNTY": "Co. Monaghan"
+ },
+ "statistics": {
+  "numberOfViews": 11,
+  "numberOfApplications": 0,
+  "numberOfDeletedApplications": 0,
+  "numberOfInterviews": null,
+  "numberOfRecommendations": null,
+  "numberOfInvitations": null
+ },
+ "geoLocation": {
+  "longitude": -6.742405,
+  "latitude": 54.117206
+ },
+ "companyId": "0fb23605d5f7409aa4a4b1e163e36ef6",
+ "companyName": "Monaghan Group of Parishes Ltd.",
+ "companyDescription": "Group of Parishes",
+ "vacancySectors": [],
+ "vacancySectorHierarchy": [
+  {
+   "id": "1795105099199",
+   "hierarchy": {
+    "L1": {
+     "id": "IND18",
+     "name": "HUMAN HEALTH AND SOCIAL WORK ACTIVITIES"
+    },
+    "L2": {
+     "id": "IND18_1",
+     "name": "Human health activities"
+    },
+    "L3": {
+     "id": "IND18_1_3",
+     "name": "Other human health activities"
+    }
+   }
+  }
+ ],
+ "employmentType": {
+  "id": "ETY2",
+  "name": "Part-time"
+ },
+ "locationType": {
+  "id": "LTY1",
+  "name": "On-site"
+ },
+ "hoursPerWeek": {
+  "id": null,
+  "name": null,
+  "minimum": null,
+  "maximum": null
+ },
+ "hoursPerWeekText": "19.5",
+ "educationDegree": {
+  "id": "EDL1",
+  "name": "No Qualification"
+ },
+ "offeredRemunerationPackages": [],
+ "datePosted": "2026-11-20",
+ "hideCompanyInformation": false,
+ "profileInformation": {
+  "favourite": false,
+  "score": null,
+  "ownScore": null,
+  "otherScore": null,
+  "application": null
+ },
+ "active": true,
+ "extended": {
+  "max": 50,
+  "vacancyLocation": "510",
+  "vacancyLocationParent": "491"
+ },
+ "statusCode": "Active",
+ "vacancyType": "VTY4",
+ "referenceNumber": "3004293",
+ "expiration": "2026-12-20",
+ "jobDescription": "Your responsibilities will include ordering and delivering of meals to clients, keeping basic records and accepting payments. Delivery area covers the wider community in the Ballybay and Castleblaney area. No experience necessary, full training and support will be given. Company van provided. This is a very rewarding position for the right person. \n\nFull clean driving licence and Garda Vetting Required. \n",
+ "application": {
+  "type": "INTERNAL",
+  "url": null,
+  "requiresAuthentication": true
+ },
+ "companySectors": [],
+ "companySize": {
+  "id": "CSZ2",
+  "name": "11 - 50 employees"
+ },
+ "termsExtended": {
+  "gardaVetting": true
+ }
+}

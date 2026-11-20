@@ -1,0 +1,442 @@
+{
+ "limit": 100,
+ "offset": 0,
+ "resultCount": 5,
+ "totalCount": 5,
+ "data": [
+  {
+   "id": "0807d31115dd4490b8dd006b013ae956",
+   "positionTitle": "Meals on Wheels Driver ",
+   "occupation": null,
+   "openPositionCount": null,
+   "location": {
+    "COUNTRY": "CTY109",
+    "CITY": "Castleblayney",
+    "POSTAL_CODE": "A75 HK09",
+    "COUNTY": "Co. Monaghan"
+   },
+   "statistics": {
+    "numberOfViews": null,
+    "numberOfApplications": 0,
+    "numberOfDeletedApplications": null,
+    "numberOfInterviews": 0,
+    "numberOfRecommendations": null,
+    "numberOfInvitations": null
+   },
+   "geoLocation": {
+    "longitude": -6.742405,
+    "latitude": 54.117206
+   },
+   "companyId": "0fb23605d5f7409aa4a4b1e163e36ef6",
+   "companyName": "Monaghan Group of Parishes Ltd.",
+   "companyDescription": "Group of Parishes",
+   "vacancySectors": null,
+   "vacancySectorHierarchy": [
+    {
+     "id": "1795105099199",
+     "hierarchy": {
+      "L1": {
+       "id": "IND18",
+       "name": "HUMAN HEALTH AND SOCIAL WORK ACTIVITIES"
+      },
+      "L2": {
+       "id": "IND18_1",
+       "name": "Human health activities"
+      },
+      "L3": {
+       "id": "IND18_1_3",
+       "name": "Other human health activities"
+      }
+     }
+    }
+   ],
+   "contractType": null,
+   "employmentType": {
+    "id": "ETY2",
+    "name": "Part-time"
+   },
+   "locationType": {
+    "id": "LTY1",
+    "name": "On-site"
+   },
+   "hoursPerWeek": null,
+   "hoursPerWeekText": null,
+   "educationDegree": null,
+   "offeredRemunerationPackages": [],
+   "datePosted": "2026-11-20",
+   "dateClosed": null,
+   "creationDate": null,
+   "showContactPerson": null,
+   "hideCompanyInformation": false,
+   "companyLogo": null,
+   "companyHeader": null,
+   "profileInformation": {
+    "favourite": false,
+    "score": 1.0,
+    "ownScore": null,
+    "otherScore": null,
+    "application": null
+   },
+   "active": true,
+   "companyYouTubeUrl": null,
+   "hiringIncentives": null,
+   "approvalStatus": "APPROVED",
+   "yearsOfWorkingExperience": null,
+   "extended": null,
+   "statusCode": "Active",
+   "applicationSummary": null,
+   "openForForeignerAndExpatriate": null,
+   "positionLevel": null,
+   "vacancyType": "VTY4",
+   "referenceNumber": "3004293"
+  },
+  {
+   "id": "1e175e242219477e80cc17f26f865d84",
+   "positionTitle": "Pipefitter",
+   "occupation": null,
+   "openPositionCount": null,
+   "location": {
+    "COUNTRY": "CTY109",
+    "CITY": "N/A",
+    "POSTAL_CODE": "F26 N634",
+    "COUNTY": "Mayo"
+   },
+   "statistics": {
+    "numberOfViews": null,
+    "numberOfApplications": 0,
+    "numberOfDeletedApplications": null,
+    "numberOfInterviews": 0,
+    "numberOfRecommendations": null,
+    "numberOfInvitations": null
+   },
+   "geoLocation": {
+    "longitude": -9.101987839,
+    "latitude": 54.12527847
+   },
+   "companyId": "4a1329830cd74ce48ec0c7271c35adfa",
+   "companyName": "AUREOL GLOBAL CONNECTIONS LIMITED",
+   "companyDescription": "International Recruitment Agency",
+   "vacancySectors": null,
+   "vacancySectorHierarchy": [
+    {
+     "id": "1795128107131",
+     "hierarchy": {
+      "L1": {
+       "id": "IND3",
+       "name": "MANUFACTURING"
+      },
+      "L2": {
+       "id": "IND3_16",
+       "name": "Manufacture of fabricated metal products, except machinery and equipment"
+      },
+      "L3": {
+       "id": "IND3_16_7",
+       "name": "Manufacture of other fabricated metal products"
+      }
+     }
+    }
+   ],
+   "contractType": null,
+   "employmentType": {
+    "id": "ETY1",
+    "name": "Full-time"
+   },
+   "locationType": {
+    "id": "LTY1",
+    "name": "On-site"
+   },
+   "hoursPerWeek": null,
+   "hoursPerWeekText": null,
+   "educationDegree": null,
+   "offeredRemunerationPackages": [],
+   "displaySalary": false,
+   "datePosted": "2026-11-20",
+   "dateClosed": null,
+   "creationDate": null,
+   "showContactPerson": null,
+   "hideCompanyInformation": false,
+   "companyLogo": null,
+   "companyHeader": null,
+   "profileInformation": {
+    "favourite": false,
+    "score": 1.0,
+    "ownScore": null,
+    "otherScore": null,
+    "application": null
+   },
+   "active": true,
+   "companyYouTubeUrl": null,
+   "hiringIncentives": null,
+   "approvalStatus": "APPROVED",
+   "yearsOfWorkingExperience": null,
+   "extended": null,
+   "statusCode": "Active",
+   "applicationSummary": null,
+   "openForForeignerAndExpatriate": null,
+   "positionLevel": null,
+   "vacancyType": "VTY1",
+   "referenceNumber": "3004344"
+  },
+  {
+   "id": "68a57d7d569d4fdf875a6ba2c18bdcff",
+   "positionTitle": "Mason",
+   "occupation": null,
+   "openPositionCount": null,
+   "location": {
+    "COUNTRY": "CTY109",
+    "CITY": "N/A",
+    "POSTAL_CODE": "C15 WV07",
+    "COUNTY": "Meath"
+   },
+   "statistics": {
+    "numberOfViews": null,
+    "numberOfApplications": 0,
+    "numberOfDeletedApplications": null,
+    "numberOfInterviews": 0,
+    "numberOfRecommendations": null,
+    "numberOfInvitations": null
+   },
+   "geoLocation": {
+    "longitude": -6.751729965,
+    "latitude": 53.6226387
+   },
+   "companyId": "4a1329830cd74ce48ec0c7271c35adfa",
+   "companyName": "AUREOL GLOBAL CONNECTIONS LIMITED",
+   "companyDescription": "International Recruitment Agency",
+   "vacancySectors": null,
+   "vacancySectorHierarchy": [
+    {
+     "id": "1795099179617",
+     "hierarchy": {
+      "L1": {
+       "id": "IND6",
+       "name": "CONSTRUCTION"
+      },
+      "L2": {
+       "id": "IND6_3",
+       "name": "Specialised construction activities"
+      },
+      "L3": {
+       "id": "IND6_3_7",
+       "name": "Other specialised construction activities"
+      }
+     }
+    }
+   ],
+   "contractType": null,
+   "employmentType": {
+    "id": "ETY1",
+    "name": "Full-time"
+   },
+   "locationType": {
+    "id": "LTY1",
+    "name": "On-site"
+   },
+   "hoursPerWeek": null,
+   "hoursPerWeekText": null,
+   "educationDegree": null,
+   "offeredRemunerationPackages": [],
+   "displaySalary": false,
+   "datePosted": "2026-11-20",
+   "dateClosed": null,
+   "creationDate": null,
+   "showContactPerson": null,
+   "hideCompanyInformation": false,
+   "companyLogo": null,
+   "companyHeader": null,
+   "profileInformation": {
+    "favourite": false,
+    "score": 1.0,
+    "ownScore": null,
+    "otherScore": null,
+    "application": null
+   },
+   "active": true,
+   "companyYouTubeUrl": null,
+   "hiringIncentives": null,
+   "approvalStatus": "APPROVED",
+   "yearsOfWorkingExperience": null,
+   "extended": null,
+   "statusCode": "Active",
+   "applicationSummary": null,
+   "openForForeignerAndExpatriate": null,
+   "positionLevel": null,
+   "vacancyType": "VTY1",
+   "referenceNumber": "3004250"
+  },
+  {
+   "id": "55b9338595994d1faab32c53474b7c82",
+   "positionTitle": "CNC (Computer Numerical Control) Punch Laser Operator",
+   "occupation": null,
+   "openPositionCount": null,
+   "location": {
+    "COUNTRY": "CTY109",
+    "CITY": "Waterford Ind Pk",
+    "POSTAL_CODE": "X91 XYN5",
+    "COUNTY": "Waterford"
+   },
+   "statistics": {
+    "numberOfViews": null,
+    "numberOfApplications": 0,
+    "numberOfDeletedApplications": null,
+    "numberOfInterviews": 0,
+    "numberOfRecommendations": null,
+    "numberOfInvitations": null
+   },
+   "geoLocation": {
+    "longitude": -7.148666859,
+    "latitude": 52.2477684
+   },
+   "companyId": "4a1329830cd74ce48ec0c7271c35adfa",
+   "companyName": "AUREOL GLOBAL CONNECTIONS LIMITED",
+   "companyDescription": "International Recruitment Agency",
+   "vacancySectors": null,
+   "vacancySectorHierarchy": [
+    {
+     "id": "1795090323113",
+     "hierarchy": {
+      "L1": {
+       "id": "IND3",
+       "name": "MANUFACTURING"
+      },
+      "L2": {
+       "id": "IND3_16",
+       "name": "Manufacture of fabricated metal products, except machinery and equipment"
+      },
+      "L3": {
+       "id": "IND3_16_7",
+       "name": "Manufacture of other fabricated metal products"
+      }
+     }
+    }
+   ],
+   "contractType": null,
+   "employmentType": {
+    "id": "ETY1",
+    "name": "Full-time"
+   },
+   "locationType": {
+    "id": "LTY1",
+    "name": "On-site"
+   },
+   "hoursPerWeek": null,
+   "hoursPerWeekText": null,
+   "educationDegree": null,
+   "offeredRemunerationPackages": [],
+   "displaySalary": false,
+   "datePosted": "2026-11-20",
+   "dateClosed": null,
+   "creationDate": null,
+   "showContactPerson": null,
+   "hideCompanyInformation": false,
+   "companyLogo": null,
+   "companyHeader": null,
+   "profileInformation": {
+    "favourite": false,
+    "score": 1.0,
+    "ownScore": null,
+    "otherScore": null,
+    "application": null
+   },
+   "active": true,
+   "companyYouTubeUrl": null,
+   "hiringIncentives": null,
+   "approvalStatus": "APPROVED",
+   "yearsOfWorkingExperience": null,
+   "extended": null,
+   "statusCode": "Active",
+   "applicationSummary": null,
+   "openForForeignerAndExpatriate": null,
+   "positionLevel": null,
+   "vacancyType": "VTY1",
+   "referenceNumber": "3004198"
+  },
+  {
+   "id": "039eb771e4bf44fc92369df14fa3f6d8",
+   "positionTitle": "Administrative Assistant - ",
+   "occupation": null,
+   "openPositionCount": null,
+   "location": {
+    "COUNTRY": "CTY109",
+    "CITY": "Mulhuddart",
+    "POSTAL_CODE": "D15 NX4W",
+    "COUNTY": "Dublin 15"
+   },
+   "statistics": {
+    "numberOfViews": null,
+    "numberOfApplications": 3,
+    "numberOfDeletedApplications": null,
+    "numberOfInterviews": 0,
+    "numberOfRecommendations": null,
+    "numberOfInvitations": null
+   },
+   "geoLocation": {
+    "longitude": -6.400727,
+    "latitude": 53.407998
+   },
+   "companyId": "c5c7ad87a52d4bfe8829c31ad8aaf589",
+   "companyName": "GE SOUZA TAX & IMMIGRATION SERVICES  LIMITED",
+   "companyDescription": "Tax return and Immigration Services",
+   "vacancySectors": null,
+   "vacancySectorHierarchy": [
+    {
+     "id": "1794994407791",
+     "hierarchy": {
+      "L1": {
+       "id": "IND15",
+       "name": "ADMINISTRATIVE AND SUPPORT SERVICE ACTIVITIES"
+      },
+      "L2": {
+       "id": "IND15_6",
+       "name": "Office administrative, office support and other business support activities"
+      },
+      "L3": {
+       "id": "IND15_6_1",
+       "name": "Office administrative and support activities"
+      }
+     }
+    }
+   ],
+   "contractType": null,
+   "employmentType": null,
+   "locationType": {
+    "id": "LTY1",
+    "name": "On-site"
+   },
+   "hoursPerWeek": null,
+   "hoursPerWeekText": null,
+   "educationDegree": null,
+   "offeredRemunerationPackages": [],
+   "datePosted": "2026-11-19",
+   "dateClosed": null,
+   "creationDate": null,
+   "showContactPerson": null,
+   "hideCompanyInformation": false,
+   "confidentialFields": [
+    "ADDRESS"
+   ],
+   "companyLogo": null,
+   "companyHeader": null,
+   "profileInformation": {
+    "favourite": false,
+    "score": 1.0,
+    "ownScore": null,
+    "otherScore": null,
+    "application": null
+   },
+   "active": true,
+   "companyYouTubeUrl": null,
+   "hiringIncentives": null,
+   "approvalStatus": "APPROVED",
+   "yearsOfWorkingExperience": null,
+   "extended": null,
+   "statusCode": "Active",
+   "applicationSummary": null,
+   "openForForeignerAndExpatriate": null,
+   "positionLevel": null,
+   "vacancyType": "VTY3",
+   "referenceNumber": "3003913"
+  }
+ ],
+ "facets": []
+}
