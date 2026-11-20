@@ -1428,7 +1428,7 @@ export const servicesCase = pgTable("services_case", {
 	check("services_case_close_reason_check", sql`close_reason = ANY (ARRAY['decided'::text, 'employer_not_engaged'::text, 'withdrawn'::text, 'referred_to_solicitor'::text, 'no_reply'::text])`),
 	check("services_case_decision_outcome_check", sql`decision_outcome = ANY (ARRAY['granted'::text, 'refused'::text])`),
 	check("services_case_documents_needed_check", sql`CHECK (private.case_codes_ok(documents_needed`),
-	check("services_case_outcome_closed", sql`(decision_outcome IS NULL) OR (status <> 'closed'::text) OR (close_reason = 'decided'::text)`),
+	check("services_case_outcome_closed", sql`(decision_outcome IS NULL) OR (status <> 'closed'::text) OR (close_reason = ANY (ARRAY['decided'::text, 'referred_to_solicitor'::text]))`),
 	check("services_case_outcome_status", sql`(decision_outcome IS NULL) OR (status = ANY (ARRAY['decision'::text, 'closed'::text]))`),
 	check("services_case_payer_check", sql`payer = ANY (ARRAY['employer'::text, 'agency'::text])`),
 	check("services_case_referral_reason", sql`(referral_solicitor_id IS NULL) OR (NOT (close_reason IS DISTINCT FROM 'referred_to_solicitor'::text))`),

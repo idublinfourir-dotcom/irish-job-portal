@@ -13,6 +13,7 @@
     "portalCaseDocumentsList": "GET /api/portal/cases/{id}/documents (any active portal login)",
     "portalCaseDocumentsUpload": "POST /api/portal/cases/{id}/documents (any active portal login)",
     "portalCaseDocumentDownload": "GET /api/portal/cases/{id}/documents/{docId} (any active portal login)",
+    "portalCaseTimeline": "GET /api/portal/cases/{id}/timeline (the requester, or the Owner or a Recruiter of the case's company)",
     "portalClaim": "POST /api/portal/claim (no company yet)",
     "portalClaimSearch": "GET /api/portal/claim/search (any active portal login)",
     "portalRegister": "POST /api/portal/register (no company yet)",

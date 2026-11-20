@@ -710,6 +710,73 @@ paths:
         '403': { $ref: '#/components/responses/ReadForbidden' }
         '404': { description: "`DOCUMENT_NOT_FOUND`: no such document of this login's case, or its copy was removed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: DOCUMENT_NOT_FOUND } } } }
         '503': { description: "`FILES_UNAVAILABLE`: file storage is not set up.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILES_UNAVAILABLE } } } }
+  /api/portal/cases/{id}/timeline:
+    parameters:
+      - { name: id, in: path, required: true, description: The services case id., schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      operationId: portalCaseTimeline
+      summary: The timeline of a services case
+      description: >-
+        Every step of the case, oldest first, at most 200 (a case has one step per staff action, so it stays small): the time, the kind, the
+        status after it, and for documents_needed the codes with their labels, for decision the outcome with its label, for referred the generic
+        code (the firm's name only once REFERRAL_FIRM_SHOWN is turned on). Never a staff id, a staff name or a note. Read through the 0061 reader
+        rule: the requester, or the Owner or a Recruiter of the case's company. A case this login cannot read is 404, whatever the case is.
+      security: [{ portalSession: [] }]
+      x-roles: [the requester, or the Owner or a Recruiter of the case's company]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The steps.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events]
+                properties:
+                  events:
+                    type: array
+                    maxItems: 200
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [at, kind, status]
+                      properties:
+                        at: { type: string, format: date-time }
+                        kind: { type: string, enum: [received, assigned, status_changed, documents_needed, decision, closed, referred, withdrawn] }
+                        status: { type: string, enum: [received, documents_needed, waiting_for_employer, submitted, decision, closed] }
+                        documentsNeeded:
+                          type: array
+                          maxItems: 30
+                          items:
+                            type: object
+                            required: [code, label]
+                            properties:
+                              code: { type: string, maxLength: 40 }
+                              label: { type: [string, 'null'] }
+                        outcome:
+                          type: object
+                          required: [code, label]
+                          properties:
+                            code: { type: string, enum: [granted, refused] }
+                            label: { type: [string, 'null'] }
+                        referral:
+                          type: object
+                          required: [code]
+                          properties:
+                            code: { type: string, enum: [referred_to_solicitor] }
+                            firm: { type: string, maxLength: 200 }
+              example:
+                events:
+                  - { at: '2026-11-20T09:00:00.000+00:00', kind: received, status: received }
+                  - { at: '2026-11-20T10:00:00.000+00:00', kind: documents_needed, status: documents_needed, documentsNeeded: [{ code: passport_copy, label: Passport copy }] }
+        '400':
+          description: '`BAD_REQUEST`: the case id is not an id.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+        '404':
+          description: "`CASE_NOT_FOUND`: not a case this login may read."
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: CASE_NOT_FOUND } } }
   /api/portal/claim:
     post:
       operationId: portalClaim

@@ -3314,7 +3314,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [queues, reportsOpen, reportsNew, appeals, contact, approvals]
+                required: [queues, reportsOpen, reportsNew, appeals, contact, approvals, casesUnassigned, casesMine]
                 properties:
                   queues: { type: object, additionalProperties: { type: integer, minimum: 1 } }
                   reportsOpen: { type: [integer, 'null'] }
@@ -3322,7 +3322,9 @@ paths:
                   appeals: { type: [integer, 'null'] }
                   contact: { type: [integer, 'null'] }
                   approvals: { type: [integer, 'null'] }
-              example: { queues: { scam_flag: 2, scheduled_check: 1 }, reportsOpen: 3, reportsNew: 1, appeals: 0, contact: null, approvals: null }
+                  casesUnassigned: { type: [integer, 'null'], description: Open services cases nobody holds (services case handlers). }
+                  casesMine: { type: [integer, 'null'], description: Open services cases assigned to this member (services case handlers). }
+              example: { queues: { scam_flag: 2, scheduled_check: 1 }, reportsOpen: 3, reportsNew: 1, appeals: 0, contact: null, approvals: null, casesUnassigned: null, casesMine: null }
         '400':
           description: "`bad_query`: any query key."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
@@ -3488,6 +3490,251 @@ paths:
         '403':
           description: "`not_active_staff`: the login is not active. `no_role`: the login holds no role."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: no_role } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/services/cases:
+    get:
+      operationId: listServicesCases
+      summary: List open services cases at one status, or open one case
+      description: >-
+        Without `id`: the open cases at `status` (default received), oldest first, 20 a page, with the payer ("who pays") and whether the
+        requester ticked the HR-contact consent; no requester name or contact. With `id`: that case. A services case handler sees all of it
+        (requester name and email while the case is open and the requester not erased, offer details, consents, payer, status, outcome,
+        documents needed with labels, the count of stored copies, the assigned handler, the notes); an administrator sees it without the notes,
+        the copies or the requester's name and email. Every open writes an audit row of kind data_access with reason services_case and the case
+        id (S-Q8 A). A staff member whose email is the requester's is refused (20c:231). Only `id`, `status` and `after`, each once; `id` alone.
+      security: [{ staffSession: [] }]
+      x-roles: [services_case_handler, administrator]
+      x-rate-limit: none
+      parameters:
+        - { name: id, in: query, required: false, schema: { type: string }, example: '31' }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [received, documents_needed, waiting_for_employer, submitted, decision] } }
+        - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: The page (no `id`), or `{ item }` (with `id`).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [items, next]
+                    properties:
+                      items:
+                        type: array
+                        maxItems: 20
+                        items:
+                          type: object
+                          additionalProperties: false
+                          required: [id, status, createdAt, permitType, payer, hrContactConsent, assignedStaffUserId, side]
+                          properties:
+                            id: { type: string }
+                            status: { type: string }
+                            createdAt: { type: string }
+                            permitType: { type: [string, 'null'] }
+                            payer: { type: [string, 'null'], enum: [employer, agency, null] }
+                            hrContactConsent: { type: boolean }
+                            assignedStaffUserId: { type: [string, 'null'] }
+                            side: { type: [string, 'null'], enum: [candidate, portal, null] }
+                      next: { type: [string, 'null'] }
+                  - type: object
+                    required: [item]
+                    properties:
+                      item:
+                        type: object
+                        required: [id, status, payer, hrContactConsent, decisionOutcome, documentsNeeded, assignedStaffUserId, side, requesterErased]
+                        properties:
+                          id: { type: string }
+                          status: { type: string }
+                          createdAt: { type: string }
+                          permitType: { type: [string, 'null'] }
+                          offerDetails: { type: [object, 'null'] }
+                          payer: { type: [string, 'null'] }
+                          organisationId: { type: [string, 'null'] }
+                          jobId: { type: [string, 'null'] }
+                          consentRecordId: { type: string }
+                          hrContactConsent: { type: boolean }
+                          decisionOutcome: { type: [string, 'null'], enum: [granted, refused, null] }
+                          documentsNeeded: { type: array, items: { type: object, required: [code, label], properties: { code: { type: string }, label: { type: [string, 'null'] } } } }
+                          decidedAt: { type: [string, 'null'] }
+                          closedAt: { type: [string, 'null'] }
+                          closeReason: { type: [string, 'null'] }
+                          referralSolicitorId: { type: [string, 'null'] }
+                          assignedStaffUserId: { type: [string, 'null'] }
+                          side: { type: [string, 'null'] }
+                          requesterErased: { type: boolean }
+                          requesterName: { type: [string, 'null'], description: Handlers only. }
+                          requesterEmail: { type: [string, 'null'], description: Handlers only. }
+                          copies: { type: integer, description: Handlers only. }
+                          notes:
+                            description: Handlers only, at most 200.
+                            type: array
+                            items: { type: object, required: [id, authorStaffUserId, body, createdAt], properties: { id: { type: string }, authorStaffUserId: { type: string }, body: { type: string, maxLength: 2000 }, createdAt: { type: string } } }
+              example:
+                items: [{ id: '31', status: received, createdAt: '2026-11-20 09:00:00.123456+00', permitType: null, payer: employer, hrContactConsent: true, assignedStaffUserId: null, side: candidate }]
+                next: null
+        '400':
+          description: "`bad_query`: an unknown or repeated key, or `id` with another key. `bad_status`: not an open status. `bad_cursor`: a token this list did not make."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_status } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_case_staff`: neither services_case_handler nor administrator. `own_case`: the requester's email is this staff member's."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_case_staff } } }
+        '404':
+          description: "`not_found`: no such case (also an id that is not an id)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: actOnServicesCase
+      summary: Assign, move, ask for documents, record the outcome, close, refer or note a services case
+      description: >-
+        One transaction each, with one case_event (none for a note) and one audit row of kind admin_action (codes and ids only, never a note's
+        text). `assign`: a handler takes an unassigned case or passes on their own to another handler; an administrator may reassign any open
+        case; the assignee must be an active handler who is not the requester. Every other action is for the assigned handler only (an
+        administrator gets `not_case_handler`). `status`: received to documents_needed, waiting_for_employer or submitted; documents_needed and
+        waiting_for_employer to each other or submitted; submitted to decision. `documents`: codes from the fixed list (passport_copy,
+        offer_letter, contract, degree, registration, payslip, cv, other), before the decision. `decision`: granted or refused, at decision only.
+        `close`: decided (needs an outcome), employer_not_engaged or no_reply (not once an outcome is recorded). `refer`: closes as
+        referred_to_solicitor, optionally naming an active firm from the solicitor list. `note`: 1 to 2000 characters, newlines and tabs only,
+        never shown to the requester. Each event gives the requester an in-app notice; documents, the decision, close and refer also queue one
+        short email with no details (0063). Origin checked. A staff member whose email is the requester's is refused.
+      security: [{ staffSession: [] }]
+      x-roles: [services_case_handler, administrator]
+      x-rate-limit: none
+      x-body-cap: 3000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, caseId]
+              properties:
+                action: { type: string, enum: [assign, status, documents, decision, close, refer, note] }
+                caseId: { $ref: '#/components/schemas/Id' }
+                staffUserId: { type: string, pattern: '^[A-Za-z0-9_-]{1,64}$', description: assign }
+                status: { type: string, enum: [documents_needed, waiting_for_employer, submitted, decision], description: status }
+                codes: { type: array, maxItems: 30, items: { type: string, maxLength: 40 }, description: documents }
+                outcome: { type: string, enum: [granted, refused], description: decision }
+                reason: { type: string, enum: [decided, employer_not_engaged, no_reply], description: close }
+                solicitorId: { $ref: '#/components/schemas/Id' }
+                body: { type: string, minLength: 1, maxLength: 2000, description: note }
+            example: { action: status, caseId: '31', status: documents_needed }
+      responses:
+        '200':
+          description: Done.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+              example: { ok: true }
+        '400':
+          description: >-
+            `bad_body`: not one JSON object, an unknown or missing field, or over 3000 characters. `bad_action`: unknown action. `bad_case_id`,
+            `bad_staff_id`, `bad_solicitor_id`: not an id. `bad_status`, `bad_outcome`, `bad_reason`: not a known value. `bad_codes`: not a list of
+            distinct codes from the fixed list (at most 30). `bad_text`: an empty or over-long note, or control characters other than newline and tab.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_codes } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: >-
+            `bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_case_staff`: neither
+            services_case_handler nor administrator. `not_case_handler`: an administrator on a handler-only action. `not_assigned`: the case is
+            another handler's. `own_case`: the requester's email is this staff member's.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_assigned } } }
+        '404':
+          description: "`not_found`: no such case."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: >-
+            `case_closed`: the case is closed. `bad_move`: not an allowed status move (or documents after the decision). `bad_assignee`: not an
+            active handler, or the requester. `not_at_decision`: an outcome before the decision. `not_decided`: decided with no outcome.
+            `outcome_recorded`: another close reason after an outcome. `bad_solicitor`: no such active firm. `no_change`: already so.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_move } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/services/solicitors:
+    get:
+      operationId: listReferralSolicitors
+      summary: The referral solicitor list
+      description: Every firm on the list (S-Q10 B), active first, at most 200. No query keys.
+      security: [{ staffSession: [] }]
+      x-roles: [services_case_handler, administrator]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 200
+                    items:
+                      type: object
+                      required: [id, firm, contact, active, createdAt]
+                      properties:
+                        id: { type: string }
+                        firm: { type: string, maxLength: 200 }
+                        contact: { type: string, maxLength: 300 }
+                        active: { type: boolean }
+                        createdAt: { type: string }
+              example: { items: [{ id: '3', firm: Fake Solicitors LLP, contact: fake.firm@example.test, active: true, createdAt: '2026-11-20 09:00:00.123456+00' }] }
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_case_staff`: neither services_case_handler nor administrator."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_case_staff } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      operationId: changeReferralSolicitors
+      summary: Add, edit or deactivate a referral firm
+      description: >-
+        Administrators only. `add` takes firm (1 to 200 characters) and contact (1 to 300), trimmed, no control characters. `edit` changes
+        either or both. `deactivate` takes the firm off the list for new referrals; nothing is ever deleted. One audit row of kind admin_action
+        each (the id, what changed and the active flag; no text). Origin checked.
+      security: [{ staffSession: [] }]
+      x-roles: [administrator]
+      x-rate-limit: none
+      x-body-cap: 1000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action]
+              properties:
+                action: { type: string, enum: [add, edit, deactivate] }
+                solicitorId: { $ref: '#/components/schemas/Id' }
+                firm: { type: string, minLength: 1, maxLength: 200 }
+                contact: { type: string, minLength: 1, maxLength: 300 }
+            example: { action: add, firm: Fake Solicitors LLP, contact: fake.firm@example.test }
+      responses:
+        '200':
+          description: Done; `add` also gives the new id.
+          content:
+            application/json:
+              schema: { type: object, required: [ok], properties: { ok: { type: boolean }, id: { type: string } } }
+              example: { ok: true, id: '3' }
+        '400':
+          description: >-
+            `bad_body`: not one JSON object, an unknown or missing field, or over 1000 characters. `bad_action`: unknown action.
+            `bad_solicitor_id`: not an id. `bad_firm`, `bad_contact`: empty, too long, untrimmed or with control characters. `nothing_to_change`: an edit with no field.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_firm } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_case_staff`: no services role. `not_administrator`: a handler."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
+        '404':
+          description: "`not_found`: no such firm."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`no_change`: already so."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: no_change } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/settings:
     get:

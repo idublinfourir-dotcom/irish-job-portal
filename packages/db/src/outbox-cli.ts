@@ -58,6 +58,8 @@ const N: Record<string, [subject: string, line: string, x?: "x"]> = {
   account_deleted: ["Your account has been deleted", `Your account on ${SITE_NAME} has been deleted. You can sign up again at any time.`, "x"],
   account_merged: ["Your accounts have been joined", "Two accounts with your details have been joined into one."],
   report_outcome: ["We have reviewed your report", "Thank you for reporting a job. We have looked at it and made a decision."],
+  // both sides (SV-B2, M5): the services case notice; no details, the reader signs in to see the timeline
+  case_update: ["Your case has an update", "There is an update on your services case."],
   // employers and agencies (employers site)
   job_expiry_reminder: ["One of your jobs closes soon", "A job your company posted reaches its closing date soon. After that it is no longer shown."],
   job_hidden: ["One of your jobs is hidden for now", "One of your company's jobs has been taken off the site while we look into a report about it."],
@@ -91,6 +93,7 @@ const DIGEST_LABELS: Record<string, string> = {
   post_strike_job_review: "Jobs to check after a strike", scam_flag: "Jobs flagged for scam wording", agency_client_check: "Agency client checks", licence_lapse_job: "Agency jobs to check after a licence lapse",
   data_request: "Data requests", scheduled_check: "Scheduled checks due", reportsOpen: "Open reports", reportsNew: "Reports in the last 24 hours",
   appeals: "Appeals to decide", contact: "Contact messages", approvals: "Requests waiting for a second person",
+  casesUnassigned: "Services cases nobody holds", casesMine: "Services cases assigned to you", // SV-B2
   // #275, administrators (staff-digest-cli.ts emailLimit)
   emailsLeft: "Emails left unsent by the last send run", alertsTooOld: "Job alerts dropped as too old in the last send run", alertSubscribers: "Active job alert subscribers",
 };
