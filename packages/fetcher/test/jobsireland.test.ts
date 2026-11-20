@@ -65,6 +65,12 @@ describe("the jobsireland kind on the real database", () => {
   });
 });
 
+// The hand plan says Dublin; an advert placed in Cork keeps Cork, one placed "Ireland" has no county, so a test can vary only the county.
+const countyPlan = (a: RawAdvert) => {
+  const p = plan(a, "passed");
+  return p.action === "job" ? { ...p, job: { ...p.job, county: a.location.startsWith("Cork") ? "Cork" : a.location === "Ireland" ? null : "Dublin" } } : p;
+};
+
 describe("the cross-source duplicate rule (0065)", () => {
   let n = 0;
   /** Two fake boards of one world: a JobsIreland one and an employer's own hiring system (`sitemap`), each listing what the test puts there. */
@@ -78,11 +84,11 @@ describe("the cross-source duplicate rule (0065)", () => {
     } });
     return {
       name,
-      put(kind: keyof typeof boards, id: string, title: string, employer = name) { boards[kind].set(id, advert(`${kind}-${w}-${id}`, { title, employer, url: `https://jobs.example.test/${kind}/${w}/${id}` })); },
+      put(kind: keyof typeof boards, id: string, title: string, employer = name, location = "Dublin, Ireland") { boards[kind].set(id, advert(`${kind}-${w}-${id}`, { title, employer, location, url: `https://jobs.example.test/${kind}/${w}/${id}` })); },
       drop(kind: keyof typeof boards, id: string) { boards[kind].delete(id); },
       async fetch(...kinds: (keyof typeof boards)[]) {
         const tasks = kinds.map(task);
-        return runBoards(deps(db.pool("app_fetcher"), tasks, { now: at }), (a) => plan(a, "passed"));
+        return runBoards(deps(db.pool("app_fetcher"), tasks, { now: at }), countyPlan);
       },
       async job(kind: keyof typeof boards, id: string) {
         const [r] = await su("select j.id::text, j.status, j.hidden_reason, j.twin_of_job_id::text as twin from job j join fetched_advert f on f.id = j.fetched_advert_id where f.external_id = $1", [`fake:b:${kind}-${w}-${id}`]);
@@ -131,6 +137,38 @@ describe("the cross-source duplicate rule (0065)", () => {
     b.put("sitemap", "1", "Chef");
     await b.fetch("sitemap");
     expect([(await b.job("jobsireland", "1")).status, (await b.job("jobsireland", "2")).status]).toEqual(["live", "live"]);
+  });
+  it("the county must agree (equal, or either empty): Cork against Dublin hides nothing, both ways; an empty county still matches; two agreeing matches hide nothing", async () => {
+    const a = world();
+    a.put("sitemap", "1", "Chef de Partie", undefined, "Dublin, Ireland");
+    await a.fetch("sitemap");
+    a.put("jobsireland", "1", "Chef de Partie", undefined, "Cork, Ireland");
+    await a.fetch("jobsireland");
+    expect((await a.job("jobsireland", "1")).status).toBe("live");
+    a.put("sitemap", "2", "Commis Chef", undefined, "Cork, Ireland");
+    a.put("jobsireland", "2", "Commis Chef", undefined, "Dublin, Ireland");
+    await a.fetch("jobsireland");
+    await a.fetch("sitemap"); // the other way: the own job goes live after
+    expect((await a.job("jobsireland", "2")).status).toBe("live");
+    const b = world();
+    b.put("sitemap", "1", "Baker", undefined, "Cork, Ireland");
+    await b.fetch("sitemap");
+    b.put("jobsireland", "1", "Baker", undefined, "Ireland"); // no county on the JobsIreland side
+    await b.fetch("jobsireland");
+    expect((await b.job("jobsireland", "1")).hidden_reason).toBe("duplicate");
+    b.put("jobsireland", "2", "Porter", undefined, "Cork, Ireland");
+    await b.fetch("jobsireland");
+    b.put("sitemap", "2", "Porter", undefined, "Ireland"); // no county on the own side, going live after
+    await b.fetch("sitemap");
+    expect((await b.job("jobsireland", "2")).hidden_reason).toBe("duplicate");
+    const c = world();
+    c.put("sitemap", "1", "Waiter", undefined, "Cork, Ireland");
+    c.put("sitemap", "2", "Waiter", undefined, "Ireland"); // agrees with Cork too: two agreeing matches
+    c.put("sitemap", "3", "Waiter", undefined, "Dublin, Ireland");
+    await c.fetch("sitemap");
+    c.put("jobsireland", "1", "Waiter", undefined, "Cork, Ireland");
+    await c.fetch("jobsireland");
+    expect((await c.job("jobsireland", "1")).status).toBe("live");
   });
   it("when the twin closes, the JobsIreland job comes back live; if its own advert went meanwhile, it closes", async () => {
     const a = world();
