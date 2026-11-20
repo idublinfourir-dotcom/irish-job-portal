@@ -19,6 +19,7 @@ const SCHEMES = new Set(["VTY3", "VTY4"]);
 const IRELAND = "CTY109"; // the list's country code for Ireland (4,286 of 4,319; one other code, 32 with no location)
 
 const NA = /^n\/?a$/i; // "N/A", as some cards write a missing city
+const EIRCODE = /^([a-z]\d{2}|d6w) ?[a-z\d]{4}$/i; // a routing key (letter and two digits, or D6W) and four characters
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : typeof v === "number" && Number.isFinite(v) ? String(v) : "");
 const name = (v: unknown) => (isObj(v) ? str(get(v, "name")) : "");
 const day = (v: unknown) => (DAY.test(str(v)) ? str(v) : "");
@@ -31,7 +32,11 @@ export function jiLocation(j: Obj): string | null {
   if (!isObj(l)) return "Ireland";
   const c = get(l, "COUNTRY");
   if (c !== undefined && c !== null && c !== IRELAND) return null;
-  return [...new Set([text(str(get(l, "CITY"))), text(str(get(l, "COUNTY")))].filter((x) => x && !NA.test(x))), "Ireland"].join(", ").slice(0, 300);
+  // Some cards put a whole address in CITY ("Cork, CORK, T12 R6FK, Ireland"): split it, drop Eircodes, "Ireland" and repeats (case ignored).
+  const parts = [text(str(get(l, "CITY"))), text(str(get(l, "COUNTY")))].flatMap((x) => x.split(",")).map((x) => x.trim());
+  const seen = new Set<string>(["ireland"]);
+  const keep = parts.filter((x) => x && !NA.test(x) && !EIRCODE.test(x) && !seen.has(x.toLowerCase()) && !!seen.add(x.toLowerCase()));
+  return [...keep, "Ireland"].join(", ").slice(0, 300);
 }
 
 const commas = (n: number) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");

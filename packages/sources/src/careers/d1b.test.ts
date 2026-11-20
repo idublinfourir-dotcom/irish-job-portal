@@ -48,7 +48,12 @@ describe("Republic towns (gap round G1: countyOf with the GeoNames town table)",
     for (const foreign of ["a dai er", "Abbifil", "Atlona", "Brejus", "Nurse a bi fei er"]) expect(countyOf(foreign), foreign).toBeNull();
     expect(titlePlace(rz("Care Assistant - Atlona"))).toBeNull();
     expect(countyOf("Adare")).toBe("Limerick");
-    for (const ni of ["Belfast", "Newtownabbey", "Derry", "Londonderry", "Lisburn", "Newry", "Newcastle", "Dundrum", "Crumlin", "Peamount Hospital", "Ford Road"]) expect(countyOf(ni), ni).toBeNull();
+    // the hand list (20 Nov sitemap places cities500 lacks); Kilcummin and North Ring stay unmapped on purpose
+    for (const [place, c] of <[string, string][]>[["Glenflesk", "Kerry"], ["Lemybrien", "Waterford"], ["Bansha", "Tipperary"], ["Birdhill", "Tipperary"], ["Ballyfin", "Laois"],
+      ["Little Island Industrial Estate", "Cork"], ["Newtown Mount Kennedy", "Wicklow"], ["Backweston", "Kildare"], ["Clarinbridge", "Galway"], ["Peamount Hospital", "Dublin"]])
+      expect(countyOf(place), place).toBe(c);
+    for (const none of ["Kilcummin", "North Ring"]) expect(countyOf(none), none).toBeNull();
+    for (const ni of ["Belfast", "Newtownabbey", "Derry", "Londonderry", "Lisburn", "Newry", "Newcastle", "Dundrum", "Crumlin", "Ford Road"]) expect(countyOf(ni), ni).toBeNull();
   });
   it("hostile text: 2,000 characters read at most, under 200 ms per 1,000 locations of 2,000 characters", () => {
     expect(countyOf(`${"x ".repeat(1000)}Bray`)).toBeNull();

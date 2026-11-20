@@ -14,9 +14,15 @@ const COUNTIES = [
 ] as const;
 const FIND = new RegExp(`(?<![a-z])(${COUNTIES.join("|")})(?![a-z])`, "i");
 
-const TOWN = new Map(Object.entries(TOWNS as Record<string, string>));
+// Small Republic places Rezoomo uses that cities500 lacks (under 500 people, or a campus or hospital, not a GeoNames town); read off
+// Rezoomo's sitemap 20 Nov 2026. Left out on purpose: Kilcummin (one in Kerry and one in Mayo) and North Ring (no single place).
+const EXTRA: Record<string, string> = {
+  glenflesk: "Kerry", lemybrien: "Waterford", bansha: "Tipperary", birdhill: "Tipperary", ballyfin: "Laois", "little island": "Cork",
+  "newtown mount kennedy": "Wicklow", backweston: "Kildare", clarinbridge: "Galway", peamount: "Dublin",
+};
+const TOWN = new Map(Object.entries({ ...(TOWNS as Record<string, string>), ...EXTRA }));
 const FIRST = new Set([...TOWN.keys()].map((k) => k.split(" ")[0]!)); // a word no name starts with costs one lookup
-const LONGEST = Math.max(...[...TOWN.keys()].map((k) => k.split(" ").length)); // words in the longest name (3)
+const LONGEST = Math.max(...[...TOWN.keys()].map((k) => k.split(" ").length)); // words in the longest name (4)
 
 export function countyOf(location: string): string | null {
   const text = location.slice(0, 2000);
