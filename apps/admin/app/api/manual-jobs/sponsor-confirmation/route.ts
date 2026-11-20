@@ -1,5 +1,5 @@
-// "Sponsor confirmed" on a manual post (Q6, #16): GET lists the confirmations waiting for an administrator, or (?requestId=) answers 302 to a 60-second
-// link to one confirmation file (one data_access audit row). POST multipart (?jobId=, field `file`, PDF, JPEG or PNG up to 4 MB): the account reviewer
+// "Sponsor confirmed" on a manual post (Q6, #16): GET lists the confirmations waiting for an administrator, or (?requestId=) answers one confirmation file itself
+// once the malware scan passed (409 scan_pending or file_blocked before; one data_access audit row). POST multipart (?jobId=, field `file`, PDF, JPEG or PNG up to 4 MB): the account reviewer
 // uploads the employer's written confirmation. POST JSON {action: "confirm" | "refuse", requestId}: a different administrator confirms (the post then shows
 // Sponsor confirmed) or refuses; the proposer may withdraw with "refuse". The role checks are inside each database call.
 import { staffSettings } from "@portal/auth";
@@ -23,9 +23,7 @@ export async function GET(request: Request) {
     const staff = await requireStaff(request.headers);
     const q = readQuery(request.url, ["requestId"]);
     if (q.requestId === undefined) return Response.json(await listSponsorConfirmations(getPool(), staff));
-    const url = await openSponsorConfirmation(getPool(), staff, q.requestId);
-    if (!url) return Response.json({ error: "not_found" }, { status: 404 });
-    return new Response(null, { status: 302, headers: { location: url, "cache-control": "no-store", "referrer-policy": "no-referrer" } });
+    return (await openSponsorConfirmation(getPool(), staff, q.requestId)) ?? Response.json({ error: "not_found" }, { status: 404 });
   } catch (e) {
     return failed(e);
   }

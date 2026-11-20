@@ -71,6 +71,7 @@ export * from "./candidate-route";
 export * from "./public-read";
 export * from "./candidate";
 export * from "./files";
+export { sharpWorks } from "./file-disarm";
 
 export * from "./pay-floors";
 export * from "./job-stats";

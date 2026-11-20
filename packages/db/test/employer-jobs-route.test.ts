@@ -403,7 +403,7 @@ describe("the written authority, for the staff who check agency jobs (gap 4)", (
     setFileStore(store);
   });
 
-  it("an account reviewer or an administrator lists the copies and opens one through a 60-second link, each open one audit row", async () => {
+  it("an account reviewer or an administrator lists the copies and opens one (the file itself, S-Q6), each open one audit row", async () => {
     const { job, docs } = await withCopies();
     for (const who of ["only_account_reviewer", "only_administrator"]) {
       const l = await json(who, `?jobId=${job}`);
@@ -413,9 +413,15 @@ describe("the written authority, for the staff who check agency jobs (gap 4)", (
       expect(replyProblems(loadSpec("admin"), "GET", "/api/employer-jobs/authority", 200, l.json)).toEqual([]);
     }
     const r = await raw("only_account_reviewer", `?jobId=${job}&docId=${docs[1]}`);
-    expect([r.status, r.headers.get("cache-control"), r.headers.get("referrer-policy")]).toEqual([302, "no-store", "no-referrer"]);
-    const u = new URL(r.headers.get("location")!);
-    expect([u.pathname, u.searchParams.get("expires")]).toEqual([`/authority/fake-staff-${job}-1`, "60"]);
+    expect([r.status, r.headers.get("content-type"), r.headers.get("cache-control"), r.headers.get("x-content-type-options"), r.headers.get("location")])
+      .toEqual([200, "application/pdf", "no-store", "nosniff", null]);
+    expect(r.headers.get("content-disposition")).toBe("inline; filename*=UTF-8''authority%201.pdf");
+    expect(new Uint8Array(await r.arrayBuffer())).toEqual(new Uint8Array([37, 80, 68, 70]));
+    for (const [tag, code] of [[null, "scan_pending"], ["THREATS_FOUND", "file_blocked"], ["FAILED", "file_blocked"]] as const) { // S-Q7 A: no audit row
+      store.tags.set(`authority/fake-staff-${job}-1`, tag);
+      expect(await json("only_account_reviewer", `?jobId=${job}&docId=${docs[1]}`)).toEqual({ status: 409, json: { error: code } });
+    }
+    store.tags.delete(`authority/fake-staff-${job}-1`);
     await raw("only_administrator", `?jobId=${job}&docId=${docs[1]}`);
     expect(await audits(docs[1]!)).toEqual([
       { kind: "data_access", actor_staff_user_id: h.staff.only_account_reviewer, role_in_force: "account_reviewer", action: "job_authority.open", object_type: "job_authority_document", after: { jobId: job } },
@@ -446,9 +452,9 @@ describe("the written authority, for the staff who check agency jobs (gap 4)", (
     expect((await json(who, `?jobId=${own.id}`)).status).toBe(404);
     await su.query("update job_authority_document set storage_key = null, file_name = null, copy_deleted_at = now() where id = $1", [docs[0]]);
     expect((await json(who, `?jobId=${job}`)).json.documents[0]).toMatchObject({ copyDeleted: true, fileName: null });
-    expect((await json(who, `?jobId=${job}&docId=${docs[0]}`)).status).toBe(404); // a deleted copy has no link
+    expect((await json(who, `?jobId=${job}&docId=${docs[0]}`)).status).toBe(404); // a deleted copy cannot be opened
     expect(await audits(docs[0]!)).toEqual([]);
-    // storage off: 503 and no audit row (the link is made before the row is written)
+    // storage off: 503 and no audit row (the file is read before the row is written)
     const two = await withCopies(1);
     setFileStore(undefined);
     const keep = Object.fromEntries(["FILES_S3_KEY_ID", "FILES_S3_SECRET", "FILES_S3_BUCKET", "FILES_S3_REGION"].map((k) => [k, process.env[k]]));

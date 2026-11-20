@@ -87,7 +87,7 @@ const STATUS = new Map<string, number>(Object.entries({
   reply_window_open: 409, decision_pending: 409, other_case_pending: 409, same_person: 409, entered_reply: 409, entered_appeal: 409, decided_case: 409,
   nothing_pending: 409, nothing_to_ban: 409, no_appeal_window: 409, already_appealed: 409, no_appeal: 409, appeal_decided: 409, window_closed: 409,
   no_ban: 409, not_agency_ban: 409, already_marked: 409,
-  already_attached: 409, bad_file: 400, empty_file: 400, file_too_large: 413, wrong_file_type: 415,
+  already_attached: 409, bad_file: 400, empty_file: 400, file_too_large: 413, wrong_file_type: 415, file_active_content: 422, scan_pending: 409, file_blocked: 409,
 }));
 /** The HTTP status for a refusal code; null for a code these routes do not know, which the caller turns into a plain 500. */
 export const statusFor = (why: string): number | null => STATUS.get(why) ?? null;

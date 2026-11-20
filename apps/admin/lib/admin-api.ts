@@ -57,6 +57,7 @@ const STATUS = new Map<string, number>(Object.entries({
   free_email_domain: 409, domain_owned_by_other: 409, already_added: 409, open_ban_case: 409, company_merged: 409, version_taken: 409,
   decision_pending: 409, no_change: 409, linked_elsewhere: 409, name_taken: 409, not_linked: 409, email_taken: 409, password_set: 409,
   too_many_resends: 429,
+  scan_pending: 409, file_blocked: 409, not_case_handler: 403, own_case: 403, case_not_found: 404, document_not_found: 404,
   same_account: 400, kept_account_deleted: 409, open_services_case: 409, open_report: 409,
   no_account: 409, several_accounts: 409, sender_not_account: 409, not_open: 409, account_changed: 409, owner_with_members: 409, close_company_first: 409, not_confirmed: 409, account_deleted: 409, email_not_confirmed: 409, bad_purpose: 400,
 }));

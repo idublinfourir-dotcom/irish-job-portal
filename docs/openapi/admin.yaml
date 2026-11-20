@@ -423,6 +423,15 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorBody' }
           example: { error: no_session }
+    StaffFileRefused:
+      description: >-
+        The malware scan (GuardDuty Malware Protection for S3, S-Q7 A) has not passed, so the file is not sent and no audit row is written.
+        `scan_pending`: the object has no `GuardDutyMalwareScanStatus` tag yet (also every file until the scan is switched on).
+        `file_blocked`: the tag is anything but `NO_THREATS_FOUND` (`THREATS_FOUND`, `UNSUPPORTED`, `ACCESS_DENIED`, `FAILED`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorBody' }
+          example: { error: scan_pending }
     ServerError:
       description: "`server_error`: anything the route does not expect. The reason stays in the server log."
       content:
@@ -473,7 +482,7 @@ paths:
     get:
       operationId: getHealth
       summary: Health check
-      description: Answers whether the app can reach its database. No session, no Origin check, no rate limit; it reads no data.
+      description: Answers whether the app can reach its database. No session, no Origin check, no rate limit; it reads no data. `sharp` (U3) says whether the image re-encoder used at upload loads in this function; it is worked out once per server instance and is not part of `ok`.
       security: []
       x-roles: [anyone]
       x-rate-limit: none
@@ -489,7 +498,8 @@ paths:
                 properties:
                   ok: { type: boolean }
                   database: { type: boolean }
-              example: { ok: true, database: true }
+                  sharp: { type: boolean }
+              example: { ok: true, database: true, sharp: true }
         '503':
           description: The database did not answer.
           content:
@@ -499,7 +509,8 @@ paths:
                 properties:
                   ok: { type: boolean }
                   database: { type: boolean }
-              example: { ok: false, database: false }
+                  sharp: { type: boolean }
+              example: { ok: false, database: false, sharp: true }
   /api/auth/staff/{path}:
     parameters:
       - name: path
@@ -1779,8 +1790,8 @@ paths:
       summary: List or open the client's written authority kept on an agency job
       description: >-
         P8. With `jobId` only: the copies an agency uploaded on its job that names a client (metadata only, oldest first, a copy removed by
-        retention shows `copyDeleted`). With `jobId` and `docId`: 302 to a 60-second download link of that stored copy, and one `data_access`
-        audit row (`job_authority.open`, the copy's id, the job id, the role in force). The list writes no audit row. For the staff who check
+        retention shows `copyDeleted`). With `jobId` and `docId`: the stored copy itself (S-Q6: inline, the type from the stored kind, nosniff, no-store),
+        only once the malware scan passed, and one `data_access` audit row (`job_authority.open`, the copy's id, the job id, the role in force). The list writes no audit row. For the staff who check
         agency jobs: account_reviewer (the agency_client_check queue) or an administrator. Only `jobId` and `docId`, each at most once.
       security: [{ staffSession: [] }]
       x-roles: [account_reviewer, administrator]
@@ -1790,7 +1801,13 @@ paths:
         - { name: docId, in: query, required: false, schema: { type: string }, example: '77' }
       responses:
         '200':
-          description: The copies (without `docId`).
+          description: The copies (without `docId`, JSON), or the stored copy itself (with `docId`).
+          headers:
+            Content-Type: { schema: { type: string, enum: [application/pdf, image/jpeg, image/png] }, description: "With the id: from the stored kind, never the uploader's." }
+            Content-Disposition: { schema: { type: string }, example: "inline; filename*=UTF-8''letter.pdf" }
+            X-Content-Type-Options: { schema: { type: string, const: nosniff } }
+            Cache-Control: { schema: { type: string, const: no-store } }
+            Content-Security-Policy: { schema: { type: string, const: "frame-ancestors 'self'" } }
           content:
             application/json:
               schema:
@@ -1811,10 +1828,9 @@ paths:
                         uploadedAt: { $ref: '#/components/schemas/Timestamp' }
                         copyDeleted: { type: boolean }
               example: { documents: [{ id: '77', fileName: client-authority.pdf, contentType: pdf, sizeBytes: 182044, uploadedAt: '2026-11-18T10:00:00.000Z', copyDeleted: false }] }
-        '302':
-          description: "The download link (with `docId`), valid 60 seconds; not cached, no referrer."
-          headers:
-            Location: { schema: { type: string, format: uri }, example: 'https://files.example.com/authority/made-up-key?signature=made-up' }
+            application/pdf: { schema: { type: string, format: binary }, example: '(the file bytes, at most 4,194,304)' }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
         '400':
           description: "`bad_query`: no `jobId`, or an unknown or repeated key."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
@@ -1825,6 +1841,7 @@ paths:
         '404':
           description: "`not_found`: no agency job naming a client with that id, or no stored copy with that id on it (also an id that is not an id)."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409': { $ref: '#/components/responses/StaffFileRefused' }
         '500': { $ref: '#/components/responses/ServerError' }
         '503':
           description: "`files_unavailable`: file storage is not set up. No audit row is written."
@@ -2077,7 +2094,7 @@ paths:
       summary: List the Sponsor confirmed requests waiting, or open one confirmation file
       description: >-
         Q6 (#16). Without `requestId`: the employer confirmations uploaded on manual posts that wait for an administrator (oldest first, at most
-        200). With `requestId`: 302 to a 60-second download link of that confirmation (a pending request, or a confirmed one whose statement
+        200). With `requestId`: that confirmation file itself (S-Q6: inline, the type from the stored kind, nosniff, no-store, only once the malware scan passed) (a pending request, or a confirmed one whose statement
         still holds the file) and one `data_access` audit row (`job.sponsor_confirmation_open`, the request id, the role in force). For the
         manual posting viewers: account_reviewer, trust_and_safety, administrator. Only `requestId`, at most once.
       security: [{ staffSession: [] }]
@@ -2087,7 +2104,13 @@ paths:
         - { name: requestId, in: query, required: false, schema: { type: string }, example: '9001' }
       responses:
         '200':
-          description: The requests waiting (without `requestId`).
+          description: The requests waiting (without `requestId`, JSON), or the confirmation file itself (with `requestId`).
+          headers:
+            Content-Type: { schema: { type: string, enum: [application/pdf, image/jpeg, image/png] }, description: "With the id: from the stored kind, never the uploader's." }
+            Content-Disposition: { schema: { type: string }, example: "inline; filename*=UTF-8''letter.pdf" }
+            X-Content-Type-Options: { schema: { type: string, const: nosniff } }
+            Cache-Control: { schema: { type: string, const: no-store } }
+            Content-Security-Policy: { schema: { type: string, const: "frame-ancestors 'self'" } }
           content:
             application/json:
               schema:
@@ -2109,10 +2132,9 @@ paths:
                         proposedBy: { $ref: '#/components/schemas/LoginId' }
                         createdAt: { $ref: '#/components/schemas/DbTime' }
               example: { pending: [{ requestId: '9001', jobId: '5501', fileName: sponsor-letter.pdf, contentType: pdf, sizeBytes: 182044, proposedBy: made-up-staff-id, createdAt: '2026-11-19 10:00:00.123456+00' }] }
-        '302':
-          description: "The download link (with `requestId`), valid 60 seconds; not cached, no referrer."
-          headers:
-            Location: { schema: { type: string, format: uri }, example: 'https://files.example.com/sponsor/made-up-key.pdf?signature=made-up' }
+            application/pdf: { schema: { type: string, format: binary }, example: '(the file bytes, at most 4,194,304)' }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
         '400':
           description: "`bad_query`: an unknown or repeated query key."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
@@ -2123,6 +2145,7 @@ paths:
         '404':
           description: "`not_found`: no such request with a file (refused and withdrawn ones have none; also an id that is not an id)."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409': { $ref: '#/components/responses/StaffFileRefused' }
         '500': { $ref: '#/components/responses/ServerError' }
         '503':
           description: "`files_unavailable`: file storage is not set up. No audit row is written."
@@ -2198,8 +2221,11 @@ paths:
           description: "`file_too_large`: over the cap by header or while reading."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: file_too_large } } }
         '415':
-          description: "`wrong_file_type`: the bytes are not a PDF, JPEG or PNG."
+          description: "`wrong_file_type`: the bytes are not a PDF, JPEG or PNG, or an image (PNG, JPEG, WebP) does not decode or is over 40,000,000 pixels, or a PDF is cut short (no %%EOF at its end). Images are stored re-encoded, with no metadata (disarm at upload, S-Q6)."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: wrong_file_type } } }
+        '422':
+          description: "`file_active_content`: a PDF that carries active content (/JavaScript, /JS, /OpenAction, /AA, /Launch, /EmbeddedFile(s), /RichMedia, /XFA, also escaped or inside an object stream), is encrypted, or hides objects behind a filter the check cannot read, or an object stream that inflates past 16 MiB."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: file_active_content } } }
         '500': { $ref: '#/components/responses/ServerError' }
         '503':
           description: "`files_unavailable`: file storage is not set up. Nothing is written."
@@ -2862,7 +2888,8 @@ paths:
       operationId: openTrustSafetyEvidence
       summary: Open the evidence file of a report or a case
       description: >-
-        Q7 (#91, #99). Exactly one of `reportId` and `caseId`: 302 to a 60-second download link of its evidence file and one `data_access`
+        Q7 (#91, #99). Exactly one of `reportId` and `caseId`: its evidence file itself (S-Q6: inline, the type from the stored kind, nosniff,
+        no-store, only once the malware scan passed) and one `data_access`
         audit row (`trust_safety.evidence_open`, object `report` or `strike`). trust_and_safety only. Whether a report or case has a file is
         `evidenceFile` on `GET /api/trust-safety/reports?id=` and `GET /api/trust-safety/cases?id=`.
       security: [{ staffSession: [] }]
@@ -2872,11 +2899,18 @@ paths:
         - { name: reportId, in: query, required: false, schema: { type: string }, example: '801' }
         - { name: caseId, in: query, required: false, schema: { type: string }, example: '51' }
       responses:
-        '302':
-          description: "The download link, valid 60 seconds; not cached, no referrer."
+        '200':
+          description: The evidence file itself.
           headers:
-            Location: { schema: { type: string, format: uri }, example: 'https://files.example.com/evidence/made-up-key.png?signature=made-up' }
-          content: { application/json: { schema: { type: object }, example: {} } }
+            Content-Type: { schema: { type: string, enum: [application/pdf, image/jpeg, image/png] }, description: "With the id: from the stored kind, never the uploader's." }
+            Content-Disposition: { schema: { type: string }, example: "inline; filename*=UTF-8''letter.pdf" }
+            X-Content-Type-Options: { schema: { type: string, const: nosniff } }
+            Cache-Control: { schema: { type: string, const: no-store } }
+            Content-Security-Policy: { schema: { type: string, const: "frame-ancestors 'self'" } }
+          content:
+            application/pdf: { schema: { type: string, format: binary }, example: '(the file bytes, at most 4,194,304)' }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
         '400':
           description: "`bad_query`: not exactly one of `reportId` and `caseId`, or an unknown or repeated key."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
@@ -2887,6 +2921,7 @@ paths:
         '404':
           description: "`not_found`: no such report or case, or it has no evidence file (also an id that is not an id)."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409': { $ref: '#/components/responses/StaffFileRefused' }
         '500': { $ref: '#/components/responses/ServerError' }
         '503':
           description: "`files_unavailable`: file storage is not set up. No audit row is written."
@@ -2944,11 +2979,105 @@ paths:
           description: "`file_too_large`: over the cap by header or while reading."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: file_too_large } } }
         '415':
-          description: "`wrong_file_type`: the bytes are not a PDF, JPEG or PNG."
+          description: "`wrong_file_type`: the bytes are not a PDF, JPEG or PNG, or an image (PNG, JPEG, WebP) does not decode or is over 40,000,000 pixels, or a PDF is cut short (no %%EOF at its end). Images are stored re-encoded, with no metadata (disarm at upload, S-Q6)."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: wrong_file_type } } }
+        '422':
+          description: "`file_active_content`: a PDF that carries active content (/JavaScript, /JS, /OpenAction, /AA, /Launch, /EmbeddedFile(s), /RichMedia, /XFA, also escaped or inside an object stream), is encrypted, or hides objects behind a filter the check cannot read, or an object stream that inflates past 16 MiB."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: file_active_content } } }
         '500': { $ref: '#/components/responses/ServerError' }
         '503':
           description: "`files_unavailable`: file storage is not set up. Nothing is written."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: files_unavailable } } }
+  /api/services/cases/{id}/documents:
+    get:
+      operationId: listServicesCaseDocuments
+      summary: List the stored copies of a services case (metadata only)
+      description: >-
+        M4. Every copy kept on the case (the candidate's, the employer's and staff ones, oldest first; a copy removed by retention shows
+        `copyDeleted`), metadata only, no audit row. Only the services_case_handler the case is assigned to (`assigned_staff_user_id`); a case
+        assigned to someone else or to no one is 404 like a missing one. Takes no query.
+      security: [{ staffSession: [] }]
+      x-roles: [services_case_handler]
+      x-rate-limit: none
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, example: '301' }
+      responses:
+        '200':
+          description: The copies.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [documents]
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [id, fileName, contentType, sizeBytes, uploadedAt, copyDeleted, uploadedBy]
+                      properties:
+                        id: { $ref: '#/components/schemas/Id' }
+                        fileName: { type: [string, 'null'], maxLength: 200 }
+                        contentType: { type: [string, 'null'], enum: [pdf, jpeg, png, null] }
+                        sizeBytes: { type: [integer, 'null'] }
+                        uploadedAt: { type: string, description: 'The upload time (the Postgres timestamp as JSON).' }
+                        copyDeleted: { type: boolean }
+                        uploadedBy: { type: string, enum: [candidate, portal, staff, gone] }
+              example: { documents: [{ id: '77', fileName: offer.pdf, contentType: pdf, sizeBytes: 182044, uploadedAt: '2026-11-18T10:00:00.000Z', copyDeleted: false, uploadedBy: candidate }] }
+        '400':
+          description: "`bad_query`: any query key. `bad_id`: an id that is not an id."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_id } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_case_handler`: not a services_case_handler (every other role, administrator included, S-Q11 B). `own_case`: the member's staff email is the requester's account email (20c:231)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_case_handler } } }
+        '404':
+          description: "`case_not_found`: no such case, or it is not assigned to this member."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: case_not_found } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/services/cases/{id}/documents/{docId}:
+    get:
+      operationId: openServicesCaseDocument
+      summary: Open one stored copy of a services case
+      description: >-
+        M4 (S-Q6, S-Q8 A). The copy itself through this route (never a presigned link): inline, the type from the stored kind, nosniff,
+        no-store, only once the malware scan passed, with one `data_access` audit row (`case_document.open`, the copy's id, reason
+        `services_case`, related case `services_case:<id>`, role services_case_handler) in the same transaction. Only the services_case_handler
+        the case is assigned to. A copy of another case is 404 (no cross-case read). Takes no query.
+      security: [{ staffSession: [] }]
+      x-roles: [services_case_handler]
+      x-rate-limit: none
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, example: '301' }
+        - { name: docId, in: path, required: true, schema: { type: string }, example: '77' }
+      responses:
+        '200':
+          description: The stored copy itself.
+          headers:
+            Content-Type: { schema: { type: string, enum: [application/pdf, image/jpeg, image/png] }, description: "From the stored kind, never the uploader's." }
+            Content-Disposition: { schema: { type: string }, example: "inline; filename*=UTF-8''offer.pdf" }
+            X-Content-Type-Options: { schema: { type: string, const: nosniff } }
+            Cache-Control: { schema: { type: string, const: no-store } }
+            Content-Security-Policy: { schema: { type: string, const: "frame-ancestors 'self'" } }
+          content:
+            application/pdf: { schema: { type: string, format: binary }, example: '(the file bytes, at most 4,194,304)' }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+        '400':
+          description: "`bad_query`: any query key. `bad_id`: an id that is not an id."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_id } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_case_handler`: not a services_case_handler (every other role, administrator included, S-Q11 B). `own_case`: the member's staff email is the requester's account email (20c:231)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_case_handler } } }
+        '404':
+          description: "`case_not_found`: no such case, or not assigned to this member. `document_not_found`: no stored copy with that id on this case (another case's, or removed)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: document_not_found } } }
+        '409': { $ref: '#/components/responses/StaffFileRefused' }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503':
+          description: "`files_unavailable`: file storage is not set up. No audit row is written."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: files_unavailable } } }
   /api/staff/me/export:
     get:

@@ -357,7 +357,7 @@ paths:
     get:
       operationId: portalHealth
       summary: Health check
-      description: Answers whether the database answers `select 1`. The result is cached for a short time. No session, no Origin check.
+      description: Answers whether the database answers `select 1`. The result is cached for a short time. No session, no Origin check. `sharp` (U3) says whether the image re-encoder used at upload loads in this function; it is worked out once per server instance and is not part of `ok`.
       security: []
       x-roles: [anyone]
       x-no-4xx: Takes no input and needs no session, so no client error is possible.
@@ -366,14 +366,14 @@ paths:
           description: The database answers.
           content:
             application/json:
-              schema: { type: object, required: [ok, database], properties: { ok: { type: boolean }, database: { type: boolean } } }
-              example: { ok: true, database: true }
+              schema: { type: object, required: [ok, database], properties: { ok: { type: boolean }, database: { type: boolean }, sharp: { type: boolean } } }
+              example: { ok: true, database: true, sharp: true }
         '503':
           description: The database does not answer.
           content:
             application/json:
-              schema: { type: object, required: [ok, database], properties: { ok: { type: boolean }, database: { type: boolean } } }
-              example: { ok: false, database: false }
+              schema: { type: object, required: [ok, database], properties: { ok: { type: boolean }, database: { type: boolean }, sharp: { type: boolean } } }
+              example: { ok: false, database: false, sharp: true }
   /api/legal:
     get:
       operationId: getLegalText
@@ -465,7 +465,8 @@ paths:
         '404': { description: "`CASE_NOT_FOUND`: no such case of this login.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: CASE_NOT_FOUND } } } }
         '409': { description: "`CASE_CLOSED`: the case is at decision or closed. `DOCUMENT_LIMIT`: the case already holds 20 stored documents.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: DOCUMENT_LIMIT } } } }
         '413': { description: "`FILE_TOO_LARGE`: over the cap by header or while reading.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILE_TOO_LARGE } } } }
-        '415': { description: "`WRONG_FILE_TYPE`: the bytes are not a PDF, JPEG or PNG.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: WRONG_FILE_TYPE } } } }
+        '415': { description: "`WRONG_FILE_TYPE`: the bytes are not a PDF, JPEG or PNG, or an image (PNG, JPEG, WebP) does not decode or is over 40,000,000 pixels, or a PDF is cut short (no %%EOF at its end). Images are stored re-encoded, with no metadata (disarm at upload, S-Q6).", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: WRONG_FILE_TYPE } } } }
+        '422': { description: "`FILE_ACTIVE_CONTENT`: a PDF that carries active content (/JavaScript, /JS, /OpenAction, /AA, /Launch, /EmbeddedFile(s), /RichMedia, /XFA, also escaped or inside an object stream), is encrypted, or hides objects behind a filter the check cannot read, or an object stream that inflates past 16 MiB.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILE_ACTIVE_CONTENT } } } }
         '429': { $ref: '#/components/responses/TooMany' }
         '503': { description: "`FILES_UNAVAILABLE`: file storage is not set up.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILES_UNAVAILABLE } } } }
   /api/portal/cases/{id}/documents/{docId}:
@@ -751,7 +752,7 @@ paths:
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or another refusal. `NOT_OWNER`: not the active account owner.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_OWNER } } } }
         '409': { description: "`ORGANISATION_NOT_AVAILABLE`: the company is suspended, rejected, banned or closed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: ORGANISATION_NOT_AVAILABLE } } } }
         '413': { description: "`FILE_TOO_LARGE`: over the cap by header, while reading, or a file over 1 MiB.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILE_TOO_LARGE } } } }
-        '415': { description: "`WRONG_FILE_TYPE`: the bytes are not a PNG, JPEG or WebP.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: WRONG_FILE_TYPE } } } }
+        '415': { description: "`WRONG_FILE_TYPE`: the bytes are not a PNG, JPEG or WebP, or an image (PNG, JPEG, WebP) does not decode or is over 40,000,000 pixels, or a PDF is cut short (no %%EOF at its end). Images are stored re-encoded, with no metadata (disarm at upload, S-Q6).", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: WRONG_FILE_TYPE } } } }
         '429': { $ref: '#/components/responses/TooMany' }
         '503': { description: "`FILES_UNAVAILABLE`: file storage is not set up.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILES_UNAVAILABLE } } } }
   /api/portal/contact:
@@ -1228,7 +1229,8 @@ paths:
         '404': { description: "`JOB_NOT_FOUND`: no agency job naming a client of this login's company, or the login may not post.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: JOB_NOT_FOUND } } } }
         '409': { description: "`DOCUMENT_LIMIT`: the job already holds 20 stored copies (checked again under a lock on the job, so two uploads at once cannot pass it).", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: DOCUMENT_LIMIT } } } }
         '413': { description: "`FILE_TOO_LARGE`: over the cap by header or while reading.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILE_TOO_LARGE } } } }
-        '415': { description: "`WRONG_FILE_TYPE`: the bytes are not a PDF, JPEG or PNG.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: WRONG_FILE_TYPE } } } }
+        '415': { description: "`WRONG_FILE_TYPE`: the bytes are not a PDF, JPEG or PNG, or an image (PNG, JPEG, WebP) does not decode or is over 40,000,000 pixels, or a PDF is cut short (no %%EOF at its end). Images are stored re-encoded, with no metadata (disarm at upload, S-Q6).", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: WRONG_FILE_TYPE } } } }
+        '422': { description: "`FILE_ACTIVE_CONTENT`: a PDF that carries active content (/JavaScript, /JS, /OpenAction, /AA, /Launch, /EmbeddedFile(s), /RichMedia, /XFA, also escaped or inside an object stream), is encrypted, or hides objects behind a filter the check cannot read, or an object stream that inflates past 16 MiB.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILE_ACTIVE_CONTENT } } } }
         '429': { $ref: '#/components/responses/TooMany' }
         '503': { description: "`FILES_UNAVAILABLE`: file storage is not set up.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILES_UNAVAILABLE } } } }
   /api/portal/jobs/{id}/authority/{docId}:

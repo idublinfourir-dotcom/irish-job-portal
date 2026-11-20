@@ -46,6 +46,8 @@
     "actOnCase": "POST /api/trust-safety/cases (trust_and_safety)",
     "openTrustSafetyEvidence": "GET /api/trust-safety/evidence (trust_and_safety)",
     "attachTrustSafetyEvidence": "POST /api/trust-safety/evidence (trust_and_safety)",
+    "listServicesCaseDocuments": "GET /api/services/cases/{id}/documents (services_case_handler)",
+    "openServicesCaseDocument": "GET /api/services/cases/{id}/documents/{docId} (services_case_handler)",
     "exportMyStaffData": "GET /api/staff/me/export (any active staff login)",
     "listScheduledChecks": "GET /api/scheduled-checks (rules_data_editor, fetched_job_reviewer, administrator)",
     "doneScheduledCheck": "POST /api/scheduled-checks (rules_data_editor, fetched_job_reviewer, administrator)",

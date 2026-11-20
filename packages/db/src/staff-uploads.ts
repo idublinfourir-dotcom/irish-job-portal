@@ -8,11 +8,12 @@
 //      sponsor_confirmed. No signer: staff never sign for the employer. Refused (an administrator) or withdrawn (the proposer), the stored file is removed.
 //   Q7 evidence on a report or a strike case (trust_and_safety only, #91, #99): one stored file each, set only while empty and while the report is open
 //      or the case's appeal is not decided; it follows the row's retention (rules 21 to 23 return the key, 0052).
-// Opening any of these files is a 60-second link and one data_access audit row, as the written authority (job-queues.ts).
+// Opening any of these files answers the file itself through the admin route once the malware scan passed (files.ts staffFileView, S-Q6), with
+// one data_access audit row, as the written authority (job-queues.ts).
 import type pg from "pg";
 import { QueueRefused } from "./admin-queue";
 import { keyKind } from "./file-check";
-import { fileLink, storeStaffDocument } from "./files";
+import { staffFileView, storeStaffDocument } from "./files";
 import { fileStore } from "./file-store";
 import { MANUAL_VIEWERS } from "./manual-posting";
 import { validId } from "./search";
@@ -24,7 +25,7 @@ const audit = (c: pg.PoolClient, staff: string, action: string, type: string, id
   c.query(AUDIT, [staff, action, type, id, JSON.stringify(after), null, second, caseId]);
 const OPENED =
   "insert into audit_event(kind, actor_staff_user_id, role_in_force, action, object_type, object_id, after, source) values ('data_access', $1, $2, $3, $4, $5, $6::jsonb, 'panel')";
-const linkFor = (key: string, name: string) => fileLink(key, `${name}.${key.split(".").pop()}`, keyKind(key) ?? "pdf");
+const viewOf = (key: string, name: string) => staffFileView(key, keyKind(key) ?? "unknown", `${name}.${key.split(".").pop()}`);
 const removeLater = (key: unknown) => {
   if (typeof key === "string") fileStore().remove(key).catch(() => console.error("staff upload: stored file not removed, delete by hand:", JSON.stringify(key)));
 };
@@ -80,14 +81,14 @@ export async function listSponsorConfirmations(db: Db, staff: string): Promise<{
   });
 }
 
-/** A 60-second link to the confirmation of a pending or confirmed request, with its data_access audit row; null when there is none. */
-export async function openSponsorConfirmation(db: Db, staff: string, requestId: unknown): Promise<string | null> {
+/** The confirmation file of a pending or confirmed request, with its data_access audit row; null when there is none. scan_pending, file_blocked. */
+export async function openSponsorConfirmation(db: Db, staff: string, requestId: unknown): Promise<Response | null> {
   return inTransaction(db, staff, MANUAL_VIEWERS, "not_manual_viewer", async (c, held) => {
     const key = validId(requestId) ? (await c.query<{ key: string | null }>(SPONSOR_FILE, [requestId])).rows[0]?.key : undefined;
     if (!key) return null;
-    const url = await linkFor(key, "confirmation");
+    const file = await viewOf(key, "confirmation");
     await c.query(OPENED, [staff, MANUAL_VIEWERS.find((r) => held.includes(r)), "job.sponsor_confirmation_open", "approval_request", requestId, "{}"]);
-    return url;
+    return file;
   });
 }
 
@@ -151,14 +152,14 @@ export async function attachEvidence(db: Db, staff: string, on: EvidenceOn, id: 
   }));
 }
 
-/** A 60-second link to the evidence file, with its data_access audit row; null when the row or its file does not exist. */
-export async function openEvidence(db: Db, staff: string, on: EvidenceOn, id: unknown): Promise<string | null> {
+/** The evidence file, with its data_access audit row; null when the row or its file does not exist. scan_pending, file_blocked. */
+export async function openEvidence(db: Db, staff: string, on: EvidenceOn, id: unknown): Promise<Response | null> {
   if (!validId(id)) return null;
   return ts(db, staff, async (c) => {
     const key = (await c.query<{ key: string | null }>(EVIDENCE[on].key, [id])).rows[0]?.key;
     if (!key) return null;
-    const url = await linkFor(key, "evidence");
+    const file = await viewOf(key, "evidence");
     await c.query(OPENED, [staff, "trust_and_safety", "trust_safety.evidence_open", on, id, "{}"]);
-    return url;
+    return file;
   });
 }

@@ -344,11 +344,17 @@ components:
           schema: { $ref: '#/components/schemas/CodeError' }
           example: { code: FILE_TOO_LARGE }
     WrongFileType:
-      description: '`WRONG_FILE_TYPE`: the bytes are not one of the allowed types.'
+      description: '`WRONG_FILE_TYPE`: the bytes are not one of the allowed types, an image (PNG, JPEG, WebP) does not decode or is over 40,000,000 pixels, or a PDF is cut short (no %%EOF at its end). Images are stored re-encoded, with no metadata (disarm at upload, S-Q6).'
       content:
         application/json:
           schema: { $ref: '#/components/schemas/CodeError' }
           example: { code: WRONG_FILE_TYPE }
+    ActiveContent:
+      description: '`FILE_ACTIVE_CONTENT`: a PDF that carries active content (/JavaScript, /JS, /OpenAction, /AA, /Launch, /EmbeddedFile(s), /RichMedia, /XFA, also escaped or inside an object stream), is encrypted, or hides objects behind a filter the check cannot read, or an object stream that inflates past 16 MiB.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: FILE_ACTIVE_CONTENT }
     UploadTooMany:
       description: '`TOO_MANY_REQUESTS`: over 60 candidate writes in 10 minutes, or over 10 uploads in an hour, by this login.'
       content:
@@ -416,7 +422,7 @@ paths:
       operationId: candidateHealth
       tags: [ops]
       summary: Health check
-      description: Answers whether the database answers `select 1`. The result is cached for a short time. No session, no rate limit.
+      description: Answers whether the database answers `select 1`. The result is cached for a short time. No session, no rate limit. `sharp` (U3) says whether the image re-encoder used at upload loads in this function; it is worked out once per server instance and is not part of `ok`.
       security: []
       x-roles: [anyone]
       x-no-4xx: The route reads nothing from the request, so it has no client error.
@@ -431,13 +437,14 @@ paths:
                 properties:
                   ok: { type: boolean }
                   database: { type: boolean }
-              example: { ok: true, database: true }
+                  sharp: { type: boolean }
+              example: { ok: true, database: true, sharp: true }
         '503':
           description: The database does not answer (same body, both false).
           content:
             application/json:
               schema: *health
-              example: { ok: false, database: false }
+              example: { ok: false, database: false, sharp: true }
 
   /api/auth/candidate/{path}:
     parameters:
@@ -2063,6 +2070,7 @@ paths:
               example: { code: TRY_AGAIN }
         '413': { $ref: '#/components/responses/FileTooLarge' }
         '415': { $ref: '#/components/responses/WrongFileType' }
+        '422': { $ref: '#/components/responses/ActiveContent' }
         '429': { $ref: '#/components/responses/UploadTooMany' }
         '503': { $ref: '#/components/responses/FilesUnavailable' }
     delete:
@@ -2180,6 +2188,7 @@ paths:
               example: { code: DOCUMENT_LIMIT }
         '413': { $ref: '#/components/responses/FileTooLarge' }
         '415': { $ref: '#/components/responses/WrongFileType' }
+        '422': { $ref: '#/components/responses/ActiveContent' }
         '429': { $ref: '#/components/responses/UploadTooMany' }
         '503': { $ref: '#/components/responses/FilesUnavailable' }
 

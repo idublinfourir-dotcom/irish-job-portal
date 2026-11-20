@@ -5,6 +5,7 @@
 // inside every call, reads included. Only the claimer decides, under row locks on the item and its job.
 import type pg from "pg";
 import { readQueueCursor, queueCursor, QueueRefused, RELEASE, STALE_AFTER, TAKE_OVER } from "./admin-queue";
+import { staffFileView } from "./files";
 import { PAGE_SIZE, validId } from "./search";
 
 type Db = Pick<pg.Pool, "query" | "connect">;
@@ -219,7 +220,7 @@ export async function rejectJobItem(db: Db, staffUserId: string, itemId: string 
 
 // ===== the client's written authority on an agency job (P8), for the staff who check agency jobs =====
 // The agency_client_check role (account_reviewer) or an administrator, as the queue. Any agency job that names a client, held or not. The list gives
-// metadata only; each opened copy is a 60-second link and one data_access audit row (codes and ids only), written in the same transaction.
+// metadata only; each opened copy is the file itself once the malware scan passed (files.ts staffFileView) and one data_access audit row (codes and ids only), written in the same transaction.
 const AUTH_COLS = `d.id::text as id, d.file_name as "fileName", d.content_type as "contentType", d.byte_size as "sizeBytes", d.uploaded_at as "uploadedAt", d.copy_deleted_at is not null as "copyDeleted"`;
 const AUTH_JOB = "from job j where j.id = $1::bigint and j.source = 'agency' and j.permit_employer_kind = 'client'";
 export const JOBQ_AUTHORITY_LIST =
@@ -239,9 +240,8 @@ export async function listJobAuthority(db: Pick<pg.Pool, "query">, staffUserId: 
   return (await db.query<{ documents: AuthorityDocument[] }>(JOBQ_AUTHORITY_LIST, [jobId])).rows[0]?.documents ?? null;
 }
 
-/** A 60-second download link to one stored copy, with its audit row; null when there is no such stored copy on that agency job. `link` makes the link (the file store). */
-export async function openJobAuthority(db: Pick<pg.Pool, "connect">, staffUserId: string, jobId: string, docId: string,
-  link: (key: string, fileName: string, contentType: string) => Promise<string>): Promise<string | null> {
+/** One stored copy, with its audit row; null when there is no such stored copy on that agency job. scan_pending, file_blocked (QueueRefused). */
+export async function openJobAuthority(db: Pick<pg.Pool, "connect">, staffUserId: string, jobId: string, docId: string): Promise<Response | null> {
   if (typeof staffUserId !== "string" || staffUserId.length === 0 || staffUserId.length > 200) throw new QueueRefused("not_active_staff");
   const c = await db.connect();
   try {
@@ -251,10 +251,10 @@ export async function openJobAuthority(db: Pick<pg.Pool, "connect">, staffUserId
     const d = validId(jobId) && validId(docId)
       ? (await c.query<{ storage_key: string; file_name: string; content_type: string }>(JOBQ_AUTHORITY_ONE, [jobId, docId])).rows[0] : undefined;
     if (!d) { await c.query("rollback"); return null; }
-    const url = await link(d.storage_key, d.file_name, d.content_type);
+    const file = await staffFileView(d.storage_key, d.content_type, d.file_name);
     await c.query(JOBQ_AUTHORITY_AUDIT, [staffUserId, roles.includes("account_reviewer") ? "account_reviewer" : "administrator", docId, jobId]);
     await c.query("commit");
-    return url;
+    return file;
   } catch (e) {
     await c.query("rollback").catch(() => {});
     throw e;

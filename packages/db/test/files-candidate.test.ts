@@ -229,6 +229,27 @@ describe("case documents, candidate side", () => {
     await expect(call(R.docs, "POST", p, { body: file(PDF), params: { id: c } })).rejects.toThrow(/fake database failure/);
     expect(new Set(store.objects.keys())).toEqual(before);
   });
+  it("disarm at upload (S-Q6): active PDFs are refused with nothing stored; images are stored re-encoded; a declared type never counts", async () => {
+    const p = await login();
+    const c = await caseFor(p.id);
+    const before = new Set(store.objects.keys());
+    const tail = "\ntrailer << /Root 1 0 R >>\n%%EOF\n";
+    for (const bad of [`%PDF-1.7\n1 0 obj << /OpenAction << /S /JavaScript /JS (app.alert(1)) >> >> endobj${tail}`, `%PDF-1.7\n1 0 obj << /J#61vaScript 2 0 R >> endobj${tail}`,
+      `%PDF-1.7\ntrailer << /Encrypt 3 0 R >>${tail}`]) {
+      const r = await call(R.docs, "POST", p, { body: file(new Uint8Array(Buffer.from(bad, "latin1")), "offer.pdf"), params: { id: c } });
+      expect([r.status, r.code], bad).toEqual([422, "FILE_ACTIVE_CONTENT"]);
+    }
+    expect((await call(R.docs, "POST", p, { body: file(new Uint8Array(Buffer.from("%PDF-1.7\n1 0 obj << >>", "latin1"))), params: { id: c } })).code).toBe("WRONG_FILE_TYPE"); // truncated
+    expect((await call(R.docs, "POST", p, { body: file(new Uint8Array([...PNG.subarray(0, 8), 1, 2, 3]), "a.png"), params: { id: c } })).code).toBe("WRONG_FILE_TYPE"); // does not decode
+    expect(new Set(store.objects.keys())).toEqual(before);
+    // a PNG with a script after its end, sent as text/html under an .html name: stored as the re-encoded PNG only
+    const f = new FormData();
+    f.append("file", new Blob([new Uint8Array([...PNG, ...Buffer.from("<script>alert(1)</script>")])], { type: "text/html" }), "page.html");
+    const up = await call(R.docs, "POST", p, { body: f, params: { id: c } });
+    expect(up.json.document).toMatchObject({ fileName: "page.html.png", contentType: "png", sizeBytes: PNG.length });
+    const key = (await one("select storage_key from case_document where id=$1", [up.json.document.id]))[0].storage_key;
+    expect(store.objects.get(key)).toEqual({ bytes: PNG, contentType: "image/png" });
+  });
   it("a decided or closed case refuses uploads but still lists and opens", async () => {
     const p = await login();
     for (const status of ["decision", "closed"]) {
