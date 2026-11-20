@@ -10,7 +10,7 @@ export type BoardsFile = {
   amazon?: boolean;
   // W1c: Workday employers read from their own career sites (packages/sources/src/careers/careers.ts)
   phenom?: [employer: string, board: string, origin: string, lang: string, country: string, pageId: string, path: string][];
-  sitemap?: [employer: string, board: string, origin: string, sitemap: string, pattern: string, idFrom: "url" | "page"][];
+  sitemap?: [employer: string, board: string, origin: string, sitemap: string, pattern: string, idFrom: "url" | "page", opts?: { query?: string; place?: "url" }][]; // opts: D1-B
   salesforce?: [board: string, employer: string][];
   eightfold?: [employer: string, board: string, origin: string, domain: string][]; // W1e
   jobsireland?: [board: string, maxDetails: number][]; // D1: the public employment service's JSON API (packages/sources/src/jobsireland)
@@ -51,8 +51,8 @@ export function atsTasks(config: BoardsFile, fetch: Fetch, log: (line: string) =
   // One board is one site, so the pool never runs two boards on one host; each board pauses PACE.siteCallGapMs between its calls.
   for (const [employer, board, origin, lang, country, pageId, path] of config.phenom ?? [])
     tasks.push({ kind: "phenom", board, rereadDays: REREAD_DAYS.phenom, fetch: (known) => fetchPhenom({ employer, board, origin, lang, country, pageId, path }, known, fetch, opts) });
-  for (const [employer, board, origin, sitemap, pattern, idFrom] of config.sitemap ?? [])
-    tasks.push({ kind: "sitemap", board, rereadDays: REREAD_DAYS.sitemap, fetch: (known) => fetchSitemap({ employer, board, origin, sitemap, pattern, idFrom }, known, fetch, opts) });
+  for (const [employer, board, origin, sitemap, pattern, idFrom, more] of config.sitemap ?? [])
+    tasks.push({ kind: "sitemap", board, rereadDays: REREAD_DAYS.sitemap, fetch: (known) => fetchSitemap({ employer, board, origin, sitemap, pattern, idFrom, query: more?.query, place: more?.place }, known, fetch, opts) });
   for (const [employer, board, origin, domain] of config.eightfold ?? [])
     tasks.push({ kind: "eightfold", board, rereadDays: REREAD_DAYS.eightfold, fetch: (known) => fetchEightfold({ employer, board, origin, domain }, known, fetch, opts) });
   // One board, one host: the pool runs it alone on jobsireland.ie, at most one request a second, `maxDetails` detail reads a run.

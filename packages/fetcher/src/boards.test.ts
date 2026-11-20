@@ -61,11 +61,11 @@ describe("atsTasks", () => {
   it("W1c: the new kinds re-read a known advert one day in 7, Salesforce every day (its one call carries the text)", () => {
     expect(Object.fromEntries(atsTasks(CONFIG, fake(() => reply(EMPTY)).fetch).map((t) => [t.kind, t.rereadDays]))).toMatchObject({ phenom: 7, sitemap: 7, eightfold: 7, jobsireland: 7, salesforce: 1, workday: 7 });
   });
-  it("the boards file: the 8 career sites under the new kinds, and all 14 Workday boards still listed", async () => {
+  it("the boards file: the 8 career sites under the new kinds (13 with D1-B), and all 14 Workday boards still listed", async () => {
     const { default: file } = await import("../data/boards.json", { with: { type: "json" } });
     const tasks = atsTasks(file as BoardsFile, fake(() => reply(EMPTY)).fetch);
     expect(tasks.filter((t) => ["phenom", "sitemap", "salesforce", "eightfold"].includes(t.kind)).map((t) => `${t.kind}:${t.board}`).sort()).toEqual(
-      ["eightfold:amat", "phenom:abbott", "phenom:mastercard", "phenom:statestreet", "phenom:thermofisher", "salesforce:salesforce", "sitemap:citi", "sitemap:fmr"]);
+      ["eightfold:amat", "eightfold:microsoft", "eightfold:qualcomm", "phenom:abbott", "phenom:mastercard", "phenom:statestreet", "phenom:thermofisher", "salesforce:salesforce", "sitemap:citi", "sitemap:dawnmeats", "sitemap:fmr", "sitemap:hsedne", "sitemap:rezoomo"]);
     expect(tasks.filter((t) => t.kind === "workday")).toHaveLength(14);
     // every new board's values pass the adapters' own checks (https origin, plain paths, safe names)
     for (const t of tasks.filter((x) => ["phenom", "sitemap", "salesforce", "eightfold"].includes(x.kind))) expect(await t.fetch(none), t.board).toEqual({ seen: [], adverts: [] });
