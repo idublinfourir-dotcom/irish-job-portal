@@ -159,7 +159,7 @@ describe("outbox sender", () => {
     const f = fake();
     expect((await sendPending(admin, f.send, 50, undefined, CAND, EMPL)).sent).toBe(5);
     const links = (to: string) => [...f.sent.filter((x) => x.to === to).flatMap((x) => [...x.html.matchAll(/href="([^"]+)"/g)].map((h) => h[1]))];
-    expect(new Set(links(`${c}@example.test`))).toEqual(new Set([`${CAND}/`]));
+    expect(new Set(links(`${c}@example.test`))).toEqual(new Set([`${CAND}/`, `${CAND}/account/settings`])); // a candidate notice also links to the notification settings (B75)
     expect(new Set(links(`${p}@example.test`))).toEqual(new Set([`${EMPL}/`]));
     expect(links(`${s}@example.test`)).toEqual([]);
     expect(links("pat2@example.test")).toEqual([]);
@@ -248,6 +248,23 @@ describe("job alert email", () => {
     expect(m.text).toContain(`${SITE}/api/alerts/unsubscribe?token=${t}&scope=all`);
     expect(m.headers).toEqual({ "List-Unsubscribe": `<${SITE}/api/alerts/unsubscribe?token=${t}&scope=all>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" });
     expect(await row(id)).toMatchObject({ status: "sent", attempts: 1 });
+  });
+  it("B78: the job's badge and pay scale come from the database; the subject has the count and the alert's name; the links open this alert", async () => {
+    const c = await F.cand(), [j1, j2] = await jobs(2);
+    await su.query("update job set badge = 'critical_skills_eligible' where id = $1", [j1]);
+    await su.query("update job set salary_low = null, salary_high = null, pay_grade = 'Grade III' where id = $1", [j2]);
+    const a = await alertFor(c, { county: "Cork", sector: "it" });
+    await alertRow(c, [[a, [j1!, j2!]]]);
+    const f = fake();
+    await sendPending(admin, f.send, 50, undefined, SITE);
+    const m = f.sent[0]!;
+    expect(m.subject).toBe("2 new jobs: it in Cork");
+    expect(m.html).toMatch(/Cook 1<\/a> <span[^>]*>Critical<\/span>/);
+    expect(m.html).not.toMatch(/Cook 2<\/a> <span/); // no badge, no pill (the Sponsor pill is held in job-alert-email.test.ts: a database sponsor badge needs a signed statement)
+    expect(m.text).toContain("Fake Employer, Cork, €40,000 to €50,000, Critical Skills eligible");
+    expect(m.text).toContain("Fake Employer, Cork, Public pay scale (Grade III)\n");
+    expect(m.text).toContain(`Edit this alert: ${SITE}/account/alerts?edit=${a}`);
+    expect(m.html).toContain(`href="${SITE}/jobs?sector=it&amp;county=Cork"`);
   });
   it("several alerts make one email with one block each; a notice of another template carries no headers", async () => {
     const c = await F.cand(), [j1, j2, j3] = await jobs(3);
@@ -407,7 +424,7 @@ describe("job alert email", () => {
       expect(String(body.htmlContent)).not.toMatch(/<script|<img/);
       expect(Object.keys(body.headers ?? {}).every((k) => /^List-Unsubscribe(-Post)?$/.test(k))).toBe(true); // nothing the sender refuses
     }
-    const alert = calls.find((x) => x.body.subject === "New jobs matching your job alerts")!;
+    const alert = calls.find((x) => /^\d+ new jobs?\b/.test(String(x.body.subject)))!;
     expect((alert.body.sender as { email: string }).email).toBe("no-reply@alerts.example.ie");
     expect(String(alert.body.htmlContent)).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
     expect(alert.body.headers).toMatchObject({ "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" });

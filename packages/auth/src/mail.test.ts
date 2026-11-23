@@ -1,6 +1,6 @@
 // The account emails (verify, reset, invite) and the shared layout: pure, no network, no database.
 import { describe, expect, it } from "vitest";
-import { esc, href, render } from "./email-layout";
+import { C, esc, href, pillHtml, render, SITE_NAME } from "./email-layout";
 import { accountEmail } from "./mail";
 
 const BASE = "https://www.example.ie";
@@ -60,6 +60,25 @@ describe("render (the layout)", () => {
     expect(m.html).toContain("prefers-color-scheme: dark");
     expect(m.html).not.toMatch(/<img|<script|src=/);
     expect(m.html).not.toContain("<a "); // no button: no link
+  });
+  it("uses the Mint Pill tokens: cream page, ink text, deep green pill button, Outfit headings and DM Sans body with system fallbacks (B75)", () => {
+    const m = render("s", { heading: "h", paragraphs: ["p"], footer: "f", button: { label: "Go", url: "https://a.example/x" } });
+    for (const hex of [C.cream, C.ink, C.green, C.sand]) expect(m.html).toContain(hex);
+    expect(m.html).toMatch(/<h1 [^>]*font-family:Outfit,[^>]*sans-serif/);
+    expect(m.html).toMatch(/<p [^>]*font-family:'DM Sans',[^>]*sans-serif/);
+    expect(m.html).toMatch(/class="btn" style="border-radius:999px;background:#0C4A35"/);
+    expect(m.html).not.toMatch(/@font-face|fonts\.googleapis|<link/); // no remote font request
+    expect(m.html.match(new RegExp(SITE_NAME, "g"))).toHaveLength(1); // the site name comes from the one constant
+    expect(pillHtml("Sponsor", C.sponsor)).toContain("background:#E7E8F5");
+    expect(pillHtml("<b>", C.sponsor)).toContain("&lt;b&gt;");
+  });
+  it("a footer link (settings) shows in the HTML and the text, escaped, and only an http(s) address is allowed", () => {
+    const m = render("s", { heading: "h", paragraphs: ["p"], footer: "f", footerLink: { label: "Notification <settings>", url: "https://a.example/account/settings?a=1&b=2" } });
+    expect(m.html).toContain('href="https://a.example/account/settings?a=1&amp;b=2"');
+    expect(m.html).toContain("Notification &lt;settings&gt;");
+    expect(m.text).toContain("Notification <settings>: https://a.example/account/settings?a=1&b=2");
+    expect(() => render("s", { heading: "h", paragraphs: [], footer: "f", footerLink: { label: "x", url: "javascript:alert(1)" } })).toThrow("not an http(s)");
+    expect(render("s", { heading: "h", paragraphs: [], footer: "f" }).html).not.toContain("<a ");
   });
   it("href takes only http(s) addresses", () => {
     for (const bad of ["javascript:alert(1)", "data:text/html,x", "//evil.example", "https://a.example/x y", ""]) expect(() => href(bad), bad).toThrow("not an http(s)");
