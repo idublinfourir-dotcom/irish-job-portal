@@ -101,9 +101,10 @@ export const readSignedIn = async (): Promise<boolean> => signedInCandidate(awai
  * frame without the line or the site origin (origin is for the JSON-LD): the frame must never be the reason a page (or the error page) fails; the page's own read shows the real error.
  */
 export async function readSiteFrame(): Promise<{ signedIn: boolean; standingLine: string | null; origin: string | null }> {
+  await headers(); // first: it marks every page in the frame as built per visit (it shows who is signed in), before any database work at build time
   const [signedIn, line] = await Promise.all([
     readSignedIn(),
-    getRules(getPool()).then((r) => standingLine(r.minimums.checkedOn), () => null),
+    Promise.resolve().then(() => getRules(getPool())).then((r) => standingLine(r.minimums.checkedOn), () => null), // a missing DATABASE_URL is a failed read, not a crash
   ]);
   return { signedIn, standingLine: line, origin: (() => { try { return siteOrigin(); } catch { return null; } })() };
 }
