@@ -2,7 +2,7 @@
 // county; the close POST needs the company's exact name typed back. The acting login always comes from the session. The database functions (migration 0031)
 // check the account owner under the company's lock, write the audit row and do the work; this file refuses bad requests early and maps the refusals.
 // Name, CRO number, status, verification and slug are never fields here (an unknown field is a 400), and app_portal cannot update organisation at all.
-import { getPool } from "@portal/db";
+import { COMPANY_QUERIES, FIRST_PERMIT_YEAR, getPool, summarisePermits } from "@portal/db";
 import { isObject, no, ok, only, portalLogin, readPost, withinLimit, type Refusal } from "./company";
 import { checkUrl, COUNTIES } from "./jobs";
 
@@ -62,14 +62,23 @@ async function call<T>(request: Request, check: (b: unknown) => T | null, sql: s
 export const profilePost = (r: Request) => call(r, checkProfile, "select private.company_edit($1, $2, $3, $4) r", (b) => [b.description, b.website, b.county]);
 export const closePost = (r: Request) => call(r, checkClose, "select private.company_close($1, $2) r", (b) => [b.confirmName]);
 
-// Any active member reads the company's own profile (the name and status too, read only).
+// Any active member reads the company's own profile (the name, status and the facts from the records too, read only). Labels are the public page's
+// (company page, public-pages.ts); croStatus is the register's own word; permitCount is the DETE permits since permitsSince, null when no DETE name is linked.
+export const COMPANY_READ = "select id, slug, kind, display_name, status, short_description, website, county, logo_url, logo_key is not null as has_logo, member_limit, claimed_at, " +
+  "claims_removed_at, permit_history, cro_number, (select c.status from cro_company c where c.cro_number = o.cro_number) as cro_status, " +
+  "(select coalesce(json_agg(x.name order by x.name), '[]') from (select name from organisation_name where organisation_id = o.id and kind = 'legal' order by name limit 20) x) as legal_names " +
+  "from organisation o where id = $1";
 export async function profileGet(request: Request): Promise<Response> {
   const login = await portalLogin(request);
   if (login instanceof Response) return login;
   if (!login.membership) return no(404, "NO_COMPANY");
-  const o = (await getPool().query(
-    "select id, display_name, status, short_description, website, county, logo_key is not null as has_logo, member_limit from organisation where id = $1",
-    [login.membership.organisationId])).rows[0];
-  return ok({ company: { organisationId: o.id, name: o.display_name, status: o.status, description: o.short_description, website: o.website,
-    county: o.county, hasLogo: o.has_logo, memberLimit: o.member_limit } });
+  const id = login.membership.organisationId;
+  const [org, permits] = await Promise.all([getPool().query(COMPANY_READ, [id]), getPool().query(COMPANY_QUERIES.permits, [id])]);
+  const o = org.rows[0];
+  const labels = [o.permit_history === "first_time" && "First-time sponsor", o.permit_history === "not_linked" && "Permit history not linked yet", o.claims_removed_at && "Sponsorship claims removed"].filter(Boolean);
+  const p = summarisePermits(permits.rows);
+  return ok({ company: { organisationId: o.id, slug: o.slug, kind: o.kind, name: o.display_name, status: o.status, description: o.short_description, descriptionMax: MAX_DESCRIPTION,
+    website: o.website, county: o.county, logoUrl: o.logo_url, hasLogo: o.has_logo, memberLimit: o.member_limit,
+    claimed: o.claimed_at !== null && (o.status === "verified" || o.status === "verified_restricted"), labels,
+    croNumber: o.cro_number, croStatus: o.cro_status, legalNames: o.legal_names, permitsSince: FIRST_PERMIT_YEAR, permitCount: p && p.byYear.reduce((n, y) => n + y.permits, 0) } });
 }

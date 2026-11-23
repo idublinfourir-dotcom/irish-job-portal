@@ -463,6 +463,13 @@
       "when": 1794300069000,
       "tag": "0069_audit_filters",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1794300074000,
+      "tag": "0074_portal_extras",
+      "breakpoints": true
     }
   ]
 }

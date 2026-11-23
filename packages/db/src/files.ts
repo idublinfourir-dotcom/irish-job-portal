@@ -210,7 +210,7 @@ export const caseDocGet = (r: Request, env: FilesEnv, caseId: string, docId: str
 });
 
 // ===== the company logo (P3: the account owner; PNG, JPEG or WebP, at most 1 MB) =====
-// The bucket is private like the rest; a public read path for the company page (a short link per view) comes with the page (step 16).
+// The bucket is private like the rest; the public pages read the logo through logoView below (migration 0074).
 export const MAX_LOGO = 1024 * 1024;
 const OWNER = "select 1 from membership where portal_user_id = $1 and status = 'active' and role = 'account_owner'";
 const companyRefused = (e: unknown) => {
@@ -231,7 +231,8 @@ export const logoPut = (r: Request, env: FilesEnv) => fileRoute(r, env, "upload"
   const store = fileStore();
   await store.put(key, c.bytes, MIME[c.kind]);
   let old: string | null;
-  try { old = (await db.query("select private.company_logo($1, $2) r", [userId, key])).rows[0].r.oldKey; } catch (e) {
+  // the public address the pages read (organisation.logo_url): this app's own logoView route
+  try { old = (await db.query("select private.company_logo($1, $2, $3) r", [userId, key, `${env.origin}/api/portal/company/logo/${key.slice(5)}`])).rows[0].r.oldKey; } catch (e) {
     await store.remove(key).catch(() => {});
     throw companyRefused(e);
   }
@@ -239,6 +240,29 @@ export const logoPut = (r: Request, env: FilesEnv) => fileRoute(r, env, "upload"
   if (old) await store.remove(old).catch(() => {});
   return { logo: { contentType: MIME[c.kind], sizeBytes: c.bytes.length } };
 }, MAX_LOGO + 16 * 1024);
+
+const LOGO_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp)$/;
+const LOGO_TYPE: Record<string, string> = { png: "image/png", jpg: "image/jpeg", webp: "image/webp" };
+export const LOGO_BY_KEY = "select 1 from organisation where logo_key = $1 and status not in ('rejected','closed','banned')";
+/** GET /api/portal/company/logo/<uuid>.<ext>, no login: the company's current logo (organisation.logo_key) for the public pages, once the malware scan has passed.
+ *  Any other name, an old logo, a rejected, closed or banned company, and a file not scanned yet are the same 404. The key changes with each upload, so the reply may be cached. */
+export async function logoView(file: string): Promise<Response> {
+  if (!LOGO_FILE.test(file)) return no(404, "NOT_FOUND");
+  const key = `logo/${file}`;
+  if (!(await getPool().query(LOGO_BY_KEY, [key])).rowCount) return no(404, "NOT_FOUND");
+  try {
+    const store = fileStore();
+    if (scanGate(await store.scanStatus(key)) !== "ok") return no(404, "NOT_FOUND");
+    const o = await store.get(key, MAX_LOGO);
+    if (!o) return no(404, "NOT_FOUND");
+    return new Response(o.bytes as Uint8Array<ArrayBuffer>, { status: 200, headers: {
+      "content-type": LOGO_TYPE[file.split(".")[1]!]!, "content-length": String(o.bytes.length), "x-content-type-options": "nosniff", "cache-control": "public, max-age=3600",
+      "content-security-policy": "default-src 'none'; sandbox", "cross-origin-resource-policy": "cross-origin", "referrer-policy": "no-referrer" } });
+  } catch (e) {
+    if (e instanceof FilesUnavailable) return no(503, "FILES_UNAVAILABLE");
+    throw e;
+  }
+}
 
 // ===== the client's written authority on an agency job (P8: optional, beside the tick; PDF, JPEG or PNG, the case documents' limits) =====
 // The member comes from the login (an active poster, recruiter or owner); the job must be this company's agency job that names a client.

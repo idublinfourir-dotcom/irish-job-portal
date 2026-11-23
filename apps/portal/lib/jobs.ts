@@ -139,10 +139,8 @@ export function checkRenew(b: unknown): { jobId: string; hireAnswer: Hire | null
   const e = (b as { exceptionConfirmed?: unknown } | null)?.exceptionConfirmed;
   return r && (e === undefined || typeof e === "boolean") ? { ...r, exceptionConfirmed: e === true } : null;
 }
-export function checkClose(b: unknown): { jobId: string; hireAnswer: Hire } | null {
-  const r = checkHire(b, ["jobId", "hireAnswer"]);
-  return r && r.hireAnswer ? { jobId: r.jobId, hireAnswer: r.hireAnswer } : null; // #49: closing always asks "Did you hire someone through us?"
-}
+/** The close body: the job and "Did you hire someone through us?" (#49). The answer is needed to close a job past draft; a draft close skips the question (B52), so the check cannot tell and the route decides. */
+export const checkClose = (b: unknown) => checkHire(b, ["jobId", "hireAnswer"]);
 
 // ===== the rules
 /**
@@ -447,17 +445,22 @@ export async function jobRenew(request: Request): Promise<Response> {
   });
 }
 
+// A draft was never shown, so it keeps no hire answer (B52); any other job needs one ($4 null refuses the update).
 const CLOSE =
-  "update job set status = 'closed', closed_at = now(), close_reason = 'closed', posted_by_membership_id = $3, hire_answer = $4, hire_answered_at = now(), " +
-  "hire_answered_by_membership_id = $3 where id = $1 and organisation_id = $2 and source in ('employer','agency') and status in ('draft','in_review','live','under_review') returning id";
-/** POST /api/portal/jobs/close: closes the job with the "Did you hire someone through us?" answer (#49). A closed job never reopens. */
+  "update job set status = 'closed', closed_at = now(), close_reason = 'closed', posted_by_membership_id = $3::bigint, " +
+  "hire_answer = case when status = 'draft' then null else $4::text end, hire_answered_at = case when status = 'draft' then null else now() end, " +
+  "hire_answered_by_membership_id = case when status = 'draft' then null else $3::bigint end where id = $1 and organisation_id = $2 and source in ('employer','agency') " +
+  "and status in ('draft','in_review','live','under_review') and (status = 'draft' or $4::text is not null) returning id";
+/** POST /api/portal/jobs/close: closes the job with the "Did you hire someone through us?" answer (#49); a draft needs none. A closed job never reopens. */
 export async function jobClose(request: Request): Promise<Response> {
   const w = await writer(request, checkClose);
   if (w instanceof Response) return w;
   const { who, body } = w;
   return inTx(async (c) => {
     const r = (await c.query(CLOSE, [body.jobId, who.organisationId, who.membershipId, body.hireAnswer])).rows[0];
-    return r ? ok({ jobId: r.id, status: "closed" }) : no(404, "JOB_NOT_FOUND");
+    if (r) return ok({ jobId: r.id, status: "closed" });
+    // no answer and no row: the answer was needed (a bad request, the same for any job, so it says nothing about whose job it is)
+    return body.hireAnswer === null ? no(400, "BAD_REQUEST") : no(404, "JOB_NOT_FOUND");
   });
 }
 
