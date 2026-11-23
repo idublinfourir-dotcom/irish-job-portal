@@ -5,7 +5,7 @@
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { main as remindersMain, type Dated } from "../src/scheduled-checks-cli";
-import { CONTENT_STALE, STALE_DAYS } from "../src/content-admin";
+import { CONTENT_STALE, STALE_DAYS, STALE_KINDS } from "../src/content-admin";
 import { OVERDUE, OVERDUE_APPROVALS, SCHEDULED_LIST, workingDayBefore } from "../src/staff-tools";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { loadSpec, replyProblems } from "./openapi";
@@ -389,7 +389,8 @@ describe("Q14: the stale guides", () => {
     for (const who of ["only_rules_data_editor", "only_administrator"]) await ok(call("/api/content", who, undefined, { query: "?stale=1" }));
     for (const who of ["only_account_reviewer", "only_fetched_job_reviewer", "only_trust_and_safety", "only_services_case_handler", "norole"])
       await no(call("/api/content", who, undefined, { query: "?stale=1" }), 403, "not_content_staff");
-    for (const q of ["?stale=0", "?stale=1&kind=guide", "?stale=1&stale=1", "?stale=yes"]) await no(call("/api/content", "only_content_editor", undefined, { query: q }), 400, "bad_query");
+    for (const q of ["?stale=0", "?stale=1&stale=1", "?stale=yes", "?stale=1&status=draft", "?stale=1&id=1"]) await no(call("/api/content", "only_content_editor", undefined, { query: q }), 400, "bad_query");
+    await no(call("/api/content", "only_content_editor", undefined, { query: "?stale=1&kind=update" }), 400, "bad_kind"); // updates have no checked-on rhythm
   });
 });
 
@@ -432,7 +433,7 @@ describe("performance", () => {
     try {
       for (const [name, text, values, budget] of [["scheduled list", SCHEDULED_LIST, [["rules_data_editor"]], BUDGET.pages.scheduled], ["overdue", OVERDUE, [workingDayBefore(new Date()).toISOString()], BUDGET.pages.overdue],
         ["overdue approvals", OVERDUE_APPROVALS, [workingDayBefore(new Date()).toISOString()], BUDGET.pages.overdueApprovals],
-        ["stale guides", CONTENT_STALE, [STALE_DAYS], BUDGET.pages.stale]] as const) {
+        ["stale guides, help and occupation pages", CONTENT_STALE, [STALE_DAYS, STALE_KINDS], BUDGET.pages.stale]] as const) {
         const cost = await measurePages(client, [{ text, values: [...values] }]);
         measured[`${name} pages`] = cost[0]!.pages;
         assertPageBudget(name, cost, budget);

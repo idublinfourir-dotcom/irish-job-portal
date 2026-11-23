@@ -1,8 +1,8 @@
-// The content editor (#234 D3): GET lists the pages of every state (?kind=&status=&after=), shows one with its body (?id=) or lists the stale guides (?stale=1, Q14); POST creates or edits a draft and
+// The content editor (#234 D3): GET lists the pages of every state (?kind=&status=&after=), shows one with its body (?id=), lists the stale guides, help and occupation pages (?stale=1, optionally &kind=guide, help or occupation; Q14, B74) or shows one page as its public page would (?id=&preview=1, B74); POST creates or edits a draft and
 // publishes or withdraws a page. Who may do what is decided in the database calls: a content editor writes drafts, publishes help and updates and withdraws any
 // page; a rules-data editor publishes guides and occupation texts. The database wants a source and a checked-on date to publish anything but help.
 import { staffSettings } from "@portal/auth";
-import { createContentDraft, editContentDraft, getContentPage, getPool, listContentPages, listStaleGuides, publishContent, withdrawContent } from "@portal/db";
+import { createContentDraft, editContentDraft, getContentPage, getPool, listContentPages, listStaleContent, previewContentPage, publishContent, withdrawContent } from "@portal/db";
 import { BadRequest, checkLength, checkOrigin, id19, parseBody, readQuery, refuse, type Field, type Spec } from "../../../lib/admin-api";
 import { requireStaff } from "../../../lib/staff";
 
@@ -24,10 +24,15 @@ const FIELDS: Record<string, Field> = {
 export async function GET(request: Request) {
   try {
     const staff = await requireStaff(request.headers);
-    const q = readQuery(request.url, ["id", "kind", "status", "after", "stale"]);
+    const q = readQuery(request.url, ["id", "kind", "status", "after", "stale", "preview"]);
     if (q.stale !== undefined) {
-      if (q.stale !== "1" || Object.keys(q).length > 1) throw new BadRequest("bad_query");
-      return Response.json(await listStaleGuides(getPool(), staff));
+      if (q.stale !== "1" || Object.keys(q).some((k) => k !== "stale" && k !== "kind")) throw new BadRequest("bad_query");
+      return Response.json(await listStaleContent(getPool(), staff, q.kind));
+    }
+    if (q.preview !== undefined) {
+      if (q.preview !== "1" || q.id === undefined || Object.keys(q).length > 2) throw new BadRequest("bad_query");
+      const found = await previewContentPage(getPool(), staff, q.id);
+      return found ? Response.json({ item: found }, { headers: { "cache-control": "no-store" } }) : Response.json({ error: "not_found" }, { status: 404 });
     }
     if (q.id !== undefined) {
       const found = await getContentPage(getPool(), staff, q.id);

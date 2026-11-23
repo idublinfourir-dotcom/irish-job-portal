@@ -30,6 +30,17 @@ export async function staffRoles(db: Q, staff: string): Promise<string[]> {
   if (!r?.active) throw new QueueRefused("not_active_staff");
   return r.roles;
 }
+// B57: the signed-in member's own name and roles, for the sidebar chip and the links its roles may open. One statement; a disabled or unknown login has no row that counts.
+export const STAFF_ME =
+  "select u.id, u.name, u.status = 'active' as active, coalesce(array_agg(r.role order by r.role) filter (where r.role is not null), '{}') as roles " +
+  "from staff_user u left join staff_role r on r.staff_user_id = u.id where u.id = $1 group by u.id";
+/** Any active staff login, whatever its roles: its id, name and roles. Throws not_active_staff for an unknown, disabled or malformed id. */
+export async function staffMe(db: Q, staff: string): Promise<{ id: string; name: string; roles: string[] }> {
+  if (!validStaffId(staff)) throw new QueueRefused("not_active_staff");
+  const r = (await db.query<{ id: string; name: string; active: boolean; roles: string[] }>(STAFF_ME, [staff])).rows[0];
+  if (!r?.active) throw new QueueRefused("not_active_staff");
+  return { id: r.id, name: r.name, roles: r.roles };
+}
 /** Throws `why` unless the acting member holds one of `any`. */
 export async function requireRole(db: Q, staff: string, any: readonly string[], why: string): Promise<string[]> {
   const roles = await staffRoles(db, staff);

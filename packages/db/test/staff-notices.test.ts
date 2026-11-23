@@ -205,15 +205,15 @@ describe("Q11: the report alert, the member's counts and the daily digest", () =
   it("each member sees the counts their roles cover; null for the rest", async () => {
     const counts = async (who: string) => { const r = await call("/api/staff/me/counts", who); expect([r.status, replyProblems(spec, "GET", "/api/staff/me/counts", r.status, r.json)], who).toEqual([200, []]); return r.json; };
     const ts = await counts("only_trust_and_safety");
-    expect(ts).toEqual({ queues: {}, reportsOpen: 4, reportsNew: 3, appeals: 0, contact: null, approvals: null, casesUnassigned: null, casesMine: null }); // the 40-day-old report is still open
-    expect(await counts("only_fetched_job_reviewer")).toEqual({ queues: { fetched_job: 1, scheduled_check: 1 }, reportsOpen: null, reportsNew: null, appeals: null, contact: null, approvals: null, casesUnassigned: null, casesMine: null });
+    expect(ts).toEqual({ queues: {}, oldestSeconds: {}, reportsOpen: 4, reportsNew: 3, reportsJobHidden: 0, appeals: 0, contact: null, approvals: null, casesUnassigned: null, casesMine: null, casesOpen: null, mergeSuggestions: null }); // the 40-day-old report is still open
+    expect(await counts("only_fetched_job_reviewer")).toMatchObject({ queues: { fetched_job: 1, scheduled_check: 1 }, reportsOpen: null, reportsNew: null, reportsJobHidden: null, appeals: null, contact: null, approvals: null, casesUnassigned: null, casesMine: null, casesOpen: null, mergeSuggestions: null });
     expect((await counts("only_rules_data_editor")).queues).toEqual({ scheduled_check: 2 }); // the DETE notice check and the 6-monthly review
     const pending = (await ok(call("/api/staff", "ad2", { action: "propose_role", staffId: h.staff.norole, role: "content_editor" }))).requestId;
     expect(await counts("only_administrator")).toMatchObject({ reportsOpen: null, appeals: 0, contact: 0, approvals: 1 });
     expect((await counts("ad2")).approvals).toBe(0); // their own proposal is not waiting for them
-    expect(await counts("only_content_editor")).toEqual({ queues: {}, reportsOpen: null, reportsNew: null, appeals: null, contact: 0, approvals: null, casesUnassigned: null, casesMine: null });
+    expect(await counts("only_content_editor")).toEqual({ queues: {}, oldestSeconds: {}, reportsOpen: null, reportsNew: null, reportsJobHidden: null, appeals: null, contact: 0, approvals: null, casesUnassigned: null, casesMine: null, casesOpen: null, mergeSuggestions: null });
     expect(await counts("only_services_case_handler")).toMatchObject({ contact: 0, casesUnassigned: 0, casesMine: 0 }); // SV-B2: no services case in this file
-    expect(await counts("norole")).toEqual({ queues: {}, reportsOpen: null, reportsNew: null, appeals: null, contact: null, approvals: null, casesUnassigned: null, casesMine: null });
+    expect(await counts("norole")).toEqual({ queues: {}, oldestSeconds: {}, reportsOpen: null, reportsNew: null, reportsJobHidden: null, appeals: null, contact: null, approvals: null, casesUnassigned: null, casesMine: null, casesOpen: null, mergeSuggestions: null });
     await ok(call("/api/staff", "ad2", { action: "refuse_role", requestId: pending }));
   });
   it("the daily digest writes one row per active member with work waiting, only numbers, once a day; the outbox sends it with the alert", async () => {
