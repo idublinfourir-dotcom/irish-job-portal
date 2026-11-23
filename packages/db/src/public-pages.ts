@@ -5,7 +5,8 @@ import type pg from "pg";
 import { checkEligibility, registrationFor, standingLine, type Registration, type RulesSnapshot } from "@portal/rules";
 import { getRules } from "./rules-data";
 import { getContent, validSlug, type ContentPage } from "./content";
-import { BadSearchInput, card, COUNT_CAP, cursorOf, decodeCursor, KEYS, CAST, LIST, LIVE, PAGE_SIZE, pageSize, SOURCE, type JobCard, type ListRow, type Sort } from "./search";
+import { PERMITS, summarisePermits, type Permits } from "./dete";
+import { BadSearchInput, CARD_JOINS, COUNT_CAP, cursorOf, decodeCursor, employerLabels, KEYS, CAST, LIST, listCards, LIVE, PAGE_SIZE, pageSize, type CompanyLabel, type JobCard, type ListRow, type Sort } from "./search";
 
 type Db = Pick<pg.Pool, "query">;
 
@@ -22,12 +23,14 @@ export function scopedQuery(scope: JobsScope, value: string, after?: string, siz
   const { where, sort } = SCOPES[scope];
   const keys = KEYS[sort].map((k) => `job.${k.col}`);
   const order = ["(not job.quota_full)", ...keys, "job.id"].map((c) => `${c} desc`).join(", ");
-  const tail = `order by ${order} limit ${size + 1}`;
-  if (after === undefined) return { text: `select ${LIST} from job ${SOURCE} where ${LIVE} and ${where} ${tail}`, values: [value] };
+  // the walk takes ids only and the card's joins run on the page's rows (see listQuery)
+  const page = (cond: string) => `with page as materialized (select job.id from job where ${LIVE} and ${where}${cond} order by ${order} limit ${size + 1}) ` +
+    `select ${LIST} from page join job on job.id = page.id ${CARD_JOINS} order by ${order}`;
+  if (after === undefined) return { text: page(""), values: [value] };
   const c = decodeCursor(sort, after);
   const row = ["$2::boolean", ...KEYS[sort].map((k, i) => `$${i + 3}::${CAST[k.kind]}`), `$${keys.length + 3}::bigint`].join(", ");
   return {
-    text: `select ${LIST} from job ${SOURCE} where ${LIVE} and ${where} and ((not job.quota_full), ${keys.join(", ")}, job.id) < (${row}) ${tail}`,
+    text: page(` and ((not job.quota_full), ${keys.join(", ")}, job.id) < (${row})`),
     values: [value, !c.quotaFull, ...c.keys, c.id],
   };
 }
@@ -42,7 +45,7 @@ export async function scopedJobs(db: Db, scope: JobsScope, value: string, after?
   const last = shown.at(-1);
   const n = count?.rows[0]!.n ?? 0;
   return {
-    jobs: shown.map(card),
+    jobs: await listCards(db, shown),
     next: rows.length > size && last ? cursorOf(SCOPES[scope].sort, last) : null,
     count: count ? { n: Math.min(n, COUNT_CAP), more: n > COUNT_CAP } : null,
   };
@@ -54,26 +57,13 @@ const ORG =
   "o.claims_removed_at, (select m.slug from organisation m where m.id = o.merged_into_id) as merged_slug, o.merged_into_id is not null as merged " +
   "from organisation o where o.slug = $1";
 const NAMES = "select name, kind from organisation_name where organisation_id = $1::bigint order by (kind = 'legal') desc, name limit 200";
-// Linked DETE rows per year and month, every year. A yearly total has no month. No rows at all means "not linked".
-const PERMITS =
-  "select d.year::int as year, d.month::int as month, sum(d.permits)::int as permits from organisation_name n join dete_permit_count d on d.organisation_name_id = n.id " +
-  "where n.organisation_id = $1::bigint group by d.year, d.month";
 export const COMPANY_QUERIES = { org: ORG, names: NAMES, permits: PERMITS };
-export const FIRST_PERMIT_YEAR = 2019; // the DETE files the site shows start here (feature plan 3.3)
 const HIDDEN_STATUSES = new Set(["rejected", "closed"]);
 
 type OrgRow = {
   id: string; slug: string; display_name: string; website: string | null; logo_url: string | null; short_description: string | null; county: string | null;
   kind: string; status: string; permit_history: string; claimed_at: Date | null; claims_removed_at: Date | null; merged_slug: string | null; merged: boolean;
 };
-export type Permits = {
-  byYear: { year: number; permits: number }[];
-  peakYear: number | null;
-  /** The last full year against the year before it. null when neither had permits. */
-  trend: "up" | "down" | "flat" | null;
-  latestMonth: { year: number; month: number; permits: number } | null;
-};
-export type CompanyLabel = "First-time sponsor" | "Permit history not linked yet" | "Sponsorship claims removed";
 export type CompanyPage = {
   id: string; slug: string; name: string; kind: string; website: string | null; logoUrl: string | null; shortDescription: string | null; county: string | null;
   /** A verified account (the employer has claimed the page). */
@@ -86,26 +76,6 @@ export type CompanyPage = {
 };
 export type CompanyResult = { merged: string } | CompanyPage;
 
-/** Pure: the permit rows into the figures a page shows. A year with a yearly total uses it; otherwise its months are added. */
-export function summarisePermits(rows: { year: number; month: number | null; permits: number }[], now = new Date()): Permits | null {
-  if (rows.length === 0) return null;
-  const yearly = new Map<number, number>();
-  const monthly = new Map<number, number>();
-  for (const r of rows) if (r.year >= FIRST_PERMIT_YEAR) (r.month === null ? yearly : monthly).set(r.year, ((r.month === null ? yearly : monthly).get(r.year) ?? 0) + r.permits);
-  const total = (y: number) => yearly.get(y) ?? monthly.get(y) ?? 0;
-  const byYear = [...new Set([...yearly.keys(), ...monthly.keys()])].sort((a, b) => a - b).map((year) => ({ year, permits: total(year) })).filter((y) => y.permits > 0);
-  const peak = byYear.reduce<{ year: number; permits: number } | null>((best, y) => (best === null || y.permits >= best.permits ? y : best), null);
-  const last = now.getUTCFullYear() - 1;
-  const [a, b] = [total(last), total(last - 1)];
-  const months = rows.filter((r) => r.month !== null && r.year >= FIRST_PERMIT_YEAR && r.permits > 0).sort((x, y) => y.year - x.year || y.month! - x.month!);
-  const m = months[0];
-  return {
-    byYear, peakYear: peak?.year ?? null,
-    trend: a === 0 && b === 0 ? null : a > b ? "up" : a < b ? "down" : "flat",
-    latestMonth: m ? { year: m.year, month: m.month!, permits: m.permits } : null,
-  };
-}
-
 /** The page of one company by slug. null: unknown, not a slug, or a company that was rejected or closed. `{ merged }` is the slug the page moved to. */
 export async function getCompanyPage(db: Db, slug: string, opts: { after?: string; now?: Date; limit?: number } = {}): Promise<CompanyResult | null> {
   if (!validSlug(slug)) return null;
@@ -117,14 +87,10 @@ export async function getCompanyPage(db: Db, slug: string, opts: { after?: strin
     db.query<{ year: number; month: number | null; permits: number }>(PERMITS, [o.id]),
     scopedJobs(db, "company", o.id, opts.after, opts.limit),
   ]);
-  const labels: CompanyLabel[] = [];
-  if (o.permit_history === "first_time") labels.push("First-time sponsor");
-  if (o.permit_history === "not_linked") labels.push("Permit history not linked yet");
-  if (o.claims_removed_at) labels.push("Sponsorship claims removed");
   return {
     id: o.id, slug: o.slug, name: o.display_name, kind: o.kind, website: o.website, logoUrl: o.logo_url, shortDescription: o.short_description, county: o.county,
     claimed: o.claimed_at !== null && (o.status === "verified" || o.status === "verified_restricted"),
-    labels, names: names.rows, permits: summarisePermits(permits.rows, opts.now), jobs,
+    labels: employerLabels(o.permit_history, o.claims_removed_at), names: names.rows, permits: summarisePermits(permits.rows, opts.now), jobs,
   };
 }
 
@@ -140,6 +106,8 @@ export type OccupationPage = {
   /** What the checker applies to a listed role; null for an ineligible one. */
   minimums: { withDegree: number; recentGraduate: number; graduateMonths: number; withoutDegreeOrNotListed: number | null; minContractMonths: number; basedOnWeekHours: number } | null;
   jobs: ScopedJobs;
+  /** The General permit quota of the code (#85, Q39): "full" when the code is in the minimums' generalQuotaFullCodes, else "none". No used count is kept. */
+  quota: "none" | "full";
   /** The optional published text block of the content side (kind occupation, slug = the code). */
   text: ContentPage | null;
   standingLine: string;
@@ -162,7 +130,7 @@ export async function getOccupationPage(db: Db, code: string, opts: { after?: st
     minimums: listed
       ? { withDegree: m.criticalSkills, recentGraduate: m.graduate, graduateMonths: m.graduateMonths, withoutDegreeOrNotListed: m.nonListRoute ? m.nonList : null, minContractMonths: m.minContractMonths, basedOnWeekHours: m.standardWeekHours }
       : null,
-    jobs, text, standingLine: standingLine(m.checkedOn), rulesCheckedOn: m.checkedOn, registration: registrationFor(code),
+    jobs, quota: m.generalQuotaFullCodes?.includes(code) ? "full" : "none", text, standingLine: standingLine(m.checkedOn), rulesCheckedOn: m.checkedOn, registration: registrationFor(code),
   };
 }
 

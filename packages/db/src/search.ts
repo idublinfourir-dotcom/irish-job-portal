@@ -3,9 +3,11 @@
 // candidate role cannot read), and the list pages on the sort key plus id, never OFFSET. No advert text is read for a list.
 import { createHash } from "node:crypto";
 import type pg from "pg";
-import { payScaleOf, registrationFor, RULES_CHECKED_ON as RULES_DATE, SOC2010_CODES, type Registration, type Sector } from "@portal/rules";
+import {
+  checkSalary, CONDITIONS, payScaleOf, registrationFor, RULES_CHECKED_ON as RULES_DATE, SOC2010_CODES, standingLine, type Minimums, type Registration, type RulesSnapshot, type Sector,
+} from "@portal/rules";
 import { getRules } from "./rules-data";
-import { permitsLast5Years } from "./dete";
+import { PERMITS, sponsoredOf, summarisePermits, type Permits } from "./dete";
 
 type Db = Pick<pg.Pool, "query">;
 
@@ -30,6 +32,7 @@ export const COUNTIES = [
 export const MAX_SALARY = 1_000_000; // whole euros a year, the posting check's ceiling
 export const MAX_Q = 200; // characters of keyword text
 export const POSTED_WITHIN = [1, 3, 7, 30] as const;
+export const BADGES = ["sponsor_confirmed", "critical_skills_eligible"] as const; // the two values job.badge holds (job_badge_check); both filter a search and an alert (B9)
 
 export type JobFilters = { occupationCode: string | null; sector: string | null; county: string | null; salaryMin: number | null; badge: string | null };
 /** The filters an alert and a search share, one check for both. Absent or null means "any"; null back means refuse. */
@@ -40,7 +43,7 @@ export function checkJobFilters(b: Record<string, unknown>, occupations: Readonl
   if (!any(sector) && !(typeof sector === "string" && (ALERT_SECTORS as readonly string[]).includes(sector))) return null;
   if (!any(county) && !(typeof county === "string" && (COUNTIES as readonly string[]).includes(county))) return null;
   if (!any(salaryMin) && !(Number.isInteger(salaryMin) && (salaryMin as number) >= 0 && (salaryMin as number) <= MAX_SALARY)) return null;
-  if (!any(badge) && badge !== "sponsor_confirmed") return null;
+  if (!any(badge) && !(BADGES as readonly unknown[]).includes(badge)) return null;
   return { occupationCode: (occ as string) ?? null, sector: (sector as string) ?? null, county: (county as string) ?? null, salaryMin: (salaryMin as number) ?? null, badge: (badge as string) ?? null };
 }
 
@@ -189,8 +192,12 @@ export function decodeCursor(sort: Sort, token: unknown, f = NO_FILTERS): Cursor
 // What a card shows, plus the key texts the cursor needs. posted_text is the time with its microseconds.
 export const LIST =
   "job.id, job.title, job.employer_name, job.county, job.salary_low, job.salary_high, job.pay_grade, job.pass_route, job.badge, job.quota_full, " +
-  "job.posted_at, job.posted_at::text as posted_text, job.sponsor_sort, job.salary_sort, s.last_ok_at";
+  "job.posted_at, job.posted_at::text as posted_text, job.sponsor_sort, job.salary_sort, s.last_ok_at, " +
+  "job.contract_months, job.permit_history, job.source, emp.slug as employer_slug, emp.logo_url as employer_logo_url";
 export const SOURCE = "left join job_source s on s.id = job.job_source_id"; // "last checked" is the source's last good fetch
+// What a card's columns need: SOURCE and the employer's page slug and logo. Every query that uses it joins on a page of at most 21 ids, and `limit 1` keeps
+// the employer a one-row index lookup per card (a plain join let the planner read organisation whole, 100+ pages, for a rare occupation code).
+export const CARD_JOINS = `${SOURCE} left join lateral (select o.slug, o.logo_url from organisation o where o.id = job.organisation_id limit 1) emp on true`;
 export const LIVE = "job.status = 'live' and job.closes_at > now()"; // the one visibility rule; 'infinity' passes
 
 type Query = { text: string; values: unknown[] };
@@ -216,7 +223,7 @@ export function listQuery(sort: Sort, cursor?: Cursor, dir: "after" | "before" =
         `order by (not quota_full) desc, ${keys.map((k) => `${k} desc`).join(", ")}, id desc limit ${COUNT_CAP + 1}) ` +
         `select ${LIST}, (select count(*) from hits)::int as capped ` +
         `from (select id, r, ${page.join(", ")} from hits order by r desc, ${page.map((k) => `${k} desc`).join(", ")}, id desc limit ${size + 1}) page ` +
-        `join job on job.id = page.id ${SOURCE} order by page.r desc, ${page.map((k) => `page.${k} desc`).join(", ")}, page.id desc`,
+        `join job on job.id = page.id ${CARD_JOINS} order by page.r desc, ${page.map((k) => `page.${k} desc`).join(", ")}, page.id desc`,
       values,
     };
   }
@@ -226,10 +233,9 @@ export function listQuery(sort: Sort, cursor?: Cursor, dir: "after" | "before" =
   const { with: kw, where } = filterSql(filters, values);
   const order = `order by ${desc(dir === "after" ? "desc" : "asc")}`;
   const walk = `where ${LIVE}${where} and ((not job.quota_full), ${keys.map((k) => `job.${k}`).join(", ")}, job.id) ${op} (${row}) ${order} limit ${size + 1}`;
-  // With a keyword the walk takes only ids, so it stays in the index and does not read every row it skips (a rare word skips most rows).
-  const text = kw
-    ? `with ${kw}, page as materialized (select job.id from job ${walk}) select ${LIST} from page join job on job.id = page.id ${SOURCE} ${order}`
-    : `select ${LIST} from job ${SOURCE} ${walk}`;
+  // The walk takes only ids, so it stays in the index and does not read every row it skips (a rare word skips most rows), and the joins of the card
+  // run on the page's 21 rows only (a join beside the walk let the planner sort 450 rows and read organisation row by row).
+  const text = `with ${kw && `${kw}, `}page as materialized (select job.id from job ${walk}) select ${LIST} from page join job on job.id = page.id ${CARD_JOINS} ${order}`;
   return { text, values };
 }
 
@@ -237,6 +243,7 @@ export type ListRow = {
   id: string; title: string; employer_name: string; county: string | null; salary_low: number | null; salary_high: number | null;
   pay_grade: string | null; pass_route: string; badge: string | null; quota_full: boolean; posted_at: Date; posted_text: string;
   sponsor_sort: number; salary_sort: number; last_ok_at: Date | null; capped?: number;
+  contract_months: number | null; permit_history: string; source: string; employer_slug: string; employer_logo_url: string | null;
 };
 
 export type JobCard = {
@@ -246,6 +253,16 @@ export type JobCard = {
   sponsorPermits: number | null;
   /** The "last checked" date: when the job's source last fetched without error. */
   lastCheckedAt: Date | null;
+  contractMonths: number | null;
+  /** has_history, first_time or not_linked: what the employer's DETE history is. */
+  permitHistory: string;
+  /** fetched, employer, agency or admin_manual. */
+  source: string;
+  /** The employer's page and logo; a card with no logo shows the initials of employerName. */
+  employerSlug: string;
+  employerLogoUrl: string | null;
+  /** "Pay scale for this grade: EUR X to Y" when payGrade is a grade of the pay scales in force (#269), else null. */
+  payScaleLine: string | null;
 };
 export type JobList = {
   jobs: JobCard[];
@@ -267,11 +284,24 @@ export function salaryLine(low: number | null, high: number | null, payGrade: st
   return payGrade || null;
 }
 
-export const card = (r: ListRow): JobCard => ({
+/** The pay scale line of a grade in the scales in force (#269), or null. Placeholder wording. */
+export const payScaleLine = (rules: RulesSnapshot, grade: string | null): string | null => {
+  const g = payScaleOf(rules, grade);
+  return g ? `Pay scale for this grade: EUR ${NUM.format(g.firstEur)} to ${NUM.format(g.lastEur)}` : null;
+};
+
+export const card = (r: ListRow, rules: RulesSnapshot | null = null): JobCard => ({
   id: r.id, title: r.title, employerName: r.employer_name, county: r.county, salaryLow: r.salary_low, salaryHigh: r.salary_high,
   salaryLine: salaryLine(r.salary_low, r.salary_high, r.pay_grade), payGrade: r.pay_grade, passRoute: r.pass_route, badge: r.badge,
   quotaFull: r.quota_full, postedAt: r.posted_at, sponsorPermits: r.sponsor_sort > 0 ? r.sponsor_sort : null, lastCheckedAt: r.last_ok_at,
+  contractMonths: r.contract_months, permitHistory: r.permit_history, source: r.source, employerSlug: r.employer_slug, employerLogoUrl: r.employer_logo_url,
+  payScaleLine: rules ? payScaleLine(rules, r.pay_grade) : null,
 });
+/** The cards of some rows. The rules are read only when a card has a pay grade (getRules keeps them 5 minutes), so a page of plain jobs costs no statement. */
+export async function listCards(db: Db, rows: ListRow[]): Promise<JobCard[]> {
+  const rules = rows.some((r) => r.pay_grade !== null) ? await getRules(db) : null;
+  return rows.map((r) => card(r, rules));
+}
 
 export function cursorOf(sort: Sort, r: ListRow, f = NO_FILTERS): string {
   const value = { sponsor_sort: String(r.sponsor_sort), salary_sort: String(r.salary_sort), posted_at: r.posted_text } as Record<string, string>;
@@ -298,29 +328,42 @@ export async function listJobs(db: Db, opts: { sort?: Sort; after?: string; befo
   if (dir === "before") rows.reverse(); // read backwards, shown forwards
   const first = rows[0];
   const last = rows.at(-1);
+  const jobs = await listCards(db, rows);
   const beyond = more && first && last ? cursorOf(sort, dir === "before" ? first : last, f) : null;
   return {
-    jobs: rows.map(card),
+    jobs,
     next: dir === "before" ? (last ? cursorOf(sort, last, f) : null) : beyond,
     previous: dir === "before" ? beyond : token !== undefined && first ? cursorOf(sort, first, f) : null,
     count: token === undefined ? { n: Math.min(all[0]?.capped ?? 0, COUNT_CAP), more: (all[0]?.capped ?? 0) > COUNT_CAP } : null,
   };
 }
 
-/** Each sector of ALERT_SECTORS with its live jobs (the LIVE rule), zero included, for a sector-first front page. */
-export async function sectorCounts(db: Db): Promise<{ sector: Sector; jobs: number }[]> {
-  const r = await db.query<{ sector: string; n: number }>(SECTOR_COUNTS);
+/**
+ * The statement behind sectorCounts: the live jobs of the search, grouped by sector. The sector filter itself is left out (a filter panel shows what
+ * each other sector would give); every other filter counts, the keyword included, by the list's own filter SQL.
+ */
+export function sectorCountsQuery(filters: SearchFilters = {}): Query {
+  const rest = checkSearch(filters);
+  delete rest.sector;
+  const values: unknown[] = [];
+  const { with: kw, where } = filterSql(rest, values);
+  return { text: `${kw && `with ${kw} `}select job.sector, count(*)::int as n from job where ${LIVE}${where} group by job.sector`, values };
+}
+/** Each sector of ALERT_SECTORS with its live jobs (the LIVE rule) for the search `filters` (all live jobs when none), zero included. */
+export async function sectorCounts(db: Db, filters: SearchFilters = {}): Promise<{ sector: Sector; jobs: number }[]> {
+  const q = sectorCountsQuery(filters);
+  const r = await db.query<{ sector: string; n: number }>(q.text, q.values);
   const n = new Map(r.rows.map((x) => [x.sector, x.n]));
   return ALERT_SECTORS.map((sector) => ({ sector, jobs: n.get(sector) ?? 0 }));
 }
-export const SECTOR_COUNTS = `select job.sector, count(*)::int as n from job where ${LIVE} group by job.sector`;
+export const SECTOR_COUNTS = sectorCountsQuery().text;
 
 // ===== one job =====
 const JOB =
   "select job.id, job.organisation_id, job.source, job.title, job.employer_name, job.county, job.sector, job.occupation_code, job.contract_type, " +
   "job.contract_months, job.permit_type, job.badge, job.salary_low, job.salary_high, job.health_insurance_eur, job.pay_grade, job.pass_route, " +
   "job.posted_at, job.closes_at, job.permit_history, job.application_route, job.own_page_url, job.permit_employer_kind, job.permit_employer_name, " +
-  "t.advert_text, s.last_ok_at, o.slug, o.display_name, o.website, o.logo_url, o.short_description, o.kind " +
+  "job.quota_full, t.advert_text, s.last_ok_at, o.slug, o.display_name, o.website, o.logo_url, o.short_description, o.kind, o.claims_removed_at " +
   `from job join organisation o on o.id = job.organisation_id left join job_text t on t.job_id = job.id ${SOURCE} ` +
   `where job.id = $1::bigint and ${LIVE}`;
 
@@ -331,6 +374,7 @@ type JobRow = {
   posted_at: Date; closes_at: Date | number; permit_history: string; application_route: string; own_page_url: string | null;
   permit_employer_kind: string | null; permit_employer_name: string | null; advert_text: string | null; last_ok_at: Date | null;
   slug: string; display_name: string; website: string | null; logo_url: string | null; short_description: string | null; kind: string;
+  quota_full: boolean; claims_removed_at: Date | null;
 };
 
 export type JobPage = {
@@ -353,7 +397,37 @@ export type JobPage = {
   registration: Registration | null;
   /** When payGrade is a grade code of the pay scales in force (#269): its scale and the line "Pay scale for this grade: EUR X to Y" (placeholder wording). */
   payScale: { code: string; title: string; firstEur: number; lastEur: number; line: string } | null;
+  /** The job's quota is full (job.quota_full, #85): it sorts last in lists and the page shows a notice. */
+  quotaFull: boolean;
+  /** The standing line of #94 with the date in force ("Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on [date]."). */
+  standingLine: string;
+  /** The minimums in force, so the page can say what a degree changes without a checker call per click (B6). nonList is null when that route is off; the General figures are null until a version has them. */
+  minimums: JobMinimums;
+  /** DETE permits of the employer for every year since 2019, with the peak year and the trend (the company page's block), null when no DETE name is linked. */
+  permits: Permits | null;
+  /** The employer's labels, as on the company page: first-time sponsor, permit history not linked yet, sponsorship claims removed. */
+  employerLabels: CompanyLabel[];
+  /** The condition the role's code carries that no list names (CONDITIONS, placeholder wording), or null. */
+  condition: string | null;
+  /** True when the stated pay is a range whose low end is under the minimum for the permit type and whose high end reaches it. Such a job has no badge ("pay depends on where you start"). */
+  salaryRangeCrosses: boolean;
 };
+export type CompanyLabel = "First-time sponsor" | "Permit history not linked yet" | "Sponsorship claims removed";
+/** The labels of an employer from its permit history and whether its sponsorship claims were removed (one rule for the company page and the job page). */
+export const employerLabels = (permitHistory: string, claimsRemovedAt: Date | null): CompanyLabel[] => [
+  ...(permitHistory === "first_time" ? (["First-time sponsor"] as const) : []),
+  ...(permitHistory === "not_linked" ? (["Permit history not linked yet"] as const) : []),
+  ...(claimsRemovedAt ? (["Sponsorship claims removed"] as const) : []),
+];
+export type JobMinimums = {
+  criticalSkills: number; graduate: number; graduateMonths: number; nonList: number | null; minContractMonths: number; standardWeekHours: number;
+  general: number | null; generalLower: number | null; generalLowerCodes: string[] | null;
+};
+export const jobMinimums = (m: Minimums): JobMinimums => ({
+  criticalSkills: m.criticalSkills, graduate: m.graduate, graduateMonths: m.graduateMonths, nonList: m.nonListRoute ? m.nonList : null,
+  minContractMonths: m.minContractMonths, standardWeekHours: m.standardWeekHours,
+  general: m.general ?? null, generalLower: m.generalLower ?? null, generalLowerCodes: m.generalLowerCodes ? [...m.generalLowerCodes] : null,
+});
 
 /** One live job with what its page shows, or null when the id is not a live job (queued, closed, expired, hidden, under review, unknown or not an id). */
 export async function getJob(db: Db, id: string | number, now = new Date()): Promise<JobPage | null> {
@@ -361,10 +435,12 @@ export async function getJob(db: Db, id: string | number, now = new Date()): Pro
   if (!validId(key)) return null;
   const r = (await db.query<JobRow>(JOB, [key])).rows[0];
   if (!r) return null;
-  const permits = await permitsLast5Years(db, r.organisation_id, now);
-  // The count is the last 5 calendar years, so "since" is no earlier than the start of that window.
-  const rules = await getRules(db), g = payScaleOf(rules, r.pay_grade);
-  const sponsored = permits && permits.permits > 0 && permits.firstYear !== null ? { permits: permits.permits, since: Math.max(permits.firstYear, now.getUTCFullYear() - 4) } : null;
+  // One DETE statement gives the per-year block and the last 5 calendar years ("since" is no earlier than the start of that window).
+  const [deteRows, rules] = await Promise.all([db.query<{ year: number; month: number | null; permits: number }>(PERMITS, [r.organisation_id]), getRules(db)]);
+  const g = payScaleOf(rules, r.pay_grade), m = rules.minimums;
+  const sponsored = sponsoredOf(deteRows.rows, now);
+  // ponytail: the minimum for the standard week (the candidate role cannot read weekly_hours), so a long week that raises the minimum is not seen here
+  const base = r.permit_type === "general" ? m.general : m.criticalSkills;
   return {
     id: r.id, source: r.source, title: r.title, employerName: r.employer_name, county: r.county, sector: r.sector, occupationCode: r.occupation_code,
     contractType: r.contract_type, contractMonths: r.contract_months, permitType: r.permit_type, applicationRoute: r.application_route, ownPageUrl: r.own_page_url,
@@ -376,9 +452,12 @@ export async function getJob(db: Db, id: string | number, now = new Date()): Pro
     employer: { id: r.organisation_id, slug: r.slug, name: r.display_name, website: r.website, logoUrl: r.logo_url, shortDescription: r.short_description, kind: r.kind },
     badge: r.badge, sponsored, permitHistory: r.permit_history, lastCheckedAt: r.last_ok_at, rulesCheckedOn: rules.minimums.checkedOn,
     registration: registrationFor(r.occupation_code, r.title),
-    payScale: g ? { code: g.code, title: g.title, firstEur: g.firstEur, lastEur: g.lastEur, line: `Pay scale for this grade: EUR ${NUM.format(g.firstEur)} to ${NUM.format(g.lastEur)}` } : null,
+    payScale: g ? { code: g.code, title: g.title, firstEur: g.firstEur, lastEur: g.lastEur, line: payScaleLine(rules, r.pay_grade)! } : null,
+    quotaFull: r.quota_full, standingLine: standingLine(m.checkedOn), minimums: jobMinimums(m), permits: summarisePermits(deteRows.rows, now),
+    employerLabels: employerLabels(r.permit_history, r.claims_removed_at), condition: (r.occupation_code && CONDITIONS[r.occupation_code]) || null,
+    salaryRangeCrosses: base !== undefined && checkSalary(r.salary_low, r.salary_high, base) === "range crosses",
   };
 }
 
-/** The statements one job page runs, for the page budget: the job, then the DETE count. */
+/** The statements one job page runs, for the page budget: the job, then the DETE permits (PERMITS). */
 export const JOB_QUERY = JOB;

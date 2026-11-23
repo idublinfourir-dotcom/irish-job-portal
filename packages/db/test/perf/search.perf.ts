@@ -5,7 +5,7 @@
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "../db";
-import { decodeCursor, filterHash, listJobs, listQuery, SECTOR_COUNTS, sectorCounts, SORTS, type SearchFilters } from "../../src/search";
+import { decodeCursor, filterHash, listJobs, listQuery, sectorCounts, sectorCountsQuery, SORTS, type SearchFilters } from "../../src/search";
 import { fill } from "./fill";
 import { measurePages, type Statement } from "./pages";
 
@@ -74,10 +74,13 @@ it("each list page is one statement inside its page and time budget, and sectorC
         rows.push({ name: `${sort} ${name}, next page`, q: listQuery(sort, at, "after", f) });
         if (second.previous) rows.push({ name: `${sort} ${name}, previous page`, q: listQuery(sort, decodeCursor(sort, second.previous, filterHash(f)), "before", f) });
       }
-    counted.n = 0;
-    await sectorCounts(counted as never);
-    expect(counted.n).toBe(1);
-    rows.push({ name: "sectorCounts", q: SECTOR_COUNTS });
+    // B11: the sector counts of a search are one grouped statement under the same budget, whatever the filters (the sector filter itself is left out)
+    for (const [name, f] of Object.entries(filters)) {
+      counted.n = 0;
+      await sectorCounts(counted as never, f);
+      expect(counted.n, `sectorCounts ${name}: statements`).toBe(1);
+      rows.push({ name: `sectorCounts ${name}`, q: sectorCountsQuery(f) });
+    }
 
     const costs = await measurePages(client, rows.map((r) => r.q));
     const over: string[] = [];

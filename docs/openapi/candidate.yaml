@@ -111,7 +111,7 @@ components:
     JobCard:
       type: object
       description: One job as a list shows it.
-      required: [id, title, employerName, county, salaryLow, salaryHigh, salaryLine, payGrade, passRoute, badge, quotaFull, postedAt, sponsorPermits, lastCheckedAt]
+      required: [id, title, employerName, county, salaryLow, salaryHigh, salaryLine, payGrade, passRoute, badge, quotaFull, postedAt, sponsorPermits, lastCheckedAt, contractMonths, permitHistory, source, employerSlug, employerLogoUrl, payScaleLine]
       properties:
         id: { $ref: '#/components/schemas/Id' }
         title: { type: string }
@@ -123,10 +123,16 @@ components:
         payGrade: { type: [string, 'null'] }
         passRoute: { enum: [stated_pay, big_company, pay_floor, public_pay, null], description: How the job passes the pay rule. }
         badge: { type: [string, 'null'], description: '`critical_skills_eligible`, `sponsor_confirmed` or null.' }
-        quotaFull: { type: boolean }
+        quotaFull: { type: boolean, description: 'The job''s General permit quota is full (#85); the job sorts last and the card shows a label.' }
         postedAt: { $ref: '#/components/schemas/Timestamp' }
         sponsorPermits: { type: [integer, 'null'], description: DETE permits of the last 5 years when the employer has any. }
         lastCheckedAt: { type: [string, 'null'], format: date-time, description: When the job's source last fetched without error. }
+        contractMonths: { type: [integer, 'null'], description: 'Months of a fixed-term contract, null when not stated.', example: 24 }
+        permitHistory: { enum: [has_history, first_time, not_linked], description: What the employer's DETE permit history is. }
+        source: { enum: [fetched, employer, agency, admin_manual], description: Where the job came from. }
+        employerSlug: { type: string, description: The employer's company page slug., example: example-care }
+        employerLogoUrl: { type: [string, 'null'], description: 'The employer''s logo; null means the card shows the initials of employerName.', example: null }
+        payScaleLine: { type: [string, 'null'], description: 'When payGrade is a grade code of the public pay scales in force (#269): "Pay scale for this grade: EUR X to Y" (placeholder wording). Null otherwise.', example: null }
     PublicJobList:
       type: object
       required: [jobs, next, previous, count, signInForMore]
@@ -176,6 +182,17 @@ components:
         salaryHigh: { type: [integer, 'null'] }
         payGrade: { type: [string, 'null'] }
         badge: { type: [string, 'null'] }
+        salaryLine: { type: [string, 'null'], description: 'As on JobCard. Saved, tracked and similar cards of a live job only (not the did-you-apply prompts, not a job that is not live).', example: '€38,000 to €45,000' }
+        passRoute: { enum: [stated_pay, big_company, pay_floor, public_pay, null], description: 'As on JobCard. Same cards as salaryLine.', example: stated_pay }
+        quotaFull: { type: boolean, description: 'As on JobCard. Same cards as salaryLine.', example: false }
+        postedAt: { $ref: '#/components/schemas/Timestamp' }
+        lastCheckedAt: { type: [string, 'null'], format: date-time, description: 'As on JobCard. Same cards as salaryLine.', example: '2026-11-18T06:00:00.000Z' }
+        contractMonths: { type: [integer, 'null'], description: 'As on JobCard. Same cards as salaryLine.', example: 24 }
+        permitHistory: { enum: [has_history, first_time, not_linked], description: 'As on JobCard. Same cards as salaryLine.' }
+        source: { enum: [fetched, employer, agency, admin_manual], description: 'As on JobCard. Same cards as salaryLine.' }
+        employerSlug: { type: string, description: 'As on JobCard. Same cards as salaryLine.', example: example-care }
+        employerLogoUrl: { type: [string, 'null'], description: 'As on JobCard. Same cards as salaryLine.', example: null }
+        payScaleLine: { type: [string, 'null'], description: 'As on JobCard. Same cards as salaryLine.', example: null }
     Profile:
       type: object
       description: The candidate profile. Every field may be null (not given).
@@ -220,7 +237,7 @@ components:
         sector: { oneOf: [{ $ref: '#/components/schemas/Sector' }, { type: 'null' }] }
         county: { oneOf: [{ $ref: '#/components/schemas/County' }, { type: 'null' }] }
         salaryMin: { type: [integer, 'null'], minimum: 0, maximum: 1000000 }
-        badge: { enum: [sponsor_confirmed, null] }
+        badge: { enum: [sponsor_confirmed, critical_skills_eligible, null], description: 'Only jobs with this badge (the same two values as the job search).' }
         frequency: { enum: [daily, weekly] }
     AlertReply:
       type: object
@@ -628,7 +645,7 @@ paths:
         - { name: sector, in: query, schema: { $ref: '#/components/schemas/Sector' } }
         - { name: county, in: query, schema: { $ref: '#/components/schemas/County' } }
         - { name: salaryMin, in: query, description: Whole euros a year; only jobs that state a salary., schema: { type: integer, minimum: 0, maximum: 1000000 } }
-        - { name: badge, in: query, schema: { enum: [sponsor_confirmed] } }
+        - { name: badge, in: query, description: 'Only jobs with this badge: an employer-signed job, or a job that meets Critical Skills pay (also an alert filter).', schema: { enum: [sponsor_confirmed, critical_skills_eligible] } }
         - { name: postedWithin, in: query, description: Days., schema: { type: integer, enum: [1, 3, 7, 30] } }
         - { name: salaryStated, in: query, schema: { enum: ['true'] } }
       responses:
@@ -639,7 +656,7 @@ paths:
               schema: { $ref: '#/components/schemas/PublicJobList' }
               example:
                 jobs:
-                  - { id: '1042', title: Staff Nurse, employerName: Example Care Ltd, county: Dublin, salaryLow: 38000, salaryHigh: 45000, salaryLine: '€38,000 to €45,000', payGrade: null, passRoute: stated_pay, badge: critical_skills_eligible, quotaFull: false, postedAt: '2026-11-17T08:00:00.000Z', sponsorPermits: 12, lastCheckedAt: '2026-11-18T06:00:00.000Z' }
+                  - { id: '1042', title: Staff Nurse, employerName: Example Care Ltd, county: Dublin, salaryLow: 38000, salaryHigh: 45000, salaryLine: '€38,000 to €45,000', payGrade: null, passRoute: stated_pay, badge: critical_skills_eligible, quotaFull: false, postedAt: '2026-11-17T08:00:00.000Z', sponsorPermits: 12, lastCheckedAt: '2026-11-18T06:00:00.000Z', contractMonths: null, permitHistory: has_history, source: fetched, employerSlug: example-care, employerLogoUrl: null, payScaleLine: null }
                 next: null
                 previous: null
                 count: { n: 1, more: false }
@@ -666,7 +683,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [id, title, employerName, employer, badge, sponsored, rulesCheckedOn, registration]
+                required: [id, title, employerName, employer, badge, sponsored, rulesCheckedOn, registration, quotaFull, standingLine, minimums, permits, employerLabels, condition, salaryRangeCrosses]
                 properties:
                   id: { $ref: '#/components/schemas/Id' }
                   source: { enum: [fetched, employer, agency, admin_manual] }
@@ -722,6 +739,38 @@ paths:
                       firstEur: { type: integer }
                       lastEur: { type: integer }
                       line: { type: string }
+                  quotaFull: { type: boolean, description: 'The job''s General permit quota is full (#85); the page shows a notice.', example: false }
+                  standingLine: { type: string, description: 'The standing line of #94 with the date in force, shown under every job and checker result.', example: 'Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 1 November 2026.' }
+                  minimums:
+                    type: object
+                    description: The pay minimums in force, so the page can say what a degree changes without a checker call per click. Whole euros a year, for a 39-hour week.
+                    required: [criticalSkills, graduate, graduateMonths, nonList, minContractMonths, standardWeekHours, general, generalLower, generalLowerCodes]
+                    properties:
+                      criticalSkills: { type: integer, description: Critical Skills minimum with a relevant degree., example: 40904 }
+                      graduate: { type: integer, description: Critical Skills minimum for a recent graduate., example: 36848 }
+                      graduateMonths: { type: integer, description: Months after the degree that count as recent., example: 12 }
+                      nonList: { type: [integer, 'null'], description: Minimum without a degree or for a role not on the list. Null when that route is off., example: 68911 }
+                      minContractMonths: { type: integer, description: Shortest fixed-term contract for Critical Skills., example: 24 }
+                      standardWeekHours: { type: number, example: 39 }
+                      general: { type: [integer, 'null'], description: General permit minimum. Null until a rules version has the General figures., example: 36605 }
+                      generalLower: { type: [integer, 'null'], description: General permit lower rate for the codes in generalLowerCodes., example: 34000 }
+                      generalLowerCodes: { type: [array, 'null'], items: { type: string }, example: ['6145'] }
+                  permits:
+                    type: [object, 'null']
+                    description: The employer's DETE permits for every year since 2019 (the company page's block). Null when no DETE name is linked (not zero).
+                    required: [byYear, peakYear, trend, latestMonth]
+                    properties:
+                      byYear: { type: array, items: { type: object, required: [year, permits], properties: { year: { type: integer, example: 2025 }, permits: { type: integer, example: 12 } } } }
+                      peakYear: { type: [integer, 'null'], example: 2025 }
+                      trend: { enum: [up, down, flat, null], description: The last full year against the year before it. }
+                      latestMonth: { type: [object, 'null'], properties: { year: { type: integer, example: 2026 }, month: { type: integer, example: 9 }, permits: { type: integer, example: 2 } } }
+                  employerLabels:
+                    type: array
+                    description: 'The employer''s labels, as on the company page.'
+                    items: { enum: [First-time sponsor, Permit history not linked yet, Sponsorship claims removed] }
+                    example: []
+                  condition: { type: [string, 'null'], description: 'A condition the role''s code carries that no occupation list names (placeholder wording), null for most codes.', example: null }
+                  salaryRangeCrosses: { type: boolean, description: 'True when the stated pay is a range whose low end is under the minimum for the permit type and whose high end reaches it (at a 39-hour week). Such a job carries no badge. The page passes salaryLow to the checker.', example: false }
               example:
                 id: '1042'
                 source: fetched
@@ -759,6 +808,13 @@ paths:
                   steps: [Apply to NMBI to have your qualification recognised (stage 1).]
                   degreeNote: For nurses and midwives, a relevant degree means a degree or diploma accepted by NMBI.
                 payScale: null
+                quotaFull: false
+                standingLine: Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 1 November 2026.
+                minimums: { criticalSkills: 40904, graduate: 36848, graduateMonths: 12, nonList: 68911, minContractMonths: 24, standardWeekHours: 39, general: null, generalLower: null, generalLowerCodes: null }
+                permits: { byYear: [{ year: 2024, permits: 8 }, { year: 2025, permits: 12 }], peakYear: 2025, trend: up, latestMonth: null }
+                employerLabels: []
+                condition: null
+                salaryRangeCrosses: false
         '400': { $ref: '#/components/responses/PublicBadRequest' }
         '404': { $ref: '#/components/responses/PublicNotFound' }
         '429': { $ref: '#/components/responses/PublicTooMany' }
@@ -880,7 +936,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [code, entries, listStatus, minimums, jobs, text, standingLine, rulesCheckedOn, registration]
+                required: [code, entries, listStatus, minimums, jobs, quota, text, standingLine, rulesCheckedOn, registration]
                 properties:
                   code: { type: string }
                   entries: { type: array, items: { type: object, required: [list, title], properties: { list: { type: string }, title: { type: string } } } }
@@ -895,6 +951,7 @@ paths:
                       minContractMonths: { type: integer }
                       basedOnWeekHours: { type: number }
                   jobs: { $ref: '#/components/schemas/PublicScopedJobs' }
+                  quota: { enum: [none, full], description: 'The General permit quota of the code (#85): full when the code is in the quota-full list of the rules in force, else none. No used count is kept.', example: none }
                   text:
                     type: [object, 'null']
                     properties:
@@ -916,6 +973,7 @@ paths:
                 listStatus: critical-skills
                 minimums: { withDegree: 38000, recentGraduate: 34000, graduateMonths: 12, withoutDegreeOrNotListed: null, minContractMonths: 24, basedOnWeekHours: 39 }
                 jobs: { jobs: [], next: null, count: { n: 0, more: false }, signInForMore: true }
+                quota: none
                 text: null
                 standingLine: Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 1 November 2026.
                 rulesCheckedOn: '2026-11-01'

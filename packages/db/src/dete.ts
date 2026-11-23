@@ -217,3 +217,45 @@ export type PermitRise = { deteName: string; year: number; before: number; after
 export async function latestPermitRises(db: Pick<pg.Pool, "query">): Promise<PermitRise[]> {
   return (await db.query<PermitRise>(LATEST_RISES)).rows;
 }
+
+// ===== the permit figures of a company or job page (public-pages.ts, search.ts) =====
+// Linked DETE rows per year and month, every year. A yearly total has no month. No rows at all means "not linked".
+export const PERMITS =
+  "select d.year::int as year, d.month::int as month, sum(d.permits)::int as permits from organisation_name n join dete_permit_count d on d.organisation_name_id = n.id " +
+  "where n.organisation_id = $1::bigint group by d.year, d.month";
+export const FIRST_PERMIT_YEAR = 2019; // the DETE files the site shows start here (feature plan 3.3)
+export type Permits = {
+  byYear: { year: number; permits: number }[];
+  peakYear: number | null;
+  /** The last full year against the year before it. null when neither had permits. */
+  trend: "up" | "down" | "flat" | null;
+  latestMonth: { year: number; month: number; permits: number } | null;
+};
+/** Pure: the permit rows into the figures a page shows. A year with a yearly total uses it; otherwise its months are added. */
+export function summarisePermits(rows: { year: number; month: number | null; permits: number }[], now = new Date()): Permits | null {
+  if (rows.length === 0) return null;
+  const yearly = new Map<number, number>();
+  const monthly = new Map<number, number>();
+  for (const r of rows) if (r.year >= FIRST_PERMIT_YEAR) (r.month === null ? yearly : monthly).set(r.year, ((r.month === null ? yearly : monthly).get(r.year) ?? 0) + r.permits);
+  const total = (y: number) => yearly.get(y) ?? monthly.get(y) ?? 0;
+  const byYear = [...new Set([...yearly.keys(), ...monthly.keys()])].sort((a, b) => a - b).map((year) => ({ year, permits: total(year) })).filter((y) => y.permits > 0);
+  const peak = byYear.reduce<{ year: number; permits: number } | null>((best, y) => (best === null || y.permits >= best.permits ? y : best), null);
+  const last = now.getUTCFullYear() - 1;
+  const [a, b] = [total(last), total(last - 1)];
+  const months = rows.filter((r) => r.month !== null && r.year >= FIRST_PERMIT_YEAR && r.permits > 0).sort((x, y) => y.year - x.year || y.month! - x.month!);
+  const m = months[0];
+  return {
+    byYear, peakYear: peak?.year ?? null,
+    trend: a === 0 && b === 0 ? null : a > b ? "up" : a < b ? "down" : "flat",
+    latestMonth: m ? { year: m.year, month: m.month!, permits: m.permits } : null,
+  };
+}
+
+
+/** Pure: "Sponsored {permits} permits since {since}" (#152) from the PERMITS rows: the current year and the four before, "since" no earlier than that window. null when not linked or none. */
+export function sponsoredOf(rows: { year: number; permits: number }[], now = new Date()): { permits: number; since: number } | null {
+  const from = now.getUTCFullYear() - 4;
+  const permits = rows.reduce((n, r) => (r.year >= from && r.year <= now.getUTCFullYear() ? n + r.permits : n), 0);
+  const first = Math.min(...rows.filter((r) => r.permits > 0).map((r) => r.year));
+  return permits > 0 && Number.isFinite(first) ? { permits, since: Math.max(first, from) } : null;
+}

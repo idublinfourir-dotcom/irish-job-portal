@@ -1,6 +1,7 @@
 import { rulesV1 } from "@portal/rules";
 import { describe, expect, it } from "vitest";
-import { getCompanyPage, getOccupationPage, scopedQuery, summarisePermits, type ListEntry } from "./public-pages";
+import { summarisePermits } from "./dete";
+import { getCompanyPage, getOccupationPage, scopedQuery, type ListEntry } from "./public-pages";
 import { BadSearchInput, encodeCursor, PAGE_SIZE } from "./search";
 
 const NOW = new Date("2026-11-12T10:00:00Z");
@@ -102,6 +103,14 @@ describe("getOccupationPage", () => {
     expect(p).toMatchObject({ listStatus: "critical-skills", rulesCheckedOn: "2027-03-01", minimums: { withDegree: 45000, withoutDegreeOrNotListed: null, basedOnWeekHours: 39 } });
     expect(p!.standingLine).toContain("Rules last checked on 2027-03-01.");
     expect((await getOccupationPage(db, "2134", { rules: today }))!.minimums).toMatchObject({ withDegree: 40904, withoutDegreeOrNotListed: 68911 });
+  });
+  it("quota is full only for a code in the quota-full list of the rules in force (B14, #85)", async () => {
+    const db = fake((t) => (t.includes("count(*)") ? [{ n: 0 }] : []));
+    const today = await rulesV1();
+    const rules = { ...today, minimums: { ...today.minimums, general: 36605, generalLower: 34000, generalLowerCodes: ["6145"], generalQuotaFullCodes: ["2134"] } };
+    expect((await getOccupationPage(db, "2134", { rules }))!.quota).toBe("full");
+    expect((await getOccupationPage(db, "2136", { rules }))!.quota).toBe("none");
+    expect((await getOccupationPage(db, "2134", { rules: today }))!.quota).toBe("none"); // a version without General figures has no quota list
   });
   it("an ineligible code has no minimums", async () => {
     const p = await getOccupationPage(fake((t) => (t.includes("count(*)") ? [{ n: 0 }] : [])), "1111", { lists, rules: v1 });

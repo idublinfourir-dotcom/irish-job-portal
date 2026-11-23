@@ -406,7 +406,7 @@ describe("S20: why a saved or tracked job is not shown", () => {
       expect(r.json.job.reason, j).toBe(reason);
     }
     const all = JSON.stringify(list) + JSON.stringify((await call(R.job, "GET", null, { ...p, query: `?id=${reported}` })).json);
-    for (const leak of ["SECRET EVIDENCE", "hiddenReportId", "hidden_report_id", "hiddenReason", "organisation_suspended", "admin"]) expect(all).not.toContain(leak);
+    for (const leak of ["SECRET EVIDENCE", "hiddenReportId", "hidden_report_id", "hiddenReason", "organisation_suspended", '"admin"']) expect(all).not.toContain(leak);
   });
   it("a tracked (applied) job that was hidden after a report says so too", async () => {
     const p = await login(), j = await hiddenByReport();

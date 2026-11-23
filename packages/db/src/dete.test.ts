@@ -1,7 +1,7 @@
 // Unit: reading the two DETE files. No database. Fake names only.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { parseLinks, parsePermits } from "./dete";
+import { parseLinks, parsePermits, sponsoredOf } from "./dete";
 
 const H = "dete_name\tyear\tpermits\tsource_file\n";
 
@@ -112,5 +112,18 @@ describe("dete.ts source", () => {
     const calls = [...src.matchAll(/\.query(?:<[^(]*?>)?\(\s*([^,)\s]+)/g)].map((m) => m[1]!);
     expect(calls.length).toBeGreaterThanOrEqual(5);
     for (const first of calls) expect(first).toMatch(/^([A-Z_0-9]+|"begin"|"commit"|"rollback")$/);
+  });
+});
+
+describe("sponsoredOf (the last 5 calendar years of the permit rows)", () => {
+  const now = new Date("2026-11-12T10:00:00Z");
+  it("adds the current year and the four before, and 'since' is no earlier than that window", () => {
+    expect(sponsoredOf([{ year: 2019, permits: 500 }, { year: 2022, permits: 4 }, { year: 2024, permits: 6 }], now)).toEqual({ permits: 10, since: 2022 });
+    expect(sponsoredOf([{ year: 2019, permits: 500 }, { year: 2025, permits: 6 }], now)).toEqual({ permits: 6, since: 2022 });
+  });
+  it("is null when not linked, or when no permits fall in the window", () => {
+    expect(sponsoredOf([], now)).toBeNull();
+    expect(sponsoredOf([{ year: 2019, permits: 9 }], now)).toBeNull();
+    expect(sponsoredOf([{ year: 2027, permits: 9 }], now)).toBeNull(); // a future year is outside the window
   });
 });

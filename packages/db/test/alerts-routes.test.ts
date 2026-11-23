@@ -116,11 +116,17 @@ describe("the candidate's own alerts", () => {
     expect(new Set(tokens).size).toBe(3);
     for (const t of tokens) expect(t).toMatch(/^[A-Za-z0-9_-]{32,}$/);
   });
+  it("accepts the Critical Skills badge filter, and stores it (B9)", async () => {
+    const p = await login();
+    const id = await create(p, { frequency: "daily", badge: "critical_skills_eligible" });
+    expect((await call(R.alerts, "GET", null, p)).json.alerts).toEqual([expect.objectContaining({ id, badge: "critical_skills_eligible" })]);
+    expect(await one("select badge from alert where id=$1", [id])).toEqual([{ badge: "critical_skills_eligible" }]);
+  });
   it("refuses a bad filter, a missing or bad frequency, free text, unknown fields and control characters, and stores nothing", async () => {
     const p = await login();
     const bad: object[] = [
       { occupationCode: "9999" }, { occupationCode: 2111 }, { sector: "mining" }, { sector: "it" }, { county: "Atlantis" }, { county: "dublin" },
-      { salaryMin: -1 }, { salaryMin: 1_000_001 }, { salaryMin: 1.5 }, { salaryMin: "100" }, { badge: "critical_skills_eligible" }, { badge: true },
+      { salaryMin: -1 }, { salaryMin: 1_000_001 }, { salaryMin: 1.5 }, { salaryMin: "100" }, { badge: "Critical_Skills_Eligible" }, { badge: "other" }, { badge: true },
       { frequency: "hourly" }, { frequency: undefined }, { searchText: "nurse" }, { search_text: "nurse" }, { q: "nurse" }, { status: "paused" }, { id: "1" },
       { candidateUserId: "x" }, { unsubscribeToken: "a".repeat(40) }, { county: "Dub\u0000lin" }, { county: "Dub‮lin" }, { sector: "IT​" },
     ];
