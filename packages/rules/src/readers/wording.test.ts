@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { noSponsorshipPhrase, scamPatternPython, scamWording, sponsorshipAvailable } from "./index";
+import { noSponsorshipPhrase, scamPatternPython, scamPhrase, scamWording, sponsorshipAvailable } from "./index";
 
 describe("R04 noSponsorshipPhrase", () => {
   test.each([
@@ -177,5 +177,16 @@ describe("R04 NEW BEHAVIOUR (11 Nov 2026): more ways to ask for the right to wor
   });
   test("a line item must be the whole line", () => {
     expect(noSponsorshipPhrase("", "x Right to work in Ireland.")).toBeNull();
+  });
+});
+
+describe("scamPhrase (B50)", () => {
+  test("gives the first wording that asks for money, and null for none, a warning or a benefit", () => {
+    expect(scamPhrase("Candidates must pay a registration fee before the interview.")).toBe("pay a registration fee");
+    expect(scamPhrase("A visa fee payable by the candidate applies.")).toBe("visa fee payable by the candidate");
+    expect(scamPhrase("We will never ask you to pay a fee.")).toBeNull();
+    expect(scamPhrase("Good pay and a pension.")).toBeNull();
+    expect(scamWording("Candidates must pay a registration fee.")).toBe(true);
+    expect(scamWording("Good pay and a pension.")).toBe(false);
   });
 });

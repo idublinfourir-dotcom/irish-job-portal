@@ -307,7 +307,7 @@ export const job = pgTable("job", {
 	check("job_permit_employer_kind_check", sql`permit_employer_kind = ANY (ARRAY['self'::text, 'client'::text])`),
 	check("job_permit_employer_check_check", sql`permit_employer_check = ANY (ARRAY['pending'::text, 'found'::text, 'not_found'::text])`),
 	check("job_check", sql`num_nonnulls(posted_by_membership_id, posted_by_staff_id) <= 1`),
-	check("job_check1", sql`(application_route <> 'own_page'::text) OR (own_page_url IS NOT NULL)`),
+	check("job_check1", sql`(application_route <> 'own_page'::text) OR (own_page_url IS NOT NULL) OR (status = 'draft'::text)`),
 	check("job_check2", sql`(status <> 'live'::text) OR (search_vector IS NOT NULL)`),
 	check("job_check3", sql`(source <> 'fetched'::text) OR ((permit_type = 'critical_skills'::text) AND (badge IS DISTINCT FROM 'sponsor_confirmed'::text) AND (application_route <> 'on_site'::text))`),
 	check("job_check4", sql`(source <> 'fetched'::text) OR (status <> 'live'::text) OR (NOT (badge IS DISTINCT FROM 'critical_skills_eligible'::text))`),

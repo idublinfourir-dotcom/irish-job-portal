@@ -78,14 +78,17 @@ export function scamPatternPython(description: string): boolean {
   return SCAM.test(description);
 }
 
-/** R06: the description asks the candidate for money. The Python's pattern, minus warnings against scams and benefits (see above). */
-export function scamWording(description: string): boolean {
+/** R06: the first wording in the description that asks the candidate for money (the Python's pattern, minus warnings against scams and benefits, see above), or null. */
+export function scamPhrase(description: string): string | null {
   for (const m of description.matchAll(SCAM)) {
     const before = description.slice(Math.max(0, m.index - SENTENCE_BACK), m.index);
     const sentence = before.slice(Math.max(before.lastIndexOf("."), before.lastIndexOf("!"), before.lastIndexOf("?"), before.lastIndexOf("\n")) + 1);
     const end = m.index + m[0].length;
     const warning = WARNING.test(sentence) && !DEMAND.test(sentence);
-    if (!warning && !BENEFIT.test(description.slice(end, end + 60))) return true;
+    if (!warning && !BENEFIT.test(description.slice(end, end + 60))) return m[0];
   }
-  return false;
+  return null;
 }
+
+/** R06: the description asks the candidate for money. */
+export const scamWording = (description: string): boolean => scamPhrase(description) !== null;
