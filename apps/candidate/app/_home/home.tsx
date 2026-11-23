@@ -113,7 +113,7 @@ function Hero({ d }: { d: HomeData }) {
   return (
     <section aria-labelledby="hero-h" className={`${wrap} grid gap-8 pt-8 lg:grid-cols-[1fr_27.4rem] lg:gap-4 lg:pt-12`}>
       <div className="flex flex-col gap-7">
-        <h1 id="hero-h" className="flex flex-col items-start gap-3 text-[2.6rem] leading-none sm:text-[4.25rem]">
+        <h1 id="hero-h" className="flex flex-col items-start gap-3 text-[2.6rem] leading-none sm:text-[4.25rem] lg:text-[3.75rem] xl:text-[4.25rem]">
           <span className="flex flex-wrap items-center gap-3 sm:gap-5">
             <span className="rounded-[1.25rem] bg-peach px-4 pb-3 pt-2 sm:px-5">Find a job</span>
             <Go tone="green" className="size-9 sm:size-14" />
@@ -121,7 +121,7 @@ function Hero({ d }: { d: HomeData }) {
           </span>
           <span className="flex flex-wrap items-center gap-4">
             <span className="rounded-[1.25rem] bg-deep-green px-4 pb-3 pt-2 text-white sm:px-5">a permit covers</span>
-            <span aria-hidden="true" className="hidden gap-2 sm:flex">
+            <span aria-hidden="true" className="hidden gap-2 sm:flex lg:hidden xl:flex">
               {byEmployer(jobs).slice(0, 2).map((j) => <Logo key={j.employerSlug} job={j} className="size-12 text-lg shadow-card" />)}
             </span>
           </span>
@@ -303,9 +303,9 @@ function Latest({ d }: { d: HomeData }) {
           <strong className="block">Showing {shown} {shown === 1 ? "job" : "jobs"}</strong>
           <span className="text-small text-muted">All passed the permit rules</span>
         </p>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-3">
           {tabs.length > 0 && (
-            <div role="tablist" aria-label="Sector" className="flex gap-2 overflow-x-auto [scrollbar-width:none]">
+            <div role="tablist" aria-label="Sector" className="flex min-w-0 max-w-full gap-2 overflow-x-auto [scrollbar-width:none]">
               <A role="tab" aria-selected={d.tab === null} href="/#latest-jobs" className={chip(d.tab === null)}>All</A>
               {tabs.map((x) => (
                 <A key={x.sector} role="tab" aria-selected={d.tab === x.sector} href={`/?sector=${encodeURIComponent(x.sector)}#latest-jobs`} className={chip(d.tab === x.sector)}>
@@ -529,9 +529,9 @@ function Permits() {
           </div>
           <ul className="flex flex-col gap-3">
             {rows.map(([label, share, fill]) => (
-              <li key={label} className="grid grid-cols-[9rem_1fr_3rem] items-center gap-3 sm:grid-cols-[12.5rem_1fr_3rem]">
+              <li key={label} className="grid grid-cols-[1fr_3rem] items-center gap-x-3 gap-y-1 sm:grid-cols-[12.5rem_1fr_3rem]">
                 <span>{label}</span>
-                <span className="h-7"><span style={{ width: `${(share / max) * 100}%` }} className={`block h-full rounded-pill ${fill}`} /></span>
+                <span className="col-span-2 row-start-2 h-5 sm:col-span-1 sm:row-start-auto sm:h-7"><span style={{ width: `${(share / max) * 100}%` }} className={`block h-full rounded-pill ${fill}`} /></span>
                 <span className="text-right font-semibold">{pct(share)}</span>
               </li>
             ))}
@@ -587,9 +587,9 @@ const SERVICES: [IconName, string, string, string][] = [
 ];
 function PermitServices() {
   return (
-    <section id="permit-services" aria-labelledby="permit-services-h" className={`${wrap} grid gap-4 py-12 lg:grid-cols-[32.4rem_1fr] lg:py-16`}>
+    <section id="permit-services" aria-labelledby="permit-services-h" className={`${wrap} grid gap-4 py-12 lg:grid-cols-[32.4rem_1fr] lg:py-16 [&>*]:min-w-0`}>
       <div className="flex flex-col gap-6 rounded-bento bg-deep-green p-8 text-white lg:p-10">
-        <h2 id="permit-services-h" className="text-[2.15rem] leading-[1.3] text-white sm:text-[2.6rem]">
+        <h2 id="permit-services-h" className="text-[1.85rem] leading-[1.3] text-white sm:text-[2.6rem]">
           Got an offer?<br /><Hl c="white">We can handle</Hl><br />your permit <Dot tone="ink" />
         </h2>
         <p className="max-w-md text-white/85">Our own permit team handles the application with your employer and tracks the case with you. The employer or agency pays for it.</p>
@@ -601,7 +601,7 @@ function PermitServices() {
       <div className="grid gap-4">
         <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           {SERVICES.map(([icon, t, text, fill]) => (
-            <li key={t} className={`flex min-h-40 flex-col gap-2 rounded-3xl p-4 ${fill}`}>
+            <li key={t} className={`flex min-h-40 min-w-0 flex-col gap-2 rounded-3xl p-4 [overflow-wrap:anywhere] ${fill}`}>
               <span aria-hidden="true" className={`mb-2 grid size-10 place-items-center rounded-xl ${fill.includes("deep-green") || fill.includes("peach") || fill.includes("lilac") ? "bg-ink" : "bg-deep-green"} text-white`}><Icon name={icon} size={18} /></span>
               <h3 className="font-sans text-[15px] font-semibold leading-snug">{t}</h3>
               <p className="text-small opacity-80">{text}</p>

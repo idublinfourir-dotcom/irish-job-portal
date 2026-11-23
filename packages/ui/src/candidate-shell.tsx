@@ -22,7 +22,8 @@ const SIGNED_IN_NAV = [
 ];
 const SIGN_OUT = "/api/auth/sign-out";
 
-const link = "inline-flex min-h-11 items-center whitespace-nowrap px-2.5 text-[15px] font-medium text-ink/80 hover:text-ink";
+// Compact between 1024 and 1280 (a laptop at 125 percent scaling is about 1093 px wide), the frame's spacing from 1280.
+const link = "inline-flex min-h-11 items-center whitespace-nowrap px-1.5 text-[14px] font-medium text-ink/80 hover:text-ink xl:px-2 xl:text-[15px]";
 const menuLink = "inline-flex min-h-11 items-center px-2 font-semibold hover:underline underline-offset-4";
 
 function SignOut({ className = link }: { className?: string }) {
@@ -48,12 +49,12 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
   const items = signedIn ? SIGNED_IN_NAV : PUBLIC_NAV;
   return (
     <header className="relative z-10 px-4 pt-4">
-      <div className="mx-auto flex max-w-[66rem] items-center justify-between gap-4 rounded-pill bg-white py-2 pl-6 pr-2 shadow-pop">
+      <div className="mx-auto flex max-w-[66rem] items-center justify-between gap-3 rounded-pill bg-white py-2 pl-4 pr-2 shadow-pop sm:pl-5 xl:pl-6">
         <Wordmark />
         <nav aria-label="Main" className="hidden flex-1 items-center lg:flex">
           <div className="flex flex-1 items-center justify-center gap-1">
             {items.map((i) => (
-              <A key={i.href} href={i.href} className={link}>
+              <A key={i.href} href={i.href} className={i.href === "/" ? link.replace("inline-flex", "hidden xl:inline-flex") : link}>
                 {i.label}
               </A>
             ))}
@@ -68,7 +69,7 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
               <A href="/login" className={link}>
                 Sign in
               </A>
-              <Button href="/signup" className="ml-2">
+              <Button href="/signup" className="ml-1 xl:ml-2">
                 Create free account <Icon name="arrow" size={16} />
               </Button>
             </div>
@@ -76,7 +77,7 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
         </nav>
         <div className="flex items-center gap-2 lg:hidden">
           {!signedIn && (
-            <A href="/login" className="px-2 text-small font-semibold">
+            <A href="/login" className="hidden px-2 text-small font-semibold min-[360px]:inline">
               Sign in
             </A>
           )}

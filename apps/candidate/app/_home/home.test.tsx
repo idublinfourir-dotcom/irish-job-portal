@@ -66,6 +66,9 @@ describe("home page, normal state", () => {
     expect(h).toContain('role="tablist"');
     expect(h.indexOf('href="/?sector=IT#latest-jobs"')).toBeLessThan(h.indexOf('href="/?sector=health#latest-jobs"'));
   });
+  it("lets the sector chip row shrink and scroll inside the toolbar, so a phone page never scrolls sideways (bug at 390 px, 23 Nov)", () => {
+    expect(h).toMatch(/class="flex min-w-0 max-w-full flex-wrap[^"]*"><div role="tablist"[^>]*class="flex min-w-0 max-w-full[^"]*overflow-x-auto/);
+  });
   it("prints the DETE figures with their period and a link to DETE, never a frame number", () => {
     expect(h).toContain("33,362");
     expect(h).toContain("DETE, Jan to Oct 2026");

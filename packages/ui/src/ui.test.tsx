@@ -176,6 +176,13 @@ describe("candidate shell", () => {
     expect(h).not.toContain("Create free account");
   });
   it("has a mobile menu with no script (native details)", () => expect(html(<CandidateShell>x</CandidateShell>)).toContain("<details"));
+  it("fits the header between 1024 and 1280 px: compact links, Home only from xl, no display class fighting hidden (bug at 1100 px, 23 Nov)", () => {
+    const h = html(<CandidateShell>x</CandidateShell>);
+    const home = h.match(/<a[^>]*href="\/"[^>]*>Home<\/a>/)![0];
+    expect(home).toContain("hidden xl:inline-flex");
+    expect(home).not.toMatch(/class="inline-flex|\sinline-flex/);
+    expect(h).toMatch(/px-1\.5 text-\[14px\][^"]*xl:px-2 xl:text-\[15px\]/);
+  });
   it("footer: GeoNames credit, report line, and the two slots only when given", () => {
     const bare = html(<CandidateShell>x</CandidateShell>);
     expect(bare).toContain('href="https://www.geonames.org/"');
