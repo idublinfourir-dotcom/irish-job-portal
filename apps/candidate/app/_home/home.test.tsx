@@ -131,3 +131,14 @@ describe("home leftovers closed by the main session", () => {
     expect(employersHref({ NODE_ENV: "production" })).toBeNull();
   });
 });
+
+describe("a section read that throws becomes that section's failed state", () => {
+  it("returns READ_FAILED and logs, and passes a good read through", async () => {
+    const { safe } = await import("./safe");
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await expect(safe(Promise.reject(new Error('column "category" does not exist')), "updates")).resolves.toEqual({ ok: false, status: 500, code: "READ_FAILED" });
+    expect(log).toHaveBeenCalledWith("home: the updates read failed", expect.any(Error));
+    await expect(safe(Promise.resolve({ ok: true, data: 1 }), "jobs")).resolves.toEqual({ ok: true, data: 1 });
+    log.mockRestore();
+  });
+});

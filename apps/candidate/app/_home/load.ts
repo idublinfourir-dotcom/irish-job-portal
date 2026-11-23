@@ -2,7 +2,8 @@
 import { VISITOR_JOBS, type ContentPage, type JobCard, type ReadResult } from "@portal/db";
 import { readGuides, readJobs, readMinimums, readSectors, readSignedIn, readUpdates } from "../../lib/data";
 
-export type Failed = { ok: false; status: number; code: string; retryAfter?: number };
+import { safe, type Failed } from "./safe";
+export type { Failed };
 export type Sec<T> = { ok: true; data: T } | Failed;
 export type Minimums = {
   criticalSkills: number; graduate: number; graduateMonths: number; nonList: number | null; general: number | null; minContractMonths: number;
@@ -25,7 +26,9 @@ const typed = <T>(r: ReadResult, pick: (d: never) => T = (d) => d as T): Sec<T> 
 export async function loadHome(sector?: unknown): Promise<HomeData> {
   const wanted = typeof sector === "string" && sector.length > 0 && sector.length <= 40 ? sector : null;
   const jobsRead = (s: string | null) => readJobs(s ? { sort: "newest", sector: s } : { sort: "newest" });
-  const [sectors, minimums, guides, updates, first, signedIn] = await Promise.all([readSectors(), readMinimums(), readGuides(), readUpdates(), jobsRead(wanted), readSignedIn()]);
+  const [sectors, minimums, guides, updates, first, signedIn] = await Promise.all([
+    safe(readSectors(), "sectors"), safe(readMinimums(), "minimums"), safe(readGuides(), "guides"), safe(readUpdates(), "updates"), safe(jobsRead(wanted), "jobs"), readSignedIn(),
+  ]);
   const jobs = wanted && !first.ok && first.status === 400 ? await jobsRead(null) : first;
   const sec = typed<SectorCount[]>(sectors, (d: { sectors: SectorCount[] }) => d.sectors);
   const tab = wanted && jobs === first && sec.ok && sec.data.some((s) => s.sector === wanted) ? wanted : null;
