@@ -31,7 +31,7 @@ const banFor = async (organisation_id, cols) => { const sk = await ins("postgres
 // ===== job
 await rule("job", "(posted_by_membership_id, organisation_id) must be a real member of that company", { refuse: async () => job({ posted_by_membership_id: mem2 }), ok: async () => job({ posted_by_membership_id: mem }) });
 await rule("job", "at most one of the two posted-by columns", { refuse: async () => job({ posted_by_membership_id: mem, posted_by_staff_id: s1 }), ok: async () => job({ source: "admin_manual", posted_by_staff_id: s1 }) });
-await rule("job", "own_page needs own_page_url (#24)", { refuse: async () => job({ own_page_url: null }), ok: async () => job({}) });
+await rule("job", "own_page needs own_page_url (#24), a draft excepted (0068)", { refuse: async () => live({ own_page_url: null }), ok: async () => job({ own_page_url: null }) });
 await rule("job", "live needs search_vector", { refuse: async () => job({ status: "live", salary_low: 40000 }), ok: async () => live() });
 await rule("job", "fetched jobs: permit_type critical_skills", { refuse: async () => ins("postgres", "job", FJ({ permit_type: "general" })), ok: async () => ins("postgres", "job", FJ()) });
 await rule("job", "fetched jobs: never sponsor_confirmed", { refuse: async () => ins("postgres", "job", FJ({ badge: "sponsor_confirmed" })), ok: async () => ins("postgres", "job", FJ({ badge: "critical_skills_eligible" })) });

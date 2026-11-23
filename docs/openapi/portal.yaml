@@ -106,24 +106,26 @@ components:
     JobPostFields:
       type: object
       description: |
-        A job post. Pay rule: `salaryLow` or a `payGrade` must be given; `salaryHigh` needs `salaryLow` and may not be below it.
-        `contractMonths` is required for `fixed_term` and must be absent or null for `permanent`. Single-line texts are trimmed and
+        A job post. A `live` post needs `description`, `county`, `occupationCode`, `contractType` and `ownPageUrl`. A `draft` needs only `status` and
+        `title` (B49): every other field may be left out or null, so "Save draft" works on a half-filled form, but a field that is given is checked as
+        in a live post. Pay rule: `salaryLow` or a `payGrade` must be given on a live post; `salaryHigh` needs `salaryLow` and may not be below it.
+        `contractMonths` is required for `fixed_term` on a live post and must be absent or null for `permanent`. Single-line texts are trimmed and
         may hold no control or format characters; `description` may hold line breaks and tabs.
-      required: [status, title, description, county, occupationCode, contractType, ownPageUrl]
+      required: [status, title]
       properties:
         status: { type: string, enum: [draft, live], description: "`draft` skips the rules; `live` runs them." }
         title: { type: string, minLength: 2, maxLength: 200 }
-        description: { type: string, minLength: 20, maxLength: 10000, description: The advert text (length counted after trimming). }
-        county: { $ref: '#/components/schemas/County' }
-        occupationCode: { $ref: '#/components/schemas/SocCode' }
-        contractType: { type: string, enum: [permanent, fixed_term] }
+        description: { type: [string, 'null'], minLength: 0, maxLength: 10000, description: "The advert text (length counted after trimming). A live post needs at least 20 characters; a draft may leave it out." }
+        county: { oneOf: [{ $ref: '#/components/schemas/County' }, { type: 'null' }] }
+        occupationCode: { oneOf: [{ $ref: '#/components/schemas/SocCode' }, { type: 'null' }] }
+        contractType: { type: [string, 'null'], enum: [permanent, fixed_term, null] }
         contractMonths: { type: [integer, 'null'], minimum: 1, maximum: 600 }
         salaryLow: { type: [integer, 'null'], minimum: 1, maximum: 1000000, description: Whole euros a year. }
         salaryHigh: { type: [integer, 'null'], minimum: 1, maximum: 1000000 }
         payGrade: { type: [string, 'null'], minLength: 1, maxLength: 100, description: "A public pay grade, shown when no salary is stated. A grade `code` from GET /api/portal/jobs/grades (the scales in force, #269) makes a public pay employer's stated pay count only when it sits on that grade's scale (`PAY_NOT_ON_SCALE` otherwise); any other text is kept as free text and checked as before." }
         healthInsuranceEur: { type: [integer, 'null'], minimum: 0, maximum: 50000, description: "Employer-paid health insurance a year, counted towards the pay minimum." }
         weeklyHours: { type: integer, minimum: 1, maximum: 60, default: 39 }
-        ownPageUrl: { type: string, minLength: 10, maxLength: 500, format: uri, description: "An https address with a dotted host name and no user name or password: where candidates apply." }
+        ownPageUrl: { type: [string, 'null'], minLength: 10, maxLength: 500, format: uri, description: "An https address with a dotted host name and no user name or password: where candidates apply." }
         clientName: { type: [string, 'null'], minLength: 2, maxLength: 160, description: Agencies only; the client the job is posted for. }
         statement:
           description: The signed sponsorship statement. Gives the job the `sponsor_confirmed` badge. The database decides who may sign.
@@ -150,16 +152,82 @@ components:
         weeklyHours: 39
         ownPageUrl: https://careers.example.ie/jobs/101
         statement: { signerName: Alex Example, signerTitle: HR Manager }
+    JobLiveFields:
+      type: object
+      description: What a `live` post needs besides `status` and `title`. A `draft` may leave all of these out.
+      required: [description, county, occupationCode, contractType, ownPageUrl]
+      properties:
+        description: { type: string, minLength: 20 }
+        county: { $ref: '#/components/schemas/County' }
+        occupationCode: { $ref: '#/components/schemas/SocCode' }
+        contractType: { type: string, enum: [permanent, fixed_term] }
+        ownPageUrl: { type: string }
     JobPost:
-      description: A new job post. Unknown fields are refused.
-      allOf: [{ $ref: '#/components/schemas/JobPostFields' }]
+      description: A new job post. A `draft` needs only `status` and `title`; a `live` post needs every field of `JobLiveFields` too. Unknown fields are refused.
+      oneOf:
+        - allOf: [{ $ref: '#/components/schemas/JobPostFields' }, { type: object, properties: { status: { const: draft } } }]
+        - allOf: [{ $ref: '#/components/schemas/JobPostFields' }, { $ref: '#/components/schemas/JobLiveFields' }, { type: object, properties: { status: { const: live } } }]
       unevaluatedProperties: false
     JobEdit:
-      description: A job edit, the whole post again plus `jobId`. Unknown fields are refused.
-      allOf:
-        - { $ref: '#/components/schemas/JobPostFields' }
-        - { type: object, required: [jobId], properties: { jobId: { $ref: '#/components/schemas/Id' } } }
+      description: A job edit, the whole post again plus `jobId`. Needs what `JobPost` needs; a job past draft needs the whole live post. Unknown fields are refused.
+      oneOf:
+        - allOf: [{ $ref: '#/components/schemas/JobPostFields' }, { type: object, required: [jobId], properties: { jobId: { $ref: '#/components/schemas/Id' }, status: { const: draft } } }]
+        - allOf: [{ $ref: '#/components/schemas/JobPostFields' }, { $ref: '#/components/schemas/JobLiveFields' }, { type: object, required: [jobId], properties: { jobId: { $ref: '#/components/schemas/Id' }, status: { const: live } } }]
       unevaluatedProperties: false
+    JobDetail:
+      type: object
+      description: One of the company's own jobs in full, in the shape of the post body, to fill the edit and repost forms (B49). `status` is the job's own state (a draft shows as `draft`).
+      required: [id, status, badge, passRoute, title, description, county, occupationCode, contractType, contractMonths, salaryLow, salaryHigh, payGrade, healthInsuranceEur, weeklyHours, ownPageUrl, clientName, permitType, exceptionConfirmed, statement, postedAt, closesAt]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        status: { type: string, enum: [draft, in_review, live, under_review, hidden, closed], description: The job's state., example: live }
+        badge: { type: [string, 'null'], enum: [sponsor_confirmed, null], description: "`sponsor_confirmed` while a signed statement is on the job.", example: sponsor_confirmed }
+        passRoute: { type: [string, 'null'], enum: [stated_pay, public_pay, null], description: The route the pay passed by; null for a draft., example: stated_pay }
+        title: { type: string, description: The job title., example: Senior Software Engineer }
+        description: { type: string, description: "The advert text; empty for a draft that has none yet.", example: Build and run payment services for a growing team in Dublin. }
+        county: { oneOf: [{ $ref: '#/components/schemas/County' }, { type: 'null' }], description: Null for a draft that has none yet. }
+        occupationCode: { type: [string, 'null'], description: A SOC 2010 code; null for a draft that has none yet., example: '2136' }
+        contractType: { type: [string, 'null'], enum: [permanent, fixed_term, null], description: Null for a draft that has none yet., example: permanent }
+        contractMonths: { type: [integer, 'null'], description: Months of a fixed term contract; null for a permanent one., example: null }
+        salaryLow: { type: [integer, 'null'], description: Whole euros a year., example: 70000 }
+        salaryHigh: { type: [integer, 'null'], description: The top of a stated range., example: 85000 }
+        payGrade: { type: [string, 'null'], description: A public pay grade., example: null }
+        healthInsuranceEur: { type: [integer, 'null'], description: Employer-paid health insurance a year., example: null }
+        weeklyHours: { type: integer, description: Hours a week; 39 when none was stored., example: 39 }
+        ownPageUrl: { type: [string, 'null'], description: Where candidates apply; null for a draft that has none yet., example: 'https://careers.example.ie/jobs/101' }
+        clientName: { type: [string, 'null'], description: The client of an agency job; null for an employer's own job., example: null }
+        permitType: { type: string, enum: [critical_skills, general], description: The permit the job is for., example: critical_skills }
+        exceptionConfirmed: { type: boolean, description: The exception tick is stored on the job., example: false }
+        statement:
+          description: The current signed sponsorship statement, or null. The signer's name and title as typed; never the signer's login.
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [signerName, signerTitle, writtenAuthority]
+              properties:
+                signerName: { type: string, description: The signer's name as typed., example: Alex Example }
+                signerTitle: { type: string, description: The signer's title as typed., example: HR Manager }
+                writtenAuthority: { type: boolean, description: The client's written authority is on file (agency jobs)., example: false }
+        postedAt: { $ref: '#/components/schemas/Timestamp' }
+        closesAt: { $ref: '#/components/schemas/Timestamp' }
+    JobCheck:
+      type: object
+      description: |
+        One line of the rules for the posting form (B50). `id` names the check: `permit_rules` (General figures not published, the only line then), `occupation` (the list status),
+        `condition` (the exception wording the employer must confirm), `quota` (General only), `list` (a role on no list, Critical Skills only), `contract` (Critical Skills only),
+        `wording` (the rules chain on the advert text), `money` (the advert asks the candidate for money: a note, the job goes to a staff check), `pay` (the minimum applied and the
+        counted pay), `statement` (General only), `client` (agency posts naming a client: whether the client is in the DETE names; a note when not, the job goes to a staff check).
+        `state`: `pass`; `note` (passes, but a person will look); `blocked` (the post would be refused with `code`). `detail` holds facts only, never wording.
+      required: [id, state, detail]
+      properties:
+        id: { type: string, enum: [permit_rules, occupation, condition, quota, list, contract, wording, money, pay, statement, client], description: Which check this is., example: pay }
+        state: { type: string, enum: [pass, note, blocked], description: The check's result., example: blocked }
+        code: { type: string, description: "The refusal code of a blocked check (as the post's 422).", example: PAY_BELOW_MINIMUM }
+        detail:
+          type: object
+          description: "Facts of the check. `occupation`: `code`, `listStatus` (critical_skills, ineligible, not_listed). `condition`: `exception`, `confirmed`. `quota`: `full`. `list`: `listStatus`, `nonListRoute`. `contract`: `months`, `minimumMonths`. `wording`: `stage`. `money`: `phrase` (the matched wording, when there is one). `pay`: `minimumEur` (for the permit type, code and hours), `countedEur` (top of the range plus health insurance, or null), `healthInsuranceEur`, `weeklyHours`, `route`. `statement`: `signed`. `client`: `found`."
+          additionalProperties: true
+          example: { minimumEur: 40904, countedEur: 36000, healthInsuranceEur: 0, weeklyHours: 39, route: null }
     JobResult:
       type: object
       required: [jobId, status, badge, passRoute]
@@ -1203,6 +1271,9 @@ paths:
                         salaryHigh: { type: [integer, 'null'] }
                         payGrade: { type: [string, 'null'] }
                         weeklyHours: { type: [integer, 'null'] }
+                        permitType: { type: string, enum: [critical_skills, general], description: The permit the job is for (B49)., example: critical_skills }
+                        applicationRoute: { type: string, enum: [own_page, on_site], description: "Where candidates apply: `own_page` at Launch A; `on_site` is Launch B (B49).", example: own_page }
+                        hasOwnPage: { type: boolean, description: "The job has an own application page address (a flag only; the address is in GET /api/portal/jobs/{id}) (B49).", example: true }
                         postedAt: { $ref: '#/components/schemas/Timestamp' }
                         closesAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
                         closedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
@@ -1212,7 +1283,7 @@ paths:
                         reviewCode: { type: [string, 'null'], enum: [GENERAL_RULES_NOT_SET, OCCUPATION_INELIGIBLE, QUOTA_FULL, OCCUPATION_NOT_ON_LIST, CONTRACT_TOO_SHORT, RULES_FAILED, PAY_REQUIRED, PAY_BELOW_MINIMUM, PAY_NOT_ON_SCALE, STATEMENT_REQUIRED, NEEDS_REVIEW, null] }
                         exceptionConfirmed: { type: boolean }
                         clientCheck: { type: boolean }
-              example: { jobs: [{ id: '5501', title: Senior Software Engineer, status: live, badge: sponsor_confirmed, passRoute: stated_pay, occupationCode: '2136', county: Dublin, salaryLow: 70000, salaryHigh: 85000, payGrade: null, weeklyHours: 39, postedAt: '2026-11-10T08:00:00.000Z', closesAt: '2026-12-10T08:00:00.000Z', closedAt: null, closeReason: null, hireAnswer: null, reason: null, reviewCode: null, exceptionConfirmed: false, clientCheck: false }, { id: '5502', title: Senior Software Engineer, status: under_review, badge: sponsor_confirmed, passRoute: stated_pay, occupationCode: '2136', county: Dublin, salaryLow: 50000, salaryHigh: null, payGrade: null, weeklyHours: 39, postedAt: '2026-10-10T08:00:00.000Z', closesAt: '2026-11-20T08:00:00.000Z', closedAt: null, closeReason: null, hireAnswer: null, reason: renewal_check, reviewCode: PAY_BELOW_MINIMUM, exceptionConfirmed: false, clientCheck: false }] }
+              example: { jobs: [{ id: '5501', title: Senior Software Engineer, status: live, badge: sponsor_confirmed, passRoute: stated_pay, occupationCode: '2136', county: Dublin, salaryLow: 70000, salaryHigh: 85000, payGrade: null, weeklyHours: 39, permitType: critical_skills, applicationRoute: own_page, hasOwnPage: true, postedAt: '2026-11-10T08:00:00.000Z', closesAt: '2026-12-10T08:00:00.000Z', closedAt: null, closeReason: null, hireAnswer: null, reason: null, reviewCode: null, exceptionConfirmed: false, clientCheck: false }, { id: '5502', title: Senior Software Engineer, status: under_review, badge: sponsor_confirmed, passRoute: stated_pay, occupationCode: '2136', county: Dublin, salaryLow: 50000, salaryHigh: null, payGrade: null, weeklyHours: 39, permitType: critical_skills, applicationRoute: own_page, hasOwnPage: true, postedAt: '2026-10-10T08:00:00.000Z', closesAt: '2026-11-20T08:00:00.000Z', closedAt: null, closeReason: null, hireAnswer: null, reason: renewal_check, reviewCode: PAY_BELOW_MINIMUM, exceptionConfirmed: false, clientCheck: false }] }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`REFUSED`: blocked or deleted login. `NOT_A_MEMBER`: the membership ended between the session read and the list.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: REFUSED } } } }
         '404': { description: "`NO_COMPANY`: the login has no company.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NO_COMPANY } } } }
@@ -1220,7 +1291,7 @@ paths:
       operationId: portalJobCreate
       summary: Post a new job (draft or live)
       description: |
-        A draft is saved with no rules check. A live post runs the rules on the typed fields (occupation list, contract length,
+        A draft is saved with no rules check and needs only a `title` (every other field may be left out); a given field is still checked. A live post runs the rules on the typed fields (occupation list, contract length,
         the rules chain on the text, the pay minimum for the stated hours); a refusal is 422 with the rule's code. A post that
         passes goes `live`, or `in_review` when the company is restricted or the text needs a staff look. A `statement` signs
         the sponsorship statement in the same transaction (the database decides who may sign). Origin checked first.
@@ -1253,8 +1324,7 @@ paths:
       operationId: portalJobEdit
       summary: Edit one of my company's jobs
       description: |
-        The whole post again plus `jobId`. A draft stays a draft, or goes live with the rules (`status: live`). On a job past draft
-        the `status` field does not move it; a change to the pay (salary, grade, health insurance, hours), the title, the occupation
+        The whole post again plus `jobId`. A draft may be saved loosely again (a `title` alone) and stays a draft, or goes live with the rules (`status: live`, then every live field is needed). On a job past draft the whole live post is needed (400 `BAD_REQUEST` otherwise). The `status` field does not move a job past draft; a change to the pay (salary, grade, health insurance, hours), the title, the occupation
         or the permit type runs the rules again and, on a `sponsor_confirmed` job, needs a fresh `statement`. A job under review for
         `pay_check` goes live again when a pay change passes. A job under review for `renewal_check` runs the rules on any change to a
         field they read (also the advert text, contract, county, client or a new statement) and goes live again when they pass; a change
@@ -1376,9 +1446,11 @@ paths:
       operationId: portalJobCheck
       summary: Check a job post against the rules without saving it
       description: |
-        The same body as a new post (`status` is read but does not matter), checked as a live post would be: the agency checks, then
-        the rules. Nothing is written, so the posting form can call it while the employer types. The same codes as the post: 400 for the
-        agency checks, 422 with the rule's code (and `exception` wording when a tick would pass it). Origin checked first.
+        The same body as a new post (`status` is read but does not matter, and every field of a live post is needed), checked as a live post would be: the
+        agency checks, then every rule. Nothing is written, so the posting form can call it while the employer types. The answer is the same single answer as
+        before (200 `ok`, or 422 with the first refusal's `code`, and `exception` wording when a tick would pass it) and, in both, `checks` lists every check in order
+        with its state and facts (B50): the minimum applied and the counted pay, the quota, the condition wording, the matched money phrase, the list status and, for an agency
+        post, whether the client is in the DETE names. An agency never gets the public pay route through `clientName` (CF98). Origin checked first.
       security: [{ portalSession: [] }]
       x-roles: [account_owner, recruiter, poster]
       x-rate-limit: 120 checks per login per 10 minutes (its own count, not the posts' 30)
@@ -1396,18 +1468,19 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [ok, status, passRoute, sector]
+                required: [ok, status, passRoute, sector, checks]
                 properties:
                   ok: { type: boolean, const: true }
-                  status: { type: string, enum: [live, in_review] }
+                  status: { type: string, enum: [live, in_review], description: "`in_review` also when an agency post names a client not in the DETE names." }
                   passRoute: { type: string, enum: [stated_pay, public_pay] }
                   sector: { type: string }
-              example: { ok: true, status: live, passRoute: stated_pay, sector: health }
+                  checks: { type: array, items: { $ref: '#/components/schemas/JobCheck' }, description: "Every check, in order." }
+              example: { ok: true, status: live, passRoute: stated_pay, sector: health, checks: [{ id: occupation, state: pass, detail: { code: '2231', listStatus: critical_skills } }, { id: contract, state: pass, detail: { months: null, minimumMonths: 24 } }, { id: wording, state: pass, detail: { stage: PASS } }, { id: money, state: pass, detail: {} }, { id: pay, state: pass, detail: { minimumEur: 40904, countedEur: 40000, healthInsuranceEur: 904, weeklyHours: 39, route: stated_pay } }] }
         '400': { description: "`BAD_REQUEST`: bad JSON or body. `CLIENT_ONLY_FOR_AGENCIES`: `clientName` from an employer. `WRITTEN_AUTHORITY_REQUIRED`: a statement on behalf of a client without `writtenAuthority: true`.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login. `NOT_A_MEMBER`: no company. `NOT_A_POSTER`: a viewer.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_A_POSTER } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
-        '422': { description: "The rules would refuse a live post, with the same codes as the post: `GENERAL_RULES_NOT_SET`, `OCCUPATION_INELIGIBLE` (with `exception` when a tick would pass it, including care work not in a private household for 6145), `QUOTA_FULL`, `OCCUPATION_NOT_ON_LIST`, `CONTRACT_TOO_SHORT`, `RULES_FAILED` (with `stage`), `PAY_REQUIRED`, `PAY_BELOW_MINIMUM`, `PAY_NOT_ON_SCALE` (a public pay employer's stated pay is off the scale of its listed grade), `STATEMENT_REQUIRED`.", content: { application/json: { schema: { $ref: '#/components/schemas/RulesVerdict' }, example: { code: PAY_BELOW_MINIMUM } } } }
+        '422': { description: "The rules would refuse a live post (the body also carries `checks`, every check with its state), with the same codes as the post: `GENERAL_RULES_NOT_SET`, `OCCUPATION_INELIGIBLE` (with `exception` when a tick would pass it, including care work not in a private household for 6145), `QUOTA_FULL`, `OCCUPATION_NOT_ON_LIST`, `CONTRACT_TOO_SHORT`, `RULES_FAILED` (with `stage`), `PAY_REQUIRED`, `PAY_BELOW_MINIMUM`, `PAY_NOT_ON_SCALE` (a public pay employer's stated pay is off the scale of its listed grade), `STATEMENT_REQUIRED`.", content: { application/json: { schema: { allOf: [{ $ref: '#/components/schemas/RulesVerdict' }, { type: object, required: [checks], properties: { checks: { type: array, items: { $ref: '#/components/schemas/JobCheck' }, description: "Every check, in order." } } }] }, example: { code: PAY_BELOW_MINIMUM, checks: [{ id: occupation, state: pass, detail: { code: '2231', listStatus: critical_skills } }, { id: pay, state: blocked, code: PAY_BELOW_MINIMUM, detail: { minimumEur: 40904, countedEur: 36000, healthInsuranceEur: 0, weeklyHours: 39, route: null } }] } } } }
         '429': { $ref: '#/components/responses/TooMany' }
   /api/portal/jobs/suggest:
     get:
@@ -1468,6 +1541,29 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
+  /api/portal/jobs/{id}:
+    parameters:
+      - { name: id, in: path, required: true, description: The job id. Not an id is 400., schema: { $ref: '#/components/schemas/Id' } }
+    get:
+      operationId: portalJobGet
+      summary: Read one of my company's own jobs in full
+      description: |
+        One employer or agency job of the signed-in company with the fields of the post body (advert text, own page address, contract, health insurance,
+        permit type, client and the current statement's signer), to fill the edit form and to repost. Any active member, viewers too, as the list.
+        Another company's job and an id that does not exist are the same 404 `JOB_NOT_FOUND`.
+      security: [{ portalSession: [] }]
+      x-roles: [any member]
+      responses:
+        '200':
+          description: The job.
+          content:
+            application/json:
+              schema: { type: object, required: [job], properties: { job: { $ref: '#/components/schemas/JobDetail' } } }
+              example: { job: { id: '5501', status: live, badge: sponsor_confirmed, passRoute: stated_pay, title: Senior Software Engineer, description: Build and run payment services for a growing team in Dublin., county: Dublin, occupationCode: '2136', contractType: permanent, contractMonths: null, salaryLow: 70000, salaryHigh: 85000, payGrade: null, healthInsuranceEur: null, weeklyHours: 39, ownPageUrl: 'https://careers.example.ie/jobs/101', clientName: null, permitType: critical_skills, exceptionConfirmed: false, statement: { signerName: Alex Example, signerTitle: HR Manager, writtenAuthority: false }, postedAt: '2026-11-10T08:00:00.000Z', closesAt: '2026-12-10T08:00:00.000Z' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+        '404': { description: "`NO_COMPANY`: the login has no company. `JOB_NOT_FOUND`: no employer or agency job of this company with that id.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: JOB_NOT_FOUND } } } }
   /api/portal/jobs/{id}/authority:
     parameters:
       - { name: id, in: path, required: true, description: The agency job id. Not an id is 400., schema: { $ref: '#/components/schemas/Id' } }
@@ -1870,6 +1966,43 @@ paths:
         '409': { description: "`NO_CONSENT_TEXT`: no pay floor wording is published. `TEXT_CHANGED`: the wording changed since the page loaded. `ALREADY_PENDING`: a floor for this role family is already waiting for its check. `NOT_WITHDRAWABLE`: the floor is not pending or active.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: TEXT_CHANGED } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
         '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/verification:
+    get:
+      operationId: portalVerificationGet
+      summary: What the verification page shows (B47)
+      description: |
+        For a company waiting for review: whether the login's email is verified, the company's CRO register row (found, name, status), whether the company name is in the
+        DETE permit names, when the staff review opened, and the newest "ask for more" question staff wrote (the account owner only, and only while the company is
+        `needs_info`; null for any other member). No staff name, note or id. A login with no company gets 404 `NO_COMPANY`. Any active member.
+      security: [{ portalSession: [] }]
+      x-roles: [any member]
+      responses:
+        '200':
+          description: The verification state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [verification]
+                properties:
+                  verification:
+                    type: object
+                    required: [organisationId, status, emailVerified, croNumber, croFound, croName, croStatus, deteMatch, reviewOpenedAt, question]
+                    properties:
+                      organisationId: { $ref: '#/components/schemas/Id' }
+                      status: { type: string, description: "The company's state (pending_review, needs_info, verified and the others).", example: needs_info }
+                      emailVerified: { type: boolean, description: The login's email is confirmed., example: true }
+                      croNumber: { type: [string, 'null'], description: The company's CRO number; null when it has none (some agencies)., example: '123456' }
+                      croFound: { type: [boolean, 'null'], description: "A row for the CRO number is in the CRO register data; null when the company has no CRO number.", example: true }
+                      croName: { type: [string, 'null'], description: The name the register holds for that number., example: Example Payments Limited }
+                      croStatus: { type: [string, 'null'], description: The register's status for that number as imported., example: Normal }
+                      deteMatch: { type: boolean, description: The company name is one of the DETE permit names., example: false }
+                      reviewOpenedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }], description: When the open staff review item was made; null when none is open. }
+                      question: { type: [string, 'null'], description: "The newest question staff wrote for the owner (the notice's text); null for a non-owner, or when none.", example: Please tell us which director signed up for the company. }
+              example: { verification: { organisationId: '1042', status: needs_info, emailVerified: true, croNumber: '123456', croFound: true, croName: Example Payments Limited, croStatus: Normal, deteMatch: false, reviewOpenedAt: '2026-11-09T10:42:00.000Z', question: Please tell us which director signed up for the company. } }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { description: "`REFUSED`: blocked or deleted login. `NOT_A_MEMBER`: the membership ended between the session read and the read.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: REFUSED } } } }
+        '404': { description: "`NO_COMPANY`: the login has no company.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NO_COMPANY } } } }
   /api/portal/status:
     get:
       operationId: portalStatusGet
