@@ -1051,6 +1051,90 @@ paths:
         '400': { $ref: '#/components/responses/PublicBadRequest' }
         '429': { $ref: '#/components/responses/PublicTooMany' }
 
+  /api/minimums:
+    get:
+      operationId: getMinimums
+      tags: [public]
+      summary: The pay and contract minimums in force today
+      description: |
+        The minimums in force today with no occupation (for the footer date, the landing box, the guide tables and the hero card), read from the
+        rules version in force (kept up to 5 minutes by the server). `nonList` is null while the route for a role on neither list is off.
+        `general`, `generalLower` and `generalLowerCodes` are the General Employment Permit minimums (null and empty until a version has them).
+        `nextVersionOn` is the day the next confirmed minimums version starts, or null when none is waiting. Amounts are whole euro a year.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      responses:
+        '200':
+          description: The minimums in force.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [criticalSkills, graduate, graduateMonths, nonList, general, generalLower, generalLowerCodes, minContractMonths, rulesCheckedOn, nextVersionOn]
+                properties:
+                  criticalSkills: { type: integer, description: 'Minimum yearly pay in euro for a Critical Skills role with a relevant degree.', example: 40904 }
+                  graduate: { type: integer, description: 'Minimum yearly pay in euro for a recent graduate on a Critical Skills role.', example: 36848 }
+                  graduateMonths: { type: integer, description: 'Months after the degree award in which the graduate minimum applies.', example: 12 }
+                  nonList: { type: [integer, 'null'], description: 'Minimum yearly pay in euro for a role without the degree or not on the list. null while that route is off.', example: 68911 }
+                  general: { type: [integer, 'null'], description: 'General Employment Permit standard minimum in euro a year. null until a rules version has it.', example: null }
+                  generalLower: { type: [integer, 'null'], description: 'General Employment Permit lower minimum in euro a year. null until a rules version has it.', example: null }
+                  generalLowerCodes: { type: array, description: 'Four-digit occupation codes at the lower General rate. Empty until a rules version has them.', items: { type: string, pattern: '^[0-9]{4}$' }, example: [] }
+                  minContractMonths: { type: integer, description: 'Shortest contract in months the Critical Skills route accepts.', example: 24 }
+                  rulesCheckedOn: { type: string, pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$', description: 'The day the minimums were last checked against the official source (the footer date).', example: '2026-11-16' }
+                  nextVersionOn: { type: [string, 'null'], pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$', description: 'The day the next confirmed minimums version starts, or null when none is waiting.', example: null }
+              example:
+                criticalSkills: 40904
+                graduate: 36848
+                graduateMonths: 12
+                nonList: 68911
+                general: null
+                generalLower: null
+                generalLowerCodes: []
+                minContractMonths: 24
+                rulesCheckedOn: '2026-11-16'
+                nextVersionOn: null
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
+  /api/occupations:
+    get:
+      operationId: listOccupations
+      tags: [public]
+      summary: Every occupation a picker offers
+      description: |
+        All 369 SOC 2010 unit groups, by code, for the pickers and typeaheads (checker, profile, alerts, search filter, posting form): the
+        code, its title, its address slug (`/occupations/<slug>`, one slug per code) and its list status. `listStatus` is `critical-skills` when
+        any list entry for the code is (as the checker), else `ineligible` when it is on the ineligible list, else `other`.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      responses:
+        '200':
+          description: The occupations, in code order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [occupations]
+                properties:
+                  occupations:
+                    type: array
+                    maxItems: 369
+                    description: Every SOC 2010 unit group, in code order.
+                    items:
+                      type: object
+                      required: [code, title, slug, listStatus]
+                      properties:
+                        code: { type: string, pattern: '^[0-9]{4}$', description: 'The four-digit SOC 2010 unit group code.', example: '2136' }
+                        title: { type: string, description: 'The unit group title, the name a picker shows.', example: Programmers and software development professionals }
+                        slug: { type: string, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', description: 'The occupation page address segment, /occupations/<slug>. One slug per code.', example: programmers-and-software-development-professionals }
+                        listStatus: { enum: [critical-skills, ineligible, other], description: 'critical-skills when any list entry for the code is, else ineligible when on that list, else other (on neither list).', example: critical-skills }
+              example:
+                occupations:
+                  - { code: '1115', title: Chief executives and senior officials, slug: chief-executives-and-senior-officials, listStatus: other }
+                  - { code: '2136', title: Programmers and software development professionals, slug: programmers-and-software-development-professionals, listStatus: critical-skills }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
   /api/legal:
     get:
       operationId: getLegalText
