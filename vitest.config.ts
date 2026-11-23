@@ -8,7 +8,7 @@ export default defineConfig({
         test: {
           name: "unit",
           setupFiles: ["./vitest.setup.ts"],
-          include: ["apps/**/*.test.ts", "packages/**/*.test.ts"],
+          include: ["apps/**/*.test.{ts,tsx}", "packages/**/*.test.{ts,tsx}"],
           exclude: ["**/node_modules/**", "packages/db/test/**", "packages/fetcher/test/**"],
         },
       },

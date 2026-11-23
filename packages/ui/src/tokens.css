@@ -1,0 +1,70 @@
+/*
+ * The one place for the look of all three apps (step 16 F1, decision #287).
+ * The eight colours and the two fonts are the designer's (frame NS2). Everything marked NEUTRAL DEFAULT is a stand-in:
+ * spacing, radii, shadows, focus ring, and the hover, disabled and error colours. The designer's values replace them HERE and nowhere else
+ * (step16/DESIGNER-HANDOFF.md item 1). No dark mode (Later L60).
+ */
+
+@theme {
+  /* The eight colours, by their frame names. */
+  --color-critical-skills: #ddeee3; /* ONLY the Critical Skills badge */
+  --color-sponsor: #e7e8f5; /* ONLY the Sponsor badge */
+  --color-green-tint: #d3e8db;
+  --color-cream: #f3f1eb; /* page background */
+  --color-ink: #12201a; /* text */
+  --color-sand: #eae6da;
+  --color-peach: #f6e1cc;
+  --color-deep-green: #0c4a35;
+
+  /* NEUTRAL DEFAULTS: colours the frames do not name. */
+  --color-sponsor-ink: #2b2f6b; /* text on the Sponsor badge */
+  --color-muted: #4a564f; /* small and help text */
+  --color-line: #cfc9b8; /* rule lines and borders */
+  --color-focus: #1d4ed8; /* focus ring */
+  --color-error: #b42318; /* error and Danger */
+  --color-error-tint: #fbe4e1; /* error notice background */
+  --color-hover-dark: #0a3a29; /* Primary hover */
+  --color-hover-light: #dcd6c4; /* light button hover (Chip, Outline) */
+  --color-disabled: #e3dfd2; /* disabled background */
+  --color-disabled-ink: #5b655f; /* disabled text */
+
+  /* NEUTRAL DEFAULTS: radii, shadows, sizes. */
+  --radius-control: 0.5rem;
+  --radius-card: 1rem;
+  --radius-pill: 999px;
+  --shadow-card: 0 1px 2px rgb(18 32 26 / 0.08), 0 4px 12px rgb(18 32 26 / 0.06);
+  --shadow-pop: 0 8px 28px rgb(18 32 26 / 0.18);
+  --text-small: 13.5px; /* "small 13.5" on NS2 */
+  --text-small--line-height: 1.5;
+  --text-body: 16px; /* "body 16/1.55" */
+  --text-body--line-height: 1.55;
+  --container-page: 72rem;
+}
+
+/* The two fonts. The apps load them with next/font and set these variables on <html>. */
+@theme inline {
+  --font-heading: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    background: var(--color-cream);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.55;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-heading);
+    font-weight: 600;
+  }
+  /* Focus is visible on every control. */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+}
