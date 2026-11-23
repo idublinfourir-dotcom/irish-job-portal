@@ -342,11 +342,11 @@ describe("statement budget", () => {
       db: { query: wrap(pool), connect: async () => { const c = await pool.connect(); return Object.assign(Object.create(c), { query: wrap(c), release: () => c.release() }); } } as unknown as pg.Pool,
     };
   };
-  it("listQueue is two statements (the role check and the page), claim four, approve and reject five each (begin, acting staff, lock, write, commit)", async () => {
+  it("listQueue is three statements (the role check, the page and the stage counts), claim four, approve and reject five each (begin, acting staff, lock, write, commit)", async () => {
     const c = await claimed();
     const m = counting(admin());
     await listQueue(m.db, c.staff);
-    expect(m.sql).toHaveLength(2);
+    expect(m.sql).toHaveLength(3);
     m.sql.length = 0;
     const q = await queued();
     await claim(m.db, c.staff, q.item);

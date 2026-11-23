@@ -5,7 +5,7 @@
 import type pg from "pg";
 import { QueueRefused, RELEASE, STALE_AFTER, TAKE_OVER } from "./admin-queue";
 import { isTime, PAGE_SIZE, validId } from "./search";
-import { domainProblem } from "./domain-check";
+import { domainProblem, isFreeEmailDomain } from "./domain-check";
 
 export { domainProblem, FREE_EMAIL_DOMAINS, isFreeEmailDomain } from "./domain-check";
 
@@ -15,7 +15,14 @@ type Db = Pick<pg.Pool, "query" | "connect">;
 const COLS =
   "r.id, r.status, r.claimed_by_staff_user_id, r.created_at::text as created_text, r.reason, r.detail, o.id as organisation_id, o.display_name, o.kind, " +
   "o.status as organisation_status, o.signup_path, o.cro_number, o.wrc_licence_number, u.email as claimant_email, " +
-  "r.detail->>'answer' as answer, r.detail->>'answered_at' as answered_at, " +
+  "r.detail->>'answer' as answer, r.detail->>'answered_at' as answered_at, r.decided_at::text as decided_text, r.outcome, " +
+  // B61: what the review page shows beside the claimant. The ban test is the one REVIEW_LOCK makes at approval (the owner's domain or address, or a company CRO number).
+  // The last permit year is the newest DETE year with permits across the company's names (null: none). A non-domain email is one the company has not saved as its domain.
+  "u.name as claimant_name, o.permit_history, " +
+  "(select max(p.year) from dete_permit_count p join organisation_name n on n.id = p.organisation_name_id where n.organisation_id = o.id and p.permits > 0) as last_permit_year, " +
+  "exists (select 1 from ban b where b.email_domain = lower(split_part(u.email, '@', 2)) or b.email_address = lower(u.email) or b.cro_number in " +
+  "(select o.cro_number union select n.cro_number from organisation_name n where n.organisation_id = o.id)) as banned, " +
+  "(u.email is not null and not exists (select 1 from organisation_domain d where d.organisation_id = o.id and d.domain = lower(split_part(u.email, '@', 2)))) as non_domain_email, " +
   // P10: a saved company domain (any company's) within 2 edits of the owner's email domain, after 0 and 1 are read as o and l. None when the owner's
   // domain is itself saved for some company (a known real domain). ponytail: scans organisation_domain once per row (a few thousand rows at launch); a trigram prefilter if it grows.
   "(select d.domain from organisation_domain d where not exists (select 1 from organisation_domain s where s.domain = lower(split_part(u.email, '@', 2))) and " +
@@ -25,16 +32,40 @@ const COLS =
   "translate(lower(split_part(u.email, '@', 2)), '01', 'ol'), 2) end <= 2 limit 1) as lookalike_of " +
   "from review_item r join organisation o on o.id = r.organisation_id " +
   "left join membership m on m.organisation_id = o.id and m.role = 'account_owner' and m.status = 'active' left join portal_user u on u.id = m.portal_user_id";
-// Oldest first on review_item_queue_idx (queue, created_at, id) where status in ('open','claimed').
-const OPEN = "r.queue = 'account_review' and r.status in ('open','claimed')";
-export const REVIEW_FIRST = `select ${COLS} where ${OPEN} order by r.created_at, r.id limit ${PAGE_SIZE + 1}`;
-export const REVIEW_AFTER = `select ${COLS} where ${OPEN} and (r.created_at, r.id) > ($1::timestamptz, $2::bigint) order by r.created_at, r.id limit ${PAGE_SIZE + 1}`;
+// The tabs (B61). No tab: every open and claimed item, oldest first (the first version of this read). The decided tabs are newest decision first, on review_item_done_idx.
+// A company asked for more stays an open item with the company in needs_info, so "waiting" and "needs_info" split the open items by the company's status.
+const OPEN_ITEMS = "r.queue = 'account_review' and r.status in ('open','claimed')";
+const TABS = {
+  all: { where: OPEN_ITEMS, key: "r.created_at", dir: "" },
+  waiting: { where: `${OPEN_ITEMS} and o.status <> 'needs_info'`, key: "r.created_at", dir: "" },
+  needs_info: { where: `${OPEN_ITEMS} and o.status = 'needs_info'`, key: "r.created_at", dir: "" },
+  approved: { where: "r.queue = 'account_review' and r.status = 'done' and r.outcome = 'approved'", key: "coalesce(r.decided_at, r.created_at)", dir: " desc" },
+  rejected: { where: "r.queue = 'account_review' and r.status = 'done' and r.outcome = 'rejected'", key: "coalesce(r.decided_at, r.created_at)", dir: " desc" },
+} as const;
+export type ReviewTab = keyof typeof TABS;
+export const REVIEW_TABS = Object.keys(TABS).filter((k) => k !== "all") as readonly ReviewTab[];
+const listSql = (tab: ReviewTab, after: boolean) => {
+  const t = TABS[tab];
+  const cmp = t.dir ? "<" : ">";
+  return `select ${COLS} where ${t.where}${after ? ` and (${t.key}, r.id) ${cmp} ($1::timestamptz, $2::bigint)` : ""} order by ${t.key}${t.dir}, r.id${t.dir} limit ${PAGE_SIZE + 1}`;
+};
+export const REVIEW_FIRST = listSql("all", false);
+export const REVIEW_AFTER = listSql("all", true);
 export const REVIEW_ITEM = `select ${COLS} where r.id = $1::bigint and r.queue = 'account_review'`;
+// The number on each tab. The open ones read review_item_queue_idx, the decided ones review_item_done_queue_idx (0073), so neither walks the whole table.
+export const REVIEW_COUNTS =
+  "select o.waiting, o.needs_info, coalesce(d.approved, 0)::int as approved, coalesce(d.rejected, 0)::int as rejected from " +
+  "(select count(*) filter (where org.status <> 'needs_info')::int as waiting, count(*) filter (where org.status = 'needs_info')::int as needs_info " +
+  "from review_item r join organisation org on org.id = r.organisation_id where r.queue = 'account_review' and r.status in ('open','claimed')) o, " +
+  "(select count(*) filter (where outcome = 'approved')::int as approved, count(*) filter (where outcome = 'rejected')::int as rejected " +
+  "from review_item where queue = 'account_review' and status = 'done' and outcome in ('approved','rejected')) d";
+export type ReviewCounts = { waiting: number; needsInfo: number; approved: number; rejected: number };
 
 type Row = {
   id: string; status: string; claimed_by_staff_user_id: string | null; created_text: string; reason: string | null; detail: unknown; organisation_id: string;
   display_name: string; kind: string; organisation_status: string; signup_path: string | null; cro_number: string | null; wrc_licence_number: string | null;
   claimant_email: string | null; answer: string | null; answered_at: string | null; lookalike_of: string | null;
+  decided_text: string | null; outcome: string | null; claimant_name: string | null; permit_history: string; last_permit_year: number | null; banned: boolean; non_domain_email: boolean;
 };
 export type ReviewItem = {
   id: string; status: string; claimedBy: string | null; createdAt: string;
@@ -49,6 +80,18 @@ export type ReviewItem = {
   answer: string | null; answeredAt: string | null;
   /** P10: extra reasons to look closely, never a refusal: `shared_mailbox` (hr@, jobs@ and the like) and `lookalike_domain` (near a saved company domain, named in `lookalikeOf`). */
   flags: string[]; lookalikeOf: string | null;
+  /** B61. The claimant's name as they gave it at sign-up (plain text, show it as text); null when the owner membership is gone. */
+  claimantName: string | null;
+  /** The email domain is a free provider (gmail.com and the like); false with no email. */
+  freeEmail: boolean;
+  /** The company has not saved the email's domain as its own (so the claimant is not on a company address yet); false with no email. */
+  nonDomainEmail: boolean;
+  /** The company's DETE label: has_history, first_time or not_linked, and the newest year it had permits (null: none on record). */
+  permitHistory: string; lastPermitYear: number | null;
+  /** The owner's email domain, the email address or one of the company's CRO numbers is on the ban list (the check approval makes again). */
+  banned: boolean;
+  /** When the item was decided (ISO text) and how (approved, rejected, needs_info); null while it waits. A needs_info item keeps the time it was last asked. */
+  decidedAt: string | null; outcome: string | null;
 };
 
 /** The part of an email after the first "@", lower case: the same cut the sign-up functions make (split_part(email, '@', 2)). */
@@ -66,9 +109,12 @@ const item = (r: Row): ReviewItem => ({
   organisationId: r.organisation_id, displayName: r.display_name, kind: r.kind, organisationStatus: r.organisation_status, signupPath: r.signup_path,
   croNumber: r.cro_number, wrcLicenceNumber: r.wrc_licence_number, claimantEmail: r.claimant_email, emailDomain: domainOf(r.claimant_email),
   answer: r.answer, answeredAt: r.answered_at, flags: reviewFlags(r.claimant_email, r.lookalike_of), lookalikeOf: r.lookalike_of,
+  claimantName: r.claimant_name, freeEmail: isFreeEmailDomain(domainOf(r.claimant_email) ?? ""), nonDomainEmail: r.non_domain_email, permitHistory: r.permit_history,
+  lastPermitYear: r.last_permit_year, banned: r.banned, decidedAt: r.decided_text, outcome: r.outcome,
 });
 
-const encode = (r: Row) => Buffer.from(JSON.stringify({ t: r.created_text, i: r.id })).toString("base64url");
+// the cursor time is the one the tab sorts on: when it was decided for the decided tabs, else when it was made
+const encode = (r: Row, tab: ReviewTab = "all") => Buffer.from(JSON.stringify({ t: TABS[tab].dir ? (r.decided_text ?? r.created_text) : r.created_text, i: r.id })).toString("base64url");
 /** A page token from `encode` back to [time, id]; anything else is refused. Same token shape as the fetched-job queue's. */
 export function decodeReviewCursor(token: unknown): [string, string] {
   const bad = new QueueRefused("bad_cursor");
@@ -96,13 +142,21 @@ async function checkReviewer(db: Pick<pg.Pool, "query">, staffUserId: string): P
   if (!r.reviewer) throw new QueueRefused("not_reviewer");
 }
 
-/** Open and claimed account_review items, oldest first, a page at a time. Reviewers only: it shows the claimant's email. */
-export async function listAccountReviews(db: Pick<pg.Pool, "query">, staffUserId: string, opts: { after?: string } = {}): Promise<{ items: ReviewItem[]; next: string | null }> {
+/**
+ * account_review items a page at a time: with no tab the open and claimed ones oldest first; with a tab (waiting, needs_info, approved, rejected) that tab's, the
+ * decided ones newest decision first. Always with the four tab counts. Reviewers only: it shows the claimant's email.
+ */
+export async function listAccountReviews(
+  db: Pick<pg.Pool, "query">, staffUserId: string, opts: { after?: string; tab?: string } = {},
+): Promise<{ items: ReviewItem[]; next: string | null; counts: ReviewCounts }> {
+  if (opts.tab !== undefined && !(REVIEW_TABS as readonly string[]).includes(opts.tab)) throw new QueueRefused("bad_tab");
+  const tab = (opts.tab ?? "all") as ReviewTab;
   const cursor = opts.after === undefined ? undefined : decodeReviewCursor(opts.after);
   await checkReviewer(db, staffUserId);
-  const all = (cursor ? await db.query<Row>(REVIEW_AFTER, cursor) : await db.query<Row>(REVIEW_FIRST)).rows;
+  const all = (cursor ? await db.query<Row>(listSql(tab, true), cursor) : await db.query<Row>(listSql(tab, false))).rows;
+  const c = (await db.query<{ waiting: number; needs_info: number; approved: number; rejected: number }>(REVIEW_COUNTS)).rows[0]!;
   const rows = all.slice(0, PAGE_SIZE);
-  return { items: rows.map(item), next: all.length > PAGE_SIZE ? encode(rows.at(-1)!) : null };
+  return { items: rows.map(item), next: all.length > PAGE_SIZE ? encode(rows.at(-1)!, tab) : null, counts: { waiting: c.waiting, needsInfo: c.needs_info, approved: c.approved, rejected: c.rejected } };
 }
 
 /** One account_review item, whatever its status. null when the id is not an account_review item. */

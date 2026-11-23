@@ -17,10 +17,10 @@ vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 // the run), and the limit is about 4 times the slowest median measured: medians over three runs on 12 November 2026: list 2.4 to 2.7 ms, item 1.7 to 2.0, claim 3.9 to 4.5, approve 6.4 to 6.6, approve with domain 8.2 to 8.5 (so 35 ms);
 // first-time approve (with the label call) 4.2 to 5.4 ms, 6 statements, under the same 35 ms;
 // through the route: list 5.2 to 5.5, approve with domain 10.4 to 11.0 (so 45 ms). Raise these only on purpose.
-// Function level: list = role check + page (2); one item = role check + read (2); claim = begin, role check, update, commit (4);
+// Function level: list = role check + page + tab counts (3, B61); one item = role check + read (2); claim = begin, role check, update, commit (4);
 // approve without domain = begin, role check, lock, decide, commit (5); a first-time registration adds the label call (6); with domain = + domain lock, other-owner check, add (8).
 // Route level adds requireStaff's 2 (session by token, user by id).
-const BUDGET = { list: 2, item: 2, claim: 4, approve: 5, approveFirstTime: 6, approveDomain: 8, routeExtra: 2, ms: 35, routeMs: 45, listPages: 2000, listFlagMs: 100 };
+const BUDGET = { list: 3, item: 2, claim: 4, approve: 5, approveFirstTime: 6, approveDomain: 8, routeExtra: 2, ms: 35, routeMs: 45, listPages: 2000, listFlagMs: 100 };
 
 const secret = "trial-only-secret-trial-only-secret-32";
 let db: TestDb;
@@ -963,7 +963,7 @@ describe("review flags (P10)", () => {
     for (const [n, item] of items.entries()) expect(await flagsOf(item), odd[n]!.slice(0, 30)).toEqual({ flags: [], lookalikeOf: null });
     expect((await get("reviewer")).status).toBe(200);
   });
-  it("performance: the list stays 2 statements, and its page read stays in budget with 3,000 saved domains", async () => {
+  it("performance: the list is 3 statements (role check, page, tab counts), and its page read stays in budget with 3,000 saved domains", async () => {
     await su.query("insert into organisation_domain(organisation_id, domain, source) select $1, 'perf-' || substr(md5(g::text), 1, 2 + g % 25) || '.ie', 'seed' from generate_series(1, 3000) g on conflict do nothing", [saved]);
     await su.query("analyze organisation_domain");
     const [, n, ms] = await counted(() => listAccountReviews(admin(), staff.reviewer!));

@@ -1,7 +1,7 @@
 // Unit tests for the pure parts of the admin queue: the staff input check, the list answer and the re-run of the rules. No database.
 import { CHAIN_RULES_V1 } from "@portal/rules";
 import { describe, expect, it } from "vitest";
-import { checkApproveInput, claim, listAnswer, QueueRefused, reassess } from "./admin-queue";
+import { checkApproveInput, claim, listAnswer, QueueRefused, reassess, stageChecks } from "./admin-queue";
 
 const LISTS = [
   { code: "2134", list: "critical-skills" },
@@ -104,5 +104,28 @@ describe("acting staff check", () => {
       await expect(claim(f.db, bad as never, "1")).rejects.toMatchObject({ why: "not_active_staff" });
       expect(f.sql).toEqual([]);
     }
+  });
+});
+
+describe("stageChecks (B63, the dry run's per-check list)", () => {
+  const a = { irishReason: "brand list match", reason: null, occupationCode: "2134", contractReason: "two years stated", salaryCheck: "pass" as const, scamFlag: false };
+  const result = (stage: string, over: Partial<typeof a> = {}) => Object.fromEntries(stageChecks({ ...a, ...over }, stage).map((c) => [c.check, c.result]));
+  it("passes every check on a PASS stage, in the chain's order", () => {
+    expect(stageChecks(a, "PASS (salary stated)").map((c) => c.check)).toEqual(["irish_employer", "sponsorship_wording", "occupation_known", "critical_skills_list", "contract", "salary", "scam_wording"]);
+    expect(Object.values(result("PASS (salary stated)"))).toEqual(Array(7).fill("pass"));
+  });
+  it("marks the stage the chain stopped at as failed, the earlier ones passed and the later ones not run", () => {
+    expect(result("7 contract under 2 years")).toMatchObject({ irish_employer: "pass", critical_skills_list: "pass", contract: "fail", salary: "not_run" });
+    expect(result("3 not in Ireland")).toMatchObject({ irish_employer: "fail", sponsorship_wording: "not_run", contract: "not_run" });
+  });
+  it("marks a stop that goes to the admin queue as unsure, not failed", () => {
+    expect(result("7 contract unclear (admin queue)").contract).toBe("unsure");
+    expect(result("3 unsure Irish employer (admin queue)").irish_employer).toBe("unsure");
+  });
+  it("gives the detail only for checks that ran, and flags scam wording whatever the stage", () => {
+    const c = stageChecks({ ...a, scamFlag: true }, "7 contract under 2 years");
+    expect(c.find((x) => x.check === "contract")!.detail).toBe("two years stated");
+    expect(c.find((x) => x.check === "salary")!.detail).toBeNull();
+    expect(c.find((x) => x.check === "scam_wording")!.result).toBe("fail");
   });
 });

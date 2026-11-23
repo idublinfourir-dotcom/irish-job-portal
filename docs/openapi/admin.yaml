@@ -155,6 +155,14 @@ components:
           items: { enum: [shared_mailbox, lookalike_domain] }
           description: "Extra reasons to look closely, never a refusal: `shared_mailbox` (the owner's email is hr@, jobs@, careers@, info@, admin@, recruitment@ or office@) and `lookalike_domain` (the email domain is within 2 edits of a saved company domain, 0 and 1 read as o and l)."
         lookalikeOf: { type: [string, 'null'], description: The saved company domain the email domain looks like; null without `lookalike_domain`. }
+        claimantName: { type: [string, 'null'], description: "The claimant's name as they gave it at sign-up. Plain text; show it as text, never as HTML. Null when the owner membership is gone.", example: Aoife Byrne }
+        freeEmail: { type: boolean, description: "The email domain is a free provider (gmail.com and the like). False with no email.", example: false }
+        nonDomainEmail: { type: boolean, description: "The company has not saved the email's domain as its own, so the claimant is not on a company address yet. False with no email.", example: true }
+        permitHistory: { type: string, enum: [has_history, first_time, not_linked], description: "The company's DETE label.", example: has_history }
+        lastPermitYear: { type: [integer, 'null'], description: "The newest year the company had DETE permits (a year of zero does not count); null when none are on record.", example: 2025 }
+        banned: { type: boolean, description: "The owner's email domain or address, or one of the company's CRO numbers, is on the ban list (the check Approve makes again).", example: false }
+        decidedAt: { type: [string, 'null'], description: "When the item was decided (database time text); null while it waits. A needs_info item keeps the time it was last asked.", example: '2026-11-18 09:30:00.123456+00' }
+        outcome: { type: [string, 'null'], enum: [approved, rejected, needs_info, null], description: "How the item was decided; null while it waits.", example: approved }
     AuditEvent:
       type: object
       required: [id, at, kind, actor, action]
@@ -319,6 +327,38 @@ components:
         reason: { type: [string, 'null'] }
         wrcAgency: { type: boolean, description: "The advert's employer name is an agency or trading name on the WRC licensed agency list (staff only)." }
         advertText: { type: [string, 'null'], description: Only on the one-item read. }
+        queuedAt: { $ref: '#/components/schemas/DbTime' }
+        county: { type: [string, 'null'], description: "The job's county.", example: Cork }
+        sourceKind: { type: string, description: "The kind of source the advert was fetched from (job_source.kind).", example: careers_page }
+        quotedEvidence: { type: [string, 'null'], description: "Only on the one-item read: the advert's own words the fetcher quoted as why it queued the item. Plain text; show it as text, never as HTML.", example: "...a specified purpose contract..." }
+        matcherModel: { type: [string, 'null'], description: "Only on the one-item read: the model that matched the occupation; null when none was stored.", example: matcher-2026-10 }
+    FetchedDryRun:
+      type: object
+      description: What Approve would do for one item with the given occupation code, pay and contract. Nothing is written.
+      required: [itemId, jobId, wouldPublish, passRoute, failedStage, badge, occupationCode, salaryLow, salaryHigh, payGrade, quotaFull, stage, checks]
+      properties:
+        itemId: { $ref: '#/components/schemas/Id' }
+        jobId: { $ref: '#/components/schemas/Id' }
+        wouldPublish: { type: boolean, description: "Approve would put the job live with these inputs.", example: true }
+        passRoute: { type: [string, 'null'], enum: [stated_pay, big_company, null], example: stated_pay }
+        failedStage: { type: [string, 'null'], description: "The rules stage that would refuse Approve (`rules_failed`); null when it would publish.", example: null }
+        badge: { type: [string, 'null'], enum: [critical_skills_eligible, null], description: "The badge the job would get.", example: critical_skills_eligible }
+        occupationCode: { type: string, example: '2231' }
+        salaryLow: { type: [integer, 'null'], description: "The pay the rules read (the reviewer's, else the advert's), whole euros a year.", example: 60000 }
+        salaryHigh: { type: [integer, 'null'], example: 60000 }
+        payGrade: { type: [string, 'null'], description: "The pay grade the job already has.", example: Staff Nurse }
+        quotaFull: { type: boolean, description: "The General quota for the occupation is full (always false for a Critical Skills job).", example: false }
+        stage: { type: string, description: "The rules stage the chain stopped at, or the PASS text.", example: PASS (salary stated) }
+        checks:
+          type: array
+          description: Every check in the chain's order. A check after the stop is `not_run`.
+          items:
+            type: object
+            required: [check, result, detail]
+            properties:
+              check: { type: string, enum: [irish_employer, sponsorship_wording, occupation_known, critical_skills_list, contract, salary, scam_wording], example: contract }
+              result: { type: string, enum: [pass, fail, unsure, not_run], example: pass }
+              detail: { type: [string, 'null'], description: "What the rule found, plain text; null when it did not run.", example: two years stated }
     ManualRow:
       type: object
       description: Database column names (snake case), as the database returns them. `reason` is why a draft is not listed.
@@ -752,8 +792,10 @@ paths:
       operationId: listAccountReviews
       summary: List open account reviews, or show one
       description: >-
-        Without `id`: the open and claimed `account_review` items (employer and agency sign-ups and claims), oldest first, 20 a page. With
-        `id`: that one item, whatever its status (an id that is not an account review, or not digits, is 404). The list shows the
+        Without `id`: the open and claimed `account_review` items (employer and agency sign-ups and claims), oldest first, 20 a page. With `tab`
+        the list is that tab's: `waiting` (open or claimed, the company not in needs_info), `needs_info` (asked for more, not yet decided),
+        `approved` or `rejected` (decided, newest decision first). Every list also gives the number on each of the four tabs in `counts`.
+        With `id`: that one item, whatever its status (an id that is not an account review, or not digits, is 404). The list shows the
         claimant's email, so only account reviewers read it. An unknown or repeated query key is 400 `bad_query`.
       security: [{ staffSession: [] }]
       x-roles: [account_reviewer]
@@ -761,6 +803,7 @@ paths:
       parameters:
         - { name: id, in: query, required: false, description: "One item's id.", schema: { type: string }, example: '1042' }
         - { name: after, in: query, required: false, description: "The `next` token of the page before.", schema: { $ref: '#/components/schemas/Cursor' } }
+        - { name: tab, in: query, required: false, description: "One tab of the page. Without it, every open and claimed item.", schema: { type: string, enum: [waiting, needs_info, approved, rejected] }, example: waiting }
       responses:
         '200':
           description: The page (no `id`), or `{ item }` (with `id`).
@@ -769,21 +812,31 @@ paths:
               schema:
                 oneOf:
                   - type: object
-                    required: [items, next]
+                    required: [items, next, counts]
                     properties:
                       items: { type: array, items: { $ref: '#/components/schemas/AccountReviewItem' } }
                       next: { type: [string, 'null'] }
+                      counts:
+                        type: object
+                        description: The number on each tab, whatever tab the list is.
+                        required: [waiting, needsInfo, approved, rejected]
+                        properties:
+                          waiting: { type: integer, example: 9 }
+                          needsInfo: { type: integer, example: 3 }
+                          approved: { type: integer, example: 212 }
+                          rejected: { type: integer, example: 17 }
                   - type: object
                     required: [item]
                     properties:
                       item: { $ref: '#/components/schemas/AccountReviewItem' }
               example:
                 items:
-                  - { id: '1042', status: open, claimedBy: null, createdAt: '2026-11-18 09:30:00.123456+00', reason: claim, detail: { found: true }, organisationId: '310', displayName: Example Care Ltd, kind: employer, organisationStatus: pending_review, signupPath: dete_claim, croNumber: '123456', wrcLicenceNumber: null, claimantEmail: owner@example.ie, emailDomain: example.ie, answer: null, answeredAt: null, flags: [], lookalikeOf: null }
+                  - { id: '1042', status: open, claimedBy: null, createdAt: '2026-11-18 09:30:00.123456+00', reason: claim, detail: { found: true }, organisationId: '310', displayName: Example Care Ltd, kind: employer, organisationStatus: pending_review, signupPath: dete_claim, croNumber: '123456', wrcLicenceNumber: null, claimantEmail: owner@example.ie, emailDomain: example.ie, answer: null, answeredAt: null, flags: [], lookalikeOf: null, claimantName: Aoife Byrne, freeEmail: false, nonDomainEmail: true, permitHistory: has_history, lastPermitYear: 2025, banned: false, decidedAt: null, outcome: null }
                 next: null
+                counts: { waiting: 9, needsInfo: 3, approved: 212, rejected: 17 }
         '400':
-          description: "`bad_cursor`: `after` is not a token this list made. `bad_query`: an unknown or repeated query key."
-          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
+          description: "`bad_cursor`: `after` is not a token this list made. `bad_tab`: `tab` is not one of the four. `bad_query`: an unknown or repeated query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_tab } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
           description: "`not_active_staff`: the staff login is not active. `not_reviewer`: no account_reviewer role (no other role stands in)."
@@ -1942,38 +1995,55 @@ paths:
       operationId: listFetchedJobQueue
       summary: List the fetched-job queue, or show one item
       description: >-
-        Without `id`: the open and claimed fetched-job review items, oldest first, 20 a page. With `id`: one item with the saved advert text,
-        whatever its status. Only `id` and `after`, each at most once (anything else is `bad_query`). No role stands in for
-        fetched_job_reviewer, not even administrator.
+        Without `id`: the open and claimed fetched-job review items, oldest first, 20 a page, with `counts` of the open items per rules stage
+        text (the category tabs; the counts ignore `stage`). `stage` keeps only the items with exactly that stage text. With `id`: one item
+        with the saved advert text, the quoted evidence and the matcher model, whatever its status. Only `id`, `after` and `stage`, each at
+        most once (anything else is `bad_query`). No role stands in for fetched_job_reviewer, not even administrator.
       security: [{ staffSession: [] }]
       x-roles: [fetched_job_reviewer]
       x-rate-limit: none
       parameters:
         - { name: id, in: query, required: false, schema: { type: string }, example: '3301' }
         - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Cursor' } }
+        - { name: stage, in: query, required: false, description: "Only items with exactly this stage text (1 to 200 characters), as `counts` lists them.", schema: { type: string, minLength: 1, maxLength: 200 }, example: 7 contract unclear (admin queue) }
       responses:
         '200':
-          description: The page (no `id`), or `{ item }` with `advertText` (with `id`).
+          description: The page (no `id`), or `{ item }` with `advertText`, `quotedEvidence` and `matcherModel` (with `id`).
           content:
             application/json:
               schema:
                 oneOf:
                   - type: object
-                    required: [items, next]
+                    required: [items, next, counts]
                     properties:
                       items: { type: array, items: { $ref: '#/components/schemas/FetchedQueueItem' } }
                       next: { type: [string, 'null'] }
+                      counts:
+                        type: object
+                        description: Open and claimed items per stage text, biggest first.
+                        required: [total, stages]
+                        properties:
+                          total: { type: integer, example: 34 }
+                          stages:
+                            type: array
+                            items:
+                              type: object
+                              required: [stage, count]
+                              properties:
+                                stage: { type: [string, 'null'], description: "The stage text; null for an item with no fetched advert.", example: 7 contract unclear (admin queue) }
+                                count: { type: integer, example: 8 }
                   - type: object
                     required: [item]
                     properties:
                       item: { $ref: '#/components/schemas/FetchedQueueItem' }
               example:
                 items:
-                  - { id: '3301', status: open, claimedBy: null, jobId: '6601', organisationId: '320', title: Software Engineer, employerName: Example Software Ltd, advertUrl: 'https://jobs.example.com/12345', occupationCode: null, permitHistory: has_history, sponsorPermits: 14, stage: 4 occupation, reason: occupation unclear, wrcAgency: false }
+                  - { id: '3301', status: open, claimedBy: null, jobId: '6601', organisationId: '320', title: Software Engineer, employerName: Example Software Ltd, advertUrl: 'https://jobs.example.com/12345', occupationCode: null, permitHistory: has_history, sponsorPermits: 14, stage: 4 occupation, reason: occupation unclear, wrcAgency: false, queuedAt: '2026-11-09 06:02:11.123456+00', county: Cork, sourceKind: careers_page }
                 next: null
+                counts: { total: 1, stages: [{ stage: 4 occupation, count: 1 }] }
         '400':
-          description: "`bad_query`: an unknown or repeated key. `bad_cursor`: a token this list did not make."
-          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
+          description: "`bad_query`: an unknown or repeated key. `bad_cursor`: a token this list did not make. `bad_stage`: `stage` is empty or over 200 characters."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_stage } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
           description: "`not_active_staff`: the login is not active. `not_reviewer`: no fetched_job_reviewer role."
@@ -2057,6 +2127,45 @@ paths:
             job left review. `no_advert_text`: no saved advert to re-run the rules on. `rules_failed`: the rules did not pass; `stage` names
             the stage that failed.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: rules_failed, stage: 5 pay } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/fetched-jobs/dry-run:
+    get:
+      operationId: dryRunFetchedJobApprove
+      summary: What Approve would do for a fetched job, nothing written
+      description: >-
+        Re-runs the rules on the saved advert with the occupation code, pay and contract given, as `approve` does, and returns each check, the
+        badge the job would get, its pay grade and its quota status. Any fetched-job reviewer may ask, claimed or not; a decided item or a job
+        no longer in review is refused as Approve would. Not a hold: the rules or the advert may change before the real Approve. Only the
+        named keys, each once (anything else is `bad_query`). No role stands in for fetched_job_reviewer, not even administrator. Never cached.
+      security: [{ staffSession: [] }]
+      x-roles: [fetched_job_reviewer]
+      x-rate-limit: none
+      parameters:
+        - { name: id, in: query, required: true, description: "The item's id.", schema: { type: string }, example: '3301' }
+        - { name: occupationCode, in: query, required: true, description: "Four digits, on the Critical Skills or Ineligible list.", schema: { type: string, pattern: '^[0-9]{4}$' }, example: '2231' }
+        - { name: salaryLow, in: query, required: false, description: "Whole euros a year, 1 to 1,000,000.", schema: { type: integer, minimum: 1, maximum: 1000000 }, example: 45000 }
+        - { name: salaryHigh, in: query, required: false, description: "Whole euros a year; needs salaryLow and may not be below it.", schema: { type: integer, minimum: 1, maximum: 1000000 }, example: 60000 }
+        - { name: contractConfirmed, in: query, required: false, description: "The reviewer confirms the contract is long enough.", schema: { type: string, enum: ['true', 'false'] }, example: 'true' }
+      responses:
+        '200':
+          description: The result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FetchedDryRun' }
+              example: { itemId: '3301', jobId: '6601', wouldPublish: true, passRoute: stated_pay, failedStage: null, badge: critical_skills_eligible, occupationCode: '2231', salaryLow: 45000, salaryHigh: 60000, payGrade: Staff Nurse, quotaFull: false, stage: PASS (salary stated), checks: [{ check: irish_employer, result: pass, detail: brand list match }, { check: contract, result: pass, detail: two years stated }] }
+        '400':
+          description: "`bad_item_id`: `id` missing or not an id. `bad_occupation_code`: missing, not four digits, or on neither list. `bad_salary`: not whole euros, out of range, a top with no bottom, or a top below the bottom. `bad_input`: contractConfirmed is not true or false. `bad_query`: an unknown or repeated key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_salary } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_reviewer`: no fetched_job_reviewer role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_reviewer } } }
+        '404':
+          description: "`not_found`: no such item."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`already_decided`: the item is decided. `job_not_in_review`: the job left review. `no_advert_text`: no saved advert to re-run the rules on."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: already_decided } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/manual-jobs:
     get:

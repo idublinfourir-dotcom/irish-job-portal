@@ -17,16 +17,22 @@ export class QueueRefused extends Error {
 // ===== the list =====
 const COLS =
   "r.id, r.status, r.claimed_by_staff_user_id, r.created_at::text as created_text, j.id as job_id, j.organisation_id, j.title, j.employer_name, " +
-  "j.own_page_url, j.occupation_code, j.permit_history, j.sponsor_sort, f.stage, f.reason, coalesce(f.wrc_agency, false) as wrc_agency " +
+  "j.own_page_url, j.occupation_code, j.permit_history, j.sponsor_sort, f.stage, f.reason, coalesce(f.wrc_agency, false) as wrc_agency, j.county, " +
+  // a subselect, not a join: it is read only for the page's rows, so the queue read does not get dearer with the queue
+  "(select s.kind from job_source s where s.id = j.job_source_id) as source_kind " +
   "from review_item r join job j on j.id = r.job_id left join fetched_advert f on f.id = j.fetched_advert_id";
 // Oldest first on review_item_queue_idx (queue, created_at, id) where status in ('open','claimed').
 const OPEN = "r.queue = 'fetched_job' and r.status in ('open','claimed')";
-export const QUEUE_FIRST = `select ${COLS} where ${OPEN} order by r.created_at, r.id limit ${PAGE_SIZE + 1}`;
-export const QUEUE_AFTER = `select ${COLS} where ${OPEN} and (r.created_at, r.id) > ($1::timestamptz, $2::bigint) order by r.created_at, r.id limit ${PAGE_SIZE + 1}`;
+// B62: `stage` narrows the list to one stage text (the category tab). $1 is the stage or null; the cursor follows at $2 and $3.
+export const QUEUE_FIRST = `select ${COLS} where ${OPEN} and ($1::text is null or f.stage = $1) order by r.created_at, r.id limit ${PAGE_SIZE + 1}`;
+export const QUEUE_AFTER = `select ${COLS} where ${OPEN} and ($1::text is null or f.stage = $1) and (r.created_at, r.id) > ($2::timestamptz, $3::bigint) order by r.created_at, r.id limit ${PAGE_SIZE + 1}`;
+// The number on each category tab: open and claimed items per stage text (null: the item has no fetched advert).
+export const QUEUE_COUNTS = `select f.stage, count(*)::int as n from review_item r join job j on j.id = r.job_id left join fetched_advert f on f.id = j.fetched_advert_id where ${OPEN} group by f.stage order by n desc, f.stage`;
 
 type Row = {
   id: string; status: string; claimed_by_staff_user_id: string | null; created_text: string; job_id: string; organisation_id: string; title: string;
   employer_name: string; own_page_url: string | null; occupation_code: string | null; permit_history: string; sponsor_sort: number; stage: string | null; reason: string | null; wrc_agency: boolean;
+  county: string | null; source_kind: string;
 };
 export type QueueItem = {
   id: string; status: string; claimedBy: string | null; jobId: string; organisationId: string; title: string; employerName: string;
@@ -39,12 +45,14 @@ export type QueueItem = {
   stage: string | null; reason: string | null;
   /** The employer name is an agency or trading name on the WRC licensed agency list (0042; staff only). A signal, never a verdict. */
   wrcAgency: boolean;
+  /** B62. When the item was queued (ISO text), the job's county, and the kind of source it was fetched from (careers_page, board and so on, job_source.kind). */
+  queuedAt: string; county: string | null; sourceKind: string;
 };
 
 const item = (r: Row): QueueItem => ({
   id: r.id, status: r.status, claimedBy: r.claimed_by_staff_user_id, jobId: r.job_id, organisationId: r.organisation_id, title: r.title, employerName: r.employer_name,
   advertUrl: r.own_page_url, occupationCode: r.occupation_code, permitHistory: r.permit_history, sponsorPermits: r.sponsor_sort >= 0 ? r.sponsor_sort : null,
-  stage: r.stage, reason: r.reason, wrcAgency: r.wrc_agency,
+  stage: r.stage, reason: r.reason, wrcAgency: r.wrc_agency, queuedAt: r.created_text, county: r.county, sourceKind: r.source_kind,
 });
 
 export const queueCursor = (r: { created_text: string; id: string }) => Buffer.from(JSON.stringify({ t: r.created_text, i: r.id })).toString("base64url");
@@ -69,24 +77,39 @@ async function checkReviewer(db: Pick<pg.Pool, "query">, staffUserId: string): P
   if (!r.reviewer) throw new QueueRefused("not_reviewer");
 }
 
-/** Open and claimed fetched_job items, oldest first, a page at a time. ponytail: next page only; add `before` when a page needs to go back. */
-export async function listQueue(db: Pick<pg.Pool, "query">, staffUserId: string, opts: { after?: string } = {}): Promise<{ items: QueueItem[]; next: string | null }> {
+const STAGE_MAX = 200;
+/**
+ * Open and claimed fetched_job items, oldest first, a page at a time, with the count per stage text (the category tabs, Q15: no separate category code). `stage` keeps
+ * only the items with exactly that stage text. ponytail: next page only; add `before` when a page needs to go back.
+ */
+export async function listQueue(
+  db: Pick<pg.Pool, "query">, staffUserId: string, opts: { after?: string; stage?: string } = {},
+): Promise<{ items: QueueItem[]; next: string | null; counts: { total: number; stages: { stage: string | null; count: number }[] } }> {
+  // a stage text is the rules' own plain text: no control or format character (a NUL would be a database error)
+  if (opts.stage !== undefined && (typeof opts.stage !== "string" || opts.stage.length < 1 || opts.stage.length > STAGE_MAX || /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(opts.stage))) throw new QueueRefused("bad_stage");
   const cursor = opts.after === undefined ? undefined : readQueueCursor(opts.after);
   await checkReviewer(db, staffUserId);
-  const all = (cursor ? await db.query<Row>(QUEUE_AFTER, cursor) : await db.query<Row>(QUEUE_FIRST)).rows;
+  const stage = opts.stage ?? null;
+  const all = (cursor ? await db.query<Row>(QUEUE_AFTER, [stage, ...cursor]) : await db.query<Row>(QUEUE_FIRST, [stage])).rows;
+  const stages = (await db.query<{ stage: string | null; n: number }>(QUEUE_COUNTS)).rows.map((s) => ({ stage: s.stage, count: s.n }));
   const rows = all.slice(0, PAGE_SIZE);
-  return { items: rows.map(item), next: all.length > PAGE_SIZE ? queueCursor(rows.at(-1)!) : null };
+  return { items: rows.map(item), next: all.length > PAGE_SIZE ? queueCursor(rows.at(-1)!) : null, counts: { total: stages.reduce((n, s) => n + s.count, 0), stages } };
 }
 
-export const QUEUE_ITEM = `select ${COLS.replace(" from ", ", t.advert_text from ")} left join job_text t on t.job_id = j.id where r.id = $1::bigint and r.queue = 'fetched_job'`;
+export const QUEUE_ITEM = `select ${COLS.replace(" from review_item r ", ", t.advert_text, f.quoted_evidence, f.matcher_model from review_item r ")} left join job_text t on t.job_id = j.id where r.id = $1::bigint and r.queue = 'fetched_job'`;
+export type QueueItemDetail = QueueItem & {
+  advertText: string | null;
+  /** B62. The advert's own words the fetcher quoted as why it queued the item, and the model that matched the occupation (null when none was stored). Plain text, show it as text. */
+  quotedEvidence: string | null; matcherModel: string | null;
+};
 
-/** One fetched_job item, whatever its status, with the saved advert text. null when the id is not a fetched_job item. */
-export async function getItem(db: Pick<pg.Pool, "query">, staffUserId: string, id: string | number): Promise<(QueueItem & { advertText: string | null }) | null> {
+/** One fetched_job item, whatever its status, with the saved advert text, the quoted evidence and the matcher model. null when the id is not a fetched_job item. */
+export async function getItem(db: Pick<pg.Pool, "query">, staffUserId: string, id: string | number): Promise<QueueItemDetail | null> {
   await checkReviewer(db, staffUserId);
   const key = String(id);
   if (!validId(key)) return null;
-  const r = (await db.query<Row & { advert_text: string | null }>(QUEUE_ITEM, [key])).rows[0];
-  return r ? { ...item(r), advertText: r.advert_text } : null;
+  const r = (await db.query<Row & { advert_text: string | null; quoted_evidence: string | null; matcher_model: string | null }>(QUEUE_ITEM, [key])).rows[0];
+  return r ? { ...item(r), advertText: r.advert_text, quotedEvidence: r.quoted_evidence, matcherModel: r.matcher_model } : null;
 }
 
 // ===== the actions =====
@@ -167,15 +190,17 @@ export async function release(db: Db, staffUserId: string, itemId: string | numb
 }
 
 // The item and its job, locked, so two staff cannot decide one item at once. The job's source kind feeds the chain's "known employer" test.
-export const LOCK =
+// LOOK is the same read without the lock (the dry run, B63).
+export const LOOK =
   "select r.status, r.claimed_by_staff_user_id, j.id as job_id, j.fetched_advert_id, j.status as job_status, j.title, j.employer_name, j.county, " +
-  "j.occupation_code, j.sector, j.salary_low, j.salary_high, j.badge, j.pass_route, s.kind as source, t.advert_text " +
+  "j.occupation_code, j.sector, j.salary_low, j.salary_high, j.badge, j.pass_route, j.pay_grade, j.quota_full, s.kind as source, t.advert_text " +
   "from review_item r join job j on j.id = r.job_id join job_source s on s.id = j.job_source_id left join job_text t on t.job_id = j.id " +
-  "where r.id = $1::bigint and r.queue = 'fetched_job' for update of r, j";
+  "where r.id = $1::bigint and r.queue = 'fetched_job'";
+export const LOCK = `${LOOK} for update of r, j`;
 type Locked = {
   status: string; claimed_by_staff_user_id: string | null; job_id: string; fetched_advert_id: string | null; job_status: string; title: string; employer_name: string;
   county: string | null; occupation_code: string | null; sector: string; salary_low: number | null; salary_high: number | null; badge: string | null;
-  pass_route: string | null; source: string; advert_text: string | null;
+  pass_route: string | null; pay_grade: string | null; quota_full: boolean; source: string; advert_text: string | null;
 };
 
 async function lockForDecision(c: pg.PoolClient, id: string, staffUserId: string): Promise<Locked> {
@@ -295,6 +320,59 @@ export async function approve(db: Db, staffUserId: string, itemId: string | numb
     await decide(c, id, staffUserId, r, after, "passed", "approved", "fetched_job.approve", "approved");
     return { jobId: r.job_id, passRoute: route };
   });
+}
+
+// ===== the dry run (B63) =====
+export type DryCheck = { check: string; result: "pass" | "fail" | "unsure" | "not_run"; detail: string | null };
+export type DryRun = {
+  itemId: string; jobId: string;
+  /** What Approve would do with this input: publish with the badge below, or refuse with `failedStage`. */
+  wouldPublish: boolean; passRoute: string | null; failedStage: string | null; badge: "critical_skills_eligible" | null;
+  occupationCode: string; salaryLow: number | null; salaryHigh: number | null;
+  /** The pay grade the job already has (null when none), and whether its occupation's General quota is full (always false for a Critical Skills job). */
+  payGrade: string | null; quotaFull: boolean;
+  /** The rules stage text the chain stopped at (or "PASS ...") and each check in order. */
+  stage: string; checks: DryCheck[];
+};
+
+// The chain stops at the first failing stage, so a check ran when its stage number is not past the stop; at the stop it failed (or stays unsure when it goes to the admin queue).
+const stageNumber = (stage: string) => (stage.startsWith("PASS") ? 99 : Number(stage.split(" ")[0]));
+export function stageChecks(a: Pick<Assessment, "irishReason" | "reason" | "occupationCode" | "contractReason" | "salaryCheck" | "scamFlag">, stage: string): DryCheck[] {
+  const stop = stageNumber(stage);
+  const at = (n: number): DryCheck["result"] => (stop < n ? "not_run" : stop > n ? "pass" : stage.includes("(admin queue") ? "unsure" : "fail");
+  const one = (check: string, n: number, detail: string | null): DryCheck => ({ check, result: at(n), detail: stop < n ? null : detail });
+  return [
+    one("irish_employer", 3, a.irishReason),
+    one("sponsorship_wording", 4, a.reason),
+    one("occupation_known", 5, a.occupationCode),
+    one("critical_skills_list", 6, a.occupationCode),
+    one("contract", 7, a.contractReason),
+    one("salary", 8, a.salaryCheck),
+    { check: "scam_wording", result: a.scamFlag ? "fail" : "pass", detail: null },
+  ];
+}
+
+/**
+ * What Approve would do, with nothing written: the same rules re-run on the saved advert with the staff member's occupation code, pay and contract, as `approve`
+ * does, and the result broken down by check with the badge the job would get. Any fetched-job reviewer may ask, claimer or not; a decided item or a job that left
+ * review is refused as approve would. ponytail: a dry run is not a hold, the rules or the advert may change before the real Approve.
+ */
+export async function dryRunApprove(db: Pick<pg.Pool, "query">, staffUserId: string, itemId: string | number, input: ApproveInput, data: RulesData): Promise<DryRun> {
+  const { staff, onList } = checkApproveInput(input, data.lists);
+  await checkReviewer(db, staffUserId);
+  const key = String(itemId);
+  if (!validId(key)) throw new QueueRefused("not_found");
+  const r = (await db.query<Locked>(LOOK, [key])).rows[0];
+  if (!r) throw new QueueRefused("not_found");
+  if (r.status !== "open" && r.status !== "claimed") throw new QueueRefused("already_decided");
+  if (r.job_status !== "in_review") throw new QueueRefused("job_not_in_review");
+  if (r.advert_text === null) throw new QueueRefused("no_advert_text");
+  const { a, route, stage } = await reassess(r, input.occupationCode, onList, staff, data.chain);
+  return {
+    itemId: key, jobId: r.job_id, wouldPublish: route !== null, passRoute: route, failedStage: route ? null : stage, badge: route ? "critical_skills_eligible" : null,
+    occupationCode: input.occupationCode, salaryLow: a.salaryLow === null ? null : Math.round(a.salaryLow), salaryHigh: a.salaryHigh === null ? null : Math.round(a.salaryHigh),
+    payGrade: r.pay_grade, quotaFull: r.quota_full, stage, checks: stageChecks(a, stage),
+  };
 }
 
 // ===== reject =====

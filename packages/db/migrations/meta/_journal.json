@@ -470,6 +470,13 @@
       "when": 1794300072000,
       "tag": "0072_content_extras",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1794300073000,
+      "tag": "0073_review_item_done_idx",
+      "breakpoints": true
     }
   ]
 }
