@@ -17,7 +17,7 @@ describe("createBrevoMail", () => {
     expect(url).toBe(BREVO_URL);
     expect(init!.method).toBe("POST");
     expect(init!.headers).toMatchObject({ "api-key": KEY, "content-type": "application/json" });
-    expect(JSON.parse(init!.body as string)).toEqual({ sender: { name: "irishworkpermit.ie", email: "no-reply@example.com" }, to: [{ email: "pat@example.com" }], subject: "Hi", htmlContent: "<p>Body</p>", textContent: "Body text" });
+    expect(JSON.parse(init!.body as string)).toEqual({ sender: { name: "Irish Work Permit", email: "no-reply@example.com" }, to: [{ email: "pat@example.com" }], subject: "Hi", htmlContent: "<p>Body</p>", textContent: "Body text" });
     expect(String(init!.body)).not.toContain(KEY);
     expect(String(url)).not.toContain(KEY);
     expect(init!.redirect).toBe("error");

@@ -37,7 +37,7 @@ describe("auth emails through the Brevo sender (fetch fake)", () => {
       expect((await post(auth, pool, "request-password-reset", { email })).status).toBe(200);
       expect(calls.map((c) => c.body.subject)).toEqual(["Confirm your email address", "Reset your password"]);
       // the reset has its own sender, so Brevo's unsubscribe on the verify email cannot block it
-      expect(calls.map((c) => c.body.sender)).toEqual([{ name: "irishworkpermit.ie", email: env.EMAIL_FROM }, { name: "irishworkpermit.ie", email: "security@account.example.ie" }]);
+      expect(calls.map((c) => c.body.sender)).toEqual([{ name: "Irish Work Permit", email: env.EMAIL_FROM }, { name: "Irish Work Permit", email: "security@account.example.ie" }]);
       for (const { url, body } of calls) {
         expect(url).toBe(BREVO_URL);
         expect(body.to).toEqual([{ email }]);

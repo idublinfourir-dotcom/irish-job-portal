@@ -11,7 +11,7 @@ describe("accountEmail", () => {
   const cases = [
     ["verify", "Confirm your email address", "1 hour", "Confirm email address"],
     ["reset", "Reset your password", "1 hour and only once", "Choose a new password"],
-    ["invite", "You are invited to join a company team on irishworkpermit.ie", "7 days", "Accept the invitation"],
+    ["invite", "You are invited to join a company team on Irish Work Permit", "7 days", "Accept the invitation"],
     ["change-email", "Confirm the change of your email address", "1 hour", "Confirm the change"], // C4, to the old address
     ["new-email", "Confirm your new email address", "1 hour", "Confirm new email address"], // C4, to the new address
   ] as const;

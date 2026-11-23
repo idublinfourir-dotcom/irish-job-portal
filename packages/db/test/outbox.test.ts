@@ -418,7 +418,7 @@ describe("job alert email", () => {
     expect(calls).toHaveLength(3);
     for (const { url, body } of calls) {
       expect(url).toBe(BREVO_URL);
-      expect((body.sender as { name: string }).name).toBe("irishworkpermit.ie");
+      expect((body.sender as { name: string }).name).toBe("Irish Work Permit");
       expect(String(body.htmlContent)).toMatch(/^<!doctype html>/);
       expect(String(body.textContent).length).toBeGreaterThan(50);
       expect(String(body.htmlContent)).not.toMatch(/<script|<img/);

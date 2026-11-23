@@ -5,7 +5,7 @@
 // (Gmail drops it and the request would tell a remote server the email was opened), so most inboxes show the fallback.
 // Every value is HTML-escaped here; callers pass only https links on our own origins (each caller checks its origin).
 // Stands alone (no imports) so the outbox command can load it with plain node.
-export const SITE_NAME = "irishworkpermit.ie"; // the brand is not decided (#G9, Q88): the domain is honest; brevo.ts SENDER_NAME is the same (a test holds them equal). The one place to rename the site in emails.
+export const SITE_NAME = "Irish Work Permit"; // the brand (#289, on irishworkpermit.ie); brevo.ts SENDER_NAME is the same (a test holds them equal)
 
 export type Email = { subject: string; text: string; html: string };
 export type Part = { heading: string; paragraphs: string[]; button?: { label: string; url: string }; footer: string; footerLink?: { label: string; url: string }; extra?: { html: string; text: string } };

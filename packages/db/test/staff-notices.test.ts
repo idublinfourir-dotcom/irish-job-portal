@@ -264,7 +264,7 @@ describe("Q15: invite a staff login", () => {
       .toEqual([{ a: h.staff.only_administrator, after: { role: "content_editor", requestId: r.json.requestId } }]);
     // the email: Brevo (the fake), the reset sender, to the invitee, a link on the admin site, never the typed name
     expect(mail).toHaveLength(1);
-    expect(mail[0]!.body.sender).toEqual({ name: "irishworkpermit.ie", email: "security@account.example.ie" });
+    expect(mail[0]!.body.sender).toEqual({ name: "Irish Work Permit", email: "security@account.example.ie" });
     expect(mail[0]!.body.to).toEqual([{ email: "new.person@example.test" }]);
     const text = String(mail[0]!.body.textContent);
     expect(text + mail[0]!.body.htmlContent).not.toMatch(/<b>New|Fake/);
