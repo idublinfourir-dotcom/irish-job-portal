@@ -31,7 +31,7 @@ export const ALERTS =
   "select a.id::text as id, a.candidate_user_id, a.occupation_code, a.sector, a.county, a.salary_min, a.badge, a.frequency, a.unsubscribe_token from alert a " +
   "join candidate_user u on u.id = a.candidate_user_id and u.suspended_at is null and u.deleted_at is null where a.id = any($1::bigint[]) and a.status = 'active'";
 export const LIVE_JOBS =
-  "select id::text as id, title, employer_name, county, salary_low, salary_high, pay_grade from job where id = any($1::bigint[]) and status = 'live' and not quota_full and closes_at > now()";
+  "select id::text as id, title, employer_name, county, salary_low, salary_high, pay_grade, badge from job where id = any($1::bigint[]) and status = 'live' and not quota_full and closes_at > now()";
 export const PENDING = "select exists(select 1 from email_outbox where status = 'pending') as any";
 // After the run (#275): the rows still due, and one audit row with the run's counts (no address, no id). Both on email_outbox_pending_idx.
 export const LEFT = "select count(*)::int as n from email_outbox where status = 'pending' and send_after <= now()";
@@ -125,14 +125,16 @@ export function confirmEmail(site: string, token: string): Email {
 const GENERAL: [string, string] = ["News about your account", "Something has changed on your account."];
 const FOOTER = `You got this email because you have an account on ${SITE_NAME}. We send emails like this when something changes on your account.`;
 
-/** A notice email. `site` is the https origin of the person's site (null: no button, the text says to sign in). */
-export function noticeEmail(template: string, site: string | null, lines: string[] = []): Email {
+/** A notice email. `site` is the https origin of the person's site (null: no button, the text says to sign in). `settings`: the footer link to the
+ *  person's notification settings (B75; only the candidate site has that page, so only a candidate row gets it). */
+export function noticeEmail(template: string, site: string | null, lines: string[] = [], settings = false): Email {
   const [subject, line, x] = N[template] ?? GENERAL;
   return render(subject, {
     heading: subject,
     paragraphs: [line, ...lines, x ? "If you have questions, please use the contact page on the site." : "Please sign in to see the details."],
     button: site && !x ? { label: "Sign in", url: `${site}/` } : undefined,
     footer: FOOTER,
+    footerLink: site && settings ? { label: "Notification settings", url: `${site}/account/settings` } : undefined,
   });
 }
 
@@ -188,7 +190,7 @@ export async function sendPending(c: pg.Pool | pg.Client, send: SendMail, batch 
         const m = confirmEmail(site, token);
         await send(email, m.subject, m.text, m.html);
       } else if (r.template !== "job_alert") {
-        const m = noticeEmail(r.template, siteOrigin(r.side === "candidate" ? siteUrl : r.side === "portal" ? portalUrl : undefined), r.template === "staff_digest" ? digestLines(r.params) : []);
+        const m = noticeEmail(r.template, siteOrigin(r.side === "candidate" ? siteUrl : r.side === "portal" ? portalUrl : undefined), r.template === "staff_digest" ? digestLines(r.params) : [], r.side === "candidate");
         await send(email, m.subject, m.text, m.html);
       } else {
         const site = siteOrigin(siteUrl);

@@ -6,7 +6,7 @@
 // alert's own List-Unsubscribe may be ignored or replaced; E1 report, step15/emails-report.md, has what a click on Brevo's does.
 // Stands alone (no imports) so the outbox command can load it with plain node.
 export type SendMail = (to: string, subject: string, text: string, html: string, headers?: Record<string, string>) => Promise<void>;
-export const SENDER_NAME = "irishworkpermit.ie"; // the From name (brand not decided, #G9); EMAIL_FROM stays one plain address
+export const SENDER_NAME = "Irish Work Permit"; // the From name (brand decided, #289); EMAIL_FROM stays one plain address
 export type BrevoOptions = { apiKey: string; from: string; fetch?: typeof fetch; timeoutMs?: number };
 
 export const BREVO_URL = "https://api.brevo.com/v3/smtp/email";

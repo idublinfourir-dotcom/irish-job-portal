@@ -51,5 +51,6 @@ describe("describeAlert", () => {
     expect(words).toHaveLength(5);
     expect(words[0]).toMatch(/^Occupation: .+ \(2111\)$/);
     expect(words.slice(1)).toEqual(["Sector: IT", "County: Cork", "Pay from EUR 0 a year", "Sponsor confirmed jobs only"]);
+    expect(describeAlert({ occupationCode: null, sector: null, county: null, salaryMin: null, badge: "critical_skills_eligible" })).toEqual(["Critical Skills eligible jobs only"]);
   });
 });

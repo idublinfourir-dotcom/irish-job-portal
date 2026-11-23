@@ -1,14 +1,14 @@
 // Unit tests (no database, network or browser) for step 15 Q11 and Q15's pure parts: which counts a staff member's roles cover (with a recording fake
 // database), the digest's numbers, and the invite's input checks.
 import { describe, expect, it } from "vitest";
-import { digestParams, QUEUE_ROLES, staffCounts } from "./staff-counts";
+import { digestParams, QUEUE_ROLES, staffCounts, type StaffCounts } from "./staff-counts";
 import { inviteStaff, STAFF_EMAIL, STAFF_ROLE_LIST, validStaffName } from "./staff-admin";
 import { PLAIN_EMAIL } from "./staff-seed-cli";
 import { QueueRefused } from "./admin-queue";
 
 const recorder = () => {
   const params: unknown[][] = [];
-  const db = { query: async (_sql: string, p: unknown[]) => (params.push(p), { rows: [{ queues: {}, reports_open: null, reports_new: null, appeals: null, contact: null, approvals: null, cases_unassigned: null, cases_mine: null }] }) };
+  const db = { query: async (_sql: string, p: unknown[]) => (params.push(p), { rows: [{ queues: { n: { fetched_job: 3 }, age: { fetched_job: 7200 } }, reports_open: null, reports_new: null, reports_job_hidden: null, appeals: null, contact: null, approvals: null, cases: null }] }) };
   return { db: db as never, params };
 };
 
@@ -24,16 +24,24 @@ describe("staffCounts: what each role's counts cover", () => {
     expect(a.slice(1)).toEqual([QUEUE_ROLES.scheduled_check, false, true, true, true, "s1", false]);
     expect(await seen([])).toEqual([[], [], false, false, false, false, "s1", false]);
   });
+  it("reads the count and the oldest wait of each queue from the one column, and leaves the merge suggestions to the caller (B57)", async () => {
+    const c = await staffCounts(recorder().db, "s1", ["fetched_job_reviewer"]);
+    expect([c.queues, c.oldestSeconds, c.mergeSuggestions]).toEqual([{ fetched_job: 3 }, { fetched_job: 7200 }, null]);
+  });
   it("every role in the map is a real role", () => {
     for (const roles of Object.values(QUEUE_ROLES)) for (const r of roles) expect(STAFF_ROLE_LIST).toContain(r);
   });
 });
 
+const NONE: StaffCounts = {
+  queues: {}, oldestSeconds: {}, reportsOpen: null, reportsNew: null, reportsJobHidden: null, appeals: null, contact: null, approvals: null, casesUnassigned: null, casesMine: null,
+  casesOpen: null, mergeSuggestions: null,
+};
 describe("digestParams", () => {
   it("keeps only counts above zero, flat", () => {
-    expect(digestParams({ queues: { scam_flag: 2, fetched_job: 0 }, reportsOpen: 3, reportsNew: 0, appeals: null, contact: 1, approvals: null, casesUnassigned: 2, casesMine: 0 }))
+    expect(digestParams({ ...NONE, queues: { scam_flag: 2, fetched_job: 0 }, reportsOpen: 3, reportsNew: 0, contact: 1, casesUnassigned: 2, casesMine: 0, casesOpen: 9, reportsJobHidden: 1 }))
       .toEqual({ scam_flag: 2, reportsOpen: 3, contact: 1, casesUnassigned: 2 });
-    expect(digestParams({ queues: {}, reportsOpen: null, reportsNew: null, appeals: 0, contact: null, approvals: null, casesUnassigned: null, casesMine: null })).toEqual({});
+    expect(digestParams({ ...NONE, appeals: 0 })).toEqual({});
   });
 });
 

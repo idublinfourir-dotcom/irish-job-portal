@@ -227,13 +227,16 @@ describe("the new routes against the rate limit, the spec and the budget", () =>
 describe("the sitemap read (S13)", () => {
   it("lists every live job and no job of any other status, nor an expired one", async () => {
     const pool = src.getPool();
-    expect(await src.sitemapIds(pool)).toEqual(["jobs-0", "companies-0", "occupations-0"]);
+    expect(await src.sitemapIds(pool)).toEqual(["jobs-0", "companies-0", "occupations-0", "pages-0", "guides-0", "updates-0", "help-0"]);
     const jobs = (await src.sitemapPart(pool, "jobs-0"))!;
     const live = (await su.query("select id::text from job where status = 'live' and closes_at > now() order by id")).rows.map((r) => r.id);
     expect(jobs.map((j) => j.key)).toEqual(live);
     expect(live).toHaveLength(8);
     for (const s of ["draft", "in_review", "under_review", "hidden", "closed", "expired"]) expect(jobs.map((j) => j.key), s).not.toContain(status[s]);
     expect(jobs.every((j) => j.kind === "job" && !Number.isNaN(Date.parse(j.lastModified!)))).toBe(true);
+    // #288: the address is made from the title and county as well as the id
+    const named = (await su.query("select id::text, title, county from job where status = 'live' and closes_at > now() order by id")).rows;
+    expect(jobs.map((j) => [j.key, j.title, j.county])).toEqual(named.map((r) => [r.id, r.title, r.county]));
   });
   it("lists the companies with a page (not rejected, closed or merged) and the occupations on the lists", async () => {
     const pool = src.getPool();

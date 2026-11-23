@@ -123,7 +123,7 @@ describe("content-admin, before the database", () => {
     for (const [k, s] of [["help", "a-page"], ["guide", "a1-b2"], ["occupation", "2134"]] as const) expect(checkSlug(k, s)).toBe(s);
     for (const [k, s] of [["help", "A"], ["help", ""], ["help", "a b"], ["occupation", "213"], ["occupation", "abcd"], ["occupation", "21345"], ["help", 5]] as const) expect(() => checkSlug(k, s), String(s)).toThrow(QueueRefused);
   });
-  it("names who publishes what", () => expect(PUBLISHER).toEqual({ help: "content_editor", update: "content_editor", guide: "rules_data_editor", occupation: "rules_data_editor" }));
+  it("names who publishes what (a notice like a help page, #291)", () => expect(PUBLISHER).toEqual({ help: "content_editor", update: "content_editor", notice: "content_editor", guide: "rules_data_editor", occupation: "rules_data_editor" }));
   it("refuses bad input without a query", async () => {
     for (const d of [{ ...draft, kind: "x" }, { ...draft, slug: "A" }, { ...draft, title: "" }, { ...draft, body: "a\u0000" }, { ...draft, sourceUrl: "javascript:1" }, { ...draft, checkedOn: "2099-01-01" }, { ...draft, checkedOn: "2026-13-01" }]) {
       const { db, calls } = fake();

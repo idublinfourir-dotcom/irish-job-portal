@@ -1,7 +1,7 @@
 // No database: the post body checks, the hours minimum, the rules verdicts and the refusal codes. The routes end to end: packages/db/test/jobs-route.test.ts.
 import { GENERAL_LOWER_CODES, GENERAL_LOWER_MINIMUM, GENERAL_MINIMUM, rulesV1 } from "@portal/rules";
 import { describe, expect, it } from "vitest";
-import { checkClose, checkEdit, checkPost, checkRenew, CONDITIONS, jobRefusal, minimumForHours, rulesFor, verdictReply, type Post, type Verdict } from "./jobs";
+import { checkBody, checkClose, checkDraft, checkEdit, checkPost, checkRenew, CONDITIONS, evaluate, isFull, jobRefusal, minimumForHours, rulesFor, verdictReply, type Check, type Post, type Verdict } from "./jobs";
 
 const desc = "We are hiring a software engineer to build our payments platform in Dublin. Full sponsorship offered.";
 export const good = {
@@ -71,14 +71,15 @@ describe("checkEdit, checkRenew, checkClose", () => {
     for (const jobId of [0, -1, 1.5, 7, 2 ** 53, Infinity, null, "0", "07", "-1", "1.5", " 7", "9".repeat(19), "9223372036854775808", 5, 1e30, undefined]) expect(checkEdit({ ...good, jobId }), String(jobId)).toBeNull();
     expect(checkEdit({ ...good, jobId: "5", extra: 1 })).toBeNull();
   });
-  it("renew takes an optional hire answer, close needs one (#49)", () => {
+  it("renew and close take an optional hire answer; the route needs it on a job past draft (#49, B52)", () => {
     expect(checkRenew({ jobId: "3" })).toEqual({ jobId: "3", hireAnswer: null, exceptionConfirmed: false });
     expect(checkRenew({ jobId: "3", hireAnswer: "yes" })).toEqual({ jobId: "3", hireAnswer: "yes", exceptionConfirmed: false });
     expect(checkRenew({ jobId: "3", exceptionConfirmed: true })).toEqual({ jobId: "3", hireAnswer: null, exceptionConfirmed: true });
     for (const b of [{ jobId: "3", exceptionConfirmed: "true" }, { jobId: "3", exceptionConfirmed: 1 }, { jobId: "3", x: 1 }, null]) expect(checkRenew(b)).toBeNull();
     expect(checkClose({ jobId: "3", hireAnswer: "no", exceptionConfirmed: true })).toBeNull(); // the tick is a renewal field only
     expect(checkClose({ jobId: "3", hireAnswer: "no" })).toEqual({ jobId: "3", hireAnswer: "no" });
-    for (const b of [{ jobId: "3" }, { jobId: 3, hireAnswer: "no" }, { jobId: "03", hireAnswer: "no" }, { jobId: "3", hireAnswer: "maybe" }, { jobId: "3", hireAnswer: "no", x: 1 }, { hireAnswer: "no" }, null]) expect(checkClose(b)).toBeNull();
+    expect(checkClose({ jobId: "3" })).toEqual({ jobId: "3", hireAnswer: null }); // a draft close skips the question; the route refuses a live job without it
+    for (const b of [{ jobId: 3, hireAnswer: "no" }, { jobId: "03", hireAnswer: "no" }, { jobId: "3", hireAnswer: "maybe" }, { jobId: "3", hireAnswer: "third" }, { jobId: "3", hireAnswer: "no", x: 1 }, { hireAnswer: "no" }, null]) expect(checkClose(b)).toBeNull();
   });
 });
 
@@ -257,5 +258,91 @@ describe("rulesFor: conditions the Ineligible titles do not name (P6)", () => {
     named("5434", ["5 years", "2 years", "fast food"]); // chefs: experience and "not fast food"
     for (const code of ["1242", "2229", "3231", "3239", "6146"]) named(code, ["disability services"]);
     expect((await rulesV1()).occupationLists.some((e) => e.code === "6145"), "6145 is on no list, so its condition lives in CONDITIONS").toBe(false);
+  });
+});
+
+describe("checkDraft (B49): a draft needs a title only", () => {
+  const empty = { county: null, occupationCode: null, contractType: null, contractMonths: null, salaryLow: null, salaryHigh: null, payGrade: null, healthInsuranceEur: null, ownPageUrl: null, clientName: null, statement: null };
+  it("takes a title alone, a half-filled form and a full post, and fills the defaults", () => {
+    expect(checkDraft({ status: "draft", title: " Chef " })).toEqual({ status: "draft", title: "Chef", description: "", weeklyHours: 39, permitType: "critical_skills", exceptionConfirmed: false, ...empty });
+    expect(checkDraft({ status: "draft", title: "Chef", county: "Cork", salaryLow: 40000, description: "short" })).toMatchObject({ county: "Cork", salaryLow: 40000, description: "short" });
+    expect(checkDraft({ ...good, status: "draft" })).toMatchObject({ county: "Dublin", occupationCode: "2136", ownPageUrl: good.ownPageUrl });
+    expect(checkDraft({ status: "draft", title: "Chef", county: null, ownPageUrl: null })).toMatchObject(empty);
+  });
+  it("still checks what is given", () => {
+    for (const bad of [
+      { title: "x" }, { title: "Chef", county: "London" }, { title: "Chef", occupationCode: "9999" }, { title: "Chef", ownPageUrl: "http://a.example.ie/x" }, { title: "Chef", ownPageUrl: "javascript:alert(1)//aaaa" },
+      { title: "Chef", contractType: "temp" }, { title: "Chef", contractType: "permanent", contractMonths: 24 }, { title: "Chef", salaryHigh: 40000 }, { title: "Chef", salaryLow: 50000, salaryHigh: 40000 },
+      { title: "Chef", salaryLow: "5" }, { title: "Chef", weeklyHours: 0 }, { title: "Chef", description: "x".repeat(10_001) }, { title: "Chef", description: 5 }, { title: "Chef", description: "a\u0000b" },
+      { title: "Chef", permitType: "stamp4" }, { title: "Chef", exceptionConfirmed: "yes" }, { title: "Chef", badge: "sponsor_confirmed" }, { title: "Chef", passRoute: "stated_pay" },
+      { title: "Chef", statement: { signerName: "A" } }, { title: "Chef\u202e" }, { description: "no title" }, { title: "Chef", clientName: "a" },
+    ]) expect(checkDraft({ status: "draft", ...bad }), JSON.stringify(bad)).toBeNull();
+    for (const bad of [null, [], "x", { title: "Chef" }, { status: "live", title: "Chef" }]) expect(checkDraft(bad), JSON.stringify(bad)).toBeNull();
+  });
+  it("checkBody loosens a draft only: a live post still needs every field", () => {
+    expect(checkBody({ status: "draft", title: "Chef" })).not.toBeNull();
+    expect(checkBody({ status: "live", title: "Chef" })).toBeNull();
+    expect(checkBody({ ...good })).not.toBeNull();
+    expect(checkEdit({ status: "draft", title: "Chef", jobId: "7" })).toMatchObject({ jobId: "7", title: "Chef" });
+    expect(checkEdit({ status: "live", title: "Chef", jobId: "7" })).toBeNull();
+    expect(checkEdit({ status: "draft", title: "Chef", jobId: "0" })).toBeNull();
+  });
+  it("isFull tells a draft that could go live from one that could not", () => {
+    expect(isFull(checkDraft({ ...good, status: "draft" })!)).toBe(true);
+    expect(isFull(checkDraft({ status: "draft", title: "Chef" })!)).toBe(false);
+  });
+});
+
+describe("evaluate (B50): every check, as a list", () => {
+  const list = async (o: object = {}, employer = "Fake Payments Limited", all = true) => evaluate(post(o), employer, await rulesV1(), all);
+  const states = (checks: Check[]) => Object.fromEntries(checks.map((c) => [c.id, c.state]));
+  it("a passing post lists its checks with the minimum applied and the counted pay", async () => {
+    const { checks, verdict } = await list({ salaryLow: 40000, salaryHigh: null, healthInsuranceEur: 904 });
+    expect(verdict).toMatchObject({ ok: true, passRoute: "stated_pay" });
+    expect(states(checks)).toEqual({ occupation: "pass", contract: "pass", wording: "pass", money: "pass", pay: "pass" });
+    expect(checks.find((c) => c.id === "occupation")!.detail).toEqual({ code: "2136", listStatus: "critical_skills" });
+    expect(checks.find((c) => c.id === "pay")!.detail).toEqual({ minimumEur: 40904, countedEur: 40904, healthInsuranceEur: 904, weeklyHours: 39, route: "stated_pay" });
+  });
+  it("a failing post lists every failing check, not only the first", async () => {
+    const { checks, verdict } = await list({ contractType: "fixed_term", contractMonths: 12, salaryLow: 20000, salaryHigh: null, description: desc + " Candidates must pay a registration fee." });
+    expect(states(checks)).toMatchObject({ contract: "blocked", money: "note", pay: "blocked" });
+    expect(checks.filter((c) => c.state === "blocked").map((c) => c.code)).toEqual(["CONTRACT_TOO_SHORT", "PAY_BELOW_MINIMUM"]);
+    expect(checks.find((c) => c.id === "money")!.detail).toEqual({ phrase: "pay a registration fee" });
+    expect(verdict).toEqual({ ok: false, code: "CONTRACT_TOO_SHORT" }); // the first blocked one, as a save gives
+    expect(checks.find((c) => c.id === "pay")!.detail).toMatchObject({ minimumEur: 40904, countedEur: 20000 });
+  });
+  it("stopping at the first refusal gives the same verdict and fewer checks", async () => {
+    const o = { contractType: "fixed_term", contractMonths: 12, salaryLow: 20000, salaryHigh: null };
+    const all = await list(o), first = await list(o, "Fake Payments Limited", false);
+    expect(first.verdict).toEqual(all.verdict);
+    expect(first.checks.map((c) => c.id)).toEqual(["occupation", "contract"]);
+  });
+  it("the quota, the condition wording and the list status each have a line", async () => {
+    const general = { ...(await rulesV1()) };
+    general.minimums = { ...general.minimums, general: 36605, generalLower: 34000, generalLowerCodes: ["6145"], generalQuotaFullCodes: ["2136"] };
+    const q = await evaluate(post({ permitType: "general" }), "Fake Payments Limited", general, true);
+    expect(q.checks.find((c) => c.id === "quota")).toMatchObject({ state: "blocked", code: "QUOTA_FULL", detail: { full: true } });
+    expect(q.checks.find((c) => c.id === "statement")).toMatchObject({ state: "blocked", code: "STATEMENT_REQUIRED" });
+    const care = await evaluate(post({ occupationCode: "6145", permitType: "general", salaryLow: 36000, salaryHigh: null }), "Fake Care Limited", general, true);
+    expect(care.checks.find((c) => c.id === "condition")).toMatchObject({ state: "blocked", code: "OCCUPATION_INELIGIBLE", detail: { exception: CONDITIONS["6145"], confirmed: false } });
+    const nl = await evaluate(post({ occupationCode: "3545", salaryLow: 70000, salaryHigh: null }), "Fake Payments Limited", { ...(await rulesV1()), minimums: { ...(await rulesV1()).minimums, nonListRoute: false } }, true);
+    expect(nl.checks.find((c) => c.id === "list")).toMatchObject({ state: "blocked", code: "OCCUPATION_NOT_ON_LIST", detail: { listStatus: "not_listed" } });
+    expect((await list({ occupationCode: "3545", salaryLow: 70000, salaryHigh: null })).checks.find((c) => c.id === "list")).toMatchObject({ state: "note" });
+  });
+  it("GENERAL_RULES_NOT_SET is the only line when the figures are missing", async () => {
+    const { checks, verdict } = await evaluate(post({ permitType: "general" }), "Fake Payments Limited", await rulesV1(), true);
+    expect(checks).toEqual([{ id: "permit_rules", state: "blocked", code: "GENERAL_RULES_NOT_SET", detail: {} }]);
+    expect(verdict).toEqual({ ok: false, code: "GENERAL_RULES_NOT_SET" });
+  });
+});
+
+describe("rulesFor: an agency never uses the public pay route through a client (CF98)", () => {
+  const grade = { salaryLow: null, salaryHigh: null, payGrade: "Staff Nurse scale" };
+  it("a public body named as the client gets no public pay route, with or without stated pay", async () => {
+    const r = await rulesV1();
+    expect(await rulesFor(post(grade), "Beaumont Hospital", r)).toMatchObject({ ok: true, passRoute: "public_pay" }); // the public body itself still may
+    expect(await rulesFor(post({ ...grade, clientName: "Beaumont Hospital" }), "Beaumont Hospital", r)).toEqual({ ok: false, code: "PAY_REQUIRED" });
+    expect(await rulesFor(post({ ...grade, salaryLow: 20000, clientName: "HSE" }), "HSE", r)).toEqual({ ok: false, code: "PAY_BELOW_MINIMUM" });
+    expect(await rulesFor(post({ salaryLow: 50000, salaryHigh: null, clientName: "HSE" }), "HSE", r)).toMatchObject({ ok: true, passRoute: "stated_pay" });
   });
 });

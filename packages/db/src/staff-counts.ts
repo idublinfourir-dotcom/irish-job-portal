@@ -20,25 +20,36 @@ const has = (roles: readonly string[], any: readonly string[]) => any.some((r) =
 // One statement. Uncorrelated subqueries run only when their CASE picks them (Postgres evaluates an InitPlan on first use). Each count is on an index:
 // review_item_queue_idx, report_inbox_idx, strike_clock_idx, contact_message_inbox_idx, approval_request_pending_idx.
 export const STAFF_COUNTS =
-  "select (select coalesce(jsonb_object_agg(queue, n), '{}') from (select queue, count(*)::int n from review_item where status in ('open','claimed') and queue = any($1::text[]) " +
+  "select (select jsonb_build_object('n', coalesce(jsonb_object_agg(queue, n), '{}'), 'age', coalesce(jsonb_object_agg(queue, age), '{}')) " +
+  "from (select queue, count(*)::int n, extract(epoch from now() - min(created_at))::int age from review_item where status in ('open','claimed') and queue = any($1::text[]) " +
   "and (queue <> 'scheduled_check' or detail->>'role' = any($2::text[])) group by queue) q) as queues, " +
   "case when $3 then (select count(*)::int from report where status in ('open','job_hidden')) end as reports_open, " +
   "case when $3 then (select count(*)::int from report where status in ('open','job_hidden') and created_at > now() - interval '24 hours') end as reports_new, " +
+  "case when $3 then (select count(*)::int from report where status = 'job_hidden') end as reports_job_hidden, " +
   "case when $4 then (select count(*)::int from strike where stage = 'appealed') end as appeals, " +
   "case when $5 then (select count(*)::int from contact_message where status in ('new','claimed')) end as contact, " +
   "case when $6 then (select count(*)::int from approval_request where status = 'pending' and proposed_by_staff_user_id <> $7) end as approvals, " +
-  // SV-B2: open services cases for handlers, unassigned (services_case_board_idx) and assigned to me (services_case_staff_idx)
-  "case when $8 then (select count(*)::int from services_case where status <> 'closed' and assigned_staff_user_id is null) end as cases_unassigned, " +
-  "case when $8 then (select count(*)::int from services_case where assigned_staff_user_id = $7 and status <> 'closed') end as cases_mine";
+  // SV-B2: open services cases for handlers: unassigned (services_case_board_idx), assigned to me and every open one, counted in one pass (B57: a third separate count walked the cases once more)
+  "case when $8 then (select jsonb_build_object('unassigned', count(*) filter (where assigned_staff_user_id is null), 'mine', count(*) filter (where assigned_staff_user_id = $7), 'open', count(*)) " +
+  "from services_case where status <> 'closed') end as cases";
 
 export type StaffCounts = {
   /** Open and claimed items per queue the member may work (a queue with none is left out). */
   queues: Record<string, number>;
-  reportsOpen: number | null; reportsNew: number | null; appeals: number | null; contact: number | null;
+  /** Seconds the oldest open or claimed item of each of those queues has waited (B57: "oldest 9 h"). */
+  oldestSeconds: Record<string, number>;
+  reportsOpen: number | null; reportsNew: number | null;
+  /** Open reports whose job is already hidden (B57), part of reportsOpen. Trust and safety only. */
+  reportsJobHidden: number | null;
+  appeals: number | null; contact: number | null;
   /** Two-person requests someone else proposed, waiting for a second person (administrators). */
   approvals: number | null;
   /** Open services cases nobody holds, and those assigned to this member (services case handlers). */
   casesUnassigned: number | null; casesMine: number | null;
+  /** Every open services case, held or not (B57). */
+  casesOpen: number | null;
+  /** DETE name to company link suggestions (B57). Null unless asked for and the roles may view them: it runs the name matcher (about 170 ms at real size), so only myCounts(…, { merges: true }) fills it. */
+  mergeSuggestions: number | null;
 };
 
 /** The counts for one staff member with these roles. One statement. */
@@ -47,8 +58,8 @@ export async function staffCounts(db: Pick<pg.ClientBase, "query">, staff: strin
   const queues = Object.keys(QUEUE_ROLES).filter((q) => has(roles, QUEUE_ROLES[q]!));
   const r = (await db.query(STAFF_COUNTS, [queues, admin ? QUEUE_ROLES.scheduled_check : roles, has(roles, ["trust_and_safety"]), has(roles, ["trust_and_safety", "administrator"]),
     has(roles, ["services_case_handler", "content_editor", "administrator"]), admin, staff, roles.includes("services_case_handler")])).rows[0]!;
-  return { queues: r.queues, reportsOpen: r.reports_open, reportsNew: r.reports_new, appeals: r.appeals, contact: r.contact, approvals: r.approvals,
-    casesUnassigned: r.cases_unassigned, casesMine: r.cases_mine };
+  return { queues: r.queues.n, oldestSeconds: r.queues.age, reportsOpen: r.reports_open, reportsNew: r.reports_new, reportsJobHidden: r.reports_job_hidden, appeals: r.appeals,
+    contact: r.contact, approvals: r.approvals, casesUnassigned: r.cases?.unassigned ?? null, casesMine: r.cases?.mine ?? null, casesOpen: r.cases?.open ?? null, mergeSuggestions: null };
 }
 
 /** The digest's numbers: every count above zero, flat (queue names and the other keys). Pure. */

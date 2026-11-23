@@ -170,14 +170,16 @@ describe("P4: POST /api/portal/jobs/check", () => {
   it("answers ok with what a save would do, writes nothing, and a refusal is the same reply as the post's", async () => {
     const c = await company();
     const r = await check(c.poster, good);
-    expect([r.status, r.json]).toEqual([200, { ok: true, status: "live", passRoute: "stated_pay", sector: "IT" }]);
+    expect([r.status, r.json]).toEqual([200, { ok: true, status: "live", passRoute: "stated_pay", sector: "IT", checks: expect.any(Array) }]);
     expect(replyProblems(spec(), "post", "/api/portal/jobs/check", 200, r.json)).toEqual([]);
     expect((await check(c.poster, { ...good, status: "draft" })).json).toMatchObject({ ok: true }); // the status does not matter
     for (const body of [{ ...good, salaryLow: 30000, salaryHigh: null }, { ...good, occupationCode: "5434", title: "Head Chef" }, { ...good, contractType: "fixed_term", contractMonths: 6 },
       { ...good, occupationCode: "6145", title: "Home Carer", permitType: "general" }]) {
       const dry = await check(c.poster, body), real = await call(R.post.POST!, c.poster, { body: JSON.stringify(body) });
       expect(dry.status).toBe(422);
-      expect([dry.status, dry.json]).toEqual([real.status, real.json]);
+      const { checks, ...answer } = dry.json; // the single answer is the post's own reply; the list is the check's addition (B50)
+      expect(checks.some((c: { state: string; code?: string }) => c.state === "blocked" && c.code === answer.code)).toBe(true);
+      expect([dry.status, answer]).toEqual([real.status, real.json]);
     }
     expect(await jobs(c.org)).toBe(0);
     expect((await one("select count(*)::int n from portal_rate_limit where key = $1", [`jobs:${c.poster.id}`])).n).toBe(1); // the four real posts, one row

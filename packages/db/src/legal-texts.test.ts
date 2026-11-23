@@ -4,8 +4,8 @@ import { isLegalPurpose, MAX_LEGAL_BODY, validLegalBody, validVersion } from "./
 import { legalInForce, SITE_PURPOSES } from "./public-read";
 
 describe("legal text input checks", () => {
-  it("knows the three legal purposes only", () => {
-    for (const p of ["signup_terms", "portal_signup_terms", "privacy_notice"]) expect(isLegalPurpose(p)).toBe(true);
+  it("knows the six legal purposes only", () => {
+    for (const p of ["signup_terms", "portal_signup_terms", "privacy_notice", "cookie_policy", "employer_acceptable_use", "data_retention"]) expect(isLegalPurpose(p)).toBe(true);
     for (const p of ["visibility", "pay_floor", "Signup_terms", "", null, 1, ["privacy_notice"]]) expect(isLegalPurpose(p)).toBe(false);
   });
   it("takes a short lower-case label, as the placeholder's", () => {
@@ -20,8 +20,9 @@ describe("legal text input checks", () => {
 });
 
 describe("the public read's purposes", () => {
-  it("each site shows its own terms and the shared privacy notice, never the other site's terms", () => {
-    expect(SITE_PURPOSES).toEqual({ candidate: ["signup_terms", "privacy_notice"], portal: ["portal_signup_terms", "privacy_notice"] });
+  it("each site shows its own terms and the shared texts (privacy, cookies, employer acceptable use, data retention), never the other site's terms", () => {
+    const shared = ["privacy_notice", "cookie_policy", "employer_acceptable_use", "data_retention"];
+    expect(SITE_PURPOSES).toEqual({ candidate: ["signup_terms", ...shared], portal: ["portal_signup_terms", ...shared] });
   });
   it("refuses another purpose before any query", async () => {
     const db = { query: () => { throw new Error("no query expected"); } } as never;

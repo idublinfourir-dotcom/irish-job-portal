@@ -34,8 +34,17 @@ export const checkAlertId = (b: unknown): { id: string } | null => (isObject(b) 
 // ===== the signed-in routes
 const ROW = `id::text as id, occupation_code as "occupationCode", sector, county, salary_min as "salaryMin", badge, frequency, status, pause_reason as "pauseReason", last_sent_at as "lastSentAt"`;
 
-/** Newest first, at most 10 rows. The unsubscribe token is never returned. */
-export async function listAlerts(db: pg.Pool, userId: string) {
+/** Newest first, at most 10 rows. The unsubscribe token is never returned. With `?id=` (the edit form, opened from the alert email): that one alert as
+ *  `{ alert }`, 400 BAD_REQUEST for a bad id or any other query key, 404 ALERT_NOT_FOUND for another candidate's or an unknown id. */
+export async function listAlerts(db: pg.Pool, userId: string, url?: URL) {
+  const q = url?.searchParams;
+  if (q?.has("id")) {
+    const id = q.get("id");
+    if (!validId(id) || q.getAll("id").length > 1 || [...q.keys()].some((k) => k !== "id")) throw new Refuse(400, "BAD_REQUEST");
+    const one = await db.query(`select ${ROW} from alert where candidate_user_id = $1 and id = $2::bigint`, [userId, id]);
+    if (!one.rowCount) throw new Refuse(404, "ALERT_NOT_FOUND");
+    return { alert: one.rows[0] };
+  }
   const r = await db.query(`select ${ROW} from alert where candidate_user_id = $1 order by id desc limit ${MAX_ALERTS}`, [userId]);
   return { alerts: r.rows };
 }
@@ -122,6 +131,7 @@ export function describeAlert(a: { occupationCode: string | null; sector: string
     a.county && `County: ${a.county}`,
     a.salaryMin !== null && `Pay from EUR ${a.salaryMin.toLocaleString("en-IE")} a year`,
     a.badge === "sponsor_confirmed" && "Sponsor confirmed jobs only",
+    a.badge === "critical_skills_eligible" && "Critical Skills eligible jobs only",
   ].filter((x): x is string => typeof x === "string");
 }
 

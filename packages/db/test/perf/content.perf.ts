@@ -5,7 +5,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import pg from "pg";
 import { createTestDb, urlFor, type TestDb } from "../db";
 import { CONTENT_QUERIES } from "../../src/content";
-import { COMPANY_QUERIES, scopedCount, scopedQuery } from "../../src/public-pages";
+import { COMPANY_QUERIES, PAGE_EMPLOYERS, scopedCount, scopedQuery } from "../../src/public-pages";
 import { encodeCursor } from "../../src/search";
 import { assertPageBudget, measurePages, type PageCost, type Statement } from "./pages";
 
@@ -16,6 +16,8 @@ export const ONE_PAGES = 15;
 export const COMPANY_PAGES = 500;
 export const OCCUPATION_PAGES = 250;
 export const MS_LIMIT = 150;
+// B15, B19: the list of 150 guides or 100 help pages through the security-barrier view. Measured 23 Nov 2026: guides 40 pages, help 19; the feed with a category 86 as without.
+export const LIST_PAGES = 150;
 // The feed reads the view published_content_page, which is a security barrier: Postgres cannot take index order through it, so the feed reads every
 // published update and keeps the newest 21 (a seq scan: about 0.08 pages a row). Fine at this size, which is far more than Launch A will publish;
 // over about 3,000 pages the budget fails. The fix then is a view without security_barrier (it holds only public rows) or a function.
@@ -46,11 +48,13 @@ beforeAll(async () => {
               to_tsvector('english', 'cook'), g % 97 = 0, now() - (g || ' minutes')::interval, abs(hashtext('c' || g)) % 50 from generate_series(1, ${JOBS}) g`);
     await k.query("update job set organisation_id = 7 where organisation_id in (8, 9)"); // company 7 is a big one: 300 live jobs, so the count runs to its cap of 200
     await k.query(
-      `insert into content_page(kind, slug, title, body, source_url, checked_on, status, published_at)
-       select 'update', 'upd-' || g, 'Update ' || g, repeat('Fake update text. ', 20), 'https://enterprise.gov.ie/', '2026-11-01', case when g % 10 = 0 then 'withdrawn' else 'published' end, now() - (g || ' hours')::interval from generate_series(1, 600) g;
+      `insert into content_page(kind, slug, title, body, source_url, checked_on, status, published_at, category, effective_from)
+       select 'update', 'upd-' || g, 'Update ' || g, repeat('Fake update text. ', 20), 'https://enterprise.gov.ie/', '2026-11-01', case when g % 10 = 0 then 'withdrawn' else 'published' end, now() - (g || ' hours')::interval,
+              (array['salary_minimums', 'quotas', 'occupation_lists', 'processing', null])[1 + g % 5], case when g % 3 = 0 then date '2027-01-01' end from generate_series(1, 600) g;
        insert into content_page(kind, slug, title, body, source_url, checked_on, status, published_at)
        select 'guide', 'guide-' || g, 'Guide ' || g, repeat('Fake guide text. ', 100), 'https://enterprise.gov.ie/', '2026-11-01', 'published', now() from generate_series(1, 150) g;
-       insert into content_page(kind, slug, title, body, status, published_at) select 'help', 'help-' || g, 'Help ' || g, 'Fake help', 'published', now() from generate_series(1, 100) g;
+       insert into content_page(kind, slug, title, body, status, published_at, category) select 'help', 'help-' || g, 'Help ' || g, 'Fake help', 'published', now(),
+              (array['report_problem', 'permit_services', 'jobs_badges', 'account', null])[1 + g % 5] from generate_series(1, 100) g;
        insert into content_page(kind, slug, title, body, source_url, checked_on, status, published_at) select 'occupation', (1000 + g)::text, 'Occupation ' || g, repeat('Fake text. ', 50), 'https://enterprise.gov.ie/', '2026-11-01', 'published', now() from generate_series(0, ${CODES - 1}) g;`);
   } finally {
     await k.end();
@@ -73,8 +77,14 @@ it("every page of the content, company and occupation reads stays under its page
       if (scans) expect(costs.map((x) => x.scans).join("|"), `${name} plan`).toMatch(scans);
     };
     const mid = (await c.query("select published_at::text t, id::text i from published_content_page where kind = 'update' order by published_at desc, published_content_page.id desc offset 300 limit 1")).rows[0];
-    await page("updates feed, first page", [CONTENT_QUERIES.feedFirst], FEED_PAGES);
-    await page("updates feed, 300 in", [{ text: CONTENT_QUERIES.feedAfter, values: [mid.t, mid.i] }], FEED_PAGES);
+    await page("updates feed, first page", [{ text: CONTENT_QUERIES.feedFirst, values: [null] }], FEED_PAGES);
+    await page("updates feed, 300 in", [{ text: CONTENT_QUERIES.feedAfter, values: [mid.t, mid.i, null] }], FEED_PAGES);
+    // B17: one category (a fifth of the updates); the same view scan, so the same budget
+    await page("updates feed, one category", [{ text: CONTENT_QUERIES.feedFirst, values: ["quotas"] }], FEED_PAGES);
+    await page("updates feed, one category, 300 in", [{ text: CONTENT_QUERIES.feedAfter, values: [mid.t, mid.i, "quotas"] }], FEED_PAGES);
+    // B15 and B19: every guide (150) and every help page (100) in one statement each
+    await page("guides list", [CONTENT_QUERIES.guides], LIST_PAGES);
+    await page("help list", [CONTENT_QUERIES.helpPages], LIST_PAGES);
     await page("guide by slug", [{ text: CONTENT_QUERIES.one, values: ["guide", "guide-250"] }], ONE_PAGES);
     await page("help by slug", [{ text: CONTENT_QUERIES.one, values: ["help", "help-150"] }], ONE_PAGES);
 
@@ -84,7 +94,9 @@ it("every page of the content, company and occupation reads stays under its page
     // a code with a quarter of all jobs may be read through the global sponsor index instead (it finds 21 matches soon); only the rare code must use job_live_occupation
     for (const [name, code, after, scans] of [["rare code", "1050", undefined, /job_live_occupation/], ["big code (10,000 jobs)", "2136", undefined, undefined], ["big code, 5,000 in", "2136", deepCursor, undefined]] as const) {
       const q = scopedQuery("occupation", code, after);
-      await page(`occupation page, ${name}`, [q, { text: scopedCount("occupation"), values: [code] }, { text: CONTENT_QUERIES.one, values: ["occupation", code] }], OCCUPATION_PAGES, scans);
+      // B7: the page's employers (slug and logo of each card) are read in one statement for the distinct organisations of the page
+      const owners = [...new Set((await c.query(q.text, q.values)).rows.slice(0, 20).map((r) => r.organisation_id as string))];
+      await page(`occupation page, ${name}`, [q, { text: scopedCount("occupation"), values: [code] }, { text: PAGE_EMPLOYERS, values: [owners] }, { text: CONTENT_QUERIES.one, values: ["occupation", code] }], OCCUPATION_PAGES, scans);
     }
 
     // the company page: its row, names, DETE rows and one page of its jobs

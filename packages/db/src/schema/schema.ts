@@ -307,7 +307,7 @@ export const job = pgTable("job", {
 	check("job_permit_employer_kind_check", sql`permit_employer_kind = ANY (ARRAY['self'::text, 'client'::text])`),
 	check("job_permit_employer_check_check", sql`permit_employer_check = ANY (ARRAY['pending'::text, 'found'::text, 'not_found'::text])`),
 	check("job_check", sql`num_nonnulls(posted_by_membership_id, posted_by_staff_id) <= 1`),
-	check("job_check1", sql`(application_route <> 'own_page'::text) OR (own_page_url IS NOT NULL)`),
+	check("job_check1", sql`(application_route <> 'own_page'::text) OR (own_page_url IS NOT NULL) OR (status = 'draft'::text)`),
 	check("job_check2", sql`(status <> 'live'::text) OR (search_vector IS NOT NULL)`),
 	check("job_check3", sql`(source <> 'fetched'::text) OR ((permit_type = 'critical_skills'::text) AND (badge IS DISTINCT FROM 'sponsor_confirmed'::text) AND (application_route <> 'on_site'::text))`),
 	check("job_check4", sql`(source <> 'fetched'::text) OR (status <> 'live'::text) OR (NOT (badge IS DISTINCT FROM 'critical_skills_eligible'::text))`),
@@ -1553,6 +1553,8 @@ export const contentPage = pgTable("content_page", {
 	publishedAt: timestamp("published_at", { withTimezone: true, mode: 'string' }),
 	updatedByStaffUserId: text("updated_by_staff_user_id"),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	category: text(),
+	effectiveFrom: date("effective_from"),
 }, (table) => [
 	index("content_page_feed_idx").using("btree", table.kind.asc().nullsLast().op("int8_ops"), table.publishedAt.desc().nullsFirst().op("int8_ops"), table.id.desc().nullsFirst().op("text_ops")).where(sql`(status = 'published'::text)`),
 	index("content_page_staff_idx").using("btree", table.updatedByStaffUserId.asc().nullsLast().op("text_ops")),
@@ -1563,9 +1565,11 @@ export const contentPage = pgTable("content_page", {
 			name: "content_page_updated_by_staff_user_id_fkey"
 		}),
 	unique("content_page_kind_slug_key").on(table.kind, table.slug),
-	check("content_page_kind_check", sql`kind = ANY (ARRAY['guide'::text, 'update'::text, 'help'::text])`),
+	check("content_page_kind_check", sql`kind = ANY (ARRAY['guide'::text, 'update'::text, 'help'::text, 'occupation'::text, 'notice'::text])`),
 	check("content_page_status_check", sql`status = ANY (ARRAY['draft'::text, 'published'::text, 'withdrawn'::text])`),
-	check("content_page_check", sql`(status <> 'published'::text) OR (kind = 'help'::text) OR ((source_url IS NOT NULL) AND (checked_on IS NOT NULL))`),
+	check("content_page_check", sql`(status <> 'published'::text) OR (kind = ANY (ARRAY['help'::text, 'notice'::text])) OR ((source_url IS NOT NULL) AND (checked_on IS NOT NULL))`),
+	check("content_page_category_check", sql`(category IS NULL) OR ((kind = 'update'::text) AND (category = ANY (ARRAY['salary_minimums'::text, 'quotas'::text, 'occupation_lists'::text, 'processing'::text]))) OR ((kind = 'help'::text) AND (category = ANY (ARRAY['report_problem'::text, 'permit_services'::text, 'jobs_badges'::text, 'account'::text])))`),
+	check("content_page_effective_check", sql`(effective_from IS NULL) OR (kind = 'update'::text)`),
 	check("content_page_check1", sql`(status <> 'published'::text) OR (published_at IS NOT NULL)`),
 ]);
 
@@ -1733,6 +1737,7 @@ export const strike = pgTable("strike", {
 	appealEnteredByStaffUserId: text("appeal_entered_by_staff_user_id"),
 	appealDecidedByStaffUserId: text("appeal_decided_by_staff_user_id"),
 	appealDecidedAt: timestamp("appeal_decided_at", { withTimezone: true, mode: 'string' }),
+	notifiedAt: timestamp("notified_at", { withTimezone: true, mode: 'string' }),
 	banLiftedAt: timestamp("ban_lifted_at", { withTimezone: true, mode: 'string' }),
 	evidenceStorageKey: text("evidence_storage_key"),
 }, (table) => [
@@ -1854,8 +1859,8 @@ export const consentText = pgTable("consent_text", {
 			name: "consent_text_approval_request_id_fkey"
 		}),
 	unique("consent_text_purpose_version_key").on(table.purpose, table.version),
-	check("consent_text_purpose_check", sql`purpose = ANY (ARRAY['signup_terms'::text, 'portal_signup_terms'::text, 'privacy_notice'::text, 'visibility'::text, 'application'::text, 'contact_accept'::text, 'services_request'::text, 'employer_contact'::text, 'sponsorship_statement'::text, 'pay_floor'::text])`),
-	check("consent_text_check", sql`(approval_request_id IS NULL) OR (purpose = ANY (ARRAY['signup_terms'::text, 'portal_signup_terms'::text, 'privacy_notice'::text]))`),
+	check("consent_text_purpose_check", sql`purpose = ANY (ARRAY['signup_terms'::text, 'portal_signup_terms'::text, 'privacy_notice'::text, 'cookie_policy'::text, 'employer_acceptable_use'::text, 'data_retention'::text, 'visibility'::text, 'application'::text, 'contact_accept'::text, 'services_request'::text, 'employer_contact'::text, 'sponsorship_statement'::text, 'pay_floor'::text])`),
+	check("consent_text_check", sql`(approval_request_id IS NULL) OR (purpose = ANY (ARRAY['signup_terms'::text, 'portal_signup_terms'::text, 'privacy_notice'::text, 'cookie_policy'::text, 'employer_acceptable_use'::text, 'data_retention'::text]))`),
 ]);
 
 export const consentRecord = pgTable("consent_record", {
@@ -2303,7 +2308,9 @@ export const publishedContentPage = pgView("published_content_page", {	// You ca
 	checkedOn: date("checked_on"),
 	publishedAt: timestamp("published_at", { withTimezone: true, mode: 'string' }),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }),
-}).with({"securityBarrier":true,"checkOption":"cascaded"}).as(sql`SELECT id, kind, slug, title, body, source_url, checked_on, published_at, updated_at FROM content_page WHERE status = 'published'::text`);
+	category: text(),
+	effectiveFrom: date("effective_from"),
+}).with({"securityBarrier":true,"checkOption":"cascaded"}).as(sql`SELECT id, kind, slug, title, body, source_url, checked_on, published_at, updated_at, category, effective_from FROM content_page WHERE status = 'published'::text`);
 
 export const candidateConsentRecord = pgView("candidate_consent_record", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }),

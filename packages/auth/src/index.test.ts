@@ -72,14 +72,15 @@ describe("candidate settings and sessions (#177)", () => {
   });
   it("the candidate and portal pools check the sign-up answers before the route runs; the staff pool does not", async () => {
     const candidate = await make("candidate").$context, portal = await make("portal").$context;
-    expect(candidate.options.plugins?.map((p) => p.id)).toEqual(["candidate-email-limit", "candidate-signup", "candidate-reauth"]);
+    expect(candidate.options.plugins?.map((p) => p.id)).toEqual(["candidate-email-limit", "candidate-signup", "candidate-reauth", "candidate-unverified-email"]);
     expect(portal.options.plugins?.map((p) => p.id)).toEqual(["portal-email-limit", "portal-signup", "portal-reauth"]);
     expect((await make("staff").$context).options.plugins?.map((p) => p.id)).not.toContain("staff-signup");
   });
   it("sign-in, sign-up, the Google start, reset and resend each have their own rate limit", async () => {
     const rules = (await make("candidate").$context).options.rateLimit?.customRules ?? {};
-    expect(Object.keys(rules).sort()).toEqual(["/change-email", "/request-password-reset", "/send-verification-email", "/sign-in/email", "/sign-in/social", "/sign-up/email"]);
+    expect(Object.keys(rules).sort()).toEqual(["/change-email", "/change-unverified-email", "/request-password-reset", "/send-verification-email", "/sign-in/email", "/sign-in/social", "/sign-up/email"]);
     expect(rules["/change-email"]).toEqual({ window: 300, max: 3 }); // C4: each change sends an email
+    expect(rules["/change-unverified-email"]).toEqual({ window: 300, max: 5 }); // B40: each change sends an email
     expect(rules["/sign-in/social"]).toEqual({ window: 60, max: 5 }); // C5: each Google "no" costs a limited start
     expect(rules["/send-verification-email"]).toEqual({ window: 300, max: 3 });
   });

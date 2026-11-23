@@ -3,7 +3,8 @@
 // the database has no row level security, so a statement without it would read another candidate's rows. The routes are in apps/candidate.
 import type pg from "pg";
 import { hasControl, inTransaction, isObject, only, Refuse } from "./candidate-route";
-import { validId } from "./search";
+import { getRules } from "./rules-data";
+import { payScaleLine, salaryLine, validId } from "./search";
 import { documentLabels } from "./case-document-codes";
 import { REFERRAL_FIRM_SHOWN, timelineEvents } from "./services-board";
 
@@ -91,6 +92,17 @@ export async function putProfile(db: pg.Pool, userId: string, p: ProfileBody) {
 export const checkJobId = (b: unknown): { jobId: string } | null => (isObject(b) && only(b, ["jobId"]) && validId(b.jobId) ? { jobId: b.jobId } : null);
 
 const CARD = "j.id::text as \"jobId\", j.title, j.employer_name as \"employerName\", j.county, j.salary_low as \"salaryLow\", j.salary_high as \"salaryHigh\", j.pay_grade as \"payGrade\", j.badge";
+// The SmallJobCard of a saved, tracked or similar job (B7): the card plus what a job card shows. Needs SMALL_JOIN. The did-you-apply prompts keep the plain CARD.
+const SMALL =
+  `${CARD}, j.contract_months as "contractMonths", j.permit_history as "permitHistory", j.source, o.slug as "employerSlug", o.logo_url as "employerLogoUrl", ` +
+  'j.pass_route as "passRoute", j.quota_full as "quotaFull", j.posted_at as "postedAt", js.last_ok_at as "lastCheckedAt"';
+const SMALL_JOIN = "join organisation o on o.id = j.organisation_id left join job_source js on js.id = j.job_source_id";
+type Priced = { salaryLow: number | null; salaryHigh: number | null; payGrade: string | null };
+/** Adds salaryLine and payScaleLine to rows of SMALL. The rules are read only when a row has a pay grade (kept 5 minutes). */
+async function priced<T extends Priced>(db: pg.Pool, rows: T[]) {
+  const rules = rows.some((r) => r.payGrade !== null) ? await getRules(db) : null;
+  return rows.map((r) => ({ ...r, salaryLine: salaryLine(r.salaryLow, r.salaryHigh, r.payGrade), payScaleLine: rules ? payScaleLine(rules, r.payGrade) : null }));
+}
 const LIVE = "(j.status = 'live' and j.closes_at > now())";
 // S20: why a job is not shown, as a code the page words (placeholder wording later): null when live. Only the hidden reason's code is read,
 // never the report, the reporter or staff notes. Anything else that is not live (closed, expired, hidden by staff or a suspension) is no_longer_available.
@@ -104,9 +116,9 @@ const stripIfClosed = <T extends { live: boolean; jobId: string; title: string; 
 /** Newest first, closed jobs included and marked live: false. At most 200 rows (the cap), so no paging. */
 export async function listSaved(db: pg.Pool, userId: string) {
   const r = await db.query(
-    `select ${CARD}, ${LIVE} as live, ${REASON}, s.created_at as "savedAt" from saved_job s join job j on j.id = s.job_id
+    `select ${SMALL}, ${LIVE} as live, ${REASON}, s.created_at as "savedAt" from saved_job s join job j on j.id = s.job_id ${SMALL_JOIN}
      where s.candidate_user_id = $1 order by s.created_at desc, s.id desc limit 200`, [userId]);
-  return { saved: r.rows.map((x) => ({ ...stripIfClosed(x), savedAt: x.savedAt })) };
+  return { saved: (await priced(db, r.rows)).map((x) => ({ ...stripIfClosed(x), savedAt: x.savedAt })) };
 }
 
 // The database refuses a job that was never live and the 201st save (migration 0020). Saving again is not an error.
@@ -197,18 +209,30 @@ export async function setStage(db: pg.Pool, userId: string, b: { jobId: string; 
   return { ok: true, offerHint: b.stage === "offer" }; // #86: "Got an offer? We can handle your permit"
 }
 
+/** B31 (#86): everything the candidate tracks, newest change first, at most 200 rows (`count` is the number tracked in all). A job that is no longer live
+ *  shows only title, employer and reason, as in the saved list; route, stage and updatedAt always stay. Stages: redirect applied, interview, offer,
+ *  rejected, withdrawn; on site applied, viewed, shortlisted, rejected, offer, hired, withdrawn. One statement on the (candidate, job) key. */
+export async function listTracker(db: pg.Pool, userId: string) {
+  const r = await db.query(
+    `select ${CARD}, ${LIVE} as live, ${REASON}, t.route, t.stage, t.updated_at as "updatedAt", count(*) over ()::int as count
+     from tracker_entry t join job j on j.id = t.job_id where t.candidate_user_id = $1 order by t.updated_at desc, t.id desc limit 200`, [userId]);
+  const count: number = r.rows[0]?.count ?? 0;
+  const tracker = r.rows.map((x) => { delete x.count; return { ...stripIfClosed(x), route: x.route, stage: x.stage, updatedAt: x.updatedAt }; });
+  return { tracker, count };
+}
+
 // ===== one saved or tracked job, even when closed (#57, D4) =====
 const SIMILAR = 5;
 export const LIVE_SIMILAR = 6; // S9: "more jobs like this" under a live job
 export const similarSql = (occ: boolean, limit = SIMILAR) =>
-  `select ${CARD} from job j where j.status = 'live' and j.closes_at > now() and j.sector = $1 and j.id <> $2::bigint ${occ ? "and j.occupation_code = $3" : ""}
+  `select ${SMALL} from job j ${SMALL_JOIN} where j.status = 'live' and j.closes_at > now() and j.sector = $1 and j.id <> $2::bigint ${occ ? "and j.occupation_code = $3" : ""}
    order by (not j.quota_full) desc, j.posted_at desc, j.id desc limit ${limit}`;
 // The live jobs of the same occupation, else of the same sector, newest first (full-quota last, as on the site; the sector index serves this order). Never the job itself.
 async function similarTo(db: pg.Pool, id: string, sector: string | null, occupationCode: string | null, limit = SIMILAR) {
   const similar = (occ: boolean) => db.query(similarSql(occ, limit), occ ? [sector, id, occupationCode] : [sector, id]);
   let s = occupationCode ? await similar(true) : null;
   if (!s?.rowCount) s = await similar(false);
-  return s.rows;
+  return priced(db, s.rows);
 }
 /** S9: up to 6 live jobs like a live job, public cards only. null (404) when the id is bad or the job is not live. */
 export async function similarLiveJobs(db: pg.Pool, id: string) {
@@ -220,11 +244,11 @@ export async function savedJob(db: pg.Pool, userId: string, url: URL) {
   const id = url.searchParams.get("id");
   if (!validId(id)) throw new Refuse(400, "BAD_REQUEST");
   const r = await db.query(
-    `select ${CARD}, j.sector, j.occupation_code as "occupationCode", j.own_page_url as "ownPageUrl", ${LIVE} as live, ${REASON}, j.closed_at as "closedAt",
+    `select ${SMALL}, j.sector, j.occupation_code as "occupationCode", j.own_page_url as "ownPageUrl", ${LIVE} as live, ${REASON}, j.closed_at as "closedAt",
        (s.id is not null) as saved, t.stage
-     from job j left join saved_job s on s.candidate_user_id = $1 and s.job_id = j.id left join tracker_entry t on t.candidate_user_id = $1 and t.job_id = j.id
+     from job j ${SMALL_JOIN} left join saved_job s on s.candidate_user_id = $1 and s.job_id = j.id left join tracker_entry t on t.candidate_user_id = $1 and t.job_id = j.id
      where j.id = $2::bigint and (s.id is not null or t.id is not null)`, [userId, id]);
-  const j = r.rows[0];
+  const j = (await priced(db, r.rows))[0];
   if (!j) throw new Refuse(404, "JOB_NOT_FOUND"); // not the candidate's own, whatever the job is
   const { sector, occupationCode, ownPageUrl, closedAt, ...card } = j;
   if (j.live) return { job: { ...card, ownPageUrl, saved: j.saved, stage: j.stage } };
@@ -252,6 +276,24 @@ export async function putSettings(db: pg.Pool, userId: string, s: Record<string,
     `insert into candidate_notification_preference(candidate_user_id, category, channel, enabled) select $1, k, 'email', v from unnest($2::text[], $3::boolean[]) as t(k, v)
      on conflict (candidate_user_id, category, channel) where candidate_user_id is not null do update set enabled = excluded.enabled`, [userId, keys, keys.map((k) => s[k])]);
   return getSettings(db, userId);
+}
+
+/** B41: who accessed or received this candidate's data (the same list as the export's `whoAccessedOrReceivedYourData`: an organisation's name, "Portal staff"
+ *  or "Portal system", the action and the time), newest first, at most 200. Never an id or a staff name; an access the candidate made themselves is not in it.
+ *  Launch B writes the rows, so it is empty at Launch A. ponytail: runs the export's private function (migration 0025) and keeps one key, no new migration;
+ *  a dedicated function with a SQL limit if the other two lists grow. */
+export async function dataAccessLog(db: pg.Pool, userId: string) {
+  const r = await db.query("select private.candidate_export_extras($1) -> 'whoAccessedOrReceivedYourData' as log", [userId]);
+  return { log: (r.rows[0].log as { by: string; action: string; at: string }[]).slice(0, 200) };
+}
+
+/** B40: when the password last changed (null for a login with no password, Google only) and the sign-in methods on the account (`credential`, `google`).
+ *  Better Auth stamps `candidate_account.updated_at` when the password is changed or reset. */
+export async function getSecurity(db: pg.Pool, userId: string) {
+  const r = await db.query(
+    `select (select a.updated_at from candidate_account a where a.user_id = $1 and a.provider_id = 'credential') as "passwordChangedAt",
+            (select coalesce(array_agg(distinct a.provider_id order by a.provider_id), '{}') from candidate_account a where a.user_id = $1) as "signInMethods"`, [userId]);
+  return r.rows[0] as { passwordChangedAt: Date | null; signInMethods: string[] };
 }
 
 // ===== delete the account (D2) =====

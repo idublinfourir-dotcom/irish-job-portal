@@ -11,7 +11,7 @@ import { CHAIN_RULES_V1 } from "@portal/rules";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createTestDb, tx, urlFor, type TestDb } from "../db";
 import { GOOD_RUN_TODAY, utcDayStart } from "../../src/fetch-guard-cli";
-import { LAST_5_YEARS } from "../../src/dete";
+import { PERMITS } from "../../src/dete";
 import { JOB_QUERY, listQuery, SORTS as LIST_SORTS, type Cursor, type Sort as ListSort } from "../../src/search";
 import { approveAccount, claimReview, REVIEW_AFTER, REVIEW_DECIDE, REVIEW_FIRST, REVIEW_ITEM, REVIEW_LOCK, listAccountReviews } from "../../src/account-review";
 import { REPORTS_AFTER, REPORTS_FIRST } from "../../src/trust-safety";
@@ -185,8 +185,7 @@ async function buildRows(): Promise<void> {
   // the job page: the module's job statement (named columns, advert text, employer, last checked), then the DETE count for its employer
   const jp = (await one("select max(job_id) v from job_text where job_id in (select id from job where status='live')")).v;
   const org = (await one(`select organisation_id v from job where id = ${jp}`)).v;
-  const y = new Date().getUTCFullYear();
-  add("job page", "job page: job + advert text + employer, then permits", [{ text: JOB_QUERY, values: [jp] }, { text: LAST_5_YEARS, values: [org, y - 4, y] }], true);
+  add("job page", "job page: job + advert text + employer, then permits (every year)", [{ text: JOB_QUERY, values: [jp] }, { text: PERMITS, values: [org] }], true);
 }
 
 const sum = (list: PageCost[], key: "pages" | "planning" | "execution" | "serialisation" | "ms") => list.reduce((n, c) => n + c[key], 0);
@@ -325,7 +324,7 @@ it("the admin queue pages and an approve stay under the limit", async () => {
   try {
     const mid = (await listQueue(client, staff)).next!;
     const [t, i] = Object.values(JSON.parse(Buffer.from(mid, "base64url").toString("utf8"))) as string[];
-    reads = await measurePages(client, [QUEUE_FIRST, { text: QUEUE_AFTER, values: [t, i] }, { text: QUEUE_ITEM, values: [made[1]] }]);
+    reads = await measurePages(client, [{ text: QUEUE_FIRST, values: [null] }, { text: QUEUE_AFTER, values: [null, t, i] }, { text: QUEUE_ITEM, values: [made[1]] }]);
   } finally {
     await client.end();
   }

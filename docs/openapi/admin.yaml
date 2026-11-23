@@ -155,6 +155,14 @@ components:
           items: { enum: [shared_mailbox, lookalike_domain] }
           description: "Extra reasons to look closely, never a refusal: `shared_mailbox` (the owner's email is hr@, jobs@, careers@, info@, admin@, recruitment@ or office@) and `lookalike_domain` (the email domain is within 2 edits of a saved company domain, 0 and 1 read as o and l)."
         lookalikeOf: { type: [string, 'null'], description: The saved company domain the email domain looks like; null without `lookalike_domain`. }
+        claimantName: { type: [string, 'null'], description: "The claimant's name as they gave it at sign-up. Plain text; show it as text, never as HTML. Null when the owner membership is gone.", example: Aoife Byrne }
+        freeEmail: { type: boolean, description: "The email domain is a free provider (gmail.com and the like). False with no email.", example: false }
+        nonDomainEmail: { type: boolean, description: "The company has not saved the email's domain as its own, so the claimant is not on a company address yet. False with no email.", example: true }
+        permitHistory: { type: string, enum: [has_history, first_time, not_linked], description: "The company's DETE label.", example: has_history }
+        lastPermitYear: { type: [integer, 'null'], description: "The newest year the company had DETE permits (a year of zero does not count); null when none are on record.", example: 2025 }
+        banned: { type: boolean, description: "The owner's email domain or address, or one of the company's CRO numbers, is on the ban list (the check Approve makes again).", example: false }
+        decidedAt: { type: [string, 'null'], description: "When the item was decided (database time text); null while it waits. A needs_info item keeps the time it was last asked.", example: '2026-11-18 09:30:00.123456+00' }
+        outcome: { type: [string, 'null'], enum: [approved, rejected, needs_info, null], description: "How the item was decided; null while it waits.", example: approved }
     AuditEvent:
       type: object
       required: [id, at, kind, actor, action]
@@ -166,6 +174,7 @@ components:
           type: object
           properties:
             staff: { type: [string, 'null'] }
+            staffName: { type: [string, 'null'], description: "The acting staff member's name (null when the actor is not staff).", example: Dara Kelly }
             candidate: { type: [string, 'null'] }
             portal: { type: [string, 'null'] }
             system: { type: [string, 'null'] }
@@ -173,11 +182,21 @@ components:
         action: { type: string }
         objectType: { type: [string, 'null'] }
         objectId: { type: [string, 'null'] }
+        objectLabel:
+          type: [string, 'null']
+          description: >-
+            B59: what the object is called, for an organisation (display name), job (title), staff member (name), content page (title), strike (the organisation's name) or
+            report (the job title, else the organisation's name). Null for any other object type, and for an object that no longer exists.
+          example: Lakeside Care Homes
         changedColumns: { type: [array, 'null'], items: { type: string } }
         before: { description: "Any JSON, or null." }
         after: { description: "Any JSON, or null." }
         reasonCode: { type: [string, 'null'] }
         secondStaff: { type: [string, 'null'] }
+        secondStaffName:
+          type: [string, 'null']
+          description: "B59: the second person's name. Only an administrator is given it; null for anyone else."
+          example: Robin Walsh
         relatedCase: { type: [string, 'null'] }
         source: { type: [string, 'null'] }
     DomainRow:
@@ -249,7 +268,7 @@ components:
       required: [id, kind, slug, title, status, updatedAt]
       properties:
         id: { $ref: '#/components/schemas/Id' }
-        kind: { type: string, enum: [guide, update, help, occupation] }
+        kind: { type: string, enum: [guide, update, help, occupation, notice] }
         slug: { type: string }
         title: { type: string }
         status: { type: string, enum: [draft, published, withdrawn] }
@@ -258,6 +277,8 @@ components:
         publishedAt: { type: [string, 'null'] }
         updatedBy: { type: [string, 'null'] }
         updatedAt: { $ref: '#/components/schemas/DbTime' }
+        category: { type: [string, 'null'], enum: [salary_minimums, quotas, occupation_lists, processing, report_problem, permit_services, jobs_badges, account, null], description: "B17, B19: an update's type (salary_minimums, quotas, occupation_lists, processing) or a help page's group (report_problem, permit_services, jobs_badges, account); null for the other kinds.", example: quotas }
+        effectiveFrom: { type: [string, 'null'], description: "B17: the day an update's rule starts; null for the other kinds.", example: '2027-01-01' }
     JobQueueItem:
       type: object
       required: [id, queue, status, jobId, jobStatus, title, organisationId, company]
@@ -306,6 +327,38 @@ components:
         reason: { type: [string, 'null'] }
         wrcAgency: { type: boolean, description: "The advert's employer name is an agency or trading name on the WRC licensed agency list (staff only)." }
         advertText: { type: [string, 'null'], description: Only on the one-item read. }
+        queuedAt: { $ref: '#/components/schemas/DbTime' }
+        county: { type: [string, 'null'], description: "The job's county.", example: Cork }
+        sourceKind: { type: string, description: "The kind of source the advert was fetched from (job_source.kind).", example: careers_page }
+        quotedEvidence: { type: [string, 'null'], description: "Only on the one-item read: the advert's own words the fetcher quoted as why it queued the item. Plain text; show it as text, never as HTML.", example: "...a specified purpose contract..." }
+        matcherModel: { type: [string, 'null'], description: "Only on the one-item read: the model that matched the occupation; null when none was stored.", example: matcher-2026-10 }
+    FetchedDryRun:
+      type: object
+      description: What Approve would do for one item with the given occupation code, pay and contract. Nothing is written.
+      required: [itemId, jobId, wouldPublish, passRoute, failedStage, badge, occupationCode, salaryLow, salaryHigh, payGrade, quotaFull, stage, checks]
+      properties:
+        itemId: { $ref: '#/components/schemas/Id' }
+        jobId: { $ref: '#/components/schemas/Id' }
+        wouldPublish: { type: boolean, description: "Approve would put the job live with these inputs.", example: true }
+        passRoute: { type: [string, 'null'], enum: [stated_pay, big_company, null], example: stated_pay }
+        failedStage: { type: [string, 'null'], description: "The rules stage that would refuse Approve (`rules_failed`); null when it would publish.", example: null }
+        badge: { type: [string, 'null'], enum: [critical_skills_eligible, null], description: "The badge the job would get.", example: critical_skills_eligible }
+        occupationCode: { type: string, example: '2231' }
+        salaryLow: { type: [integer, 'null'], description: "The pay the rules read (the reviewer's, else the advert's), whole euros a year.", example: 60000 }
+        salaryHigh: { type: [integer, 'null'], example: 60000 }
+        payGrade: { type: [string, 'null'], description: "The pay grade the job already has.", example: Staff Nurse }
+        quotaFull: { type: boolean, description: "The General quota for the occupation is full (always false for a Critical Skills job).", example: false }
+        stage: { type: string, description: "The rules stage the chain stopped at, or the PASS text.", example: PASS (salary stated) }
+        checks:
+          type: array
+          description: Every check in the chain's order. A check after the stop is `not_run`.
+          items:
+            type: object
+            required: [check, result, detail]
+            properties:
+              check: { type: string, enum: [irish_employer, sponsorship_wording, occupation_known, critical_skills_list, contract, salary, scam_wording], example: contract }
+              result: { type: string, enum: [pass, fail, unsure, not_run], example: pass }
+              detail: { type: [string, 'null'], description: "What the rule found, plain text; null when it did not run.", example: two years stated }
     ManualRow:
       type: object
       description: Database column names (snake case), as the database returns them. `reason` is why a draft is not listed.
@@ -739,8 +792,10 @@ paths:
       operationId: listAccountReviews
       summary: List open account reviews, or show one
       description: >-
-        Without `id`: the open and claimed `account_review` items (employer and agency sign-ups and claims), oldest first, 20 a page. With
-        `id`: that one item, whatever its status (an id that is not an account review, or not digits, is 404). The list shows the
+        Without `id`: the open and claimed `account_review` items (employer and agency sign-ups and claims), oldest first, 20 a page. With `tab`
+        the list is that tab's: `waiting` (open or claimed, the company not in needs_info), `needs_info` (asked for more, not yet decided),
+        `approved` or `rejected` (decided, newest decision first). Every list also gives the number on each of the four tabs in `counts`.
+        With `id`: that one item, whatever its status (an id that is not an account review, or not digits, is 404). The list shows the
         claimant's email, so only account reviewers read it. An unknown or repeated query key is 400 `bad_query`.
       security: [{ staffSession: [] }]
       x-roles: [account_reviewer]
@@ -748,6 +803,7 @@ paths:
       parameters:
         - { name: id, in: query, required: false, description: "One item's id.", schema: { type: string }, example: '1042' }
         - { name: after, in: query, required: false, description: "The `next` token of the page before.", schema: { $ref: '#/components/schemas/Cursor' } }
+        - { name: tab, in: query, required: false, description: "One tab of the page. Without it, every open and claimed item.", schema: { type: string, enum: [waiting, needs_info, approved, rejected] }, example: waiting }
       responses:
         '200':
           description: The page (no `id`), or `{ item }` (with `id`).
@@ -756,21 +812,31 @@ paths:
               schema:
                 oneOf:
                   - type: object
-                    required: [items, next]
+                    required: [items, next, counts]
                     properties:
                       items: { type: array, items: { $ref: '#/components/schemas/AccountReviewItem' } }
                       next: { type: [string, 'null'] }
+                      counts:
+                        type: object
+                        description: The number on each tab, whatever tab the list is.
+                        required: [waiting, needsInfo, approved, rejected]
+                        properties:
+                          waiting: { type: integer, example: 9 }
+                          needsInfo: { type: integer, example: 3 }
+                          approved: { type: integer, example: 212 }
+                          rejected: { type: integer, example: 17 }
                   - type: object
                     required: [item]
                     properties:
                       item: { $ref: '#/components/schemas/AccountReviewItem' }
               example:
                 items:
-                  - { id: '1042', status: open, claimedBy: null, createdAt: '2026-11-18 09:30:00.123456+00', reason: claim, detail: { found: true }, organisationId: '310', displayName: Example Care Ltd, kind: employer, organisationStatus: pending_review, signupPath: dete_claim, croNumber: '123456', wrcLicenceNumber: null, claimantEmail: owner@example.ie, emailDomain: example.ie, answer: null, answeredAt: null, flags: [], lookalikeOf: null }
+                  - { id: '1042', status: open, claimedBy: null, createdAt: '2026-11-18 09:30:00.123456+00', reason: claim, detail: { found: true }, organisationId: '310', displayName: Example Care Ltd, kind: employer, organisationStatus: pending_review, signupPath: dete_claim, croNumber: '123456', wrcLicenceNumber: null, claimantEmail: owner@example.ie, emailDomain: example.ie, answer: null, answeredAt: null, flags: [], lookalikeOf: null, claimantName: Aoife Byrne, freeEmail: false, nonDomainEmail: true, permitHistory: has_history, lastPermitYear: 2025, banned: false, decidedAt: null, outcome: null }
                 next: null
+                counts: { waiting: 9, needsInfo: 3, approved: 212, rejected: 17 }
         '400':
-          description: "`bad_cursor`: `after` is not a token this list made. `bad_query`: an unknown or repeated query key."
-          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
+          description: "`bad_cursor`: `after` is not a token this list made. `bad_tab`: `tab` is not one of the four. `bad_query`: an unknown or repeated query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_tab } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
           description: "`not_active_staff`: the staff login is not active. `not_reviewer`: no account_reviewer role (no other role stands in)."
@@ -871,7 +937,9 @@ paths:
       description: >-
         Newest first, 50 a page. An administrator reads every row and may filter by any staff member; any other active staff member reads
         only the rows where they are the actor (and is refused another member's id). Dates are UTC days, both ends inclusive. Only the
-        listed query keys, each at most once (anything else is `bad_query`). Nothing here writes.
+        listed query keys, each at most once (anything else is `bad_query`). Nothing here writes. B59: each row carries the staff member's name and a label for its
+        object (`actor.staffName`, `objectLabel`, `secondStaffName`), and `kind` and `case` filter (`kind=data_access` is the personal data views). Paging is by `after`
+        only, there are no page numbers. The same filters as a file: `GET /api/audit/export`.
       security: [{ staffSession: [] }]
       x-roles: [any active staff member (own rows), administrator (every row)]
       x-rate-limit: none
@@ -880,6 +948,8 @@ paths:
         - { name: action, in: query, required: false, schema: { type: string, pattern: '^[a-z][a-z0-9_.]{0,80}$' }, example: account_review.approved }
         - { name: objectType, in: query, required: false, schema: { type: string, pattern: '^[a-z][a-z0-9_]{0,40}$' }, example: organisation }
         - { name: objectId, in: query, required: false, schema: { type: string, pattern: '^[A-Za-z0-9_.:-]{1,100}$' }, example: '310' }
+        - { name: kind, in: query, required: false, description: "B59: the kind of row. `data_access` is a staff member opening personal data.", schema: { type: string, enum: [admin_action, data_access, security] }, example: data_access }
+        - { name: case, in: query, required: false, description: "B59: rows about one case, as the `relatedCase` value.", schema: { type: string, pattern: '^[A-Za-z0-9_.:-]{1,100}$' }, example: 'strike:12' }
         - { name: from, in: query, required: false, description: "First UTC day (inclusive).", schema: { $ref: '#/components/schemas/Date' } }
         - { name: to, in: query, required: false, description: "Last UTC day (inclusive).", schema: { $ref: '#/components/schemas/Date' } }
         - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Cursor' } }
@@ -896,17 +966,62 @@ paths:
                   next: { type: [string, 'null'] }
               example:
                 events:
-                  - { id: '88001', at: '2026-11-18 09:30:00.123456+00', kind: admin_action, actor: { staff: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', candidate: null, portal: null, system: null }, roleInForce: null, action: account_review.approved, objectType: organisation, objectId: '310', changedColumns: [status], before: { status: pending_review }, after: { status: verified }, reasonCode: approved, secondStaff: null, relatedCase: null, source: panel }
+                  - { id: '88001', at: '2026-11-18 09:30:00.123456+00', kind: admin_action, actor: { staff: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', staffName: Dara Kelly, candidate: null, portal: null, system: null }, roleInForce: null, action: account_review.approved, objectType: organisation, objectId: '310', objectLabel: Lakeside Care Homes, changedColumns: [status], before: { status: pending_review }, after: { status: verified }, reasonCode: approved, secondStaff: null, secondStaffName: null, relatedCase: null, source: panel }
                 next: null
         '400':
           description: >-
-            `bad_query`: an unknown or repeated query key. `bad_staff_id`, `bad_action`, `bad_object_type`, `bad_object_id`: a filter of the
-            wrong shape. `bad_from`, `bad_to`: not a real YYYY-MM-DD day. `bad_range`: from after to. `bad_cursor`: a token this list did not make.
+            `bad_query`: an unknown or repeated query key. `bad_staff_id`, `bad_action`, `bad_object_type`, `bad_object_id`, `bad_case_id`: a filter of the
+            wrong shape. `bad_kind`: not admin_action, data_access or security. `bad_from`, `bad_to`: not a real YYYY-MM-DD day. `bad_range`: from after to. `bad_cursor`: a token this list did not make.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_range } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
           description: "`not_active_staff`: the login is not active. `not_administrator`: a non-administrator filtered by another member's id."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/audit/export:
+    get:
+      operationId: exportAudit
+      summary: Download the audit log as a CSV file
+      description: >-
+        B59: the rows of `GET /api/audit` for the same filters (no `after`), newest first, at most 2,000, as one CSV file (`Content-Disposition: attachment; filename="audit-YYYY-MM-DD.csv"`,
+        `Cache-Control: no-store`). The first line names the columns: id, at, kind, staffId, staffName, action, objectType, objectId, objectLabel, reasonCode, relatedCase, secondStaffId,
+        secondStaffName, source, changedColumns, before, after. Every cell is quoted, and a cell that would run as a spreadsheet formula starts with a quote mark. When there were more rows the
+        header `x-audit-export-truncated: 1` is set: narrow the filters. Who sees what is as the list: an administrator every row, any other staff member their own (and is refused another member's id).
+        Writes one audit row (`audit.export`, with the filters and the row count). C4 (#270): the session must come from a sign-in in the last 10 minutes, else 403 `reauth_required`.
+      security: [{ staffSession: [] }]
+      x-roles: [any active staff member (own rows), administrator (every row)]
+      x-rate-limit: none
+      parameters:
+        - { name: staff, in: query, required: false, description: "The acting staff id.", schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,64}$' } }
+        - { name: action, in: query, required: false, schema: { type: string, pattern: '^[a-z][a-z0-9_.]{0,80}$' }, example: account_review.approved }
+        - { name: objectType, in: query, required: false, schema: { type: string, pattern: '^[a-z][a-z0-9_]{0,40}$' }, example: organisation }
+        - { name: objectId, in: query, required: false, schema: { type: string, pattern: '^[A-Za-z0-9_.:-]{1,100}$' }, example: '310' }
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [admin_action, data_access, security] }, example: data_access }
+        - { name: case, in: query, required: false, schema: { type: string, pattern: '^[A-Za-z0-9_.:-]{1,100}$' }, example: 'strike:12' }
+        - { name: from, in: query, required: false, description: "First UTC day (inclusive).", schema: { $ref: '#/components/schemas/Date' } }
+        - { name: to, in: query, required: false, description: "Last UTC day (inclusive).", schema: { $ref: '#/components/schemas/Date' } }
+      responses:
+        '200':
+          description: The file.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              example: attachment; filename="audit-2026-11-18.csv"
+            x-audit-export-truncated:
+              description: "`1` only when the filters matched more than 2,000 rows."
+              schema: { type: string }
+              example: '1'
+          content:
+            text/csv:
+              schema: { type: string }
+              example: "\"id\",\"at\",\"kind\",\"staffId\",\"staffName\",\"action\",\"objectType\",\"objectId\",\"objectLabel\",\"reasonCode\",\"relatedCase\",\"secondStaffId\",\"secondStaffName\",\"source\",\"changedColumns\",\"before\",\"after\"\r\n\"88001\",\"2026-11-18 09:30:00.123456+00\",\"admin_action\",\"q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP\",\"Dara Kelly\",\"account_review.approved\",\"organisation\",\"310\",\"Lakeside Care Homes\",\"approved\",\"\",\"\",\"\",\"panel\",\"status\",\"{\\\"status\\\":\\\"pending_review\\\"}\",\"{\\\"status\\\":\\\"verified\\\"}\"\r\n"
+        '400':
+          description: "As `GET /api/audit`: `bad_query` (an unknown or repeated key, `after` included), `bad_staff_id`, `bad_action`, `bad_object_type`, `bad_object_id`, `bad_case_id`, `bad_kind`, `bad_from`, `bad_to`, `bad_range`."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_range } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`reauth_required`: no sign-in in the last 10 minutes. `not_active_staff`: the login is not active. `not_administrator`: a non-administrator filtered by another member's id."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: reauth_required } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/signup-no-counts:
     get:
@@ -1549,24 +1664,27 @@ paths:
       summary: List content pages, or show one
       description: >-
         Without `id`: pages of every state, newest change first, 20 a page, filtered by `kind` and `status`. With `id`: one page with its
-        body. With `stale=1` alone (step 15 Q14): the published guides whose checked-on date is over `staleDays` (90) days old, oldest
-        first, at most 100. Only `id`, `kind`, `status`, `after` and `stale`, each at most once (anything else is `bad_query`).
+        body. With `stale=1` (step 15 Q14, B74): the published guides, help and occupation pages whose checked-on date is over `staleDays` (90) days
+        old, oldest first, at most 100 (a help page with no checked-on date is not listed); `kind` (guide, help or occupation) narrows it and is the only other key allowed with it.
+        With `id` and `preview=1` (B74): the page as its public page is made, whatever its state, as `{ item }` (no `Cache-Control` caching: `no-store`), with `status`
+        so the page can say Draft; no other key. Only `id`, `kind`, `status`, `after`, `stale` and `preview`, each at most once (anything else is `bad_query`).
       security: [{ staffSession: [] }]
       x-roles: [content_editor, rules_data_editor, administrator]
       x-rate-limit: none
       parameters:
         - { name: id, in: query, required: false, schema: { type: string }, example: '41' }
-        - { name: kind, in: query, required: false, schema: { type: string, enum: [guide, update, help, occupation] } }
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [guide, update, help, occupation, notice] } }
         - { name: status, in: query, required: false, schema: { type: string, enum: [draft, published, withdrawn] } }
         - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Cursor' } }
         - { name: stale, in: query, required: false, schema: { const: '1' } }
+        - { name: preview, in: query, required: false, description: "B74: `1` with `id` shows the page as the public page would.", schema: { const: '1' } }
       responses:
         '200':
-          description: The page (no `id`), `{ item }` with `body` (with `id`), or the stale guides (with `stale=1`).
+          description: The page (no `id`), `{ item }` with `body` (with `id`), the page as its public page (with `id` and `preview=1`), or the stale pages (with `stale=1`).
           content:
             application/json:
               schema:
-                oneOf:
+                anyOf:
                   - type: object
                     required: [items, next]
                     properties:
@@ -1580,6 +1698,26 @@ paths:
                           - $ref: '#/components/schemas/ContentSummary'
                           - { type: object, required: [body], properties: { body: { type: string } } }
                   - type: object
+                    description: "B74: `?id=&preview=1`. The fields the public read of this kind gives, plus the state."
+                    required: [item]
+                    properties:
+                      item:
+                        type: object
+                        required: [id, kind, slug, title, body, sourceUrl, checkedOn, publishedAt, updatedAt, status]
+                        properties:
+                          id: { $ref: '#/components/schemas/Id' }
+                          kind: { type: string, enum: [guide, update, help, occupation, notice] }
+                          slug: { type: string, example: how-to-apply }
+                          title: { type: string, example: How to apply }
+                          body: { type: string, example: "First, check the job page." }
+                          sourceUrl: { type: [string, 'null'], example: 'https://enterprise.gov.ie/en/what-we-do/workplace-and-skills/employment-permits/' }
+                          checkedOn: { type: [string, 'null'], example: '2026-11-01' }
+                          publishedAt: { type: [string, 'null'], description: "Null for a draft.", example: null }
+                          updatedAt: { $ref: '#/components/schemas/DbTime' }
+                          category: { type: [string, 'null'], enum: [salary_minimums, quotas, occupation_lists, processing, report_problem, permit_services, jobs_badges, account, null], description: "B17, B19: an update's type (salary_minimums, quotas, occupation_lists, processing) or a help page's group (report_problem, permit_services, jobs_badges, account); null for the other kinds.", example: quotas }
+                          effectiveFrom: { type: [string, 'null'], description: "B17: the day an update's rule starts; null for the other kinds.", example: '2027-01-01' }
+                          status: { type: string, enum: [draft, published, withdrawn], example: draft }
+                  - type: object
                     required: [staleDays, items, truncated]
                     properties:
                       staleDays: { type: integer }
@@ -1589,7 +1727,7 @@ paths:
                 items: [{ id: '41', kind: help, slug: how-to-apply, title: How to apply, status: draft, sourceUrl: null, checkedOn: null, publishedAt: null, updatedBy: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', updatedAt: '2026-11-18 09:30:00.123456+00' }]
                 next: null
         '400':
-          description: "`bad_query`: an unknown or repeated key, or `stale` with another key or not `1`. `bad_kind`, `bad_status`: not one of the values. `bad_cursor`: a token this list did not make."
+          description: "`bad_query`: an unknown or repeated key, `stale` or `preview` not `1`, `stale` with a key other than `kind`, `preview` without `id` or with another key. `bad_kind`: not one of the values (with `stale`, only guide, help or occupation). `bad_status`: not one of the values. `bad_cursor`: a token this list did not make."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_kind } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
@@ -1603,7 +1741,7 @@ paths:
       operationId: actOnContentPage
       summary: Create or edit a draft, publish or withdraw a page
       description: >-
-        `create` (content_editor) writes a new draft; an occupation page's slug is its SOC 2010 code. `edit` (content_editor) changes a
+        `create` (content_editor) writes a new draft; an occupation page's slug is its SOC 2010 code. Kind `notice` (decision #291) is a short notice staff switch on (publish) and off (withdraw): the permit pages show the published one with slug `dete-portal-closed` (GET /api/permit-notice on the candidate site); like help it needs no source or checked-on date. `edit` (content_editor) changes a
         draft or a withdrawn page; kind and slug never change and a published page is withdrawn first. `publish`: a content_editor
         publishes help and update pages, a rules_data_editor guides and occupation texts; anything but help needs a source and a
         checked-on date. `withdraw` (content_editor) takes any published page down. Title 1 to 200 characters, body 1 to 50,000
@@ -1624,12 +1762,14 @@ paths:
                   required: [action, kind, slug, title, body]
                   properties:
                     action: { const: create }
-                    kind: { type: string, enum: [guide, update, help, occupation] }
+                    kind: { type: string, enum: [guide, update, help, occupation, notice] }
                     slug: { type: string }
                     title: { type: string, maxLength: 200 }
                     body: { type: string, maxLength: 50000 }
                     sourceUrl: { type: string, maxLength: 500 }
                     checkedOn: { $ref: '#/components/schemas/Date' }
+                    category: { type: string, enum: [salary_minimums, quotas, occupation_lists, processing, report_problem, permit_services, jobs_badges, account], description: "B17, B19: an update takes one of the first four, a help page one of the last four, any other kind none (`bad_category`).", example: quotas }
+                    effectiveFrom: { $ref: '#/components/schemas/Date', description: "B17: updates only (`bad_effective_from` for another kind). Unlike checkedOn it may be a future day." }
                 - type: object
                   additionalProperties: false
                   required: [action, id]
@@ -1640,6 +1780,8 @@ paths:
                     body: { type: string, maxLength: 50000 }
                     sourceUrl: { type: string, maxLength: 500 }
                     checkedOn: { $ref: '#/components/schemas/Date' }
+                    category: { type: string, enum: [salary_minimums, quotas, occupation_lists, processing, report_problem, permit_services, jobs_badges, account], description: "B17, B19: an update takes one of the first four, a help page one of the last four, any other kind none (`bad_category`).", example: quotas }
+                    effectiveFrom: { $ref: '#/components/schemas/Date', description: "B17: updates only (`bad_effective_from` for another kind). Unlike checkedOn it may be a future day." }
                 - type: object
                   additionalProperties: false
                   required: [action, id]
@@ -1662,7 +1804,7 @@ paths:
         '400':
           description: >-
             `bad_body`: not one JSON object, an unknown or missing field, or over 110,000 characters. `bad_action`: unknown action.
-            `bad_id`, `bad_kind`, `bad_slug`, `bad_title`, `bad_body_text`, `bad_source_url`, `bad_checked_on`: a field of the wrong type or
+            `bad_id`, `bad_kind`, `bad_slug`, `bad_title`, `bad_body_text`, `bad_source_url`, `bad_checked_on`, `bad_category`, `bad_effective_from`: a field of the wrong type or
             outside its rules. `nothing_to_change`: an edit with no field.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_slug } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
@@ -1676,7 +1818,7 @@ paths:
           description: "`not_found`: no such page."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
         '409':
-          description: "`slug_taken`: a page with this kind and slug exists. `not_editable`: edit of a published page. `already_published`: publish of a published page. `not_published`: withdraw of a page that is not published. `needs_source_and_checked_on`: publish of a non-help page without both."
+          description: "`slug_taken`: a page with this kind and slug exists. `not_editable`: edit of a published page. `already_published`: publish of a published page. `not_published`: withdraw of a page that is not published. `needs_source_and_checked_on`: publish of a page that is not help or a notice without both."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: needs_source_and_checked_on } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/employer-jobs:
@@ -1853,38 +1995,55 @@ paths:
       operationId: listFetchedJobQueue
       summary: List the fetched-job queue, or show one item
       description: >-
-        Without `id`: the open and claimed fetched-job review items, oldest first, 20 a page. With `id`: one item with the saved advert text,
-        whatever its status. Only `id` and `after`, each at most once (anything else is `bad_query`). No role stands in for
-        fetched_job_reviewer, not even administrator.
+        Without `id`: the open and claimed fetched-job review items, oldest first, 20 a page, with `counts` of the open items per rules stage
+        text (the category tabs; the counts ignore `stage`). `stage` keeps only the items with exactly that stage text. With `id`: one item
+        with the saved advert text, the quoted evidence and the matcher model, whatever its status. Only `id`, `after` and `stage`, each at
+        most once (anything else is `bad_query`). No role stands in for fetched_job_reviewer, not even administrator.
       security: [{ staffSession: [] }]
       x-roles: [fetched_job_reviewer]
       x-rate-limit: none
       parameters:
         - { name: id, in: query, required: false, schema: { type: string }, example: '3301' }
         - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Cursor' } }
+        - { name: stage, in: query, required: false, description: "Only items with exactly this stage text (1 to 200 characters), as `counts` lists them.", schema: { type: string, minLength: 1, maxLength: 200 }, example: 7 contract unclear (admin queue) }
       responses:
         '200':
-          description: The page (no `id`), or `{ item }` with `advertText` (with `id`).
+          description: The page (no `id`), or `{ item }` with `advertText`, `quotedEvidence` and `matcherModel` (with `id`).
           content:
             application/json:
               schema:
                 oneOf:
                   - type: object
-                    required: [items, next]
+                    required: [items, next, counts]
                     properties:
                       items: { type: array, items: { $ref: '#/components/schemas/FetchedQueueItem' } }
                       next: { type: [string, 'null'] }
+                      counts:
+                        type: object
+                        description: Open and claimed items per stage text, biggest first.
+                        required: [total, stages]
+                        properties:
+                          total: { type: integer, example: 34 }
+                          stages:
+                            type: array
+                            items:
+                              type: object
+                              required: [stage, count]
+                              properties:
+                                stage: { type: [string, 'null'], description: "The stage text; null for an item with no fetched advert.", example: 7 contract unclear (admin queue) }
+                                count: { type: integer, example: 8 }
                   - type: object
                     required: [item]
                     properties:
                       item: { $ref: '#/components/schemas/FetchedQueueItem' }
               example:
                 items:
-                  - { id: '3301', status: open, claimedBy: null, jobId: '6601', organisationId: '320', title: Software Engineer, employerName: Example Software Ltd, advertUrl: 'https://jobs.example.com/12345', occupationCode: null, permitHistory: has_history, sponsorPermits: 14, stage: 4 occupation, reason: occupation unclear, wrcAgency: false }
+                  - { id: '3301', status: open, claimedBy: null, jobId: '6601', organisationId: '320', title: Software Engineer, employerName: Example Software Ltd, advertUrl: 'https://jobs.example.com/12345', occupationCode: null, permitHistory: has_history, sponsorPermits: 14, stage: 4 occupation, reason: occupation unclear, wrcAgency: false, queuedAt: '2026-11-09 06:02:11.123456+00', county: Cork, sourceKind: careers_page }
                 next: null
+                counts: { total: 1, stages: [{ stage: 4 occupation, count: 1 }] }
         '400':
-          description: "`bad_query`: an unknown or repeated key. `bad_cursor`: a token this list did not make."
-          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
+          description: "`bad_query`: an unknown or repeated key. `bad_cursor`: a token this list did not make. `bad_stage`: `stage` is empty or over 200 characters."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_stage } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
           description: "`not_active_staff`: the login is not active. `not_reviewer`: no fetched_job_reviewer role."
@@ -1968,6 +2127,45 @@ paths:
             job left review. `no_advert_text`: no saved advert to re-run the rules on. `rules_failed`: the rules did not pass; `stage` names
             the stage that failed.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: rules_failed, stage: 5 pay } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/fetched-jobs/dry-run:
+    get:
+      operationId: dryRunFetchedJobApprove
+      summary: What Approve would do for a fetched job, nothing written
+      description: >-
+        Re-runs the rules on the saved advert with the occupation code, pay and contract given, as `approve` does, and returns each check, the
+        badge the job would get, its pay grade and its quota status. Any fetched-job reviewer may ask, claimed or not; a decided item or a job
+        no longer in review is refused as Approve would. Not a hold: the rules or the advert may change before the real Approve. Only the
+        named keys, each once (anything else is `bad_query`). No role stands in for fetched_job_reviewer, not even administrator. Never cached.
+      security: [{ staffSession: [] }]
+      x-roles: [fetched_job_reviewer]
+      x-rate-limit: none
+      parameters:
+        - { name: id, in: query, required: true, description: "The item's id.", schema: { type: string }, example: '3301' }
+        - { name: occupationCode, in: query, required: true, description: "Four digits, on the Critical Skills or Ineligible list.", schema: { type: string, pattern: '^[0-9]{4}$' }, example: '2231' }
+        - { name: salaryLow, in: query, required: false, description: "Whole euros a year, 1 to 1,000,000.", schema: { type: integer, minimum: 1, maximum: 1000000 }, example: 45000 }
+        - { name: salaryHigh, in: query, required: false, description: "Whole euros a year; needs salaryLow and may not be below it.", schema: { type: integer, minimum: 1, maximum: 1000000 }, example: 60000 }
+        - { name: contractConfirmed, in: query, required: false, description: "The reviewer confirms the contract is long enough.", schema: { type: string, enum: ['true', 'false'] }, example: 'true' }
+      responses:
+        '200':
+          description: The result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FetchedDryRun' }
+              example: { itemId: '3301', jobId: '6601', wouldPublish: true, passRoute: stated_pay, failedStage: null, badge: critical_skills_eligible, occupationCode: '2231', salaryLow: 45000, salaryHigh: 60000, payGrade: Staff Nurse, quotaFull: false, stage: PASS (salary stated), checks: [{ check: irish_employer, result: pass, detail: brand list match }, { check: contract, result: pass, detail: two years stated }] }
+        '400':
+          description: "`bad_item_id`: `id` missing or not an id. `bad_occupation_code`: missing, not four digits, or on neither list. `bad_salary`: not whole euros, out of range, a top with no bottom, or a top below the bottom. `bad_input`: contractConfirmed is not true or false. `bad_query`: an unknown or repeated key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_salary } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_reviewer`: no fetched_job_reviewer role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_reviewer } } }
+        '404':
+          description: "`not_found`: no such item."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409':
+          description: "`already_decided`: the item is decided. `job_not_in_review`: the job left review. `no_advert_text`: no saved advert to re-run the rules on."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: already_decided } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/manual-jobs:
     get:
@@ -3081,6 +3279,38 @@ paths:
         '503':
           description: "`files_unavailable`: file storage is not set up. No audit row is written."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: files_unavailable } } }
+  /api/staff/me:
+    get:
+      operationId: getMyStaffIdentity
+      summary: Who am I
+      description: >-
+        B57: the signed-in staff member's id, name and roles (the seven backend roles, sorted), for the name chip and for which sidebar links to show. Any active staff login,
+        whatever its roles (a login with no role has an empty list). No query key is allowed.
+      security: [{ staffSession: [] }]
+      x-roles: [any active staff]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The identity.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [id, name, roles]
+                properties:
+                  id: { type: string, description: "The staff login id.", example: q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP }
+                  name: { type: string, description: "The name shown on the account.", example: Dara Kelly }
+                  roles: { type: array, items: { $ref: '#/components/schemas/StaffRole' }, description: "The roles held now, sorted.", example: [account_reviewer, content_editor] }
+              example: { id: q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP, name: Dara Kelly, roles: [account_reviewer, content_editor] }
+        '400':
+          description: "`bad_query`: any query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_active_staff } } }
+        '500': { $ref: '#/components/responses/ServerError' }
   /api/staff/me/export:
     get:
       operationId: exportMyStaffData
@@ -3304,11 +3534,14 @@ paths:
         The signed-in member's notices (step 15 Q11): open and claimed items of each review queue their roles may work (a queue with none is
         left out), and for the roles that work them: open reports and those of the last 24 hours (trust_and_safety), strike appeals waiting
         (trust_and_safety, administrator), new and claimed contact messages (services_case_handler, content_editor, administrator) and
-        two-person requests someone else proposed (administrator). A count the roles do not cover is null. Any active staff login. No query
-        key is allowed. The same numbers go out in the daily digest email.
+        two-person requests someone else proposed (administrator). A count the roles do not cover is null. Any active staff login. B57 adds
+        `oldestSeconds` (how long the oldest item of each queue has waited), `reportsJobHidden`, `casesOpen` and, with `?merges=1`, `mergeSuggestions`.
+        The only query key is `merges`, and only as `1`. The daily digest email carries the numbers of the first list only.
       security: [{ staffSession: [] }]
       x-roles: [any active staff]
       x-rate-limit: none
+      parameters:
+        - { name: merges, in: query, required: false, description: "B57: `1` adds the name-merge suggestion count (it runs the name matcher, about 170 ms at real size, so ask for it only on the page that shows it).", schema: { const: '1' } }
       responses:
         '200':
           description: The counts.
@@ -3316,19 +3549,23 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [queues, reportsOpen, reportsNew, appeals, contact, approvals, casesUnassigned, casesMine]
+                required: [queues, oldestSeconds, reportsOpen, reportsNew, reportsJobHidden, appeals, contact, approvals, casesUnassigned, casesMine, casesOpen, mergeSuggestions]
                 properties:
                   queues: { type: object, additionalProperties: { type: integer, minimum: 1 } }
+                  oldestSeconds: { type: object, additionalProperties: { type: integer, minimum: 0 }, description: "B57: for each queue in `queues`, seconds the oldest open or claimed item has waited.", example: { scam_flag: 32400 } }
                   reportsOpen: { type: [integer, 'null'] }
                   reportsNew: { type: [integer, 'null'] }
+                  reportsJobHidden: { type: [integer, 'null'], description: "B57: open reports whose job is already hidden, part of `reportsOpen` (trust_and_safety).", example: 1 }
                   appeals: { type: [integer, 'null'] }
                   contact: { type: [integer, 'null'] }
                   approvals: { type: [integer, 'null'] }
                   casesUnassigned: { type: [integer, 'null'], description: Open services cases nobody holds (services case handlers). }
                   casesMine: { type: [integer, 'null'], description: Open services cases assigned to this member (services case handlers). }
-              example: { queues: { scam_flag: 2, scheduled_check: 1 }, reportsOpen: 3, reportsNew: 1, appeals: 0, contact: null, approvals: null, casesUnassigned: null, casesMine: null }
+                  casesOpen: { type: [integer, 'null'], description: "B57: every open services case, held or not (services case handlers).", example: 11 }
+                  mergeSuggestions: { type: [integer, 'null'], description: "B57: DETE name to company link suggestions (account_reviewer, trust_and_safety, administrator). Null unless `merges=1` was sent and a role covers it.", example: 14 }
+              example: { queues: { scam_flag: 2, scheduled_check: 1 }, oldestSeconds: { scam_flag: 32400, scheduled_check: 86400 }, reportsOpen: 3, reportsNew: 1, reportsJobHidden: 1, appeals: 0, contact: null, approvals: null, casesUnassigned: null, casesMine: null, casesOpen: null, mergeSuggestions: null }
         '400':
-          description: "`bad_query`: any query key."
+          description: "`bad_query`: a query key other than `merges`, a repeated one, or `merges` with a value other than `1`."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
@@ -3857,8 +4094,8 @@ paths:
       operationId: listLegalTexts
       summary: List the legal text versions and the pending proposals
       description: >-
-        Step 15 R5. Every version of the three legal purposes (`signup_terms` for candidates, `portal_signup_terms` for employers and agencies,
-        `privacy_notice`), newest first within a purpose (the first of a purpose is the text in force), each with its body, and the proposals
+        Step 15 R5. Every version of the six legal purposes (`signup_terms` for candidates, `portal_signup_terms` for employers and agencies,
+        `privacy_notice`, and the public texts `cookie_policy`, `employer_acceptable_use`, `data_retention`), newest first within a purpose (the first of a purpose is the text in force), each with its body, and the proposals
         waiting for an administrator. The real wording waits for the solicitor and the entity; the placeholders come from signup-terms-cli.ts.
         No query key is allowed.
       security: [{ staffSession: [] }]
@@ -3880,7 +4117,7 @@ paths:
                       required: [id, purpose, version, body, publishedAt, requestId]
                       properties:
                         id: { $ref: '#/components/schemas/Id' }
-                        purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice] }
+                        purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice, cookie_policy, employer_acceptable_use, data_retention] }
                         version: { type: string }
                         body: { type: string }
                         publishedAt: { $ref: '#/components/schemas/DbTime' }
@@ -3892,7 +4129,7 @@ paths:
                       required: [requestId, purpose, version, body, proposedBy, createdAt]
                       properties:
                         requestId: { $ref: '#/components/schemas/Id' }
-                        purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice] }
+                        purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice, cookie_policy, employer_acceptable_use, data_retention] }
                         version: { type: string }
                         body: { type: string }
                         proposedBy: { $ref: '#/components/schemas/LoginId' }
@@ -3934,7 +4171,7 @@ paths:
                   required: [action, purpose, version, body]
                   properties:
                     action: { const: propose }
-                    purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice] }
+                    purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice, cookie_policy, employer_acceptable_use, data_retention] }
                     version: { type: string, pattern: '^[a-z0-9][a-z0-9._-]{0,63}$' }
                     body: { type: string, minLength: 1, maxLength: 100000 }
                 - type: object
@@ -3956,7 +4193,7 @@ paths:
                   ok: { const: true }
                   requestId: { $ref: '#/components/schemas/Id' }
                   id: { $ref: '#/components/schemas/Id' }
-                  purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice] }
+                  purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice, cookie_policy, employer_acceptable_use, data_retention] }
                   version: { type: string }
                   publishedAt: { $ref: '#/components/schemas/DbTime' }
               example: { ok: true, requestId: '131' }

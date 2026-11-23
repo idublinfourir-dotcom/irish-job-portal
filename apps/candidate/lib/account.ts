@@ -1,8 +1,9 @@
 // The signed-in candidate routes (step 9, part 10). Each route file is one line per method; the work is in @portal/db (candidate.ts).
 import { candidateSettings } from "@portal/auth";
 import {
-  answerClick, applyClick, candidateRead, candidateWrite, checkAnswer, checkDelete, checkJobId, checkProfile, checkSettings, checkStage, deleteAccount,
-  didYouApplyPrompts, exportData, exportFilename, getProfile, getSettings, listSaved, markApplied, putProfile, putSettings, saveJob, savedJob, setStage, unsaveJob,
+  answerClick, applyClick, candidateRead, candidateWrite, checkAnswer, checkDelete, checkJobId, checkNoticeSeen, checkProfile, checkSettings, checkStage, dataAccessLog, deleteAccount,
+  didYouApplyPrompts, exportData, exportFilename, getProfile, getSecurity, getSettings, listCandidateNotices, listSaved, listTracker, markApplied, markCandidateNotices, putProfile,
+  putSettings, saveJob, savedJob, setStage, unsaveJob,
 } from "@portal/db";
 import { signedInCandidate } from "./candidate";
 import { OCCUPATION_CODES } from "./occupations";
@@ -21,7 +22,12 @@ export const promptsGet = (r: Request) => candidateRead(r, env(), didYouApplyPro
 export const answerPost = (r: Request) => candidateWrite(r, env(), checkAnswer, answerClick);
 export const trackerPost = (r: Request) => candidateWrite(r, env(), checkJobId, markApplied);
 export const trackerPut = (r: Request) => candidateWrite(r, env(), checkStage, setStage);
+export const trackerGet = (r: Request) => candidateRead(r, env(), listTracker);
 export const jobGet = (r: Request) => candidateRead(r, env(), savedJob);
+export const noticesGet = (r: Request) => candidateRead(r, env(), listCandidateNotices);
+export const noticesPost = (r: Request) => candidateWrite(r, env(), checkNoticeSeen, markCandidateNotices);
+export const securityGet = (r: Request) => candidateRead(r, env(), getSecurity);
+export const dataAccessGet = (r: Request) => candidateRead(r, env(), dataAccessLog);
 export const settingsGet = (r: Request) => candidateRead(r, env(), getSettings);
 export const settingsPut = (r: Request) => candidateWrite(r, env(), checkSettings, putSettings);
 export const accountDelete = (r: Request) => candidateWrite(r, freshEnv(), checkDelete, (db, userId) => deleteAccount(db, userId));

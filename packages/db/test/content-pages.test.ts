@@ -167,6 +167,9 @@ describe("occupation page", () => {
     expect(p.minimums).toEqual({ withDegree: 40904, recentGraduate: 36848, graduateMonths: 12, withoutDegreeOrNotListed: 68911, minContractMonths: 24, basedOnWeekHours: 39 });
     expect(p.jobs.jobs.map((j) => j.id).sort()).toEqual([...mine].sort());
     expect(p.jobs.count).toEqual({ n: 2, more: false });
+    // B7: each card carries its employer's page slug and logo (one statement for the page's employers)
+    const own = (await su("select slug, logo_url from organisation where id = $1", [org])).rows[0];
+    for (const j of p.jobs.jobs) expect(j).toMatchObject({ employerSlug: own.slug, employerLogoUrl: own.logo_url });
     expect(p.text).toMatchObject({ title: "About 9201", body: "Registration body: fake" });
     expect(p.standingLine).toMatch(/^Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 2026-11-12\.$/);
     const both = (await getOccupationPage(candidate(), "9203", { lists: LISTS }))!;
@@ -232,6 +235,7 @@ describe("company page", () => {
       expect(p.claimed).toBe(true);
       expect(p.jobs.jobs.map((j) => j.id).sort()).toEqual([...mine].sort());
       expect(p.jobs.count).toEqual({ n: 2, more: false });
+      for (const j of p.jobs.jobs) expect(j).toMatchObject({ employerSlug: c.slug }); // B7: a company page knows its own slug and logo
       expect(JSON.stringify(p)).not.toContain(other.tag);
     }
   });

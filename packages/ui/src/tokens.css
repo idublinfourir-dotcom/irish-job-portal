@@ -1,0 +1,77 @@
+/*
+ * The one place for the look of all three apps (step 16 F1, decision #287).
+ * The colours and the two fonts are the designer's (frame NS2, Mint Pill with the Irish palette). Everything marked NEUTRAL DEFAULT is a stand-in:
+ * spacing, radii, shadows, focus ring, and the hover, disabled and error colours. The designer's values replace them HERE and nowhere else
+ * (step16/DESIGNER-HANDOFF.md item 1). No dark mode (Later L60).
+ */
+
+@theme {
+  /* The Mint Pill colours, by their names on frame NS2 (re-read from the frame image 23 Nov 2026, step16/design/images/ns2-system-308-4931). */
+  --color-ink: #14142b; /* Ink: text, dark cards, footer */
+  --color-peach: #ffc48a; /* Sun */
+  --color-lilac: #dcd6ff; /* Lavender */
+  --color-deep-green: #0e8655; /* Mint #0F8A57, one step darker so white text on it passes AA (4.6 to 1) */
+  --color-sand: #f6f6fa; /* Surface: soft cards, chips, FAQ rows */
+  --color-line: #d8d5ee; /* Line */
+  --color-sponsor: #e9e5ff; /* ONLY the Sponsor badge */
+  --color-sponsor-ink: #4a32c4;
+  --color-critical-skills: #d9f5e7; /* ONLY the Critical Skills badge */
+  --color-critical-skills-ink: #0a6b43;
+  --color-cream: #ffffff; /* page background (white on the landing frame) */
+  /* Fills the landing frame uses beside the eight. */
+  --color-green-tint: #d3ede0; /* the Health tile */
+  --color-pink: #ffd9e8; /* the Pharma tile */
+  --color-teal: #10444f; /* occupation cards */
+
+  /* NEUTRAL DEFAULTS: colours the frames do not name. */
+  --color-muted: #55566b; /* small and help text */
+  --color-focus: #1d4ed8; /* focus ring */
+  --color-error: #b42318; /* error and Danger */
+  --color-error-tint: #fbe4e1; /* error notice background */
+  --color-hover-dark: #0b6c45; /* Primary hover */
+  --color-hover-light: #ecebf5; /* light button hover (Chip, Outline) */
+  --color-disabled: #ecebf3; /* disabled background */
+  --color-disabled-ink: #5d5e70; /* disabled text */
+
+  /* Radii and shadows read off the landing frame (pills everywhere, 24 to 28 px cards). */
+  --radius-control: 1.5rem; /* buttons and inputs are pills */
+  --radius-card: 1.5rem;
+  --radius-bento: 1.75rem; /* the home page's big cards */
+  --radius-pill: 999px;
+  --shadow-card: 0 1px 2px rgb(20 20 43 / 0.06), 0 6px 20px rgb(20 20 43 / 0.06);
+  --shadow-pop: 0 12px 40px rgb(20 20 43 / 0.14);
+  --text-small: 13.5px; /* "small 13.5/1.45" on NS2 */
+  --text-small--line-height: 1.45;
+  --text-body: 16px; /* "body 16/1.55" */
+  --text-body--line-height: 1.55;
+  --container-page: 69.5rem; /* the frame's 1080 px content width, plus the 16 px page padding each side */
+}
+
+/* The two fonts. The apps load them with next/font and set these variables on <html>. */
+@theme inline {
+  --font-heading: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    background: var(--color-cream);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.55;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-heading);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  /* Focus is visible on every control. */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+}

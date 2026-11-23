@@ -119,7 +119,7 @@ async function strike(org: string, s: Seed = {}): Promise<string> {
 const waiting = (org: string, o: Seed = {}) => strike(org, { reply: `now() + 3 * ${DAY}`, stage: "reply_window", ...o });
 const decided = (org: string, o: Seed = {}) => strike(org, { reply: `now() - 10 * ${DAY}`, decided: `now() - 2 * ${DAY}`, appealDue: `now() + 12 * ${DAY}`, stage: "decided", outcome: "strike", level: 1, ...o });
 const row = (id: string) => one("select stage, employer_reply, replied_at, appeal_text, appealed_at from strike where id=$1", [id]);
-const KEYS = ["id", "caseKind", "reasonCode", "jobId", "jobTitle", "noticeSummary", "stage", "outcome", "level", "replyDueAt", "employerReply", "repliedAt", "decidedAt", "appealDueAt", "appealText", "appealedAt", "appealDecidedAt", "canReply", "canAppeal"].sort();
+const KEYS = ["id", "caseKind", "reasonCode", "jobId", "jobTitle", "noticeSummary", "stage", "outcome", "level", "createdAt", "notifiedAt", "replyDueAt", "employerReply", "repliedAt", "decidedAt", "appealDueAt", "appealText", "appealedAt", "appealDecidedAt", "canReply", "canAppeal"].sort();
 const found = (r: Reply, id: string) => r.json!.page.cases.find((c: { id: string }) => c.id === id);
 
 describe("GET", () => {
@@ -180,6 +180,36 @@ describe("GET", () => {
     expect(r.json!.page.status).toBe("suspended");
     expect(found(r, b)).toMatchObject({ caseKind: "instant_ban", outcome: "ban", level: null });
     expect(r.json!.page.strikesLast12Months).toBe(0);
+  });
+});
+
+describe("B56: createdAt and notifiedAt on a case", () => {
+  it("shows when the case was opened and when the employer was notified (null when never), to every member, as times with Z", async () => {
+    const c = await company();
+    const w = await waiting(c.org);
+    await su.query("update strike set created_at = '2026-10-14T09:00:00Z', notified_at = '2026-10-15T10:30:00Z' where id = $1", [w]);
+    const d = await decided(c.org);
+    await su.query("update strike set created_at = '2026-10-01T09:00:00Z' where id = $1", [d]);
+    for (const l of [c.owner, c.viewer]) {
+      const r = await page(l.cookie);
+      expect(found(r, w)).toMatchObject({ createdAt: "2026-10-14T09:00:00.000Z", notifiedAt: "2026-10-15T10:30:00.000Z" });
+      expect(found(r, d)).toMatchObject({ createdAt: "2026-10-01T09:00:00.000Z", notifiedAt: null });
+      expect(replyProblems(loadSpec("portal"), "GET", "/api/portal/status", r.status, r.json)).toEqual([]);
+    }
+  });
+  it("app_portal cannot read or write notified_at on the table; app_admin may set it (staff notify) but no other portal role can", async () => {
+    const c = await company(), w = await waiting(c.org);
+    const p = db.pool("app_portal");
+    await expect(p.query("select notified_at from strike where id = $1", [w])).rejects.toThrow(/permission denied/);
+    await expect(p.query("update strike set notified_at = now() where id = $1", [w])).rejects.toThrow(/permission denied/);
+    await expect(db.pool("app_candidate").query("select notified_at from strike")).rejects.toThrow(/permission denied/);
+    const k = await db.pool("app_admin").connect();
+    try { // the notice time is for the status page only; staff set it with the notice (notifyEmployer, trust-safety.test.ts)
+      await k.query("begin");
+      await k.query("select set_config('app.staff_user_id', $1, true)", [await F.staff()]);
+      await k.query("update strike set notified_at = now() where id = $1", [w]);
+    } finally { await k.query("rollback"); k.release(); }
+    expect((await page(c.viewer.cookie)).text).not.toMatch(/report|staff|received/i);
   });
 });
 

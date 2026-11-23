@@ -4,7 +4,7 @@
 // statement check). There is no row level security: every read and write here is filtered by the login's own company.
 import { getPool, getRules, listAnswer, validId } from "@portal/db";
 import { suggestCodes } from "@portal/matcher/rules";
-import { assess, chainRules, isSoc2010, minimumForHours, offScale, socTitle, type RulesSnapshot } from "@portal/rules";
+import { assess, chainRules, CONDITIONS, isSoc2010, minimumForHours, offScale, scamPhrase, socTitle, type RulesSnapshot } from "@portal/rules";
 import type pg from "pg";
 import { isObject, no, ok, only, portalLogin, readPost, withinLimit, type Refusal } from "./company";
 
@@ -89,11 +89,41 @@ export function checkPost(b: unknown, keys = POST_KEYS): Post | null {
     weeklyHours, ownPageUrl, clientName, statement, permitType, exceptionConfirmed: b.exceptionConfirmed === true };
 }
 
+/** A draft being worked on (B49): only the title is required, every other field may be missing, but one that is given is checked as in a live post. */
+export type Draft = Omit<Post, "county" | "occupationCode" | "contractType" | "ownPageUrl"> & {
+  status: "draft"; county: Post["county"] | null; occupationCode: string | null; contractType: Post["contractType"] | null; ownPageUrl: string | null;
+};
+export function checkDraft(b: unknown): Draft | null {
+  if (!isObject(b) || !only(b, POST_KEYS) || b.status !== "draft") return null;
+  const title = line(b.title, 2, 200);
+  const text = b.description === undefined || b.description === null ? "" : typeof b.description === "string" ? b.description.trim() : null;
+  if (!title || text === null || text.length > 10_000 || BAD_TEXT.test(text)) return null;
+  const county = opt(b.county, (v) => COUNTIES.find((c) => c === v) ?? null), occupationCode = opt(b.occupationCode, (v) => (isSoc2010(v) ? v : null));
+  const contractType = opt(b.contractType, (v) => (v === "permanent" || v === "fixed_term" ? v : null)), contractMonths = opt(b.contractMonths, (v) => int(v, 1, 600));
+  const salaryLow = opt(b.salaryLow, (v) => int(v, 1, MAX_PAY)), salaryHigh = opt(b.salaryHigh, (v) => int(v, 1, MAX_PAY));
+  const payGrade = opt(b.payGrade, (v) => line(v, 1, 100)), healthInsuranceEur = opt(b.healthInsuranceEur, (v) => int(v, 0, 50_000));
+  const weeklyHours = b.weeklyHours === undefined ? 39 : int(b.weeklyHours, 1, 60);
+  const ownPageUrl = opt(b.ownPageUrl, checkUrl), clientName = opt(b.clientName, (v) => line(v, 2, 160)), statement = opt(b.statement, checkStatement);
+  const permitType = b.permitType === undefined ? "critical_skills" : b.permitType;
+  if ((permitType !== "critical_skills" && permitType !== "general") || (b.exceptionConfirmed !== undefined && typeof b.exceptionConfirmed !== "boolean")) return null;
+  if (county === undefined || occupationCode === undefined || contractType === undefined || contractMonths === undefined || salaryLow === undefined || salaryHigh === undefined
+    || payGrade === undefined || healthInsuranceEur === undefined || weeklyHours === null || ownPageUrl === undefined || clientName === undefined || statement === undefined) return null;
+  if (contractType === "permanent" && contractMonths !== null) return null;
+  if (salaryLow === null && salaryHigh !== null) return null;
+  if (salaryHigh !== null && salaryLow !== null && salaryHigh < salaryLow) return null;
+  return { status: "draft", title, description: text, county, occupationCode, contractType, contractMonths, salaryLow, salaryHigh, payGrade, healthInsuranceEur, weeklyHours,
+    ownPageUrl, clientName, statement, permitType, exceptionConfirmed: b.exceptionConfirmed === true };
+}
+/** A post or edit body: a draft is checked loosely, anything else as a live post. */
+export const checkBody = (b: unknown): Post | Draft | null => (isObject(b) && b.status === "draft" ? checkDraft(b) : checkPost(b));
+/** A body that carries every field a live post needs (a draft that has them all is one too). */
+export const isFull = (p: Post | Draft): p is Post => p.county !== null && p.occupationCode !== null && p.contractType !== null && p.ownPageUrl !== null;
+
 const id = (v: unknown) => (validId(v) ? v : null);
-export function checkEdit(b: unknown): (Post & { jobId: string }) | null {
+export function checkEdit(b: unknown): ((Post | Draft) & { jobId: string }) | null {
   if (!isObject(b)) return null;
   const jobId = id(b.jobId);
-  const post = checkPost(Object.fromEntries(Object.entries(b).filter(([k]) => k !== "jobId")));
+  const post = checkBody(Object.fromEntries(Object.entries(b).filter(([k]) => k !== "jobId")));
   return jobId && post ? { ...post, jobId } : null;
 }
 export type Hire = "yes" | "no";
@@ -109,52 +139,69 @@ export function checkRenew(b: unknown): { jobId: string; hireAnswer: Hire | null
   const e = (b as { exceptionConfirmed?: unknown } | null)?.exceptionConfirmed;
   return r && (e === undefined || typeof e === "boolean") ? { ...r, exceptionConfirmed: e === true } : null;
 }
-export function checkClose(b: unknown): { jobId: string; hireAnswer: Hire } | null {
-  const r = checkHire(b, ["jobId", "hireAnswer"]);
-  return r && r.hireAnswer ? { jobId: r.jobId, hireAnswer: r.hireAnswer } : null; // #49: closing always asks "Did you hire someone through us?"
-}
+/** The close body: the job and "Did you hire someone through us?" (#49). The answer is needed to close a job past draft; a draft close skips the question (B52), so the check cannot tell and the route decides. */
+export const checkClose = (b: unknown) => checkHire(b, ["jobId", "hireAnswer"]);
 
 // ===== the rules
-/**
- * Conditions a code carries that its Ineligible title does not name (P6, 06-health-hospitality-eligibility.md): the employer ticks them with the same
- * `exceptionConfirmed` as an Ineligible exception, and the refusal carries the wording. Placeholder wording. Every other named condition (chef experience
- * and "not fast food" on 5434, disability services on 1242, 2229, 3231, 3239 and 6146) is already in its Ineligible title and asks for the same tick.
- */
-export const CONDITIONS: Readonly<Record<string, string>> = {
-  "6145": "Care workers and home carers: the employer is a care provider, not a private household (a job in a private home is not eligible)",
-};
+// CONDITIONS (the role conditions a code carries, P6) live in @portal/rules so the public job read can show them too.
+export { CONDITIONS };
 /** `ticked`: the pass needed the exception tick (the job stores it, so a renewal does not ask again). */
 export type Verdict = { ok: true; passRoute: "stated_pay" | "public_pay"; status: "live" | "in_review"; sector: string; stage: string; ticked: boolean }
   | { ok: false; code: string; stage?: string; exception?: string };
+/** One line of the rules for the posting form (B50). `blocked` carries the refusal `code`; `note` passes but needs a look; `detail` holds facts, no wording. */
+export type Check = { id: string; state: "pass" | "note" | "blocked"; code?: string; detail: Record<string, unknown> };
 
 /**
  * The rules on the structured fields: the occupation list, the contract, the rules chain (Ireland, "no sponsorship", Irish employer, contract text, scam wording), then the pay.
  * A General Employment Permit post (4.2): no occupation list or contract length, a quota check, the General minimum (a lower rate for some codes), stated pay only,
  * and the sponsorship statement always. The General figures are optional in the minimums, so a version without them refuses with GENERAL_RULES_NOT_SET.
  * `rules`: the minimums and lists in force (#229, `getRules(db)` from the database); the DETE names are not loaded: the chain uses them only for LinkedIn adverts (assess.ts, `known`).
+ * Returns every check in order. With `all` false it stops at the first blocked one (a save: the verdict is that check's code); with `all` true it runs them all (the posting form's list).
+ * The verdict is always the first blocked check, so both modes give the same answer.
  */
-export async function rulesFor(p: Post, employerName: string, r: RulesSnapshot): Promise<Verdict> {
+export async function evaluate(p: Post, employerName: string, r: RulesSnapshot, all = false): Promise<{ checks: Check[]; verdict: Verdict }> {
   const m = r.minimums;
   const general = p.permitType === "general";
-  if (general && (m.general === undefined || m.generalLower === undefined || !m.generalLowerCodes || !m.generalQuotaFullCodes)) return { ok: false, code: "GENERAL_RULES_NOT_SET" };
+  const checks: Check[] = [];
+  const add = (id: string, state: Check["state"], detail: Record<string, unknown>, code?: string) => { checks.push({ id, state, ...(code ? { code } : {}), detail }); };
+  const stop = () => !all && checks.some((c) => c.state === "blocked");
+  let ticked = false, passRoute: "stated_pay" | "public_pay" | undefined;
+  const done = (a?: Awaited<ReturnType<typeof assess>>): { checks: Check[]; verdict: Verdict } => {
+    const b = checks.find((c) => c.state === "blocked");
+    if (b) {
+      const { stage, exception } = b.detail as { stage?: string; exception?: string };
+      return { checks, verdict: { ok: false, code: b.code!, ...(stage ? { stage } : {}), ...(exception ? { exception } : {}) } };
+    }
+    return { checks, verdict: { ok: true, passRoute: passRoute!, status: a!.bucket === "queue" || a!.scamFlag ? "in_review" : "live", sector: a!.sector, stage: a!.stage, ticked } };
+  };
+  if (general && (m.general === undefined || m.generalLower === undefined || !m.generalLowerCodes || !m.generalQuotaFullCodes)) {
+    add("permit_rules", "blocked", {}, "GENERAL_RULES_NOT_SET");
+    return done();
+  }
   const onList = listAnswer(r.occupationLists, p.occupationCode);
-  let ticked = false;
-  if (onList === "no") {
-    // an Ineligible entry that names an exception passes when the employer confirmed they meet it; the reply carries the wording so the page can show it
-    const title = r.occupationLists.find((e) => e.code === p.occupationCode && e.list === "ineligible")?.title;
-    const exception = title?.includes("with the exception of") ? title : undefined;
-    if (!(exception && p.exceptionConfirmed)) return { ok: false, code: "OCCUPATION_INELIGIBLE", ...(exception ? { exception } : {}) };
-    ticked = true;
+  const listStatus = onList === "yes" ? "critical_skills" : onList === "no" ? "ineligible" : "not_listed";
+  // an Ineligible entry that names an exception passes when the employer confirmed they meet it; the reply carries the wording so the page can show it
+  const title = r.occupationLists.find((e) => e.code === p.occupationCode && e.list === "ineligible")?.title;
+  const exception = onList === "no" && title?.includes("with the exception of") ? title : undefined;
+  if (onList === "no" && !exception) add("occupation", "blocked", { code: p.occupationCode, listStatus }, "OCCUPATION_INELIGIBLE");
+  else add("occupation", onList === "no" ? "note" : "pass", { code: p.occupationCode, listStatus });
+  if (stop()) return done();
+  const condition = exception ?? CONDITIONS[p.occupationCode];
+  if (condition) {
+    ticked = p.exceptionConfirmed;
+    add("condition", ticked ? "pass" : "blocked", { exception: condition, confirmed: ticked }, ticked ? undefined : "OCCUPATION_INELIGIBLE");
   }
-  const condition = CONDITIONS[p.occupationCode];
-  if (condition && !p.exceptionConfirmed) return { ok: false, code: "OCCUPATION_INELIGIBLE", exception: condition };
-  if (condition) ticked = true;
-  if (general && m.generalQuotaFullCodes!.includes(p.occupationCode)) return { ok: false, code: "QUOTA_FULL" }; // #85: a full quota blocks new postings
-  if (!general) {
-    if (onList === null && !m.nonListRoute) return { ok: false, code: "OCCUPATION_NOT_ON_LIST" };
+  if (stop()) return done();
+  if (general) add("quota", m.generalQuotaFullCodes!.includes(p.occupationCode) ? "blocked" : "pass", { full: m.generalQuotaFullCodes!.includes(p.occupationCode) }, // #85: a full quota blocks new postings
+    m.generalQuotaFullCodes!.includes(p.occupationCode) ? "QUOTA_FULL" : undefined);
+  else {
+    if (onList === null) add("list", m.nonListRoute ? "note" : "blocked", { listStatus, nonListRoute: !!m.nonListRoute }, m.nonListRoute ? undefined : "OCCUPATION_NOT_ON_LIST");
+    if (stop()) return done();
     // a Critical Skills post needs a contract of at least 2 years (#32); a General post has no minimum length
-    if (p.contractType === "fixed_term" && p.contractMonths! < m.minContractMonths) return { ok: false, code: "CONTRACT_TOO_SHORT" };
+    const short = p.contractType === "fixed_term" && p.contractMonths! < m.minContractMonths;
+    add("contract", short ? "blocked" : "pass", { months: p.contractMonths, minimumMonths: m.minContractMonths }, short ? "CONTRACT_TOO_SHORT" : undefined);
   }
+  if (stop()) return done();
   // ponytail: for a General post the chain's text reader gets a 1-month minimum, so "6 months" in the advert is not "short" (maternity, intern and temporary wording still stop it)
   const chain = chainRules(r);
   if (general) chain.minimums = { ...m, minContractMonths: 1 };
@@ -164,7 +211,11 @@ export async function rulesFor(p: Post, employerName: string, r: RulesSnapshot):
     // The contract is stated in its own fields (checked above), so the chain's "contract unclear" stops do not apply; a short contract in the text still fails.
     { contractConfirmed: true, ...(p.salaryLow !== null ? { salary: { low: p.salaryLow, high: p.salaryHigh ?? p.salaryLow } } : {}) },
   );
-  if (a.bucket === "rejected" && !a.stage.startsWith("8 ")) return { ok: false, code: "RULES_FAILED", stage: a.stage };
+  const failed = a.bucket === "rejected" && !a.stage.startsWith("8 ");
+  add("wording", failed ? "blocked" : a.bucket === "queue" ? "note" : "pass", { stage: a.stage }, failed ? "RULES_FAILED" : undefined);
+  const phrase = scamPhrase(p.description); // asks the candidate for money: not a block, the job goes to a staff check (#244, #287)
+  add("money", phrase ? "note" : "pass", phrase ? { phrase } : {});
+  if (stop()) return done(a);
   // Pay: the top of a range counts (#66), with employer-paid health insurance (#68), against the minimum for the stated hours. Compared with >=:
   // DETE's page says "over 68,911" and its checklist "is 68,911 or more"; we follow the checklist.
   // #225 (step9/dete-thresholds-research.md): a role not on the Critical Skills list and not Ineligible qualifies at the non-list minimum.
@@ -172,16 +223,19 @@ export async function rulesFor(p: Post, employerName: string, r: RulesSnapshot):
   const base = general ? (m.generalLowerCodes!.includes(p.occupationCode) ? m.generalLower! : m.general!) : onList === "yes" ? m.criticalSkills : m.nonList;
   const minimum = minimumForHours(base, p.weeklyHours, m.standardWeekHours);
   const pay = p.salaryLow === null ? null : (p.salaryHigh ?? p.salaryLow) + (p.healthInsuranceEur ?? 0);
-  let passRoute: "stated_pay" | "public_pay";
+  let payCode: string | undefined;
   if (pay !== null && pay >= minimum) passRoute = "stated_pay";
-  else if (!general && a.publicPayTier > 0 && onList === "yes") {
-    // a public pay-scale employer on a list role (#67). With a grade code from the scales in force (#269), stated pay must sit on that grade's scale
-    // (any point counts); a grade typed as free text, or no stated pay, passes as before.
-    if (offScale(r, p.payGrade, p.salaryLow, p.salaryHigh)) return { ok: false, code: "PAY_NOT_ON_SCALE" };
-    passRoute = "public_pay";
-  } else return { ok: false, code: pay === null ? "PAY_REQUIRED" : "PAY_BELOW_MINIMUM" };
-  if (general && !p.statement) return { ok: false, code: "STATEMENT_REQUIRED" }; // #31: a General job appears only when the employer confirms sponsorship
-  return { ok: true, passRoute, status: a.bucket === "queue" || a.scamFlag ? "in_review" : "live", sector: a.sector, stage: a.stage, ticked };
+  // a public pay-scale employer on a list role (#67), never an agency posting for a client (CF98: the client, not the agency, is the permit employer). With a grade code
+  // from the scales in force (#269), stated pay must sit on that grade's scale (any point counts); a grade typed as free text, or no stated pay, passes as before.
+  else if (!general && p.clientName === null && a.publicPayTier > 0 && onList === "yes") {
+    if (offScale(r, p.payGrade, p.salaryLow, p.salaryHigh)) payCode = "PAY_NOT_ON_SCALE"; else passRoute = "public_pay";
+  } else payCode = pay === null ? "PAY_REQUIRED" : "PAY_BELOW_MINIMUM";
+  add("pay", payCode ? "blocked" : "pass", { minimumEur: minimum, countedEur: pay, healthInsuranceEur: p.healthInsuranceEur ?? 0, weeklyHours: p.weeklyHours, route: passRoute ?? null }, payCode);
+  if (general) add("statement", p.statement ? "pass" : "blocked", { signed: p.statement !== null }, p.statement ? undefined : "STATEMENT_REQUIRED"); // #31: a General job appears only when the employer confirms sponsorship
+  return done(a);
+}
+export async function rulesFor(p: Post, employerName: string, r: RulesSnapshot): Promise<Verdict> {
+  return (await evaluate(p, employerName, r)).verdict;
 }
 export function verdictReply(v: Verdict & { ok: false }): Response {
   return Response.json({ code: v.code, ...(v.stage ? { stage: v.stage } : {}), ...(v.exception ? { exception: v.exception } : {}) }, { status: 422 });
@@ -256,7 +310,7 @@ const INSERT_STATEMENT =
   "values ($1, $2, $3, $4, $5, $6, $7, $8, $9)";
 
 /** The statement (the database's signer_check decides who may sign). Inside the caller's transaction. */
-async function sign(c: pg.PoolClient, jobId: string, who: Acting, p: Post): Promise<Response | null> {
+async function sign(c: pg.PoolClient, jobId: string, who: Acting, p: Pick<Post, "statement" | "clientName">): Promise<Response | null> {
   const s = p.statement!;
   if (p.clientName && !s.writtenAuthority) return no(400, "WRITTEN_AUTHORITY_REQUIRED"); // on behalf of a client: the client's written authority is on file
   const text = (await c.query(TEXT)).rows[0];
@@ -271,7 +325,7 @@ const jobReply = (r: { id: string; status: string; badge: string | null; pass_ro
 
 /** POST /api/portal/jobs: a new job, as a draft (no checks) or live (the rules; a restricted company's job goes to review, #44). */
 export async function jobPost(request: Request): Promise<Response> {
-  const w = await writer(request, checkPost, MAX_JOB_BODY);
+  const w = await writer(request, checkBody, MAX_JOB_BODY);
   if (w instanceof Response) return w;
   const { who, body: p } = w;
   return inTx(async (c) => {
@@ -311,6 +365,8 @@ export async function jobEdit(request: Request): Promise<Response> {
     const j = (await c.query(LOCK, [p.jobId, who.organisationId])).rows[0];
     if (!j) return no(404, "JOB_NOT_FOUND"); // another company's job is not found either
     if (j.status === "closed" || j.status === "hidden") return no(409, "BAD_STATE");
+    const full = isFull(p) ? p : null; // a loose draft body edits a draft only; a job past draft needs the whole post
+    if (!full && j.status !== "draft") return no(400, "BAD_REQUEST");
     const org = (await c.query(ORG, [who.organisationId])).rows[0] as { display_name: string; kind: string };
     if (p.clientName && org.kind !== "agency") return no(400, "CLIENT_ONLY_FOR_AGENCIES");
     const pay = j.salary_low !== p.salaryLow || j.salary_high !== p.salaryHigh || j.pay_grade !== p.payGrade || j.health_insurance_eur !== p.healthInsuranceEur;
@@ -321,7 +377,8 @@ export async function jobEdit(request: Request): Promise<Response> {
       || j.permit_employer_name !== p.clientName || (p.statement !== null && j.badge !== "sponsor_confirmed"));
     let status: string = j.status, passRoute = j.pass_route, sector = j.sector, ticked: boolean | null = null;
     if (publish || (j.status !== "draft" && key) || fix) {
-      const v = await rulesFor(p, p.clientName ?? org.display_name, await getRules(c));
+      if (!full) return no(400, "BAD_REQUEST"); // not reached: a publish carries every field and a job past draft was checked above
+      const v = await rulesFor(full, p.clientName ?? org.display_name, await getRules(c));
       if (!v.ok) return verdictReply(v);
       if (publish) status = v.status;
       else if (v.status === "in_review" && j.status === "live") return no(409, "NEEDS_REVIEW"); // the guard keeps a live job live or closes it
@@ -382,17 +439,22 @@ export async function jobRenew(request: Request): Promise<Response> {
   });
 }
 
+// A draft was never shown, so it keeps no hire answer (B52); any other job needs one ($4 null refuses the update).
 const CLOSE =
-  "update job set status = 'closed', closed_at = now(), close_reason = 'closed', posted_by_membership_id = $3, hire_answer = $4, hire_answered_at = now(), " +
-  "hire_answered_by_membership_id = $3 where id = $1 and organisation_id = $2 and source in ('employer','agency') and status in ('draft','in_review','live','under_review') returning id";
-/** POST /api/portal/jobs/close: closes the job with the "Did you hire someone through us?" answer (#49). A closed job never reopens. */
+  "update job set status = 'closed', closed_at = now(), close_reason = 'closed', posted_by_membership_id = $3::bigint, " +
+  "hire_answer = case when status = 'draft' then null else $4::text end, hire_answered_at = case when status = 'draft' then null else now() end, " +
+  "hire_answered_by_membership_id = case when status = 'draft' then null else $3::bigint end where id = $1 and organisation_id = $2 and source in ('employer','agency') " +
+  "and status in ('draft','in_review','live','under_review') and (status = 'draft' or $4::text is not null) returning id";
+/** POST /api/portal/jobs/close: closes the job with the "Did you hire someone through us?" answer (#49); a draft needs none. A closed job never reopens. */
 export async function jobClose(request: Request): Promise<Response> {
   const w = await writer(request, checkClose);
   if (w instanceof Response) return w;
   const { who, body } = w;
   return inTx(async (c) => {
     const r = (await c.query(CLOSE, [body.jobId, who.organisationId, who.membershipId, body.hireAnswer])).rows[0];
-    return r ? ok({ jobId: r.id, status: "closed" }) : no(404, "JOB_NOT_FOUND");
+    if (r) return ok({ jobId: r.id, status: "closed" });
+    // no answer and no row: the answer was needed (a bad request, the same for any job, so it says nothing about whose job it is)
+    return body.hireAnswer === null ? no(400, "BAD_REQUEST") : no(404, "JOB_NOT_FOUND");
   });
 }
 
@@ -411,8 +473,10 @@ export async function jobList(request: Request): Promise<Response> {
 }
 
 /**
- * POST /api/portal/jobs/check (P4): the post body, checked as a live post would be (the agency and written authority checks, then rulesFor) and
- * nothing written, so the form can show a refusal while the employer types. `status` is read but does not matter. The same codes as the post.
+ * POST /api/portal/jobs/check (P4, B50): the post body (every field of a live post, whatever its `status`), checked as a live post would be (the agency and written
+ * authority checks, then every rule) and nothing written, so the form can show the whole list while the employer types. The reply keeps its single answer
+ * (200 `ok` with the route, or 422 with the first refusal's code) and adds `checks`: every check with its state and facts, the client's DETE match for an agency
+ * post included. A client not in the DETE names is a note and turns the answer's status to `in_review`, as a save would.
  */
 export async function jobCheck(request: Request): Promise<Response> {
   const w = await writer(request, checkPost, MAX_JOB_BODY, "jobcheck", CHECK_RATE);
@@ -422,8 +486,44 @@ export async function jobCheck(request: Request): Promise<Response> {
   const org = (await db.query(ORG, [who.organisationId])).rows[0] as { display_name: string; kind: string };
   if (p.clientName && org.kind !== "agency") return no(400, "CLIENT_ONLY_FOR_AGENCIES");
   if (p.clientName && p.statement && !p.statement.writtenAuthority) return no(400, "WRITTEN_AUTHORITY_REQUIRED");
-  const v = await rulesFor(p, p.clientName ?? org.display_name, await getRules(db));
-  return v.ok ? ok({ ok: true, status: v.status, passRoute: v.passRoute, sector: v.sector }) : verdictReply(v);
+  const { checks, verdict: v } = await evaluate(p, p.clientName ?? org.display_name, await getRules(db), true);
+  let held = false;
+  if (p.clientName) {
+    const found = (await db.query(CLIENT_KNOWN, [p.clientName])).rows[0].found as boolean;
+    held = !found;
+    checks.push({ id: "client", state: found ? "pass" : "note", detail: { found } });
+  }
+  if (!v.ok) return Response.json({ code: v.code, ...(v.stage ? { stage: v.stage } : {}), ...(v.exception ? { exception: v.exception } : {}), checks }, { status: 422 });
+  return ok({ ok: true, status: held ? "in_review" : v.status, passRoute: v.passRoute, sector: v.sector, checks });
+}
+
+// The same name key job_defaults uses (0008): is the client one of the names DETE (or the register) knows?
+const CLIENT_KNOWN = "select exists (select 1 from organisation_name n where n.normalised_name = btrim(regexp_replace(lower($1::text), '[^a-z0-9]+', ' ', 'g'))) as found";
+
+export const ONE_JOB =
+  "select j.id, j.status, j.badge, j.pass_route, j.title, t.advert_text, j.county, j.occupation_code, j.contract_type, j.contract_months, j.salary_low, j.salary_high, j.pay_grade, " +
+  "j.health_insurance_eur, j.weekly_hours, j.own_page_url, j.permit_employer_kind, j.permit_employer_name, j.permit_type, j.exception_confirmed_at is not null as ticked, " +
+  "j.posted_at, j.closes_at, s.signer_name, s.signer_title, s.written_authority_on_file " +
+  "from job j left join job_text t on t.job_id = j.id left join sponsorship_statement s on s.job_id = j.id and s.superseded_at is null " +
+  "where j.id = $1 and j.organisation_id = $2 and j.source in ('employer','agency')";
+
+/**
+ * GET /api/portal/jobs/{id} (B49): one of the company's own jobs in full, in the shape of the post body, to fill the edit and repost forms. Any active member,
+ * viewers too, as the list. Another company's job, and one that does not exist, are the same 404 JOB_NOT_FOUND.
+ */
+export async function jobGet(request: Request, jobId: string): Promise<Response> {
+  const login = await portalLogin(request);
+  if (login instanceof Response) return login;
+  if (!validId(jobId)) return no(400, "BAD_REQUEST");
+  if (!login.membership) return no(404, "NO_COMPANY");
+  const j = (await getPool().query(ONE_JOB, [jobId, login.membership.organisationId])).rows[0];
+  if (!j) return no(404, "JOB_NOT_FOUND");
+  return ok({ job: {
+    id: j.id, status: j.status, badge: j.badge, passRoute: j.pass_route, title: j.title, description: j.advert_text ?? "", county: j.county, occupationCode: j.occupation_code,
+    contractType: j.contract_type, contractMonths: j.contract_months, salaryLow: j.salary_low, salaryHigh: j.salary_high, payGrade: j.pay_grade, healthInsuranceEur: j.health_insurance_eur,
+    weeklyHours: j.weekly_hours ?? 39, ownPageUrl: j.own_page_url, clientName: j.permit_employer_kind === "client" ? j.permit_employer_name : null, permitType: j.permit_type,
+    exceptionConfirmed: j.ticked, statement: j.signer_name === null ? null : { signerName: j.signer_name, signerTitle: j.signer_title, writtenAuthority: j.written_authority_on_file },
+    postedAt: j.posted_at, closesAt: j.closes_at } });
 }
 
 /** GET /api/portal/jobs/suggest?title= (P5): up to 3 SOC codes from the matcher's title rules, with their official titles. No AI, no database read but the session. */

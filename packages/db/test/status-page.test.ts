@@ -73,8 +73,8 @@ describe("status_page", () => {
       expect(p.cases[0].canReply).toBe(u === a.owner);
     }
     const c = (await page(a.owner)).cases[0];
-    expect(Object.keys(c).sort()).toEqual(["appealDecidedAt", "appealDueAt", "appealText", "appealedAt", "canAppeal", "canReply", "caseKind", "decidedAt",
-      "employerReply", "id", "jobId", "jobTitle", "level", "noticeSummary", "outcome", "reasonCode", "repliedAt", "replyDueAt", "stage"]);
+    expect(Object.keys(c).sort()).toEqual(["appealDecidedAt", "appealDueAt", "appealText", "appealedAt", "canAppeal", "canReply", "caseKind", "createdAt", "decidedAt",
+      "employerReply", "id", "jobId", "jobTitle", "level", "noticeSummary", "notifiedAt", "outcome", "reasonCode", "repliedAt", "replyDueAt", "stage"]);
     expect(JSON.stringify(await page(a.owner))).not.toMatch(/report|staff|received/i);
   });
 

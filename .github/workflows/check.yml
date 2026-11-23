@@ -57,6 +57,8 @@ jobs:
       - run: node packages/db/src/bundle-check-cli.ts
         env:
           SENTRY_AUTH_TOKEN: fake-token-for-ci
+      # Shared CSS and first-load JS of each app's stub page stay within the size budget (step 16 F1).
+      - run: node packages/ui/src/size-budget.ts
 
   # The page gate: full-size fake fill, then every list page must read at most 1,000 pages. About 2 minutes.
   perf:

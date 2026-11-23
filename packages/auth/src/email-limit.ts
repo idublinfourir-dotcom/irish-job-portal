@@ -9,7 +9,7 @@ import type { Pool } from "pg";
 
 export const EMAIL_LIMIT = { max: 3, windowMs: 3600_000 };
 // Sign-up is left out: it sends only when it makes the account, so one address gets at most one sign-up email.
-export const EMAIL_LIMIT_PATHS = ["/request-password-reset", "/send-verification-email"];
+export const EMAIL_LIMIT_PATHS = ["/request-password-reset", "/send-verification-email", "/change-unverified-email"]; // the last: B40, counted on the old address
 
 // One statement, atomic under concurrent requests. last_request holds the END of the window, not the last request: Better Auth prunes
 // rows whose last_request is older than its longest window (5 minutes), and an hour-long count must not be pruned early.

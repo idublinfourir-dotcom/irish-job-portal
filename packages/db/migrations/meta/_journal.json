@@ -449,6 +449,41 @@
       "when": 1794300065000,
       "tag": "0065_jobsireland_twin",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1794300068000,
+      "tag": "0068_portal_reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1794300069000,
+      "tag": "0069_audit_filters",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1794300072000,
+      "tag": "0072_content_extras",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1794300073000,
+      "tag": "0073_review_item_done_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1794300074000,
+      "tag": "0074_portal_extras",
+      "breakpoints": true
     }
   ]
 }

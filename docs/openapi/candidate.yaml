@@ -111,7 +111,7 @@ components:
     JobCard:
       type: object
       description: One job as a list shows it.
-      required: [id, title, employerName, county, salaryLow, salaryHigh, salaryLine, payGrade, passRoute, badge, quotaFull, postedAt, sponsorPermits, lastCheckedAt]
+      required: [id, title, employerName, county, salaryLow, salaryHigh, salaryLine, payGrade, passRoute, badge, quotaFull, postedAt, sponsorPermits, lastCheckedAt, contractMonths, permitHistory, source, employerSlug, employerLogoUrl, payScaleLine]
       properties:
         id: { $ref: '#/components/schemas/Id' }
         title: { type: string }
@@ -123,10 +123,16 @@ components:
         payGrade: { type: [string, 'null'] }
         passRoute: { enum: [stated_pay, big_company, pay_floor, public_pay, null], description: How the job passes the pay rule. }
         badge: { type: [string, 'null'], description: '`critical_skills_eligible`, `sponsor_confirmed` or null.' }
-        quotaFull: { type: boolean }
+        quotaFull: { type: boolean, description: 'The job''s General permit quota is full (#85); the job sorts last and the card shows a label.' }
         postedAt: { $ref: '#/components/schemas/Timestamp' }
         sponsorPermits: { type: [integer, 'null'], description: DETE permits of the last 5 years when the employer has any. }
         lastCheckedAt: { type: [string, 'null'], format: date-time, description: When the job's source last fetched without error. }
+        contractMonths: { type: [integer, 'null'], description: 'Months of a fixed-term contract, null when not stated.', example: 24 }
+        permitHistory: { enum: [has_history, first_time, not_linked], description: What the employer's DETE permit history is. }
+        source: { enum: [fetched, employer, agency, admin_manual], description: Where the job came from. }
+        employerSlug: { type: string, description: The employer's company page slug., example: example-care }
+        employerLogoUrl: { type: [string, 'null'], description: 'The employer''s logo; null means the card shows the initials of employerName.', example: null }
+        payScaleLine: { type: [string, 'null'], description: 'When payGrade is a grade code of the public pay scales in force (#269): "Pay scale for this grade: EUR X to Y" (placeholder wording). Null otherwise.', example: null }
     PublicJobList:
       type: object
       required: [jobs, next, previous, count, signInForMore]
@@ -176,6 +182,17 @@ components:
         salaryHigh: { type: [integer, 'null'] }
         payGrade: { type: [string, 'null'] }
         badge: { type: [string, 'null'] }
+        salaryLine: { type: [string, 'null'], description: 'As on JobCard. Saved, tracked and similar cards of a live job only (not the did-you-apply prompts, not a job that is not live).', example: '€38,000 to €45,000' }
+        passRoute: { enum: [stated_pay, big_company, pay_floor, public_pay, null], description: 'As on JobCard. Same cards as salaryLine.', example: stated_pay }
+        quotaFull: { type: boolean, description: 'As on JobCard. Same cards as salaryLine.', example: false }
+        postedAt: { $ref: '#/components/schemas/Timestamp' }
+        lastCheckedAt: { type: [string, 'null'], format: date-time, description: 'As on JobCard. Same cards as salaryLine.', example: '2026-11-18T06:00:00.000Z' }
+        contractMonths: { type: [integer, 'null'], description: 'As on JobCard. Same cards as salaryLine.', example: 24 }
+        permitHistory: { enum: [has_history, first_time, not_linked], description: 'As on JobCard. Same cards as salaryLine.' }
+        source: { enum: [fetched, employer, agency, admin_manual], description: 'As on JobCard. Same cards as salaryLine.' }
+        employerSlug: { type: string, description: 'As on JobCard. Same cards as salaryLine.', example: example-care }
+        employerLogoUrl: { type: [string, 'null'], description: 'As on JobCard. Same cards as salaryLine.', example: null }
+        payScaleLine: { type: [string, 'null'], description: 'As on JobCard. Same cards as salaryLine.', example: null }
     Profile:
       type: object
       description: The candidate profile. Every field may be null (not given).
@@ -220,7 +237,7 @@ components:
         sector: { oneOf: [{ $ref: '#/components/schemas/Sector' }, { type: 'null' }] }
         county: { oneOf: [{ $ref: '#/components/schemas/County' }, { type: 'null' }] }
         salaryMin: { type: [integer, 'null'], minimum: 0, maximum: 1000000 }
-        badge: { enum: [sponsor_confirmed, null] }
+        badge: { enum: [sponsor_confirmed, critical_skills_eligible, null], description: 'Only jobs with this badge (the same two values as the job search).' }
         frequency: { enum: [daily, weekly] }
     AlertReply:
       type: object
@@ -230,7 +247,7 @@ components:
     ServicesCase:
       type: object
       description: One permit services case as the requester side sees it. Never a note, a staff name or a staff id.
-      required: [id, status, decisionOutcome, permitType, jobId, jobTitle, createdAt, lastChangeAt, documentCount]
+      required: [id, status, decisionOutcome, permitType, jobId, jobTitle, employerName, payer, documentsNeeded, createdAt, lastChangeAt, documentCount]
       additionalProperties: false
       properties:
         id: { $ref: '#/components/schemas/Id' }
@@ -239,6 +256,18 @@ components:
         permitType: { enum: [critical_skills, general] }
         jobId: { oneOf: [{ $ref: '#/components/schemas/Id' }, { type: 'null' }] }
         jobTitle: { type: [string, 'null'] }
+        employerName: { type: [string, 'null'], description: "The employer's name: the job's, else the company's; null for a case with neither. Example Care Ltd." }
+        payer: { enum: [employer, agency, null], description: "Who pays the permit fee, from the job's company (S-Q2). null for a case with no job." }
+        documentsNeeded:
+          type: array
+          description: The documents we are asking for now, as codes with their placeholder labels (a code no longer in the list keeps its code with a null label). Empty when none.
+          items:
+            type: object
+            required: [code, label]
+            additionalProperties: false
+            properties:
+              code: { type: string, description: The document code., example: passport_copy }
+              label: { type: [string, 'null'], description: The label shown for the code., example: Passport copy }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         lastChangeAt: { $ref: '#/components/schemas/Timestamp', description: The newest timeline event, or the creation time. }
         documentCount: { type: integer, minimum: 0, description: Stored copies this side uploaded (deleted copies not counted). }
@@ -507,7 +536,8 @@ paths:
       summary: Better Auth GET endpoints (candidate pool)
       description: |
         Handed to Better Auth unchanged (basePath `/api/auth/candidate`). The GET endpoints the site uses: `get-session`,
-        `verify-email?token=` (the link in the confirmation email, and the two links of an email change), `callback/google` (Google sign-in, on only when
+        `verify-email?token=` (the link in the confirmation email, and the two links of an email change), `list-accounts` (B40: the sign-in methods of the
+        signed-in candidate, `[{ id, providerId, accountId, ... }]`; needs a session, none of the password hash or tokens), `callback/google` (Google sign-in, on only when
         GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set) and `error`. Request and reply shapes are Better Auth's own; see its docs.
         The session cookie is `candidate.session_token` (`__Secure-` over HTTPS); sessions are read from the database every time.
       security: [{}, { candidateSession: [] }]
@@ -543,8 +573,8 @@ paths:
       summary: Better Auth POST endpoints (candidate pool)
       description: |
         Handed to Better Auth after the bot check. The POST endpoints the site uses: `sign-up/email`, `sign-in/email`,
-        `sign-in/social` (Google), `sign-out`, `send-verification-email`, `request-password-reset`, `reset-password`, `change-email`,
-        `revoke-sessions` and `revoke-other-sessions`.
+        `sign-in/social` (Google), `sign-out`, `send-verification-email`, `change-unverified-email`, `request-password-reset`, `reset-password`,
+        `change-password`, `unlink-account`, `change-email`, `revoke-sessions` and `revoke-other-sessions`.
 
         - Bot check first (only when BOT_CHECK=on) on `sign-up/email`, `sign-in/email`, `request-password-reset`,
           `send-verification-email` and `sign-in/social` (the Google start): 403 `{ "code": "BOT_SUSPECTED" }` before Better Auth reads the body.
@@ -561,6 +591,16 @@ paths:
           account, and is refused there as before (`error=SIGNUP_ANSWERS_REFUSED`); a returning Google user's answers are not read.
         - A suspended or deleted candidate cannot start a session (403).
         - A password reset ends every other session.
+        - `change-password` `{ currentPassword, newPassword, revokeOtherSessions? }` (B40): needs a session; a wrong current password is 400
+          `INVALID_PASSWORD`; the new password follows the sign-up rule (8 to 128 characters). It stamps the account row, which is the date `GET
+          /api/candidate/security` gives. With `revokeOtherSessions` true every other session ends.
+        - `list-accounts` (GET) and `unlink-account` `{ accountId }` (B40; the `id` of a row from `list-accounts`, not the provider name; 400 `VALIDATION_ERROR` without): needs a session, and unlinking needs Better Auth's own fresh
+          session (a sign-in in the last day, not the 10-minute rule); the only sign-in method cannot be unlinked (400 `FAILED_TO_UNLINK_LAST_ACCOUNT`).
+        - `change-unverified-email` `{ email, password, newEmail }` (B40, C27 "Wrong address? Change it"): for an account whose email is not yet
+          confirmed, which cannot sign in. The old address and its password are the proof; the account moves to the new address and the confirmation link is
+          sent there (the old link stops working). A wrong password or unknown address is 401 `INVALID_EMAIL_OR_PASSWORD`; an account already
+          confirmed is 400 `ALREADY_VERIFIED`; a bad or over-long address is 400 `INVALID_EMAIL`; a new address that already has an account answers 200
+          and changes and sends nothing. Bot checked; 5 in 5 minutes per client address and 3 an hour per old address.
         - `change-email` `{ newEmail, callbackURL? }` (C4, #270): needs a session from a sign-in in the last 10 minutes, else 403 `REAUTH_REQUIRED`.
           It emails the OLD address a confirm link (kind `change-email`, from the security sender); that link sends the NEW address its own link
           (kind `new-email`), and only that second link changes the address. An address that already has an account answers 200 and sends nothing.
@@ -628,7 +668,7 @@ paths:
         - { name: sector, in: query, schema: { $ref: '#/components/schemas/Sector' } }
         - { name: county, in: query, schema: { $ref: '#/components/schemas/County' } }
         - { name: salaryMin, in: query, description: Whole euros a year; only jobs that state a salary., schema: { type: integer, minimum: 0, maximum: 1000000 } }
-        - { name: badge, in: query, schema: { enum: [sponsor_confirmed] } }
+        - { name: badge, in: query, description: 'Only jobs with this badge: an employer-signed job, or a job that meets Critical Skills pay (also an alert filter).', schema: { enum: [sponsor_confirmed, critical_skills_eligible] } }
         - { name: postedWithin, in: query, description: Days., schema: { type: integer, enum: [1, 3, 7, 30] } }
         - { name: salaryStated, in: query, schema: { enum: ['true'] } }
       responses:
@@ -639,7 +679,7 @@ paths:
               schema: { $ref: '#/components/schemas/PublicJobList' }
               example:
                 jobs:
-                  - { id: '1042', title: Staff Nurse, employerName: Example Care Ltd, county: Dublin, salaryLow: 38000, salaryHigh: 45000, salaryLine: '€38,000 to €45,000', payGrade: null, passRoute: stated_pay, badge: critical_skills_eligible, quotaFull: false, postedAt: '2026-11-17T08:00:00.000Z', sponsorPermits: 12, lastCheckedAt: '2026-11-18T06:00:00.000Z' }
+                  - { id: '1042', title: Staff Nurse, employerName: Example Care Ltd, county: Dublin, salaryLow: 38000, salaryHigh: 45000, salaryLine: '€38,000 to €45,000', payGrade: null, passRoute: stated_pay, badge: critical_skills_eligible, quotaFull: false, postedAt: '2026-11-17T08:00:00.000Z', sponsorPermits: 12, lastCheckedAt: '2026-11-18T06:00:00.000Z', contractMonths: null, permitHistory: has_history, source: fetched, employerSlug: example-care, employerLogoUrl: null, payScaleLine: null }
                 next: null
                 previous: null
                 count: { n: 1, more: false }
@@ -666,7 +706,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [id, title, employerName, employer, badge, sponsored, rulesCheckedOn, registration]
+                required: [id, title, employerName, employer, badge, sponsored, rulesCheckedOn, registration, quotaFull, standingLine, minimums, permits, employerLabels, condition, salaryRangeCrosses]
                 properties:
                   id: { $ref: '#/components/schemas/Id' }
                   source: { enum: [fetched, employer, agency, admin_manual] }
@@ -722,6 +762,38 @@ paths:
                       firstEur: { type: integer }
                       lastEur: { type: integer }
                       line: { type: string }
+                  quotaFull: { type: boolean, description: 'The job''s General permit quota is full (#85); the page shows a notice.', example: false }
+                  standingLine: { type: string, description: 'The standing line of #94 with the date in force, shown under every job and checker result.', example: 'Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 1 November 2026.' }
+                  minimums:
+                    type: object
+                    description: The pay minimums in force, so the page can say what a degree changes without a checker call per click. Whole euros a year, for a 39-hour week.
+                    required: [criticalSkills, graduate, graduateMonths, nonList, minContractMonths, standardWeekHours, general, generalLower, generalLowerCodes]
+                    properties:
+                      criticalSkills: { type: integer, description: Critical Skills minimum with a relevant degree., example: 40904 }
+                      graduate: { type: integer, description: Critical Skills minimum for a recent graduate., example: 36848 }
+                      graduateMonths: { type: integer, description: Months after the degree that count as recent., example: 12 }
+                      nonList: { type: [integer, 'null'], description: Minimum without a degree or for a role not on the list. Null when that route is off., example: 68911 }
+                      minContractMonths: { type: integer, description: Shortest fixed-term contract for Critical Skills., example: 24 }
+                      standardWeekHours: { type: number, example: 39 }
+                      general: { type: [integer, 'null'], description: General permit minimum. Null until a rules version has the General figures., example: 36605 }
+                      generalLower: { type: [integer, 'null'], description: General permit lower rate for the codes in generalLowerCodes., example: 34000 }
+                      generalLowerCodes: { type: [array, 'null'], items: { type: string }, example: ['6145'] }
+                  permits:
+                    type: [object, 'null']
+                    description: The employer's DETE permits for every year since 2019 (the company page's block). Null when no DETE name is linked (not zero).
+                    required: [byYear, peakYear, trend, latestMonth]
+                    properties:
+                      byYear: { type: array, items: { type: object, required: [year, permits], properties: { year: { type: integer, example: 2025 }, permits: { type: integer, example: 12 } } } }
+                      peakYear: { type: [integer, 'null'], example: 2025 }
+                      trend: { enum: [up, down, flat, null], description: The last full year against the year before it. }
+                      latestMonth: { type: [object, 'null'], properties: { year: { type: integer, example: 2026 }, month: { type: integer, example: 9 }, permits: { type: integer, example: 2 } } }
+                  employerLabels:
+                    type: array
+                    description: 'The employer''s labels, as on the company page.'
+                    items: { enum: [First-time sponsor, Permit history not linked yet, Sponsorship claims removed] }
+                    example: []
+                  condition: { type: [string, 'null'], description: 'A condition the role''s code carries that no occupation list names (placeholder wording), null for most codes.', example: null }
+                  salaryRangeCrosses: { type: boolean, description: 'True when the stated pay is a range whose low end is under the minimum for the permit type and whose high end reaches it (at a 39-hour week). Such a job carries no badge. The page passes salaryLow to the checker.', example: false }
               example:
                 id: '1042'
                 source: fetched
@@ -759,6 +831,13 @@ paths:
                   steps: [Apply to NMBI to have your qualification recognised (stage 1).]
                   degreeNote: For nurses and midwives, a relevant degree means a degree or diploma accepted by NMBI.
                 payScale: null
+                quotaFull: false
+                standingLine: Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 1 November 2026.
+                minimums: { criticalSkills: 40904, graduate: 36848, graduateMonths: 12, nonList: 68911, minContractMonths: 24, standardWeekHours: 39, general: null, generalLower: null, generalLowerCodes: null }
+                permits: { byYear: [{ year: 2024, permits: 8 }, { year: 2025, permits: 12 }], peakYear: 2025, trend: up, latestMonth: null }
+                employerLabels: []
+                condition: null
+                salaryRangeCrosses: false
         '400': { $ref: '#/components/responses/PublicBadRequest' }
         '404': { $ref: '#/components/responses/PublicNotFound' }
         '429': { $ref: '#/components/responses/PublicTooMany' }
@@ -880,7 +959,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [code, entries, listStatus, minimums, jobs, text, standingLine, rulesCheckedOn, registration]
+                required: [code, entries, listStatus, minimums, jobs, quota, text, standingLine, rulesCheckedOn, registration]
                 properties:
                   code: { type: string }
                   entries: { type: array, items: { type: object, required: [list, title], properties: { list: { type: string }, title: { type: string } } } }
@@ -895,6 +974,7 @@ paths:
                       minContractMonths: { type: integer }
                       basedOnWeekHours: { type: number }
                   jobs: { $ref: '#/components/schemas/PublicScopedJobs' }
+                  quota: { enum: [none, full], description: 'The General permit quota of the code (#85): full when the code is in the quota-full list of the rules in force, else none. No used count is kept.', example: none }
                   text:
                     type: [object, 'null']
                     properties:
@@ -916,6 +996,7 @@ paths:
                 listStatus: critical-skills
                 minimums: { withDegree: 38000, recentGraduate: 34000, graduateMonths: 12, withoutDegreeOrNotListed: null, minContractMonths: 24, basedOnWeekHours: 39 }
                 jobs: { jobs: [], next: null, count: { n: 0, more: false }, signInForMore: true }
+                quota: none
                 text: null
                 standingLine: Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 1 November 2026.
                 rulesCheckedOn: '2026-11-01'
@@ -945,7 +1026,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [id, kind, slug, title, body, sourceUrl, checkedOn, publishedAt, updatedAt]
+                required: [id, kind, slug, title, body, sourceUrl, checkedOn, publishedAt, updatedAt, category, effectiveFrom]
                 properties:
                   id: { $ref: '#/components/schemas/Id' }
                   kind: { const: help }
@@ -956,7 +1037,9 @@ paths:
                   checkedOn: { type: [string, 'null'] }
                   publishedAt: { $ref: '#/components/schemas/Timestamp' }
                   updatedAt: { $ref: '#/components/schemas/Timestamp' }
-              example: { id: '12', kind: help, slug: not-sure, title: Not sure?, body: Placeholder text., sourceUrl: null, checkedOn: null, publishedAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z' }
+                  category: { type: [string, 'null'], description: "B19: the help group (report_problem, permit_services, jobs_badges or account); null when staff set none.", example: permit_services }
+                  effectiveFrom: { type: [string, 'null'], description: "B17: the day an update's rule starts (a date, YYYY-MM-DD); null for other kinds.", example: null }
+              example: { id: '12', kind: help, slug: not-sure, title: Not sure?, body: Placeholder text., sourceUrl: null, checkedOn: null, publishedAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z', category: permit_services, effectiveFrom: null }
         '404': { $ref: '#/components/responses/PublicNotFound' }
         '429': { $ref: '#/components/responses/PublicTooMany' }
 
@@ -967,12 +1050,14 @@ paths:
       summary: The updates feed, newest first
       description: |
         The published updates (news on permits and rules), 20 a page, newest first. `after` is the `next` of the page before; a visitor
-        pages it too (the 6-job cap is for job lists only). A cursor this route did not make is 400.
+        pages it too (the 6-job cap is for job lists only). A cursor this route did not make is 400. `category` (B17) keeps one type of update; any
+        other value is 400. Each update carries its `category` and `effectiveFrom` (the day its rule starts).
       security: [{}, { candidateSession: [] }]
       x-roles: [anyone]
       x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
       parameters:
         - { name: after, in: query, schema: { type: string, maxLength: 200, pattern: '^[A-Za-z0-9_-]+$' } }
+        - { name: category, in: query, description: "B17: only updates of this type.", schema: { type: string, enum: [salary_minimums, quotas, occupation_lists, processing] } }
       responses:
         '200':
           description: One page of updates.
@@ -987,7 +1072,7 @@ paths:
                     maxItems: 20
                     items:
                       type: object
-                      required: [id, kind, slug, title, body, sourceUrl, checkedOn, publishedAt, updatedAt]
+                      required: [id, kind, slug, title, body, sourceUrl, checkedOn, publishedAt, updatedAt, category, effectiveFrom]
                       properties:
                         id: { $ref: '#/components/schemas/Id' }
                         kind: { const: update }
@@ -998,11 +1083,153 @@ paths:
                         checkedOn: { type: [string, 'null'] }
                         publishedAt: { $ref: '#/components/schemas/Timestamp' }
                         updatedAt: { $ref: '#/components/schemas/Timestamp' }
+                        category: { type: [string, 'null'], description: "B17: the update's type (salary_minimums, quotas, occupation_lists or processing); null when staff set none.", example: salary_minimums }
+                        effectiveFrom: { type: [string, 'null'], description: "B17: the day an update's rule starts (a date, YYYY-MM-DD); null for other kinds.", example: '2027-01-01' }
                   next: { type: [string, 'null'] }
               example:
-                updates: [{ id: '31', kind: update, slug: new-minimums, title: Placeholder update, body: Placeholder text., sourceUrl: 'https://enterprise.gov.ie/', checkedOn: '2026-11-01', publishedAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z' }]
+                updates: [{ id: '31', kind: update, slug: new-minimums, title: Placeholder update, body: Placeholder text., sourceUrl: 'https://enterprise.gov.ie/', checkedOn: '2026-11-01', publishedAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z', category: salary_minimums, effectiveFrom: '2027-01-01' }]
                 next: null
         '400': { $ref: '#/components/responses/PublicBadRequest' }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
+  /api/guides:
+    get:
+      operationId: listGuides
+      tags: [public]
+      summary: Every published guide
+      description: |
+        B15. The published guides by title (then slug), at most 200: slug, title and the day the guide was last checked against its source.
+        Drafts and withdrawn guides are never listed. A page links each one to `/guides/<slug>` and reads it with `GET /api/guide`.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      responses:
+        '200':
+          description: The guides.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [guides]
+                properties:
+                  guides:
+                    type: array
+                    maxItems: 200
+                    items:
+                      type: object
+                      required: [slug, title, checkedOn]
+                      properties:
+                        slug: { type: string, description: The address part, example: living-in-dublin }
+                        title: { type: string, example: Living in Dublin }
+                        checkedOn: { type: [string, 'null'], description: "The day staff last checked the guide against its source (YYYY-MM-DD).", example: '2026-11-01' }
+              example: { guides: [{ slug: living-in-dublin, title: Living in Dublin, checkedOn: '2026-11-01' }] }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
+  /api/guide:
+    get:
+      operationId: getGuide
+      tags: [public]
+      summary: A published guide by slug
+      description: |
+        B15. One guide by slug, from the published guides only: a draft or withdrawn guide, another kind's slug, an unknown or malformed slug
+        (not lowercase letters, digits and hyphens, at most 100) is 404 `NOT_FOUND`. The body is stored as staff typed it (plain text today;
+        the body format, Q2, is not decided).
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      parameters:
+        - { name: slug, in: query, required: true, schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,99}$' } }
+      responses:
+        '200':
+          description: The guide.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, kind, slug, title, body, sourceUrl, checkedOn, publishedAt, updatedAt, category, effectiveFrom]
+                properties:
+                  id: { $ref: '#/components/schemas/Id' }
+                  kind: { const: guide }
+                  slug: { type: string }
+                  title: { type: string }
+                  body: { type: string, description: "Plain text as staff typed it; the body format (Q2) is not decided." }
+                  sourceUrl: { type: [string, 'null'] }
+                  checkedOn: { type: [string, 'null'] }
+                  publishedAt: { $ref: '#/components/schemas/Timestamp' }
+                  updatedAt: { $ref: '#/components/schemas/Timestamp' }
+                  category: { type: [string, 'null'], description: "Always null for this kind." , example: null }
+                  effectiveFrom: { type: [string, 'null'], description: "Always null for this kind.", example: null }
+              example: { id: '7', kind: guide, slug: living-in-dublin, title: Living in Dublin, body: Placeholder text., sourceUrl: 'https://enterprise.gov.ie/', checkedOn: '2026-11-01', publishedAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z', category: null, effectiveFrom: null }
+        '404': { $ref: '#/components/responses/PublicNotFound' }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
+  /api/help/list:
+    get:
+      operationId: listHelpPages
+      tags: [public]
+      summary: Every published help page
+      description: |
+        B19. The published help pages by category, then title (pages with no category last), at most 200: slug, title and category. Drafts and withdrawn pages
+        are never listed. A page reads one with `GET /api/help`. Help text search is not built.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      responses:
+        '200':
+          description: The help pages.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pages]
+                properties:
+                  pages:
+                    type: array
+                    maxItems: 200
+                    items:
+                      type: object
+                      required: [slug, title, category]
+                      properties:
+                        slug: { type: string, example: who-needs-a-permit }
+                        title: { type: string, example: Who needs an employment permit? }
+                        category: { type: [string, 'null'], enum: [report_problem, permit_services, jobs_badges, account, null], description: The help group the page belongs to., example: permit_services }
+              example: { pages: [{ slug: who-needs-a-permit, title: Who needs an employment permit?, category: permit_services }] }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
+  /api/permit-notice:
+    get:
+      operationId: getPermitNotice
+      tags: [public]
+      summary: The notice for the permit pages while DETE's portal is closed
+      description: |
+        Decision #291. The permit services page and the request form show this notice while DETE's Employment Permits portal is closed. Staff switch it
+        on (publish the notice with slug `dete-portal-closed`) and off (withdraw it) and edit its text in the content editor, with no code change.
+        404 `NOT_FOUND` means it is off: the page shows nothing.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      responses:
+        '200':
+          description: The notice.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, kind, slug, title, body, sourceUrl, checkedOn, publishedAt, updatedAt, category, effectiveFrom]
+                properties:
+                  id: { $ref: '#/components/schemas/Id' }
+                  kind: { const: notice }
+                  slug: { type: string }
+                  title: { type: string }
+                  body: { type: string, description: "Plain text as staff typed it; the body format (Q2) is not decided." }
+                  sourceUrl: { type: [string, 'null'] }
+                  checkedOn: { type: [string, 'null'] }
+                  publishedAt: { $ref: '#/components/schemas/Timestamp' }
+                  updatedAt: { $ref: '#/components/schemas/Timestamp' }
+                  category: { type: [string, 'null'], description: "Always null for this kind." , example: null }
+                  effectiveFrom: { type: [string, 'null'], description: "Always null for this kind.", example: null }
+              example: { id: '55', kind: notice, slug: dete-portal-closed, title: DETE's portal is closed, body: Placeholder text., sourceUrl: null, checkedOn: null, publishedAt: '2026-11-19T10:00:00.000Z', updatedAt: '2026-11-19T10:00:00.000Z', category: null, effectiveFrom: null }
+        '404': { $ref: '#/components/responses/PublicNotFound' }
         '429': { $ref: '#/components/responses/PublicTooMany' }
 
   /api/checker:
@@ -1051,13 +1278,97 @@ paths:
         '400': { $ref: '#/components/responses/PublicBadRequest' }
         '429': { $ref: '#/components/responses/PublicTooMany' }
 
+  /api/minimums:
+    get:
+      operationId: getMinimums
+      tags: [public]
+      summary: The pay and contract minimums in force today
+      description: |
+        The minimums in force today with no occupation (for the footer date, the landing box, the guide tables and the hero card), read from the
+        rules version in force (kept up to 5 minutes by the server). `nonList` is null while the route for a role on neither list is off.
+        `general`, `generalLower` and `generalLowerCodes` are the General Employment Permit minimums (null and empty until a version has them).
+        `nextVersionOn` is the day the next confirmed minimums version starts, or null when none is waiting. Amounts are whole euro a year.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      responses:
+        '200':
+          description: The minimums in force.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [criticalSkills, graduate, graduateMonths, nonList, general, generalLower, generalLowerCodes, minContractMonths, rulesCheckedOn, nextVersionOn]
+                properties:
+                  criticalSkills: { type: integer, description: 'Minimum yearly pay in euro for a Critical Skills role with a relevant degree.', example: 40904 }
+                  graduate: { type: integer, description: 'Minimum yearly pay in euro for a recent graduate on a Critical Skills role.', example: 36848 }
+                  graduateMonths: { type: integer, description: 'Months after the degree award in which the graduate minimum applies.', example: 12 }
+                  nonList: { type: [integer, 'null'], description: 'Minimum yearly pay in euro for a role without the degree or not on the list. null while that route is off.', example: 68911 }
+                  general: { type: [integer, 'null'], description: 'General Employment Permit standard minimum in euro a year. null until a rules version has it.', example: null }
+                  generalLower: { type: [integer, 'null'], description: 'General Employment Permit lower minimum in euro a year. null until a rules version has it.', example: null }
+                  generalLowerCodes: { type: array, description: 'Four-digit occupation codes at the lower General rate. Empty until a rules version has them.', items: { type: string, pattern: '^[0-9]{4}$' }, example: [] }
+                  minContractMonths: { type: integer, description: 'Shortest contract in months the Critical Skills route accepts.', example: 24 }
+                  rulesCheckedOn: { type: string, pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$', description: 'The day the minimums were last checked against the official source (the footer date).', example: '2026-11-16' }
+                  nextVersionOn: { type: [string, 'null'], pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$', description: 'The day the next confirmed minimums version starts, or null when none is waiting.', example: null }
+              example:
+                criticalSkills: 40904
+                graduate: 36848
+                graduateMonths: 12
+                nonList: 68911
+                general: null
+                generalLower: null
+                generalLowerCodes: []
+                minContractMonths: 24
+                rulesCheckedOn: '2026-11-16'
+                nextVersionOn: null
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
+  /api/occupations:
+    get:
+      operationId: listOccupations
+      tags: [public]
+      summary: Every occupation a picker offers
+      description: |
+        All 369 SOC 2010 unit groups, by code, for the pickers and typeaheads (checker, profile, alerts, search filter, posting form): the
+        code, its title, its address slug (`/occupations/<slug>`, one slug per code) and its list status. `listStatus` is `critical-skills` when
+        any list entry for the code is (as the checker), else `ineligible` when it is on the ineligible list, else `other`.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      responses:
+        '200':
+          description: The occupations, in code order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [occupations]
+                properties:
+                  occupations:
+                    type: array
+                    maxItems: 369
+                    description: Every SOC 2010 unit group, in code order.
+                    items:
+                      type: object
+                      required: [code, title, slug, listStatus]
+                      properties:
+                        code: { type: string, pattern: '^[0-9]{4}$', description: 'The four-digit SOC 2010 unit group code.', example: '2136' }
+                        title: { type: string, description: 'The unit group title, the name a picker shows.', example: Programmers and software development professionals }
+                        slug: { type: string, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', description: 'The occupation page address segment, /occupations/<slug>. One slug per code.', example: programmers-and-software-development-professionals }
+                        listStatus: { enum: [critical-skills, ineligible, other], description: 'critical-skills when any list entry for the code is, else ineligible when on that list, else other (on neither list).', example: critical-skills }
+              example:
+                occupations:
+                  - { code: '1115', title: Chief executives and senior officials, slug: chief-executives-and-senior-officials, listStatus: other }
+                  - { code: '2136', title: Programmers and software development professionals, slug: programmers-and-software-development-professionals, listStatus: critical-skills }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
   /api/legal:
     get:
       operationId: getLegalText
       tags: [public]
       summary: The legal text in force for a purpose
       description: |
-        Step 15 R5. The newest published version of one legal purpose of this site: signup_terms or privacy_notice. Staff publish
+        Step 15 R5. The newest published version of one legal purpose of this site: signup_terms, privacy_notice, cookie_policy, employer_acceptable_use or data_retention (B20, decision #290: the cookie policy lists every cookie the site sets). Staff publish
         a version at the admin site's `/api/legal-texts` (two people); new sign-ups consent to the version shown here. No login is needed.
         No version yet is 404 `NOT_FOUND`; any other purpose, or none, is 400 `BAD_REQUEST`. The real wording waits for the solicitor and
         the entity: today only placeholder texts exist.
@@ -1065,7 +1376,7 @@ paths:
       x-roles: [anyone]
       x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
       parameters:
-        - { name: purpose, in: query, required: true, schema: { type: string, enum: [signup_terms, privacy_notice] } }
+        - { name: purpose, in: query, required: true, schema: { type: string, enum: [signup_terms, privacy_notice, cookie_policy, employer_acceptable_use, data_retention] } }
       responses:
         '200':
           description: The text in force.
@@ -1076,7 +1387,7 @@ paths:
                 additionalProperties: false
                 required: [purpose, version, body, publishedAt]
                 properties:
-                  purpose: { type: string, enum: [signup_terms, privacy_notice] }
+                  purpose: { type: string, enum: [signup_terms, privacy_notice, cookie_policy, employer_acceptable_use, data_retention] }
                   version: { type: string }
                   body: { type: string, description: Plain text; line breaks are kept. }
                   publishedAt: { type: string, description: 'The database time, as "2026-11-19 09:30:00.123456+00".' }
@@ -1574,6 +1885,41 @@ paths:
         '429': { $ref: '#/components/responses/WriteTooMany' }
 
   /api/candidate/tracker:
+    get:
+      operationId: listTracker
+      tags: [account]
+      summary: Everything the candidate tracks
+      description: |
+        Newest change first, at most 200 (the cap, so no paging); `count` is the number tracked in all. A job that is no longer live shows only its id, title and
+        employer, with `live` false and its `reason`; `route`, `stage` and `updatedAt` always stay. Stages (#86): a redirect row is applied, interview, offer,
+        rejected or withdrawn; an on-site row is applied, viewed, shortlisted, rejected, offer, hired or withdrawn.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      responses:
+        '200':
+          description: The tracked jobs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tracker, count]
+                properties:
+                  tracker:
+                    type: array
+                    maxItems: 200
+                    items:
+                      allOf: [{ $ref: '#/components/schemas/SmallJobCard' }]
+                      required: [live, reason, route, stage, updatedAt]
+                      properties:
+                        live: { type: boolean, description: False once the job is closed and expired or hidden., example: true }
+                        reason: { $ref: '#/components/schemas/JobReason' }
+                        route: { enum: [redirect, on_site], description: "redirect: the employer's own page, tracked by the candidate; on_site: applied here.", example: redirect }
+                        stage: { enum: [applied, interview, viewed, shortlisted, offer, hired, rejected, withdrawn], description: The stage the row is at., example: applied }
+                        updatedAt: { $ref: '#/components/schemas/Timestamp', description: When the row last changed. }
+                  count: { type: integer, minimum: 0, description: How many jobs the candidate tracks in all (may be more than the 200 listed)., example: 2 }
+              example: { tracker: [{ jobId: '1042', title: Staff Nurse, employerName: Example Care Ltd, county: Dublin, salaryLow: 38000, salaryHigh: 45000, payGrade: null, badge: null, live: true, reason: null, route: redirect, stage: interview, updatedAt: '2026-11-18T09:30:00.000Z' }, { jobId: '1007', title: Chef de Partie, employerName: Example Hotel Ltd, live: false, reason: no_longer_available, route: redirect, stage: applied, updatedAt: '2026-11-10T12:00:00.000Z' }], count: 2 }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
     post:
       operationId: markApplied
       tags: [account]
@@ -1653,6 +1999,143 @@ paths:
               example: { code: NOT_TRACKED }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
         '429': { $ref: '#/components/responses/WriteTooMany' }
+
+  /api/candidate/notices:
+    get:
+      operationId: listCandidateNotices
+      tags: [account]
+      summary: My updates
+      description: The candidate's in-app updates, newest first, 50 a page (decision #287, Q54: no "N updates since" count; a page counts the rows it was given with `readAt` null). Params hold ids and codes only; the wording is the page's.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      parameters:
+        - { name: after, in: query, required: false, description: "The `next` token of the previous page (at most 200 characters).", schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 50
+                    items:
+                      type: object
+                      required: [id, category, templateKey, params, createdAt, readAt]
+                      properties:
+                        id: { $ref: '#/components/schemas/Id' }
+                        category: { type: string, description: The notification category., example: account }
+                        templateKey: { type: string, description: Which update this is; the page words it., example: deletion_on_hold }
+                        params: { description: The update's values (ids and codes only)., example: { rule: inactive_account } }
+                        createdAt: { $ref: '#/components/schemas/Timestamp' }
+                        readAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }], description: When it was marked seen; null while unseen. }
+                  next: { oneOf: [{ $ref: '#/components/schemas/Cursor' }, { type: 'null' }], description: The token for the next page; null on the last. }
+              example: { items: [{ id: '880', category: account, templateKey: deletion_on_hold, params: { rule: inactive_account }, createdAt: '2026-11-18T09:30:00.123Z', readAt: null }], next: null }
+        '400':
+          description: "`BAD_CURSOR`: the `after` token is not one this route made. `BAD_REQUEST`: another query key, or `after` twice."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: BAD_CURSOR }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+    post:
+      operationId: markCandidateNoticesSeen
+      tags: [account]
+      summary: Mark my updates seen
+      description: "`{ action: read, id }` marks one, `{ action: read_all }` marks every unseen one. `marked` is how many changed (0 for an unknown, already seen or another candidate's id). Origin checked."
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      x-body-cap: 2048 characters
+      x-rate-limit: 60 candidate writes in 10 minutes per login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - { type: object, additionalProperties: false, required: [action, id], properties: { action: { const: read }, id: { $ref: '#/components/schemas/Id' } } }
+                - { type: object, additionalProperties: false, required: [action], properties: { action: { const: read_all } } }
+            example: { action: read, id: '880' }
+      responses:
+        '200':
+          description: Marked.
+          content:
+            application/json:
+              schema: { type: object, required: [marked], properties: { marked: { type: integer, minimum: 0, description: How many updates changed., example: 1 } } }
+              example: { marked: 1 }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/WriteForbidden' }
+        '413': { $ref: '#/components/responses/BodyTooLarge' }
+        '429': { $ref: '#/components/responses/WriteTooMany' }
+
+  /api/candidate/security:
+    get:
+      operationId: getSecurity
+      tags: [account]
+      summary: Password date and sign-in methods
+      description: |
+        When the password last changed (Better Auth stamps the account row on a change or a reset; for a password never changed it is the sign-up time) and
+        the sign-in methods on the account. `passwordChangedAt` is null for a login with no password (Google only). Whether the Google buttons show is a
+        setting of the site (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, off in production until G10), not a field here. To list or unlink methods see
+        `list-accounts` and `unlink-account` under the Better Auth routes.
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      responses:
+        '200':
+          description: The password date and the methods.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [passwordChangedAt, signInMethods]
+                properties:
+                  passwordChangedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }], description: When the password last changed; null with no password. }
+                  signInMethods:
+                    type: array
+                    description: "The sign-in methods on the account: `credential` (email and password) and `google`."
+                    items: { enum: [credential, google], example: credential }
+              example: { passwordChangedAt: '2026-11-02T10:00:00.000Z', signInMethods: [credential, google] }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
+
+  /api/candidate/data-access:
+    get:
+      operationId: getDataAccessLog
+      tags: [account]
+      summary: Who viewed my data
+      description: |
+        Who accessed or received the candidate's data, newest first, at most 200: an organisation's name (or names), "Portal staff" or "Portal system", the
+        action and the time. Never an id or a staff name; the candidate's own downloads are not listed. The same list as the export's
+        `whoAccessedOrReceivedYourData`. Launch B writes the rows, so it is empty at Launch A. A plain session is enough (no fresh sign-in).
+      security: [{ candidateSession: [] }]
+      x-roles: [candidate]
+      responses:
+        '200':
+          description: The log.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [log]
+                properties:
+                  log:
+                    type: array
+                    maxItems: 200
+                    items:
+                      type: object
+                      required: [by, action, at]
+                      properties:
+                        by: { type: string, description: 'The organisation name, Portal staff or Portal system.', example: Example Care Ltd }
+                        action: { type: string, description: What was done., example: contact_request.accept }
+                        at: { $ref: '#/components/schemas/Timestamp' }
+              example: { log: [{ by: Example Care Ltd, action: contact_request.accept, at: '2026-11-18T09:30:00.000Z' }] }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
 
   /api/candidate/job:
     get:
@@ -1878,20 +2361,33 @@ paths:
       operationId: listAlerts
       tags: [alerts]
       summary: The candidate's job alerts
-      description: Newest first, at most 10. The unsubscribe token is never returned.
+      description: |
+        Newest first, at most 10. The unsubscribe token is never returned. With `?id=` (the edit form that the alert email's "Edit this alert" link opens at
+        `/account/alerts?edit=<id>`): that one alert as `{ alert }`; no other query key is allowed with it.
       security: [{ candidateSession: [] }]
       x-roles: [candidate]
+      parameters:
+        - { name: id, in: query, required: false, description: "One alert's id. Gives `{ alert }` instead of the list.", schema: { $ref: '#/components/schemas/Id' } }
       responses:
         '200':
-          description: The alerts.
+          description: The alerts, or with `id` the one alert.
           content:
             application/json:
               schema:
-                type: object
-                required: [alerts]
-                properties:
-                  alerts: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/Alert' } }
+                oneOf:
+                  - type: object
+                    required: [alerts]
+                    properties:
+                      alerts: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/Alert' } }
+                  - { $ref: '#/components/schemas/AlertReply' }
               example: { alerts: [{ id: '31', occupationCode: null, sector: health, county: Dublin, salaryMin: null, badge: null, frequency: weekly, status: active, pauseReason: null, lastSentAt: null }] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404':
+          description: "`ALERT_NOT_FOUND`: no such alert, or it is another candidate's."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodeError' }
+              example: { code: ALERT_NOT_FOUND }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
     post:
@@ -2193,7 +2689,7 @@ paths:
                 properties:
                   cases: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/ServicesCase' } }
                   next: { oneOf: [{ $ref: '#/components/schemas/Cursor' }, { type: 'null' }] }
-              example: { cases: [{ id: '31', status: received, decisionOutcome: null, permitType: critical_skills, jobId: '1042', jobTitle: Fake Developer, createdAt: '2026-11-20T08:00:00.000Z', lastChangeAt: '2026-11-20T08:00:00.000Z', documentCount: 0 }], next: null }
+              example: { cases: [{ id: '31', status: received, decisionOutcome: null, permitType: critical_skills, jobId: '1042', jobTitle: Fake Developer, employerName: Example Care Ltd, payer: employer, documentsNeeded: [], createdAt: '2026-11-20T08:00:00.000Z', lastChangeAt: '2026-11-20T08:00:00.000Z', documentCount: 0 }], next: null }
         '400':
           description: '`BAD_REQUEST`: an unknown or repeated query key, or a forged or changed paging token.'
           content:
@@ -2240,7 +2736,7 @@ paths:
                   case: { $ref: '#/components/schemas/ServicesCase' }
                   freeCheck: { $ref: '#/components/schemas/FreeCheck' }
                   replayed: { type: boolean }
-              example: { case: { id: '31', status: received, decisionOutcome: null, permitType: critical_skills, jobId: '1042', jobTitle: Fake Developer, createdAt: '2026-11-20T08:00:00.000Z', lastChangeAt: '2026-11-20T08:00:00.000Z', documentCount: 0 }, freeCheck: { qualifies: true, reason: listed_degree, minimum: 40904, why: 'On the Critical Skills list with a relevant degree: the minimum is EUR 40,904.', standingLine: Rules checked on 12 November 2026., rulesCheckedOn: '2026-11-12', registration: null }, replayed: false }
+              example: { case: { id: '31', status: received, decisionOutcome: null, permitType: critical_skills, jobId: '1042', jobTitle: Fake Developer, employerName: Example Care Ltd, payer: employer, documentsNeeded: [], createdAt: '2026-11-20T08:00:00.000Z', lastChangeAt: '2026-11-20T08:00:00.000Z', documentCount: 0 }, freeCheck: { qualifies: true, reason: listed_degree, minimum: 40904, why: 'On the Critical Skills list with a relevant degree: the minimum is EUR 40,904.', standingLine: Rules checked on 12 November 2026., rulesCheckedOn: '2026-11-12', registration: null }, replayed: false }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/NoSession' }
         '403':
@@ -2291,7 +2787,7 @@ paths:
                 additionalProperties: false
                 properties:
                   case: { $ref: '#/components/schemas/ServicesCase' }
-              example: { case: { id: '31', status: received, decisionOutcome: null, permitType: critical_skills, jobId: '1042', jobTitle: Fake Developer, createdAt: '2026-11-20T08:00:00.000Z', lastChangeAt: '2026-11-20T08:00:00.000Z', documentCount: 0 } }
+              example: { case: { id: '31', status: received, decisionOutcome: null, permitType: critical_skills, jobId: '1042', jobTitle: Fake Developer, employerName: Example Care Ltd, payer: employer, documentsNeeded: [], createdAt: '2026-11-20T08:00:00.000Z', lastChangeAt: '2026-11-20T08:00:00.000Z', documentCount: 0 } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
         '404':
@@ -2324,7 +2820,7 @@ paths:
                 additionalProperties: false
                 properties:
                   case: { $ref: '#/components/schemas/ServicesCase' }
-              example: { case: { id: '31', status: closed, decisionOutcome: null, permitType: critical_skills, jobId: '1042', jobTitle: Fake Developer, createdAt: '2026-11-20T08:00:00.000Z', lastChangeAt: '2026-11-20T08:00:00.000Z', documentCount: 0 } }
+              example: { case: { id: '31', status: closed, decisionOutcome: null, permitType: critical_skills, jobId: '1042', jobTitle: Fake Developer, employerName: Example Care Ltd, payer: employer, documentsNeeded: [], createdAt: '2026-11-20T08:00:00.000Z', lastChangeAt: '2026-11-20T08:00:00.000Z', documentCount: 0 } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403':
           description: '`BAD_ORIGIN`: the Origin is not this site. `REFUSED`: suspended or deleted.'
