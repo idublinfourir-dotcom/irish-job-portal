@@ -1,9 +1,10 @@
 // Unit: the cursor token, the salary line, the SQL shapes and the input checks of the Search module. No database (a fake query function).
 import { describe, expect, it } from "vitest";
 import { checkAlert } from "./alerts";
+import { CONDITIONS, rulesV1 } from "@portal/rules";
 import {
-  BadSearchInput, checkJobFilters, checkSearch, decodeCursor, encodeCursor, filterHash, getJob, listJobs, listQuery, MAX_Q, parseSearch, salaryLine, searchParams,
-  sectorCounts, SORTS, toAlertBody, type Cursor, type SearchFilters, type Sort,
+  BadSearchInput, card, checkJobFilters, checkSearch, decodeCursor, encodeCursor, filterHash, getJob, listJobs, listQuery, MAX_Q, employerLabels, jobMinimums, parseSearch, payScaleLine, salaryLine, searchParams,
+  sectorCounts, sectorCountsQuery, SORTS, toAlertBody, type Cursor, type SearchFilters, type Sort,
 } from "./search";
 
 const at = "2026-11-11 14:35:01.123456+00";
@@ -101,8 +102,8 @@ describe("the SQL", () => {
     expect(next.values).toEqual([!c.quotaFull, ...c.keys, c.id]);
     expect(next.text).toContain(") < (");
     expect(prev.text).toContain(") > (");
-    expect(next.text).toMatch(/order by .*job\.id desc limit 21$/);
-    expect(prev.text).toMatch(/order by .*job\.id asc limit 21$/);
+    expect(next.text).toMatch(/order by .*job\.id desc limit 21\)/);
+    expect(prev.text).toMatch(/order by .*job\.id asc limit 21\)/);
     expect(next.text).not.toContain(c.id);
     expect(next.text).not.toMatch(/offset|job\.\*/i);
     expect(next.text).toContain("job.status = 'live' and job.closes_at > now()");
@@ -160,6 +161,7 @@ describe("parseSearch", () => {
     expect(url("salaryMin=0")).toEqual({ salaryMin: 0 });
     expect(url("salaryMin=1000000")).toEqual({ salaryMin: 1_000_000 });
     expect(url("badge=sponsor_confirmed")).toEqual({ badge: "sponsor_confirmed" });
+    expect(url("badge=critical_skills_eligible")).toEqual({ badge: "critical_skills_eligible" }); // B9
     for (const d of [1, 3, 7, 30]) expect(url(`postedWithin=${d}`)).toEqual({ postedWithin: d });
     expect(url("salaryStated=true")).toEqual({ salaryStated: true });
     expect(url("q=nurse&occupationCode=2231&sector=health&county=Dublin&salaryMin=40000&badge=sponsor_confirmed&postedWithin=7&salaryStated=true")).toEqual({
@@ -179,7 +181,7 @@ describe("parseSearch", () => {
 
   it.each([
     "sector=it", "sector=Health", "sector=nothing", "county=Narnia", "county=cork", "occupationCode=9999", "occupationCode=22", "salaryMin=-1",
-    "salaryMin=1000001", "salaryMin=2.5", "salaryMin=1e5", "salaryMin=abc", "salaryMin=%2010", "badge=critical_skills_eligible", "badge=other",
+    "salaryMin=1000001", "salaryMin=2.5", "salaryMin=1e5", "salaryMin=abc", "salaryMin=%2010", "badge=other", "badge=Critical_Skills_Eligible",
     "postedWithin=2", "postedWithin=0", "postedWithin=365", "postedWithin=x", "salaryStated=1", "salaryStated=false", "salaryStated=yes",
     "county=Cork&county=Dublin", "q=a&q=b", "sector=IT&sector=",
   ])("refuses %s", (s) => refused(s));
@@ -276,7 +278,7 @@ describe("the filter SQL", () => {
     // the keyword is one GIN match in its own CTE, and a cursor page walks ids only, then reads its 21 rows
     expect(first.text).toMatch(/^with kw as materialized \(select id from job where status = 'live' and search_vector @@ websearch_to_tsquery/);
     expect(next.text).toContain("page as materialized (select job.id from job where");
-    expect(listQuery(sort, cursorFor(sort), "after", { county: "Cork" }).text).toMatch(/^select /);
+    expect(listQuery(sort, cursorFor(sort), "after", { county: "Cork" }).text).toMatch(/^with page as materialized \(select job\.id from job where/);
   });
 });
 
@@ -288,4 +290,65 @@ describe("sectorCounts", () => {
       { sector: "care", jobs: 0 }, { sector: "hospitality", jobs: 0 }, { sector: "pharma and science", jobs: 0 }, { sector: "other", jobs: 0 },
     ]);
   });
+});
+
+describe("sectorCountsQuery (B11)", () => {
+  it("is the live jobs grouped by sector, every filter a parameter", () => {
+    const q = sectorCountsQuery({ county: "Cork", salaryMin: 40000, badge: "critical_skills_eligible", postedWithin: 7, salaryStated: true, occupationCode: "2231" });
+    expect(q.text).toMatch(/^select job\.sector, count\(\*\)::int as n from job where job\.status = 'live' and job\.closes_at > now\(\)/);
+    expect(q.text).toMatch(/group by job\.sector$/);
+    expect(q.values).toEqual(["2231", "Cork", 40000, "critical_skills_eligible", 7]);
+    expect(q.text).not.toContain("Cork");
+  });
+  it("leaves the sector filter out, so the other sectors show what they would give", () => {
+    expect(sectorCountsQuery({ sector: "IT", county: "Cork" }).values).toEqual(["Cork"]);
+    expect(sectorCountsQuery({ sector: "IT" }).text).not.toContain("job.sector =");
+  });
+  it("a keyword is one materialized match, and a hostile keyword stays a parameter", () => {
+    const q = sectorCountsQuery({ q: "x'); drop table job; --" });
+    expect(q.text).toMatch(/^with kw as materialized \(select id from job where status = 'live' and search_vector @@ websearch_to_tsquery\('english', \$1::text\)\) select/);
+    expect(q.text).not.toContain("drop");
+  });
+  it("refuses a bad filter before any statement", async () => {
+    await expect(sectorCounts({ query: () => { throw new Error("ran"); } } as never, { county: "Narnia" } as never)).rejects.toThrow(BadSearchInput);
+  });
+  it("without filters it asks for all live jobs", async () => {
+    const seen: unknown[][] = [];
+    await sectorCounts({ query: (t: string, v: unknown[]) => (seen.push([t, v]), Promise.resolve({ rows: [] })) } as never);
+    expect(seen).toEqual([[sectorCountsQuery().text, []]]);
+  });
+});
+
+describe("job card fields (B7)", () => {
+  const row = {
+    id: "5", title: "Nurse", employer_name: "Fake Care Ltd", county: "Cork", salary_low: null, salary_high: null, pay_grade: "NURSE-1", pass_route: "public_pay", badge: null,
+    quota_full: true, posted_at: new Date("2026-11-01T00:00:00Z"), posted_text: "x", sponsor_sort: 3, salary_sort: 0, last_ok_at: null,
+    contract_months: 24, permit_history: "has_history", source: "employer", employer_slug: "fake-care", employer_logo_url: null,
+  };
+  const scale = { code: "NURSE-1", title: "Staff nurse", firstEur: 33000, lastEur: 50000, sourceUrl: "https://example.test", sourcePage: 1 };
+  it("carries the new fields, and the pay scale line only when the grade is a scale of the rules in force", async () => {
+    const rules = { ...(await rulesV1()), payScales: [scale] };
+    expect(card(row, rules)).toMatchObject({
+      contractMonths: 24, permitHistory: "has_history", source: "employer", employerSlug: "fake-care", employerLogoUrl: null, quotaFull: true,
+      payScaleLine: "Pay scale for this grade: EUR 33,000 to 50,000",
+    });
+    expect(card(row).payScaleLine).toBeNull();
+    expect(card({ ...row, pay_grade: "Grade 5 (free text)" }, rules).payScaleLine).toBeNull();
+    expect(payScaleLine(rules, null)).toBeNull();
+  });
+});
+
+describe("job page fields (B6)", () => {
+  it("jobMinimums: nonList is null when that route is off, the General figures null until a version has them", async () => {
+    const m = (await rulesV1()).minimums;
+    expect(jobMinimums({ ...m, nonListRoute: false }).nonList).toBeNull();
+    expect(jobMinimums(m)).toMatchObject({ criticalSkills: m.criticalSkills, graduate: m.graduate, nonList: m.nonList, general: null, generalLower: null, generalLowerCodes: null });
+    expect(jobMinimums({ ...m, general: 36605, generalLower: 34000, generalLowerCodes: ["6145"], generalQuotaFullCodes: [] })).toMatchObject({ general: 36605, generalLowerCodes: ["6145"] });
+  });
+  it("employerLabels follows the company page rule", () => {
+    expect(employerLabels("has_history", null)).toEqual([]);
+    expect(employerLabels("first_time", null)).toEqual(["First-time sponsor"]);
+    expect(employerLabels("not_linked", new Date())).toEqual(["Permit history not linked yet", "Sponsorship claims removed"]);
+  });
+  it("CONDITIONS is the one list the portal and the job read share", () => expect(CONDITIONS["6145"]).toContain("private household"));
 });

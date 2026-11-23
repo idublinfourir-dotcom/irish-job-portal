@@ -44,3 +44,12 @@ export function minimumForHours(annualMinimum: number, weeklyHours: number = STA
   const hourlyCents = Math.round((annualMinimum * 100) / (standardWeek * 52));
   return Math.max(annualMinimum, Math.round(hourlyCents * weeklyHours * 52) / 100);
 }
+
+/**
+ * Conditions a code carries that its Ineligible title does not name (P6, 06-health-hospitality-eligibility.md): the employer ticks them with the same
+ * `exceptionConfirmed` as an Ineligible exception, and the refusal carries the wording. Placeholder wording. Every other named condition (chef experience
+ * and "not fast food" on 5434, disability services on 1242, 2229, 3231, 3239 and 6146) is already in its Ineligible title and asks for the same tick.
+ */
+export const CONDITIONS: Readonly<Record<string, string>> = {
+  "6145": "Care workers and home carers: the employer is a care provider, not a private household (a job in a private home is not eligible)",
+};

@@ -69,7 +69,7 @@ async function job(o: J = {}): Promise<Made> {
 const hit = (m: Made, x: SearchFilters) => {
   const pay = m.low !== null || m.high !== null;
   return (x.occupationCode === undefined || m.occ === x.occupationCode) && (x.sector === undefined || m.sector === x.sector) &&
-    (x.county === undefined || m.county === x.county) && (x.badge === undefined || (x.badge === "sponsor_confirmed") === m.sponsor) &&
+    (x.county === undefined || m.county === x.county) && (x.badge === undefined || x.badge === (m.sponsor ? "sponsor_confirmed" : "critical_skills_eligible")) &&
     (x.salaryMin === undefined || (pay && (m.high ?? m.low ?? 0) >= x.salaryMin)) && (x.salaryStated === undefined || pay) &&
     (x.postedWithin === undefined || m.days < x.postedWithin);
 };
@@ -100,7 +100,7 @@ describe("each filter alone and combined", () => {
     ];
     const cases: SearchFilters[] = [
       {}, { sector: "care" }, { sector: "hospitality" }, { sector: "care", county: "Dublin" }, { sector: "hospitality", county: "Dublin" }, { occupationCode: "2231" }, { occupationCode: "3111" }, { sector: "health" }, { sector: "pharma and science" }, { county: "Dublin" }, { salaryMin: 40000 },
-      { salaryMin: 0 }, { badge: "sponsor_confirmed" }, { postedWithin: 1 }, { postedWithin: 3 }, { postedWithin: 7 }, { postedWithin: 30 }, { salaryStated: true },
+      { salaryMin: 0 }, { badge: "sponsor_confirmed" }, { badge: "critical_skills_eligible" }, { postedWithin: 1 }, { postedWithin: 3 }, { postedWithin: 7 }, { postedWithin: 30 }, { salaryStated: true },
       { sector: "health", county: "Dublin" }, { sector: "IT", badge: "sponsor_confirmed" }, { county: "Dublin", salaryMin: 40000, postedWithin: 7 },
       { occupationCode: "2231", sector: "health", county: "Dublin", salaryMin: 45000, badge: "sponsor_confirmed", postedWithin: 3, salaryStated: true },
     ];
@@ -161,6 +161,8 @@ describe("hidden jobs", () => {
       expect(ids, `${sort} ${JSON.stringify(x)}`).toEqual([live.id, full.id]);
       for (const h of hidden) expect(ids).not.toContain(h.id);
     }
+    // the Critical Skills badge filter (B9) is the other badge: every job without a signed statement, none of the sponsor jobs
+    expect((await walk("newest", { badge: "critical_skills_eligible" })).ids).not.toContain(live.id);
     // the badge filter needs a signed statement: only the two sponsor jobs
     expect((await walk("newest", { badge: "sponsor_confirmed" })).ids).toEqual([live.id, full.id]);
   });
@@ -248,6 +250,35 @@ describe("sectorCounts", () => {
       { sector: "health", jobs: 2 }, { sector: "IT", jobs: 1 }, { sector: "construction and engineering", jobs: 0 }, { sector: "finance", jobs: 1 },
       { sector: "care", jobs: 1 }, { sector: "hospitality", jobs: 0 }, { sector: "pharma and science", jobs: 1 }, { sector: "other", jobs: 1 },
     ]);
+  });
+});
+
+describe("sectorCounts for a search (B11)", () => {
+  it("counts the live jobs that match the other filters, leaves the sector filter out, and agrees with the list", async () => {
+    await job({ sector: "health", county: "Cork", low: 50000, high: 50000, occ: "2231", title: "Welder" });
+    await job({ sector: "health", county: "Cork", title: "Welder" });
+    await job({ sector: "IT", county: "Cork", low: 45000, high: 45000, occ: "2136", title: "Welder" });
+    await job({ sector: "IT", county: "Dublin", low: 45000, high: 45000, title: "Cook" });
+    await job({ sector: "finance", county: "Cork", low: 20000, high: 20000, title: "Cook" });
+    await job({ sector: "care", county: "Cork", low: 60000, high: 60000, status: "closed", title: "Welder" });
+    const by = (r: { sector: string; jobs: number }[]) => Object.fromEntries(r.filter((x) => x.jobs).map((x) => [x.sector, x.jobs]));
+    expect(by(await sectorCounts(candidate(), { county: "Cork" }))).toEqual({ health: 2, IT: 1, finance: 1 });
+    expect(by(await sectorCounts(candidate(), { county: "Cork", salaryMin: 40000 }))).toEqual({ health: 1, IT: 1 });
+    expect(by(await sectorCounts(candidate(), { q: "welder" }))).toEqual({ health: 2, IT: 1 });
+    expect(by(await sectorCounts(candidate(), { q: "welder", county: "Cork", salaryStated: true }))).toEqual({ health: 1, IT: 1 });
+    // the sector filter does not narrow its own counts
+    expect(by(await sectorCounts(candidate(), { county: "Cork", sector: "IT" }))).toEqual({ health: 2, IT: 1, finance: 1 });
+    // the counts add up to the list's own total for the same filters
+    for (const f of [{ county: "Cork" }, { salaryMin: 40000 }, { q: "welder" }] as SearchFilters[]) {
+      const total = (await sectorCounts(candidate(), f)).reduce((n, x) => n + x.jobs, 0);
+      expect(total, JSON.stringify(f)).toBe((await listJobs(candidate(), { filters: f })).count!.n);
+    }
+  });
+  it("a hostile filter is refused before any statement, and hostile keyword text is only data", async () => {
+    await expect(sectorCounts(candidate(), { county: "Narnia" } as never)).rejects.toThrow(BadSearchInput);
+    await expect(sectorCounts(candidate(), { q: "x\u0000y" })).rejects.toThrow(BadSearchInput);
+    await expect(sectorCounts(candidate(), { q: "'; drop table job; --" })).resolves.toHaveLength(8);
+    expect((await su("select count(*)::int n from job")).rows[0].n).toBeGreaterThan(0);
   });
 });
 

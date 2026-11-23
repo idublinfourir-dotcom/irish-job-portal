@@ -18,14 +18,14 @@ const BEFORE = "2026-11-15T00:00:00Z"; // alerts are made here; jobs go live aft
 const su = (sql: string, p?: unknown[]) => db.query("postgres", sql, p);
 const run = (now: Date) => queueAlerts(db.pool("app_admin"), now);
 
-type JobOpts = { occ?: string | null; sector?: string; county?: string | null; low?: number | null; high?: number | null; sponsor?: boolean; quota?: boolean; closes?: string; at?: string };
+type JobOpts = { occ?: string | null; sector?: string; county?: string | null; low?: number | null; high?: number | null; sponsor?: boolean; cs?: boolean; quota?: boolean; closes?: string; at?: string };
 async function job(o: JobOpts = {}): Promise<number> {
   const id = (await su(
     `insert into job(organisation_id, source, job_source_id, title, employer_name, county, sector, occupation_code, permit_type, badge, salary_low, salary_high, pay_grade,
        quota_full, status, closes_at, own_page_url, search_vector)
      values ($1, $12, $2, 'Fake job', 'Fake Org', $3, $4, $5, 'critical_skills', $6, $7, $8, null, $9, $10, $11::timestamptz, 'https://example.test/a', to_tsvector('english', 'cook'))
      returning id::int`,
-    [org, src, o.county ?? null, o.sector ?? "it", o.occ ?? null, o.sponsor ? "sponsor_confirmed" : null, o.low ?? null, o.high ?? null, o.quota ?? false,
+    [org, src, o.county ?? null, o.sector ?? "it", o.occ ?? null, o.sponsor ? "sponsor_confirmed" : o.cs ? "critical_skills_eligible" : null, o.low ?? null, o.high ?? null, o.quota ?? false,
       o.sponsor ? "draft" : "live", o.closes ?? "2026-12-20T00:00:00Z", o.sponsor ? "employer" : "admin_manual"])).rows[0].id as number;
   if (o.sponsor) {
     await db.query("app_portal", "insert into sponsorship_statement(job_id, organisation_id, kind, consent_text_id, signer_membership_id, signer_name) values ($1, $2, 'own_company', $3, $4, 'Fake Signer')", [id, org, text, member]);
@@ -140,6 +140,19 @@ describe("which jobs are new for an alert", () => {
     for (const [o] of cases) { const c = await cand(); cands.push(c); await alert(c, o); }
     await run(MON);
     for (const [i, [o, want]] of cases.entries()) expect(await jobsFor(cands[i]!), JSON.stringify(o)).toEqual(want.length ? [want] : []);
+  });
+  it("an alert with the Critical Skills badge matches only jobs with that badge, not the sponsor-confirmed ones (B9)", async () => {
+    const c = await cand(), c2 = await cand(), c3 = await cand();
+    const cs = await job({ cs: true });
+    await job({ sponsor: true, low: 40000, high: 40000 });
+    await job();
+    await alert(c, { badge: "critical_skills_eligible" });
+    await alert(c2, { badge: "sponsor_confirmed" });
+    await alert(c3);
+    await run(MON);
+    expect(await jobsFor(c)).toEqual([[cs]]);
+    expect((await jobsFor(c2)).flat()).toHaveLength(1);
+    expect((await jobsFor(c3)).flat()).toHaveLength(3);
   });
   it("a job that closes and reopens is not sent again (its posted_at does not move)", async () => {
     const c = await cand();

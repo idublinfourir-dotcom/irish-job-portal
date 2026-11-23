@@ -4,7 +4,7 @@
 // statement check). There is no row level security: every read and write here is filtered by the login's own company.
 import { getPool, getRules, listAnswer, validId } from "@portal/db";
 import { suggestCodes } from "@portal/matcher/rules";
-import { assess, chainRules, isSoc2010, minimumForHours, offScale, scamPhrase, socTitle, type RulesSnapshot } from "@portal/rules";
+import { assess, chainRules, CONDITIONS, isSoc2010, minimumForHours, offScale, scamPhrase, socTitle, type RulesSnapshot } from "@portal/rules";
 import type pg from "pg";
 import { isObject, no, ok, only, portalLogin, readPost, withinLimit, type Refusal } from "./company";
 
@@ -145,14 +145,8 @@ export function checkClose(b: unknown): { jobId: string; hireAnswer: Hire } | nu
 }
 
 // ===== the rules
-/**
- * Conditions a code carries that its Ineligible title does not name (P6, 06-health-hospitality-eligibility.md): the employer ticks them with the same
- * `exceptionConfirmed` as an Ineligible exception, and the refusal carries the wording. Placeholder wording. Every other named condition (chef experience
- * and "not fast food" on 5434, disability services on 1242, 2229, 3231, 3239 and 6146) is already in its Ineligible title and asks for the same tick.
- */
-export const CONDITIONS: Readonly<Record<string, string>> = {
-  "6145": "Care workers and home carers: the employer is a care provider, not a private household (a job in a private home is not eligible)",
-};
+// CONDITIONS (the role conditions a code carries, P6) live in @portal/rules so the public job read can show them too.
+export { CONDITIONS };
 /** `ticked`: the pass needed the exception tick (the job stores it, so a renewal does not ask again). */
 export type Verdict = { ok: true; passRoute: "stated_pay" | "public_pay"; status: "live" | "in_review"; sector: string; stage: string; ticked: boolean }
   | { ok: false; code: string; stage?: string; exception?: string };

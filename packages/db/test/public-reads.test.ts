@@ -295,7 +295,10 @@ describe("more jobs like this (S9, GET /api/job/similar)", () => {
     for (const o of [{}, { cookie }]) {
       const g = await get(SIMILAR, `/api/job/similar?id=${newest}`, o);
       expect([g.status, ids(g)]).toEqual([200, newestFirst().slice(1, 7)]);
-      expect(Object.keys((g.body.jobs as object[])[0]!).sort()).toEqual(["badge", "county", "employerName", "jobId", "payGrade", "salaryHigh", "salaryLow", "title"]);
+      expect(Object.keys((g.body.jobs as object[])[0]!).sort()).toEqual([
+        "badge", "contractMonths", "county", "employerLogoUrl", "employerName", "employerSlug", "jobId", "lastCheckedAt", "passRoute", "payGrade", "payScaleLine",
+        "permitHistory", "postedAt", "quotaFull", "salaryHigh", "salaryLine", "salaryLow", "source", "title",
+      ]);
     }
     expect(ids(await get(SIMILAR, `/api/job/similar?id=${jobIds[0]}`))).toEqual(newestFirst().slice(0, 6));
   });

@@ -1,5 +1,6 @@
 // Integration: the Search module's two reads (src/search.ts) and the sponsor sort key (migration 0008), run on the real test database as
 // app_candidate. Fake names and fake numbers only.
+import { readFileSync } from "node:fs";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { importPermits, linkNames } from "../src/dete";
@@ -21,6 +22,14 @@ beforeAll(async () => {
   db = await createTestDb();
   ({ id, F, su } = fixtures(db) as unknown as { id: typeof id; F: typeof F; su: typeof su });
   source = (await su("insert into job_source(kind, board) values ('portal', $1) returning id::text", [id("src")])).rows[0].id;
+  // a pay scales version (the rules are cached per process, so it goes in before the first read)
+  const c = await db.pool("postgres").connect();
+  try {
+    await c.query("begin");
+    await c.query("set local role portal_owner");
+    await c.query("insert into rules_version(kind, data, effective_from, seeded_by_owner) values ('pay_scales', $1::jsonb, '2026-06-01', true)", [readFileSync(new URL("../../rules/data/pay-scales-v1.json", import.meta.url), "utf8")]);
+    await c.query("commit");
+  } finally { c.release(); }
 });
 afterAll(() => db.drop());
 
@@ -370,6 +379,89 @@ describe("one job", () => {
     const before = (await su("select count(*)::int n from job")).rows[0].n;
     expect(await getJob(candidate(), bad)).toBeNull();
     expect((await su("select count(*)::int n from job")).rows[0].n).toBe(before);
+  });
+});
+
+describe("job page additions (B6)", () => {
+  it("quota, standing line, minimums, the per-year permit block and the employer labels", async () => {
+    const e = await employer([[2019, 3], [YEAR - 2, 30], [YEAR - 1, 20]]);
+    const j = await addJob(e.org, { quota: true });
+    const page = (await getJob(candidate(), j.id, new Date(Date.UTC(YEAR, 5, 1))))!;
+    expect(page.quotaFull).toBe(true);
+    expect(page.standingLine).toMatch(/^Our check is guidance, not a permit decision\. Only DETE decides\. Rules last checked on .+\.$/);
+    expect(page.minimums).toMatchObject({ criticalSkills: 40904, graduate: 36848, graduateMonths: 12, nonList: 68911, minContractMonths: 24, standardWeekHours: 39 });
+    expect(page.permits).toEqual({
+      byYear: [{ year: 2019, permits: 3 }, { year: YEAR - 2, permits: 30 }, { year: YEAR - 1, permits: 20 }], peakYear: YEAR - 2, trend: "down", latestMonth: null,
+    });
+    expect(page.sponsored).toEqual({ permits: 50, since: YEAR - 4 }); // 2019 is the first year with permits, but the window starts at YEAR - 4
+    expect(page.employerLabels).toEqual([]);
+    expect((await getJob(candidate(), (await addJob(e.org)).id))!.quotaFull).toBe(false);
+  });
+  it("an employer with no DETE link has no permit block and the label says so; removed claims add their label", async () => {
+    const e = await employer(null);
+    const j = await addJob(e.org);
+    expect((await getJob(candidate(), j.id))).toMatchObject({ permits: null, sponsored: null, employerLabels: ["Permit history not linked yet"] });
+    // the strike-3 trigger guards this column; the label read is what is under test, so the trigger is switched off for this one statement
+    const k = await db.pool("postgres").connect();
+    try { await k.query("set session_replication_role = replica"); await k.query("update organisation set claims_removed_at = now() where id = $1", [e.org]); } finally { k.release(); }
+    expect((await getJob(candidate(), j.id))!.employerLabels).toContain("Sponsorship claims removed");
+  });
+  it("the condition of a code that carries one, and the range-crossing flag against the minimum for the permit type", async () => {
+    const e = await employer(null);
+    const care = await addJob(e.org);
+    await su("update job set occupation_code = '6145' where id = $1", [care.id]);
+    expect((await getJob(candidate(), care.id))!.condition).toContain("private household");
+    const range = async (low: number | null, high: number | null) => {
+      const j = await addJob(e.org);
+      await su("update job set salary_low = $2, salary_high = $3 where id = $1", [j.id, low, high]);
+      return (await getJob(candidate(), j.id))!;
+    };
+    expect((await range(30000, 50000)).salaryRangeCrosses).toBe(true); // only the top clears 40,904
+    expect((await range(41000, 50000)).salaryRangeCrosses).toBe(false); // the low end clears: a pass
+    expect((await range(30000, 35000)).salaryRangeCrosses).toBe(false); // below
+    expect((await range(30000, 30000)).salaryRangeCrosses).toBe(false);
+    expect((await range(null, null)).salaryRangeCrosses).toBe(false); // not stated
+    expect((await range(null, 50000)).salaryRangeCrosses).toBe(false);
+    expect((await getJob(candidate(), (await addJob(e.org)).id))!.condition).toBeNull();
+  });
+});
+
+describe("job card additions (B7)", () => {
+  it("a list card carries contract months, permit history, source, the employer page and logo, and the pay scale line for a scale grade", async () => {
+    const e = await employer([[YEAR - 1, 5]]);
+    await su("update organisation set slug = $2, logo_url = 'https://example.test/logo.png' where id = $1", [e.org, `fake-${e.tag}`]);
+    const plain = await addJob(e.org, { k: 900_001 });
+    const graded = await addJob(e.org, { k: 900_002 });
+    await su("update job set contract_months = 24, pay_grade = '2135' where id = $1", [graded.id]);
+    const list = await listJobs(candidate(), { sort: "newest" });
+    const g = list.jobs.find((x) => x.id === graded.id)!;
+    expect(g).toMatchObject({
+      contractMonths: 24, permitHistory: (await su("select permit_history from job where id = $1", [graded.id])).rows[0].permit_history, source: "admin_manual", employerSlug: `fake-${e.tag}`, employerLogoUrl: "https://example.test/logo.png",
+      payGrade: "2135", salaryLine: "2135", payScaleLine: "Pay scale for this grade: EUR 38,166 to 56,592",
+    });
+    expect(list.jobs.find((x) => x.id === plain.id)).toMatchObject({ contractMonths: null, payScaleLine: null });
+  });
+});
+
+describe("what the additions expose (B6, B7)", () => {
+  it("a card and a job page carry exactly the public fields: no organisation internals, no claims date, no hidden reason", async () => {
+    const e = await employer([[YEAR - 1, 5]]);
+    const j = await addJob(e.org, { k: 900_100 });
+    const card = (await listJobs(candidate(), { sort: "newest" })).jobs.find((x) => x.id === j.id)!;
+    expect(Object.keys(card).sort()).toEqual([
+      "badge", "contractMonths", "county", "employerLogoUrl", "employerName", "employerSlug", "id", "lastCheckedAt", "passRoute", "payGrade", "payScaleLine",
+      "permitHistory", "postedAt", "quotaFull", "salaryHigh", "salaryLine", "salaryLow", "source", "sponsorPermits", "title",
+    ]);
+    const page = JSON.stringify((await getJob(candidate(), j.id))!);
+    expect(page).not.toMatch(/claimsRemovedAt|claims_removed_at|search_?vector|hidden|closeReason|weeklyHours|organisation_id/i);
+  });
+  it("a job that is not live gives no page and no card, whatever the new fields", async () => {
+    const e = await employer(null);
+    for (const status of ["closed", "hidden"]) {
+      const j = await addJob(e.org, { status, k: 900_200 });
+      expect(await getJob(candidate(), j.id), status).toBeNull();
+      expect((await listJobs(candidate(), { sort: "newest" })).jobs.map((x) => x.id), status).not.toContain(j.id);
+    }
   });
 });
 

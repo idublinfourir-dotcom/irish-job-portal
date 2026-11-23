@@ -131,6 +131,7 @@ export function describeAlert(a: { occupationCode: string | null; sector: string
     a.county && `County: ${a.county}`,
     a.salaryMin !== null && `Pay from EUR ${a.salaryMin.toLocaleString("en-IE")} a year`,
     a.badge === "sponsor_confirmed" && "Sponsor confirmed jobs only",
+    a.badge === "critical_skills_eligible" && "Critical Skills eligible jobs only",
   ].filter((x): x is string => typeof x === "string");
 }
 
