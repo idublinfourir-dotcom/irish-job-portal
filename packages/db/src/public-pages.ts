@@ -6,7 +6,7 @@ import { checkEligibility, registrationFor, standingLine, type Registration, typ
 import { getRules } from "./rules-data";
 import { getContent, validSlug, type ContentPage } from "./content";
 import { PERMITS, summarisePermits, type Permits } from "./dete";
-import { BadSearchInput, CARD_JOINS, COUNT_CAP, cursorOf, decodeCursor, employerLabels, KEYS, CAST, LIST, listCards, LIVE, PAGE_SIZE, pageSize, type CompanyLabel, type JobCard, type ListRow, type Sort } from "./search";
+import { BadSearchInput, COUNT_CAP, cursorOf, decodeCursor, employerLabels, KEYS, CAST, LIST, listCards, LIVE, PAGE_SIZE, pageSize, SOURCE, type ScopedRow, type CompanyLabel, type JobCard, type ListRow, type Sort } from "./search";
 
 type Db = Pick<pg.Pool, "query">;
 
@@ -23,9 +23,7 @@ export function scopedQuery(scope: JobsScope, value: string, after?: string, siz
   const { where, sort } = SCOPES[scope];
   const keys = KEYS[sort].map((k) => `job.${k.col}`);
   const order = ["(not job.quota_full)", ...keys, "job.id"].map((c) => `${c} desc`).join(", ");
-  // the walk takes ids only and the card's joins run on the page's rows (see listQuery)
-  const page = (cond: string) => `with page as materialized (select job.id from job where ${LIVE} and ${where}${cond} order by ${order} limit ${size + 1}) ` +
-    `select ${LIST} from page join job on job.id = page.id ${CARD_JOINS} order by ${order}`;
+  const page = (cond: string) => `select ${LIST} from job ${SOURCE} where ${LIVE} and ${where}${cond} order by ${order} limit ${size + 1}`;
   if (after === undefined) return { text: page(""), values: [value] };
   const c = decodeCursor(sort, after);
   const row = ["$2::boolean", ...KEYS[sort].map((k, i) => `$${i + 3}::${CAST[k.kind]}`), `$${keys.length + 3}::bigint`].join(", ");
@@ -37,15 +35,24 @@ export function scopedQuery(scope: JobsScope, value: string, after?: string, siz
 export const scopedCount = (scope: JobsScope) =>
   `select count(*)::int as n from (select 1 from job where job.status = 'live' and job.closes_at > now() and ${SCOPES[scope].where} limit ${COUNT_CAP + 1}) c`;
 
-export async function scopedJobs(db: Db, scope: JobsScope, value: string, after?: string, size = PAGE_SIZE): Promise<ScopedJobs> {
+// The page's employers (slug and logo for the cards) in one statement on the primary key, only for the distinct ids of the page; a company page knows its own.
+export const PAGE_EMPLOYERS = "select id::text, slug, logo_url from organisation where id = any($1::bigint[])";
+/** `company`: the company this page is of (company scope), so its cards need no read. */
+export async function scopedJobs(db: Db, scope: JobsScope, value: string, after?: string, size = PAGE_SIZE, company?: { slug: string; logoUrl: string | null }): Promise<ScopedJobs> {
   const q = scopedQuery(scope, value, after, size); // throws BadSearchInput on a bad cursor, before any statement runs
-  const [list, count] = await Promise.all([db.query<ListRow>(q.text, q.values), after === undefined ? db.query<{ n: number }>(scopedCount(scope), [value]) : null]);
+  const [list, count] = await Promise.all([db.query<ScopedRow>(q.text, q.values), after === undefined ? db.query<{ n: number }>(scopedCount(scope), [value]) : null]);
   const rows = list.rows;
   const shown = rows.slice(0, size);
   const last = shown.at(-1);
   const n = count?.rows[0]!.n ?? 0;
+  const owners = new Map<string, { slug: string; logo_url: string | null }>();
+  if (!company && shown.length) for (const o of (await db.query<{ id: string; slug: string; logo_url: string | null }>(PAGE_EMPLOYERS, [[...new Set(shown.map((r) => r.organisation_id))]])).rows) owners.set(o.id, o);
+  const withEmployer = ({ organisation_id: orgId, ...r }: ScopedRow): ListRow => {
+    const o = company ? { slug: company.slug, logo_url: company.logoUrl } : owners.get(orgId);
+    return { ...r, employer_slug: o?.slug ?? "", employer_logo_url: o?.logo_url ?? null };
+  };
   return {
-    jobs: await listCards(db, shown),
+    jobs: await listCards(db, shown.map(withEmployer)),
     next: rows.length > size && last ? cursorOf(SCOPES[scope].sort, last) : null,
     count: count ? { n: Math.min(n, COUNT_CAP), more: n > COUNT_CAP } : null,
   };
@@ -85,7 +92,7 @@ export async function getCompanyPage(db: Db, slug: string, opts: { after?: strin
   const [names, permits, jobs] = await Promise.all([
     db.query<{ name: string; kind: string }>(NAMES, [o.id]),
     db.query<{ year: number; month: number | null; permits: number }>(PERMITS, [o.id]),
-    scopedJobs(db, "company", o.id, opts.after, opts.limit),
+    scopedJobs(db, "company", o.id, opts.after, opts.limit, { slug: o.slug, logoUrl: o.logo_url }),
   ]);
   return {
     id: o.id, slug: o.slug, name: o.display_name, kind: o.kind, website: o.website, logoUrl: o.logo_url, shortDescription: o.short_description, county: o.county,

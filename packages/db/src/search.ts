@@ -193,7 +193,9 @@ export function decodeCursor(sort: Sort, token: unknown, f = NO_FILTERS): Cursor
 export const LIST =
   "job.id, job.title, job.employer_name, job.county, job.salary_low, job.salary_high, job.pay_grade, job.pass_route, job.badge, job.quota_full, " +
   "job.posted_at, job.posted_at::text as posted_text, job.sponsor_sort, job.salary_sort, s.last_ok_at, " +
-  "job.contract_months, job.permit_history, job.source, emp.slug as employer_slug, emp.logo_url as employer_logo_url";
+  "job.contract_months, job.permit_history, job.source, job.organisation_id";
+/** LIST plus the employer's page slug and logo (the CARD_JOINS' `emp`). A scoped page reads them apart (public-pages.ts): it knows the company, or reads the page's employers in one statement. */
+export const LIST_WITH_EMPLOYER = `${LIST}, emp.slug as employer_slug, emp.logo_url as employer_logo_url`;
 export const SOURCE = "left join job_source s on s.id = job.job_source_id"; // "last checked" is the source's last good fetch
 // What a card's columns need: SOURCE and the employer's page slug and logo. Every query that uses it joins on a page of at most 21 ids, and `limit 1` keeps
 // the employer a one-row index lookup per card (a plain join let the planner read organisation whole, 100+ pages, for a rare occupation code).
@@ -221,7 +223,7 @@ export function listQuery(sort: Sort, cursor?: Cursor, dir: "after" | "before" =
       text:
         `with ${kw && `${kw}, `}hits as materialized (select id, (not quota_full) as r, ${ks} from job where ${LIVE}${where} ` +
         `order by (not quota_full) desc, ${keys.map((k) => `${k} desc`).join(", ")}, id desc limit ${COUNT_CAP + 1}) ` +
-        `select ${LIST}, (select count(*) from hits)::int as capped ` +
+        `select ${LIST_WITH_EMPLOYER}, (select count(*) from hits)::int as capped ` +
         `from (select id, r, ${page.join(", ")} from hits order by r desc, ${page.map((k) => `${k} desc`).join(", ")}, id desc limit ${size + 1}) page ` +
         `join job on job.id = page.id ${CARD_JOINS} order by page.r desc, ${page.map((k) => `page.${k} desc`).join(", ")}, page.id desc`,
       values,
@@ -235,7 +237,7 @@ export function listQuery(sort: Sort, cursor?: Cursor, dir: "after" | "before" =
   const walk = `where ${LIVE}${where} and ((not job.quota_full), ${keys.map((k) => `job.${k}`).join(", ")}, job.id) ${op} (${row}) ${order} limit ${size + 1}`;
   // The walk takes only ids, so it stays in the index and does not read every row it skips (a rare word skips most rows), and the joins of the card
   // run on the page's 21 rows only (a join beside the walk let the planner sort 450 rows and read organisation row by row).
-  const text = `with ${kw && `${kw}, `}page as materialized (select job.id from job ${walk}) select ${LIST} from page join job on job.id = page.id ${CARD_JOINS} ${order}`;
+  const text = `with ${kw && `${kw}, `}page as materialized (select job.id from job ${walk}) select ${LIST_WITH_EMPLOYER} from page join job on job.id = page.id ${CARD_JOINS} ${order}`;
   return { text, values };
 }
 
@@ -245,6 +247,8 @@ export type ListRow = {
   sponsor_sort: number; salary_sort: number; last_ok_at: Date | null; capped?: number;
   contract_months: number | null; permit_history: string; source: string; employer_slug: string; employer_logo_url: string | null;
 };
+/** A row of LIST alone: the employer is added by the caller (a scoped page). */
+export type ScopedRow = Omit<ListRow, "employer_slug" | "employer_logo_url"> & { organisation_id: string };
 
 export type JobCard = {
   id: string; title: string; employerName: string; county: string | null; salaryLow: number | null; salaryHigh: number | null;
@@ -303,7 +307,7 @@ export async function listCards(db: Db, rows: ListRow[]): Promise<JobCard[]> {
   return rows.map((r) => card(r, rules));
 }
 
-export function cursorOf(sort: Sort, r: ListRow, f = NO_FILTERS): string {
+export function cursorOf(sort: Sort, r: Pick<ListRow, "id" | "quota_full" | "sponsor_sort" | "salary_sort" | "posted_text">, f = NO_FILTERS): string {
   const value = { sponsor_sort: String(r.sponsor_sort), salary_sort: String(r.salary_sort), posted_at: r.posted_text } as Record<string, string>;
   return encodeCursor({ sort, quotaFull: r.quota_full, keys: KEYS[sort].map((k) => value[k.col]!), id: r.id }, f);
 }
