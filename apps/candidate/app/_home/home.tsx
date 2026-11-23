@@ -5,7 +5,7 @@ import { A, Button, Card, CriticalSkillsBadge, EmptyState, Icon, Input, JobCard,
 import { guidePath, jobPath, staticPath, updatePath } from "../../lib/paths";
 import { COUNTIES } from "./counties";
 import { eur, jobsIn, sectorLabel, shortDate } from "./format";
-import { EMPLOYERS_HREF } from "./meta";
+import { employersHref } from "./meta";
 import type { Failed, HomeData, Jobs, Minimums, SectorCount, Sec } from "./load";
 
 const JOBS_LIMIT = 6; // #46: what a visitor sees of any list
@@ -293,7 +293,7 @@ export function HomeView({ data: d }: { data: HomeData }) {
         <Button href={staticPath("permit-services")!}>Open permit services</Button>
       </Section>
       <Section id="employers" title="Employers: post a job and confirm sponsorship" intro="A separate portal. Free to post. Live rule checks warn you while you type.">
-        <Button href={EMPLOYERS_HREF}>Post a job</Button>
+        {employersHref() && <Button href={employersHref()!}>Post a job</Button>}
       </Section>
       <Section id="guides" title="Guides and government updates" action={<Button href={staticPath("guides")!} variant="outline" size="sm">All guides</Button>}>
         <Cards d={d} />
@@ -301,12 +301,14 @@ export function HomeView({ data: d }: { data: HomeData }) {
       <Section id="faq" title="Questions answered">
         <Faq d={d} />
       </Section>
+      {!d.signedIn && (
       <section aria-labelledby="join-h" className={`${wrap} py-8 lg:py-12`}>
         <Card className="flex flex-col items-start gap-3 bg-green-tint">
           <h2 id="join-h" className="text-2xl lg:text-3xl">Create a free account and see every job</h2>
           <Button href="/signup" size="lg">Create free account</Button>
         </Card>
       </section>
+      )}
     </>
   );
 }

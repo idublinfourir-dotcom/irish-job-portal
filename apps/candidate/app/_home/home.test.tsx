@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { HomeView } from "./home";
 import type { HomeData } from "./load";
 import { eur, jobsIn, sectorLabel, shortDate } from "./format";
-import { HOME_DESCRIPTION, HOME_TITLE } from "./meta";
+import { employersHref, HOME_DESCRIPTION, HOME_TITLE } from "./meta";
 import { generateMetadata } from "../page";
 
 vi.mock("server-only", () => ({})); // page.tsx reaches lib/data.ts; nothing here calls it
@@ -22,7 +22,7 @@ const full = (o: Partial<HomeData> = {}): HomeData => ({
   sectors: { ok: true, data: [{ sector: "health", jobs: 5 }, { sector: "IT", jobs: 9 }, { sector: "care", jobs: 0 }] },
   guides: { ok: true, data: [{ slug: "g-one", title: "Fake guide", checkedOn: "2026-11-01" }] },
   updates: { ok: true, data: [{ slug: "u-one", title: "Fake update", checkedOn: "2026-11-02" }] as never },
-  tab: null, ...o,
+  tab: null, signedIn: false, ...o,
 });
 const fail = { ok: false as const, status: 500, code: "ERROR" }, limited = { ok: false as const, status: 429, code: "TOO_MANY_REQUESTS", retryAfter: 42 };
 
@@ -91,12 +91,12 @@ describe("home page, other states", () => {
     expect(h).toContain("will appear here when they are published");
   });
   it("429 on every read: each section says how long to wait, nothing else breaks", () => {
-    const h = html(<HomeView data={{ minimums: limited, jobs: limited, sectors: limited, guides: limited, updates: limited, tab: null }} />);
+    const h = html(<HomeView data={{ minimums: limited, jobs: limited, sectors: limited, guides: limited, updates: limited, tab: null, signedIn: false }} />);
     expect(h).toContain("Please try again in 42 seconds.");
     expect(h.match(/<h1/g)).toHaveLength(1);
   });
   it("other read errors: a reload notice, and the hero card is left out", () => {
-    const h = html(<HomeView data={{ minimums: fail, jobs: fail, sectors: fail, guides: fail, updates: fail, tab: null }} />);
+    const h = html(<HomeView data={{ minimums: fail, jobs: fail, sectors: fail, guides: fail, updates: fail, tab: null, signedIn: false }} />);
     expect(h).toContain("This part could not be loaded");
     expect(h).not.toContain("From the rules table</p>");
   });
@@ -117,5 +117,17 @@ describe("helpers and metadata", () => {
     expect(HOME_DESCRIPTION.length).toBeGreaterThanOrEqual(120);
     expect(HOME_DESCRIPTION.length).toBeLessThanOrEqual(160);
     expect(m.robots).toBeUndefined(); // the layout's site-wide noindex stays
+  });
+});
+
+describe("home leftovers closed by the main session", () => {
+  it("hides the create-account block for a signed-in candidate and shows it to a visitor", () => {
+    expect(html(<HomeView data={full({ signedIn: true })} />)).not.toContain("Create a free account and see every job");
+    expect(html(<HomeView data={full({ signedIn: false })} />)).toContain("Create a free account and see every job");
+  });
+  it("links employers to the portal address, the dev server when unset, and nowhere in production when unset", () => {
+    expect(employersHref({ PORTAL_AUTH_URL: "https://employers.example.ie/api/auth/portal", NODE_ENV: "production" })).toBe("https://employers.example.ie/");
+    expect(employersHref({ NODE_ENV: "development" })).toBe("http://localhost:3001/");
+    expect(employersHref({ NODE_ENV: "production" })).toBeNull();
   });
 });

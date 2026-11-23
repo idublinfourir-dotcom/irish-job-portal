@@ -17,7 +17,9 @@ const BUDGET = { statements: 15, medianMs: 30 }; // measured: 15 statements (5 r
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
 const BASE = "http://localhost:3000";
-let db: TestDb, su: pg.Pool, AUTH: (r: Request) => Promise<Response>, H: typeof import("../../../apps/candidate/app/_home/load"), P: typeof import("../../../apps/candidate/app/page");
+let db: TestDb, su: pg.Pool, AUTH: (r: Request) => Promise<Response>, H: typeof import("../../../apps/candidate/app/_home/load"), P: HomePage;
+// The page is a .tsx file and this package has no JSX setting, so its path is held in a variable (the type checker does not follow it) and typed by hand.
+type HomePage = { default: (p: { searchParams: Promise<{ sector?: string | string[] }> }) => Promise<import("react").ReactElement>; generateMetadata: () => { title: string; description: string; [k: string]: unknown } }; // never import "next" root types here: they make NODE_ENV required on every ProcessEnv
 let C: typeof import("../../../apps/candidate/app/_home/counties");
 
 beforeAll(async () => {
@@ -27,7 +29,8 @@ beforeAll(async () => {
   Object.assign(process.env, { DATABASE_URL: urlFor(db.name, "app_candidate"), DATABASE_SSL: "disable", CANDIDATE_AUTH_URL: BASE, CANDIDATE_AUTH_SECRET: secret });
   ({ POST: AUTH } = await import("../../../apps/candidate/app/api/auth/candidate/[...all]/route"));
   H = await import("../../../apps/candidate/app/_home/load");
-  P = await import("../../../apps/candidate/app/page");
+  const pageFile: string = "../../../apps/candidate/app/page";
+  P = (await import(pageFile)) as HomePage;
   C = await import("../../../apps/candidate/app/_home/counties");
   await su.query(`insert into content_page(kind, slug, title, body, status, published_at, source_url, checked_on) values
     ('guide', 'fake-guide', 'Fake guide', 'Guide body', 'published', now(), 'https://enterprise.gov.ie/', '2026-11-01'),
