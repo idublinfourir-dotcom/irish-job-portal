@@ -5,7 +5,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import pg from "pg";
 import { createTestDb, urlFor, type TestDb } from "../db";
 import { CONTENT_QUERIES } from "../../src/content";
-import { COMPANY_QUERIES, scopedCount, scopedQuery } from "../../src/public-pages";
+import { COMPANY_QUERIES, PAGE_EMPLOYERS, scopedCount, scopedQuery } from "../../src/public-pages";
 import { encodeCursor } from "../../src/search";
 import { assertPageBudget, measurePages, type PageCost, type Statement } from "./pages";
 
@@ -94,7 +94,9 @@ it("every page of the content, company and occupation reads stays under its page
     // a code with a quarter of all jobs may be read through the global sponsor index instead (it finds 21 matches soon); only the rare code must use job_live_occupation
     for (const [name, code, after, scans] of [["rare code", "1050", undefined, /job_live_occupation/], ["big code (10,000 jobs)", "2136", undefined, undefined], ["big code, 5,000 in", "2136", deepCursor, undefined]] as const) {
       const q = scopedQuery("occupation", code, after);
-      await page(`occupation page, ${name}`, [q, { text: scopedCount("occupation"), values: [code] }, { text: CONTENT_QUERIES.one, values: ["occupation", code] }], OCCUPATION_PAGES, scans);
+      // B7: the page's employers (slug and logo of each card) are read in one statement for the distinct organisations of the page
+      const owners = [...new Set((await c.query(q.text, q.values)).rows.slice(0, 20).map((r) => r.organisation_id as string))];
+      await page(`occupation page, ${name}`, [q, { text: scopedCount("occupation"), values: [code] }, { text: PAGE_EMPLOYERS, values: [owners] }, { text: CONTENT_QUERIES.one, values: ["occupation", code] }], OCCUPATION_PAGES, scans);
     }
 
     // the company page: its row, names, DETE rows and one page of its jobs
