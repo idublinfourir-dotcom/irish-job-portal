@@ -1737,6 +1737,7 @@ export const strike = pgTable("strike", {
 	appealEnteredByStaffUserId: text("appeal_entered_by_staff_user_id"),
 	appealDecidedByStaffUserId: text("appeal_decided_by_staff_user_id"),
 	appealDecidedAt: timestamp("appeal_decided_at", { withTimezone: true, mode: 'string' }),
+	notifiedAt: timestamp("notified_at", { withTimezone: true, mode: 'string' }),
 	banLiftedAt: timestamp("ban_lifted_at", { withTimezone: true, mode: 'string' }),
 	evidenceStorageKey: text("evidence_storage_key"),
 }, (table) => [

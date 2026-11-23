@@ -8,6 +8,7 @@ import { answers, makeAuth, portalAnswers, seedSignupTerms } from "./better-auth
 import { fixtures } from "./fixtures";
 import { memoryStore, setFileStore, type MemoryStore } from "../src/file-store";
 import { EXE, JPEG, PDF, PNG, WEBP } from "../src/file-fixture";
+import { loadSpec, replyProblems } from "./openapi";
 
 // Statements counted on every pg.Client.query call, measured on 18 November 2026: the edit 5 and the close 5 (requirePortal 3, the rate count, the function),
 // the logo 6 (requirePortal 3, the rate count, the owner check, the function). Medians of 9 warm calls: edit 2.1 ms, logo 2.6 ms, close 3.5 ms (a small company;
@@ -22,6 +23,7 @@ let AUTH: Handler;
 const R = {} as Record<"profile" | "logo" | "close" | "team" | "claim", Route>;
 let F: { org(o?: object): Promise<number>; member(org: string, user: string | null, o?: object): Promise<number> };
 let store: MemoryStore;
+let logoView: (r: Request, c: { params: Promise<{ file: string }> }) => Promise<Response>;
 let src: number, fetchedSrc: number;
 let candidateCookie: string;
 
@@ -36,6 +38,7 @@ beforeAll(async () => {
   R.profile = await import("../../../apps/portal/app/api/portal/company/route");
   R.logo = await import("../../../apps/portal/app/api/portal/company/logo/route");
   R.close = await import("../../../apps/portal/app/api/portal/company/close/route");
+  ({ GET: logoView } = await import("../../../apps/portal/app/api/portal/company/logo/[file]/route"));
   R.team = await import("../../../apps/portal/app/api/portal/team/route");
   R.claim = await import("../../../apps/portal/app/api/portal/claim/route");
   store = memoryStore();
@@ -121,7 +124,7 @@ describe("P3: the profile", () => {
     expect([r.status, r.json]).toEqual([200, { organisationId: c.org, changed: ["short_description", "website", "county"] }]);
     for (const who of [c.owner, c.recruiter, c.viewer]) {
       const g = await call(R.profile, "GET", who);
-      expect(g.json.company).toEqual({ organisationId: c.org, name: c.name, status: "verified", ...profile, hasLogo: false, memberLimit: 10 });
+      expect(g.json.company).toMatchObject({ organisationId: c.org, name: c.name, status: "verified", ...profile, hasLogo: false, memberLimit: 10 }); // B54 added fields: portal-extras-p2.test.ts
     }
     const a = await one("select kind, actor_portal_user_id, action, changed_columns, before, after, reason_text from audit_event where action = 'organisation.profile' and object_id = $1", [String(c.org)]);
     expect(a).toEqual({ kind: "security", actor_portal_user_id: c.owner.id, action: "organisation.profile", changed_columns: ["short_description", "website", "county"], before: null, after: null, reason_text: null });
@@ -231,6 +234,136 @@ describe("P3: the logo", () => {
     const s = await company("suspended");
     expect((await call(R.logo, "PUT", s.owner, undefined, { body: file(PNG) })).code).toBe("ORGANISATION_NOT_AVAILABLE");
     expect(store.objects.size).toBe(keys); // the suspended company's file was stored, then removed when the database refused
+  });
+});
+
+// Step 16 B54 (frame E18): the company read's facts from the records, and the logo's public address.
+const KEYS = ["claimed", "county", "croNumber", "croStatus", "description", "descriptionMax", "hasLogo", "kind", "labels", "legalNames", "logoUrl", "memberLimit", "name", "organisationId",
+  "permitCount", "permitsSince", "slug", "status", "website"];
+// An organisation update with its guard triggers off (a status the real flows reach only through staff steps).
+async function setOrg(org: string, sql: string) {
+  const k = await su.connect();
+  try { await k.query("begin"); await k.query("set local session_replication_role = replica"); await k.query(`update organisation set ${sql} where id = $1`, [org]); await k.query("commit"); } finally { k.release(); }
+}
+const publicLogo = (file: string) => logoView(new Request(`${BASE}/api/portal/company/logo/${file}`), { params: Promise.resolve({ file }) });
+describe("B54: the company read", () => {
+  it("every member reads the same fields; a company with nothing linked shows the not-linked label, no CRO status, no permit count", async () => {
+    const c = await company();
+    for (const who of [c.owner, c.recruiter, c.poster, c.viewer]) {
+      const g = await call(R.profile, "GET", who);
+      expect(Object.keys(g.json.company).sort()).toEqual(KEYS);
+      expect(replyProblems(loadSpec("portal"), "GET", "/api/portal/company", g.status, g.json)).toEqual([]);
+      expect(g.json.company).toMatchObject({ kind: "employer", claimed: false, labels: ["Permit history not linked yet"], croNumber: null, croStatus: null, legalNames: [], logoUrl: null,
+        permitCount: null, permitsSince: 2019, descriptionMax: 2000, slug: expect.stringMatching(/^[a-z0-9-]+$/) });
+    }
+  });
+  it("claimed, the labels, the register's number and status, the legal names and the permits since 2019 come from the records", async () => {
+    const c = await company(), other = await company();
+    const cro = `${uid("9")}`.replace(/\D/g, "").slice(0, 7);
+    await su.query("insert into cro_company(cro_number, name, normalised_name, status, last_seen_on) values ($1, 'Fake Widgets Limited', 'fake widgets', 'Normal', now())", [cro]);
+    await su.query("update organisation set cro_number = $2, claimed_at = now(), permit_history = 'first_time' where id = $1", [c.org, cro]);
+    const mk = async (org: string, name: string, kind: string, source: string) => String((await one("insert into organisation_name(organisation_id, name, normalised_name, kind, source) values ($1, $2, lower($2), $3, $4) returning id", [org, name, kind, source])).id);
+    const dete = await mk(c.org, `Fake Widgets ${uid("L")} Ltd`, "legal", "dete");
+    await mk(c.org, `Fake Alias ${uid("A")}`, "alias", "admin");
+    await mk(other.org, `Other Company ${uid("O")} Ltd`, "legal", "dete");
+    for (const [year, month, permits] of [[2018, null, 50], [2022, null, 4], [2023, 3, 1], [2023, 7, 2]] as const)
+      await su.query("insert into dete_permit_count(dete_name, organisation_name_id, year, month, permits) values ($1, $2, $3, $4, $5)", [`fake dete ${uid("")}`, dete, year, month, permits]);
+    const g = (await call(R.profile, "GET", c.viewer)).json.company;
+    expect(g).toMatchObject({ claimed: true, labels: ["First-time sponsor"], croNumber: cro, croStatus: "Normal", permitsSince: 2019, permitCount: 7 }); // 2018 is before 2019; 2022 + (1 + 2)
+    expect(g.legalNames).toHaveLength(1);
+    expect(g.legalNames[0]).toMatch(/^fake widgets .* ltd$/i);
+    expect(JSON.stringify(g)).not.toMatch(/other company|alias/i);
+    // not claimed until verified: a pending company that has claimed_at is not "claimed"; claims removed adds its label; a restricted company is still claimed
+    await su.query("update organisation set status = 'pending_review' where id = $1", [c.org]);
+    expect((await call(R.profile, "GET", c.owner)).json.company.claimed).toBe(false);
+    await setOrg(c.org, "status = 'verified_restricted', restricted_until = now() + interval '30 days', claims_removed_at = now()");
+    expect((await call(R.profile, "GET", c.owner)).json.company).toMatchObject({ claimed: true, labels: ["First-time sponsor", "Sponsorship claims removed"] });
+  });
+  it("no login, a candidate session and a login with no company get nothing; another company's data never shows", async () => {
+    expect((await call(R.profile, "GET", {})).code).toBe("NO_SESSION");
+    expect((await call(R.profile, "GET", { cookie: candidateCookie })).code).toBe("NO_SESSION");
+    expect((await call(R.profile, "GET", await login())).code).toBe("NO_COMPANY");
+    const c = await company(), d = await company();
+    const g = await call(R.profile, "GET", c.owner);
+    expect(g.json.company.organisationId).toBe(c.org);
+    expect(JSON.stringify(g.json)).not.toContain(d.name);
+  });
+  it("stays within 5 statements (requirePortal 3, the company, its permits) and its time budget", async () => {
+    const c = await company();
+    await call(R.profile, "GET", c.owner);
+    const [r, n] = await counted(() => call(R.profile, "GET", c.owner));
+    expect([r.status, n]).toEqual([200, 5]);
+    const ms: number[] = [];
+    for (let i = 0; i < 9; i++) { const t = performance.now(); await call(R.profile, "GET", c.owner); ms.push(performance.now() - t); }
+    expect(ms.sort((a, b) => a - b)[4]!).toBeLessThan(25);
+  });
+});
+
+describe("B54: the logo's public address", () => {
+  it("an upload sets organisation.logo_url to this app's public address; the address serves the stored file with no login; a replaced logo's old address is gone", async () => {
+    const c = await company();
+    expect((await call(R.logo, "PUT", c.owner, undefined, { body: file(PNG) })).status).toBe(200);
+    const o = await one("select logo_key, logo_url from organisation where id = $1", [c.org]);
+    expect(o.logo_url).toBe(`${BASE}/api/portal/company/logo/${o.logo_key.slice(5)}`);
+    expect((await call(R.profile, "GET", c.viewer)).json.company).toMatchObject({ hasLogo: true, logoUrl: o.logo_url });
+    const r = await publicLogo(o.logo_key.slice(5));
+    expect([r.status, r.headers.get("content-type"), r.headers.get("x-content-type-options"), r.headers.get("cross-origin-resource-policy"), r.headers.get("set-cookie")]).toEqual([200, "image/png", "nosniff", "cross-origin", null]);
+    expect(r.headers.get("content-security-policy")).toBe("default-src 'none'; sandbox");
+    expect(new Uint8Array(await r.arrayBuffer())).toEqual(new Uint8Array(store.objects.get(o.logo_key)!.bytes));
+    expect((await call(R.logo, "PUT", c.owner, undefined, { body: file(WEBP, "l.webp") })).status).toBe(200);
+    expect((await publicLogo(o.logo_key.slice(5))).status).toBe(404);
+    const n = await one("select logo_key, logo_url from organisation where id = $1", [c.org]);
+    expect(n.logo_url).toMatch(/\.webp$/);
+    expect((await publicLogo(n.logo_key.slice(5))).headers.get("content-type")).toBe("image/webp");
+  });
+  it("404 and nothing else for: another name, a made-up key, bad names, a file not scanned yet or with a threat, a rejected, closed or banned company", async () => {
+    const c = await company();
+    await call(R.logo, "PUT", c.owner, undefined, { body: file(PNG) });
+    const key = (await orgRow(c.org)).logo_key as string, name = key.slice(5);
+    expect((await publicLogo(name)).status).toBe(200);
+    const other = `${crypto.randomUUID()}.png`;
+    store.objects.set(`logo/${other}`, { bytes: PNG, contentType: "image/png" }); // a stored file no company points at
+    for (const bad of [other, name.replace(".png", ".jpg"), `../${name}`, `${name}/x`, `logo/${name}`, name.toUpperCase(), name.replace(".png", ".svg"), name + "%00", "x".repeat(10_000), "", "case/1.pdf"])
+      expect((await publicLogo(bad)).status, bad.slice(0, 60)).toBe(404);
+    store.tags.set(key, null);
+    expect((await publicLogo(name)).status).toBe(404); // no scan result yet
+    store.tags.set(key, "THREATS_FOUND");
+    expect((await publicLogo(name)).status).toBe(404);
+    store.tags.delete(key);
+    for (const status of ["rejected", "closed", "banned"]) {
+      await setOrg(c.org, `status = '${status}'`); // the status guards (a ban row for banned) are not under test here
+      expect((await publicLogo(name)).status, status).toBe(404);
+    }
+    await setOrg(c.org, "status = 'verified'");
+    expect((await publicLogo(name)).status).toBe(200);
+    store.objects.delete(`logo/${other}`);
+    const body = await (await publicLogo(other)).text();
+    expect(body).not.toMatch(/logo\//);
+  });
+  it("the database refuses a logo address that is not this key's own public path, and the old two-argument function is gone", async () => {
+    const c = await company();
+    const p = db.pool("app_portal");
+    const key = `logo/${crypto.randomUUID()}.png`, ok = `https://portal.example.test/api/portal/company/logo/${key.slice(5)}`;
+    for (const url of [null, "", "javascript:alert(1)", "https://portal.example.test/x.png", ok.replace(".png", ".webp"), `${ok}?x=1`, `${ok}#x`, ok.replace("portal.example.test", "a b"), `https://x.example.test/api/portal/company/logo/${crypto.randomUUID()}.png`, "x".repeat(400)])
+      await expect(p.query("select private.company_logo($1, $2, $3)", [c.owner.id, key, url]), String(url).slice(0, 50)).rejects.toThrow(/BAD_REQUEST|violates|invalid input/);
+    await expect(p.query("select private.company_logo($1, $2)", [c.owner.id, key])).rejects.toThrow(/does not exist/);
+    expect((await orgRow(c.org)).logo_key).toBeNull();
+    expect((await p.query("select private.company_logo($1, $2, $3) r", [c.owner.id, key, ok])).rows[0].r).toEqual({ organisationId: Number(c.org), oldKey: null });
+    await expect(p.query("select private.company_logo($1, $2, $3)", [c.viewer.id, key.replace(/.{36}/, crypto.randomUUID()), ok])).rejects.toThrow(/NOT_OWNER/);
+  });
+  it("a public logo read is one statement and quick (no login, one lookup, one scan check, one read)", async () => {
+    const c = await company();
+    await call(R.logo, "PUT", c.owner, undefined, { body: file(PNG) });
+    const name = ((await orgRow(c.org)).logo_key as string).slice(5);
+    await publicLogo(name);
+    const [r, n] = await counted(() => publicLogo(name));
+    expect([r.status, n]).toEqual([200, 1]);
+    const ms: number[] = [];
+    for (let i = 0; i < 9; i++) { const t = performance.now(); await publicLogo(name); ms.push(performance.now() - t); }
+    expect(ms.sort((a, b) => a - b)[4]!).toBeLessThan(15);
+    const plan = (await su.query("explain select 1 from organisation where logo_key = $1", [`logo/${name}`])).rows.map((x) => x["QUERY PLAN"]).join("\n");
+    expect(plan).toMatch(/organisation_logo_key_idx|Index|Seq Scan/); // a tiny table may still scan; the index exists for the real one
+    expect((await one("select count(*)::int n from pg_indexes where indexname = 'organisation_logo_key_idx'")).n).toBe(1);
   });
 });
 

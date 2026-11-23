@@ -11,7 +11,7 @@ describe("checkTeam", () => {
     expect(checkTeam({ action: "invite", email: "  Fake.One@Example.TEST ", role: "poster", isSigner: true })).toEqual({ action: "invite", email: "fake.one@example.test", role: "poster", isSigner: true });
     expect(checkTeam({ action: "accept", token })).toEqual({ action: "accept", token });
     expect(checkTeam({ action: "request", organisationId: "7" })).toEqual({ action: "request", organisationId: "7" });
-    for (const action of ["refuse", "remove", "transfer"]) expect(checkTeam({ action, membershipId: "3" })).toEqual({ action, membershipId: "3" });
+    for (const action of ["refuse", "remove", "transfer", "resend"]) expect(checkTeam({ action, membershipId: "3" })).toEqual({ action, membershipId: "3" });
     expect(checkTeam({ action: "approve", membershipId: "3", role: "poster", isSigner: true })).toEqual({ action: "approve", membershipId: "3", role: "poster", isSigner: true });
     expect(checkTeam({ action: "leave" })).toEqual({ action: "leave" });
     expect(checkTeam({ action: "role", membershipId: "3", role: "viewer", isSigner: false })).toEqual({ action: "role", membershipId: "3", role: "viewer", isSigner: false });
@@ -32,7 +32,9 @@ describe("checkTeam", () => {
     }
   });
   it("refuses odd ids, odd switches and odd emails", () => {
-    for (const membershipId of [0, -1, 1.5, 3, "0", "03", "9".repeat(19), 2 ** 53, Infinity, null, [3], { id: 3 }, "3 or 1=1"]) expect(checkTeam({ action: "remove", membershipId }), String(membershipId)).toBeNull();
+    for (const membershipId of [0, -1, 1.5, 3, "0", "03", "9".repeat(19), 2 ** 53, Infinity, null, [3], { id: 3 }, "3 or 1=1"])
+      for (const action of ["remove", "resend"]) expect(checkTeam({ action, membershipId }), `${action} ${String(membershipId)}`).toBeNull();
+    for (const extra of [{ email: "a@b.test" }, { role: "poster" }, { token: "x" }, { isSigner: true }]) expect(checkTeam({ action: "resend", membershipId: "3", ...extra })).toBeNull(); // a resend takes only the id, never a new address or role
     for (const isSigner of ["true", 1, null]) expect(checkTeam({ action: "invite", email: "a@example.test", role: "poster", isSigner })).toBeNull();
     for (const email of ["", "a", "a@b", "@example.test", "a@@example.test", "a b@example.test", `${"x".repeat(250)}@example.test`, "a@example.test\u0000",
       "a​@example.test", "a\n@example.test", 42, null, ["a@example.test"], "x'; drop table membership;--@example.test x"])

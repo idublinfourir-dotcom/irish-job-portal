@@ -305,7 +305,7 @@ export async function notifyEmployer(db: Db, staff: string, caseId: string | num
   return acting(db, staff, caseId, async (c, id) => {
     const k = await lockCase(c, id);
     if (k.reply_due_at !== null || k.stage !== "case_open") throw new QueueRefused("already_notified");
-    await c.query("update strike set reply_due_at = now() + interval '7 days', stage = 'employer_notified' where id = $1::bigint", [id]);
+    await c.query("update strike set reply_due_at = now() + interval '7 days', notified_at = now(), stage = 'employer_notified' where id = $1::bigint", [id]);
     const n = await notice(c, id, "strike_case_opened");
     await audit(c, staff, "case_notify", "strike", id, { stage: "employer_notified", notices: n }, { caseId: id });
     return { notices: n };

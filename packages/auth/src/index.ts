@@ -105,7 +105,8 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
     : send;
   // C1: the dormant rules (retention rules 3 to 5, 0002_functions.sql) read last_active_at, so a sign-in and each session refresh set it;
   // a trigger then clears inactive_warned_at, which cancels a warning already sent. A refresh of a row deleted meanwhile passes null.
-  const touchActive = async (s: { userId: string } | null) => void (s && (await database.query("update candidate_user set last_active_at = now() where id = $1", [s.userId])));
+  // B55: the portal's team list shows "last active", so a portal sign-in and refresh set portal_user.last_active_at the same way (no dormant rule reads it).
+  const touchActive = async (s: { userId: string } | null) => void (s && (await database.query(`update ${name}_user set last_active_at = now() where id = $1`, [s.userId])));
   // The unverified-email plugin sends the confirmation through the finished instance (set just below), so the link is Better Auth's own.
   const later: { send?: (body: { email: string }) => Promise<unknown> } = {};
   const auth = betterAuth({
@@ -212,10 +213,10 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
             if (name === "staff") return { data: { ...s, expiresAt: new Date(Math.min(+s.expiresAt, Date.now() + STAFF_IDLE_SECONDS * 1000)) } };
             return { data: s };
           },
-          ...(name === "candidate" ? { after: touchActive } : {}),
+          ...(name !== "staff" ? { after: touchActive } : {}),
         },
         // Better Auth refreshes a session in use once a day (updateAge), so this marks a signed-in candidate active at most daily.
-        ...(name === "candidate" ? { update: { after: touchActive } } : {}),
+        ...(name !== "staff" ? { update: { after: touchActive } } : {}),
       },
     },
     // The client address comes from the header Vercel sets, not X-Forwarded-For, which any client can send.

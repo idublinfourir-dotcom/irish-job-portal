@@ -329,6 +329,48 @@ describe("edit, renew, close", () => {
   });
 });
 
+describe("B52: a draft close skips the hire question", () => {
+  it("a draft closes with no answer (200), keeps no hire columns, and a given answer is ignored; a closed draft stays closed", async () => {
+    const c = await company();
+    const a = (await post(c.owner.cookie, { ...good, status: "draft" })).json!.jobId, b = (await post(c.owner.cookie, { ...good, status: "draft" })).json!.jobId;
+    const r = await close(c.owner.cookie, { jobId: a });
+    expect([r.status, r.json]).toEqual([200, { jobId: a, status: "closed" }]);
+    expect(replyProblems(loadSpec("portal"), "POST", "/api/portal/jobs/close", r.status, r.json)).toEqual([]);
+    expect(await job(a)).toMatchObject({ status: "closed", close_reason: "closed", hire_answer: null, hire_answered_at: null, hire_answered_by_membership_id: null });
+    expect((await close(c.poster.cookie, { jobId: b, hireAnswer: "yes" })).status).toBe(200);
+    expect(await job(b)).toMatchObject({ status: "closed", hire_answer: null, hire_answered_at: null, hire_answered_by_membership_id: null });
+    expect((await close(c.owner.cookie, { jobId: a })).status).toBe(400); // no answer and no open job: nothing to say about whose job it is
+    expect((await renew(c.owner.cookie, { jobId: a })).json).toEqual({ code: "JOB_NOT_FOUND" });
+  });
+  it("every other open state still needs the answer (400) and keeps the job open; a third value is refused", async () => {
+    const c = await company();
+    const live = (await post(c.owner.cookie, good)).json!.jobId;
+    const held = (await post(c.owner.cookie, { ...good, title: "Fake Held" })).json!.jobId;
+    await su.query("update job set status = 'in_review' where id = $1", [held]);
+    const under = (await post(c.owner.cookie, { ...good, title: "Fake Under" })).json!.jobId;
+    await su.query("update job set status = 'under_review', under_review_reason = 'pay_check' where id = $1", [under]);
+    for (const id of [live, held, under]) {
+      expect((await close(c.owner.cookie, { jobId: id })).json, String(id)).toEqual({ code: "BAD_REQUEST" });
+      expect((await close(c.owner.cookie, { jobId: id, hireAnswer: null })).status).toBe(400);
+      for (const hireAnswer of ["through_us", "elsewhere", "maybe", "", true, 1]) expect((await close(c.owner.cookie, { jobId: id, hireAnswer })).status, String(hireAnswer)).toBe(400);
+      expect((await job(id)).status).not.toBe("closed");
+    }
+    expect((await close(c.owner.cookie, { jobId: live, hireAnswer: "no" })).status).toBe(200);
+    expect(await job(live)).toMatchObject({ hire_answer: "no", hire_answered_by_membership_id: String(c.owner.mem) });
+  });
+  it("another company's draft, a viewer, no session and a bad id are refused as before; a draft close with no answer reveals nothing", async () => {
+    const c = await company(), other = await company();
+    const d = (await post(c.owner.cookie, { ...good, status: "draft" })).json!.jobId;
+    expect((await close(other.owner.cookie, { jobId: d })).json).toEqual({ code: "BAD_REQUEST" }); // the same answer as for a missing id
+    expect((await close(other.owner.cookie, { jobId: "999999999" })).json).toEqual({ code: "BAD_REQUEST" });
+    expect((await close(other.owner.cookie, { jobId: d, hireAnswer: "no" })).json).toEqual({ code: "JOB_NOT_FOUND" });
+    expect((await close(c.viewer.cookie, { jobId: d })).json).toEqual({ code: "NOT_A_POSTER" });
+    expect((await close(undefined, { jobId: d })).status).toBe(401);
+    for (const jobId of [0, "0", "07", "1.5", "-1", "x", "9".repeat(30), null, undefined]) expect((await close(c.owner.cookie, { jobId })).status, String(jobId)).toBe(400);
+    expect((await job(d)).status).toBe("draft");
+  });
+});
+
 describe("renewal re-runs the rules (P14, #254)", () => {
   it("a job that no longer passes goes to Under review instead of being renewed, and the reply says why; a pay edit brings it back", async () => {
     await seedTexts();

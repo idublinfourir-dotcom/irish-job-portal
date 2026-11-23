@@ -211,7 +211,7 @@ describe("the team list (GET): roles decide what is shown", () => {
     const t = r.json!.team;
     expect(t.members.map((m: { membershipId: string }) => m.membershipId)).toEqual([c.owner.mem, poster.mem]);
     expect(t.members[0]).toMatchObject({ email: c.owner.email, role: "account_owner", isSigner: true });
-    expect(t.invites).toEqual([{ membershipId: invited, email: "fake.later@example.test", role: "viewer", isSigner: false, expiresAt: expect.any(String) }]);
+    expect(t.invites).toEqual([{ membershipId: invited, email: "fake.later@example.test", role: "viewer", isSigner: false, invitedAt: expect.any(String), expiresAt: expect.any(String) }]);
     expect(t.requests).toEqual([{ membershipId: request, name: expect.any(String), email: asker.email }]);
   });
   it("viewer, poster and recruiter see the members only, never the invites or requests", async () => {
@@ -805,5 +805,127 @@ describe("budgets: median of 9 calls", () => {
     const acceptMs = await median(async () => { const p = people[i++]!; expect((await team(p.cookie, { action: "accept", token: tokenFor(p.email) })).status).toBe(200); });
     expect(acceptMs).toBeLessThan(BUDGET.acceptMs);
     console.log(`team budgets: invite ${si} statements, median ${inviteMs.toFixed(1)} ms; accept ${sa} statements, median ${acceptMs.toFixed(1)} ms`);
+  });
+});
+
+// Step 16 B55 (frame E19): last active, the invite's send date and the resend action.
+describe("B55: last active, invitedAt and resend", () => {
+  const ageInvite = (mem: string, minutes: number) => su.query("update membership set invite_expires_at = now() + interval '7 days' - make_interval(mins => $2) where id = $1", [mem, minutes]);
+  it("a portal sign-in sets last_active_at; the list shows it to every member, null when never set", async () => {
+    const c = await company(), poster = await joined(c, "poster");
+    const row = await one("select last_active_at from portal_user where id = $1", [poster.id]);
+    expect(Date.now() - +row.last_active_at).toBeLessThan(60_000);
+    const old = new Date("2026-01-02T03:04:05.000Z");
+    await su.query("update portal_user set last_active_at = $2 where id = $1", [poster.id, old]);
+    for (const who of [c.owner, poster]) {
+      const t = (await list(who.cookie)).json!.team;
+      expect(t.members.find((m: { membershipId: string }) => m.membershipId === poster.mem).lastActiveAt).toBe("2026-01-02T03:04:05.000Z");
+      expect(t.members.find((m: { membershipId: string }) => m.membershipId === c.owner.mem).lastActiveAt).toMatch(/Z$/);
+    }
+    await su.query("update portal_user set last_active_at = null where id = $1", [poster.id]);
+    expect((await list(c.owner.cookie)).json!.team.members.find((m: { membershipId: string }) => m.membershipId === poster.mem).lastActiveAt).toBeNull();
+  });
+  it("a session refresh sets it again; the staff pool is untouched (no such column write)", async () => {
+    const c = await company();
+    await su.query("update portal_user set last_active_at = '2026-01-01' where id = $1", [c.owner.id]);
+    const again = await authCall("sign-in/email", { email: c.owner.email, password: c.owner.password });
+    expect(again.status).toBe(200);
+    expect(+(await one("select last_active_at from portal_user where id = $1", [c.owner.id])).last_active_at).toBeGreaterThan(Date.now() - 60_000);
+  });
+  it("the owner's invite list has invitedAt (7 days before the expiry), for the owner only", async () => {
+    const c = await company(), poster = await joined(c, "poster");
+    const r = await invite(c, "fake.invitedat@example.test", "viewer");
+    const i = (await list(c.owner.cookie)).json!.team.invites[0];
+    expect(+new Date(i.expiresAt) - +new Date(i.invitedAt)).toBe(7 * 86_400_000);
+    expect(Date.now() - +new Date(i.invitedAt)).toBeLessThan(60_000);
+    expect(r.json!.membershipId).toBe(i.membershipId);
+    expect((await list(poster.cookie)).json!.team.invites).toBeUndefined();
+  });
+  it("resend: a new token (the old link stops), 7 more days, the same address, one audit row; the reply does not repeat the address", async () => {
+    const c = await company(), who = await login("elsewhere.example.test");
+    const inv = (await invite(c, who.email, "poster", true)).json!;
+    const oldToken = tokenFor(who.email);
+    expect((await team(c.owner.cookie, { action: "resend", membershipId: inv.membershipId })).json).toEqual({ code: "RESEND_TOO_SOON" });
+    await ageInvite(inv.membershipId, 10);
+    const sent = mail().length;
+    const r = await team(c.owner.cookie, { action: "resend", membershipId: inv.membershipId });
+    expect([r.status, Object.keys(r.json!).sort()]).toEqual([200, ["expiresAt", "membershipId"]]);
+    expect(mail().length).toBe(sent + 1);
+    expect(mail().at(-1)).toMatchObject({ kind: "invite", to: who.email });
+    const fresh = tokenFor(who.email);
+    expect(fresh).not.toBe(oldToken);
+    expect(+new Date(r.json!.expiresAt) - Date.now()).toBeGreaterThan(7 * 86_400_000 - 60_000);
+    expect((await mem(inv.membershipId)).invite_token_hash).toBe(createHash("sha256").update(fresh).digest("hex"));
+    expect(await audits("membership.resend", inv.membershipId)).toEqual([{ kind: "security", actor_portal_user_id: c.owner.id, before: null, after: { status: "invited" }, reason_text: null }]);
+    expect((await team(who.cookie, { action: "accept", token: oldToken })).json).toEqual({ code: "INVITE_NOT_VALID" });
+    expect((await team(who.cookie, { action: "accept", token: fresh })).status).toBe(200);
+    expect((await mem(inv.membershipId))).toMatchObject({ status: "active", role: "poster", is_signer: true });
+  });
+  it("resend revives an expired invite; a second resend within 5 minutes is refused (429), nothing is sent", async () => {
+    const c = await company(), who = await login();
+    const inv = (await invite(c, who.email, "viewer")).json!;
+    await su.query("update membership set invite_expires_at = now() - interval '1 day' where id = $1", [inv.membershipId]);
+    expect((await team(who.cookie, { action: "accept", token: tokenFor(who.email) })).json).toEqual({ code: "INVITE_NOT_VALID" });
+    expect((await team(c.owner.cookie, { action: "resend", membershipId: inv.membershipId })).status).toBe(200);
+    const sent = mail().length;
+    const again = await team(c.owner.cookie, { action: "resend", membershipId: inv.membershipId });
+    expect([again.status, again.json, mail().length]).toEqual([429, { code: "RESEND_TOO_SOON" }, sent]);
+    expect((await team(who.cookie, { action: "accept", token: tokenFor(who.email) })).status).toBe(200);
+  });
+  it("an email that cannot be sent leaves the old link working (502 EMAIL_FAILED)", async () => {
+    const c = await company(), who = await login();
+    const inv = (await invite(c, who.email, "poster")).json!;
+    await ageInvite(inv.membershipId, 10);
+    const before = await mem(inv.membershipId);
+    const box = mail() as unknown as { push: (...a: unknown[]) => number };
+    const push = box.push;
+    box.push = () => { throw new Error("fake send failure"); };
+    try { expect((await team(c.owner.cookie, { action: "resend", membershipId: inv.membershipId })).json).toEqual({ code: "EMAIL_FAILED" }); } finally { box.push = push; }
+    expect(await mem(inv.membershipId)).toEqual(before);
+    expect(await audits("membership.resend", inv.membershipId)).toEqual([]);
+  });
+  it("refused: every other role, no session, another company's owner (404, as a missing id), an active member, a removed invite, a banned domain; a stale session may resend (no power is granted)", async () => {
+    const c = await company(), d = await company(), who = await login(`banned${++dn}.example.test`); // its own domain: the ban below must not reach other tests
+    const inv = (await invite(c, who.email, "poster")).json!;
+    await ageInvite(inv.membershipId, 10);
+    const roles = [await joined(c, "poster"), await joined(c, "recruiter"), await joined(c, "viewer")];
+    const body = { action: "resend", membershipId: inv.membershipId };
+    for (const r of roles) expect((await team(r.cookie, body)).json, r.email).toEqual({ code: "NOT_OWNER" });
+    expect((await team(undefined, body)).json).toEqual({ code: "NO_SESSION" });
+    expect((await team((await login()).cookie, body)).json).toEqual({ code: "NOT_OWNER" });
+    expect((await team(d.owner.cookie, body)).json).toEqual({ code: "MEMBER_NOT_FOUND" });
+    expect((await team(c.owner.cookie, { action: "resend", membershipId: roles[0]!.mem })).json).toEqual({ code: "MEMBER_NOT_FOUND" }); // an active member
+    expect((await team(c.owner.cookie, { action: "resend", membershipId: c.owner.mem })).json).toEqual({ code: "MEMBER_NOT_FOUND" });
+    expect((await team(c.owner.cookie, { action: "resend", membershipId: "999999999" })).json).toEqual({ code: "MEMBER_NOT_FOUND" });
+    for (const bad of [{}, { membershipId: 5 }, { membershipId: "0" }, { membershipId: "1.5" }, { membershipId: "1; drop table membership" }, { membershipId: "9".repeat(30) }, { membershipId: inv.membershipId, role: "viewer" }, { membershipId: inv.membershipId, email: "a@b.test" }])
+      expect((await team(c.owner.cookie, { action: "resend", ...bad })).json, JSON.stringify(bad)).toEqual({ code: "BAD_REQUEST" });
+    expect((await team(c.owner.cookie, body, { origin: "https://evil.example.test" })).json).toEqual({ code: "BAD_ORIGIN" });
+    expect(await audits("membership.resend", inv.membershipId)).toEqual([]);
+    await su.query("update portal_session set created_at = now() - interval '11 minutes' where user_id = $1", [c.owner.id]);
+    await ban(who.email.split("@")[1]!);
+    expect((await team(c.owner.cookie, body)).json).toEqual({ code: "REFUSED" });
+    await su.query("update membership set status = 'removed', invited_email = null, invite_token_hash = null where id = $1", [inv.membershipId]);
+    expect((await team(c.owner.cookie, body)).json).toEqual({ code: "MEMBER_NOT_FOUND" });
+    expect((await list(c.owner.cookie)).text).not.toMatch(/token|hash/i);
+  });
+  it("a company that cannot take on people cannot resend", async () => {
+    const c = await company(), who = await login();
+    const inv = (await invite(c, who.email, "viewer")).json!;
+    await ageInvite(inv.membershipId, 10);
+    await su.query("update organisation set status = 'suspended' where id = $1", [c.org]);
+    expect((await team(c.owner.cookie, { action: "resend", membershipId: inv.membershipId })).json).toEqual({ code: "ORGANISATION_NOT_AVAILABLE" });
+  });
+  it("a resend stays within its statement and time budget, and the reply matches the contract", async () => {
+    const c = await company(), who = await login();
+    const inv = (await invite(c, who.email, "viewer")).json!;
+    const spec = loadSpec("portal");
+    const run = async () => { await ageInvite(inv.membershipId, 10); return team(c.owner.cookie, { action: "resend", membershipId: inv.membershipId }); };
+    await run();
+    await ageInvite(inv.membershipId, 10);
+    const [r, stmts] = await counted(() => team(c.owner.cookie, { action: "resend", membershipId: inv.membershipId }));
+    expect([r.status, replyProblems(spec, "POST", "/api/portal/team", r.status, r.json)]).toEqual([200, []]);
+    expect(stmts, `${stmts} resend statements`).toBeLessThanOrEqual(7); // as an invite: requirePortal 3, rate count, begin, the function, commit
+    const ms = await median(run);
+    expect(ms).toBeLessThan(25);
   });
 });

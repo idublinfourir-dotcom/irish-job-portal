@@ -71,14 +71,15 @@ describe("checkEdit, checkRenew, checkClose", () => {
     for (const jobId of [0, -1, 1.5, 7, 2 ** 53, Infinity, null, "0", "07", "-1", "1.5", " 7", "9".repeat(19), "9223372036854775808", 5, 1e30, undefined]) expect(checkEdit({ ...good, jobId }), String(jobId)).toBeNull();
     expect(checkEdit({ ...good, jobId: "5", extra: 1 })).toBeNull();
   });
-  it("renew takes an optional hire answer, close needs one (#49)", () => {
+  it("renew and close take an optional hire answer; the route needs it on a job past draft (#49, B52)", () => {
     expect(checkRenew({ jobId: "3" })).toEqual({ jobId: "3", hireAnswer: null, exceptionConfirmed: false });
     expect(checkRenew({ jobId: "3", hireAnswer: "yes" })).toEqual({ jobId: "3", hireAnswer: "yes", exceptionConfirmed: false });
     expect(checkRenew({ jobId: "3", exceptionConfirmed: true })).toEqual({ jobId: "3", hireAnswer: null, exceptionConfirmed: true });
     for (const b of [{ jobId: "3", exceptionConfirmed: "true" }, { jobId: "3", exceptionConfirmed: 1 }, { jobId: "3", x: 1 }, null]) expect(checkRenew(b)).toBeNull();
     expect(checkClose({ jobId: "3", hireAnswer: "no", exceptionConfirmed: true })).toBeNull(); // the tick is a renewal field only
     expect(checkClose({ jobId: "3", hireAnswer: "no" })).toEqual({ jobId: "3", hireAnswer: "no" });
-    for (const b of [{ jobId: "3" }, { jobId: 3, hireAnswer: "no" }, { jobId: "03", hireAnswer: "no" }, { jobId: "3", hireAnswer: "maybe" }, { jobId: "3", hireAnswer: "no", x: 1 }, { hireAnswer: "no" }, null]) expect(checkClose(b)).toBeNull();
+    expect(checkClose({ jobId: "3" })).toEqual({ jobId: "3", hireAnswer: null }); // a draft close skips the question; the route refuses a live job without it
+    for (const b of [{ jobId: 3, hireAnswer: "no" }, { jobId: "03", hireAnswer: "no" }, { jobId: "3", hireAnswer: "maybe" }, { jobId: "3", hireAnswer: "third" }, { jobId: "3", hireAnswer: "no", x: 1 }, { hireAnswer: "no" }, null]) expect(checkClose(b)).toBeNull();
   });
 });
 

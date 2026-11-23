@@ -272,6 +272,8 @@ describe("strikes", () => {
     expect(JSON.stringify(out)).not.toMatch(/proof|report/i);
     const k = await caseRow(caseId);
     expect(k.reply_due_at.getTime() - Date.now()).toBeGreaterThan(6.9 * 864e5);
+    expect(k.reply_due_at - k.notified_at).toBe(7 * 864e5); // B56: the notice time is kept, the start of the 7 days
+    expect(Math.abs(Date.now() - k.notified_at.getTime())).toBeLessThan(60_000);
     await no("ts1", "cases", { action: "decide", caseId, outcome: "strike" }, 409, "reply_window_open");
     // a reply by post, entered by ts2 with its received date: ts2 may not decide, ts1 may (a reply is in, so the case need not wait)
     await ok("ts2", "cases", { action: "record_reply", caseId, text: "We do sponsor; letter attached.", receivedAt: ago(60) });

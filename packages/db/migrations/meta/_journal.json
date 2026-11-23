@@ -477,6 +477,13 @@
       "when": 1794300073000,
       "tag": "0073_review_item_done_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1794300074000,
+      "tag": "0074_portal_extras",
+      "breakpoints": true
     }
   ]
 }

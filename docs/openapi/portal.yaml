@@ -970,7 +970,11 @@ paths:
     get:
       operationId: portalCompanyGet
       summary: Read my company's profile
-      description: Any active member reads its own company's profile, the name and status included (read only here).
+      description: |
+        Any active member reads its own company's profile, the name and status included (read only here: names are merged by staff, so a wrong name is
+        reported with the contact form). Also the facts from the records the profile page prints: the public page's `slug` and `kind`, whether the page is claimed,
+        its labels (the public page's), the CRO number and the register's own status word, the legal names, and the DETE permit count since `permitsSince`.
+        `logoUrl` is the logo's public address (set by the upload; see `GET /api/portal/company/logo/{file}`).
       security: [{ portalSession: [] }]
       x-roles: [any member]
       responses:
@@ -984,17 +988,36 @@ paths:
                 properties:
                   company:
                     type: object
-                    required: [organisationId, name, status, description, website, county, hasLogo, memberLimit]
+                    required: [organisationId, slug, kind, name, status, description, descriptionMax, website, county, logoUrl, hasLogo, memberLimit, claimed, labels, croNumber, croStatus, legalNames, permitsSince, permitCount]
                     properties:
                       organisationId: { $ref: '#/components/schemas/Id' }
+                      slug: { type: string, description: "The company's public page name (`/companies/<slug>`).", example: example-software-ltd }
+                      kind: { type: string, enum: [employer, agency, public_body], description: The kind of company., example: employer }
                       name: { type: string }
                       status: { type: string, description: "The company status, for example `pending_review`, `verified`, `verified_restricted`, `suspended`, `closed`." }
                       description: { type: [string, 'null'] }
                       website: { type: [string, 'null'] }
                       county: { oneOf: [{ $ref: '#/components/schemas/County' }, { type: 'null' }] }
+                      descriptionMax: { type: integer, description: The most characters the description may have., example: 2000 }
+                      logoUrl: { type: [string, 'null'], description: "The logo's public address (the portal's own, no login needed); null when no logo was uploaded since this field exists.", example: 'https://portal.example.ie/api/portal/company/logo/3f0c1d5e-7a52-4c1e-9c0a-5d1f2b7a9e10.png' }
                       hasLogo: { type: boolean }
                       memberLimit: { type: integer }
-              example: { company: { organisationId: '1042', name: Example Software Ltd, status: verified, description: We build payment software., website: 'https://www.example.ie', county: Dublin, hasLogo: false, memberLimit: 10 } }
+                      claimed: { type: boolean, description: The page shows the Claimed mark (the company is claimed and verified)., example: true }
+                      labels:
+                        type: array
+                        description: "The public page's labels, in order: `First-time sponsor`, `Permit history not linked yet`, `Sponsorship claims removed`."
+                        items: { type: string }
+                        example: [First-time sponsor]
+                      croNumber: { type: [string, 'null'], description: The CRO number the company registered with., example: '123456' }
+                      croStatus: { type: [string, 'null'], description: "The register's own status word for that number, as imported (for example `Normal`); null with no number or no register row.", example: Normal }
+                      legalNames:
+                        type: array
+                        description: The company's legal names on record (at most 20), A to Z.
+                        items: { type: string }
+                        example: [Example Software Limited]
+                      permitsSince: { type: integer, description: The first year of the DETE files the site shows., example: 2019 }
+                      permitCount: { type: [integer, 'null'], description: "DETE permits issued from `permitsSince` on, added up over the linked names; null when no DETE name is linked (not zero).", example: 148 }
+              example: { company: { organisationId: '1042', slug: example-software-ltd, kind: employer, name: Example Software Ltd, status: verified, description: We build payment software., descriptionMax: 2000, website: 'https://www.example.ie', county: Dublin, logoUrl: null, hasLogo: false, memberLimit: 10, claimed: true, labels: [First-time sponsor], croNumber: '123456', croStatus: Normal, legalNames: [Example Software Limited], permitsSince: 2019, permitCount: null } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
         '404': { description: "`NO_COMPANY`: the login has no company.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NO_COMPANY } } } }
@@ -1078,6 +1101,33 @@ paths:
         '409': { description: "`ORGANISATION_NOT_AVAILABLE`: the company is already suspended, rejected, banned or closed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: ORGANISATION_NOT_AVAILABLE } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
         '429': { $ref: '#/components/responses/TooMany' }
+  /api/portal/company/logo/{file}:
+    parameters:
+      - name: file
+        in: path
+        required: true
+        description: The logo's file name from `logoUrl`, `<uuid>.<png|jpg|webp>`; any other name is 404.
+        schema: { type: string, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp)$', example: 3f0c1d5e-7a52-4c1e-9c0a-5d1f2b7a9e10.png }
+    get:
+      operationId: portalCompanyLogoGet
+      summary: A company's logo, public
+      description: |
+        The public pages show the logo through this address (no login, no Origin check). It serves the stored, re-encoded logo of the company's current upload,
+        once the malware scan has passed. An old logo (replaced since), a name no company holds, a file not scanned yet or with a threat, and the logo of a
+        rejected, closed or banned company are all the same 404. The name changes with every upload, so the reply is cacheable (`cache-control: public, max-age=3600`),
+        and it carries `cross-origin-resource-policy: cross-origin` so the candidate site may show it (that site's `img-src` must name the portal's origin).
+      security: []
+      x-roles: [anyone]
+      x-rate-limit: none (one indexed lookup and one object read; the host's cache and firewall limit abuse)
+      responses:
+        '200':
+          description: The image.
+          content:
+            image/png: { schema: { type: string, format: binary }, example: '(the image bytes, at most 1,048,576)' }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+        '404': { description: "`NOT_FOUND`: no such current logo.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_FOUND } } } }
+        '503': { description: "`FILES_UNAVAILABLE`: file storage is not set up.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILES_UNAVAILABLE } } } }
   /api/portal/company/logo:
     put:
       operationId: portalCompanyLogo
@@ -1086,7 +1136,8 @@ paths:
         The account owner uploads a PNG, JPEG or WebP (found from the bytes) of at most 1,048,576 bytes, multipart with exactly one
         field `file`. Order: Origin (403 `BAD_ORIGIN`), the 1 MiB cap by `Content-Length` (413, before the session is read), the
         session, the upload rate limit, the owner check (before the body is read), then the body. The old logo file is removed after
-        the new one is saved. The file is private; a public read path comes with the company page.
+        the new one is saved. The file is stored in a private bucket; the upload sets the company's public logo address (`logoUrl` on the company read), which
+        serves it through `GET /api/portal/company/logo/{file}`.
       security: [{ portalSession: [] }]
       x-roles: [account_owner]
       x-rate-limit: 10 uploads per login per hour
@@ -1410,7 +1461,7 @@ paths:
     post:
       operationId: portalJobClose
       summary: Close one of my company's jobs
-      description: Closes a draft, live, in-review or under-review job with the required answer to "Did you hire someone through us?". A closed job never reopens. Origin checked first.
+      description: Closes a draft, live, in-review or under-review job. A job past draft needs the answer to "Did you hire someone through us?" (yes or no); a draft was never shown, so closing it skips the question (a given answer is ignored and not stored). A closed job never reopens. Origin checked first.
       security: [{ portalSession: [] }]
       x-roles: [account_owner, recruiter, poster]
       x-rate-limit: posts, edits, renewals and closes together, 30 per login per 10 minutes
@@ -1422,10 +1473,10 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [jobId, hireAnswer]
+              required: [jobId]
               properties:
                 jobId: { $ref: '#/components/schemas/Id' }
-                hireAnswer: { type: string, enum: [yes, no] }
+                hireAnswer: { type: string, enum: [yes, no], description: "Needed to close a job past draft (400 `BAD_REQUEST` without it); left out when closing a draft." }
             example: { jobId: '5501', hireAnswer: yes }
       responses:
         '200':
@@ -2045,6 +2096,8 @@ paths:
                             stage: { type: string }
                             outcome: { type: [string, 'null'] }
                             level: { type: [string, integer, 'null'] }
+                            createdAt: { $ref: '#/components/schemas/Timestamp', description: "When staff opened the case (not when anyone reported anything).", example: '2026-10-14T09:00:00.000Z' }
+                            notifiedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }], description: "When the company was told and the 7 day reply window began; null for a case that was never notified (for example one staff entered already decided).", example: '2026-10-15T10:30:00.000Z' }
                             replyDueAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
                             employerReply: { type: [string, 'null'] }
                             repliedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
@@ -2122,11 +2175,11 @@ paths:
                       myRole: { type: string, enum: [account_owner, recruiter, poster, viewer] }
                       members:
                         type: array
-                        items: { type: object, properties: { membershipId: { $ref: '#/components/schemas/Id' }, name: { type: [string, 'null'] }, email: { type: string }, role: { type: string }, isSigner: { type: boolean }, joinedAt: { type: [string, 'null'], format: date-time } } }
+                        items: { type: object, properties: { membershipId: { $ref: '#/components/schemas/Id' }, name: { type: [string, 'null'] }, email: { type: string }, role: { type: string }, isSigner: { type: boolean }, joinedAt: { type: [string, 'null'], format: date-time }, lastActiveAt: { type: [string, 'null'], format: date-time, description: "When the member last signed in or had a session refreshed (set at most daily); null if never since this was recorded.", example: '2026-11-22T09:15:00.000Z' } } }
                       invites:
                         description: Account owner only.
                         type: array
-                        items: { type: object, properties: { membershipId: { $ref: '#/components/schemas/Id' }, email: { type: string }, role: { type: string }, isSigner: { type: boolean }, expiresAt: { type: string, format: date-time } } }
+                        items: { type: object, properties: { membershipId: { $ref: '#/components/schemas/Id' }, email: { type: string }, role: { type: string }, isSigner: { type: boolean }, invitedAt: { type: string, format: date-time, description: "When the invite email was last sent (the invite, or its latest resend): always 7 days before `expiresAt`.", example: '2026-11-18T09:30:00.000Z' }, expiresAt: { type: string, format: date-time } } }
                       requests:
                         description: Account owner only.
                         type: array
@@ -2148,6 +2201,9 @@ paths:
 
         - `invite` (owner): emails an invite link (`/team/accept?token=...`) to a colleague as viewer, poster or recruiter. If
           the email cannot be sent the invite is undone (502). Needs room on the team (`member_limit`).
+        - `resend` (owner): emails a still-open invite again (also an expired one that is still listed) with a new link and 7 more days; the old link stops
+          working. If the email cannot be sent the old link stays (502). Not again within 5 minutes of the last send (429 `RESEND_TOO_SOON`). It needs no fresh sign-in (it grants
+          nothing new). No company-domain rule applies to invites (decision #287).
         - `accept` (a login with no company): takes an invite by its token; the login's email must match the invite.
         - `request` (a login with no company): asks to join a company; the email domain must be one of the company's.
         - `approve` and `refuse` (owner): answers a join request.
@@ -2157,7 +2213,7 @@ paths:
 
         A viewer can never be a signer. A banned email domain is `REFUSED`, the same as a blocked login. Origin checked first.
       security: [{ portalSession: [] }]
-      x-roles: ["invite, approve, refuse, remove, role, transfer: account_owner", "accept, request: no company yet", "leave: any member"]
+      x-roles: ["invite, resend, approve, refuse, remove, role, transfer: account_owner", "accept, request: no company yet", "leave: any member"]
       x-rate-limit: every team action together, 20 per login per 10 minutes
       x-body-cap: 2048 characters
       requestBody:
@@ -2169,13 +2225,13 @@ paths:
                 - { type: object, additionalProperties: false, required: [action, email, role, isSigner], properties: { action: { const: invite }, email: { type: string, maxLength: 254, description: "Trimmed and lower-cased; shaped like `a@b.c`." }, role: { $ref: '#/components/schemas/TeamRole' }, isSigner: { type: boolean } } }
                 - { type: object, additionalProperties: false, required: [action, token], properties: { action: { const: accept }, token: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' } } }
                 - { type: object, additionalProperties: false, required: [action, organisationId], properties: { action: { const: request }, organisationId: { $ref: '#/components/schemas/Id' } } }
-                - { type: object, additionalProperties: false, required: [action, membershipId], properties: { action: { enum: [refuse, remove, transfer] }, membershipId: { $ref: '#/components/schemas/Id' } } }
+                - { type: object, additionalProperties: false, required: [action, membershipId], properties: { action: { enum: [refuse, remove, transfer, resend] }, membershipId: { $ref: '#/components/schemas/Id' } } }
                 - { type: object, additionalProperties: false, required: [action, membershipId, role, isSigner], properties: { action: { enum: [approve, role] }, membershipId: { $ref: '#/components/schemas/Id' }, role: { $ref: '#/components/schemas/TeamRole' }, isSigner: { type: boolean } } }
                 - { type: object, additionalProperties: false, required: [action], properties: { action: { const: leave } } }
             example: { action: invite, email: colleague@example.ie, role: poster, isSigner: false }
       responses:
         '200':
-          description: "Done. `invite` answers `{ membershipId, expiresAt }`, `accept` answers `{ organisationId, membershipId }`, every other action `{ membershipId }`."
+          description: "Done. `invite` and `resend` answer `{ membershipId, expiresAt }`, `accept` answers `{ organisationId, membershipId }`, every other action `{ membershipId }`."
           content:
             application/json:
               schema:
@@ -2189,11 +2245,11 @@ paths:
         '400': { description: "`BAD_REQUEST`: bad JSON or body. `VIEWER_NOT_SIGNER`: a viewer with the signer switch on.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: VIEWER_NOT_SIGNER } } } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, a ban, or an unknown refusal. `EMAIL_NOT_VERIFIED`: the login's email is not confirmed (accept, request). `NOT_OWNER`: not the account owner. `NOT_ALLOWED_DOMAIN`: the email is not on the company's domains (request). `NOT_A_MEMBER`: leave with no membership (403 as on the jobs and status routes). `REAUTH_REQUIRED`: transfer, invite, approve or role on a session older than 10 minutes.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_OWNER } } } }
-        '404': { description: "`MEMBER_NOT_FOUND`: no such member, invite or request of this company. `INVITE_NOT_VALID`: no such invite, already used, expired, or for another email.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: INVITE_NOT_VALID } } } }
+        '404': { description: "`MEMBER_NOT_FOUND`: no such member, invite or request of this company (resend: no open invite with that id). `INVITE_NOT_VALID`: no such invite, already used, expired, or for another email.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: INVITE_NOT_VALID } } } }
         '409': { description: "`TEAM_FULL`, `ALREADY_IN_TEAM`, `ALREADY_IN_A_COMPANY`, `OWNER_MUST_TRANSFER`, `ORGANISATION_NOT_AVAILABLE` (the company cannot take on people).", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: TEAM_FULL } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
-        '429': { $ref: '#/components/responses/TooMany' }
-        '502': { description: "`EMAIL_FAILED`: the invite email could not be sent; the invite was undone.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: EMAIL_FAILED } } } }
+        '429': { description: "`TOO_MANY_REQUESTS`: the 20 team calls in 10 minutes. `RESEND_TOO_SOON`: the invite was sent less than 5 minutes ago.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: RESEND_TOO_SOON } } } }
+        '502': { description: "`EMAIL_FAILED`: the invite email could not be sent; the invite was undone (a resend: the old link still works).", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: EMAIL_FAILED } } } }
   /api/portal/account:
     delete:
       operationId: portalAccountDelete

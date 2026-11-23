@@ -25,6 +25,7 @@ export type TeamAction =
   | { action: "accept"; token: string }
   | { action: "request"; organisationId: string }
   | { action: "refuse" | "remove" | "transfer"; membershipId: string }
+  | { action: "resend"; membershipId: string }
   | { action: "approve"; membershipId: string; role: Role; isSigner: boolean }
   | { action: "leave" }
   | { action: "role"; membershipId: string; role: Role; isSigner: boolean };
@@ -43,7 +44,7 @@ export function checkTeam(b: unknown): TeamAction | null {
   }
   if (a === "accept" && only(b, ["action", "token"]) && typeof b.token === "string" && TOKEN.test(b.token)) return { action: a, token: b.token };
   if (a === "request" && only(b, ["action", "organisationId"]) && isId(b.organisationId)) return { action: a, organisationId: b.organisationId };
-  if ((a === "refuse" || a === "remove" || a === "transfer") && only(b, ["action", "membershipId"]) && isId(b.membershipId))
+  if ((a === "refuse" || a === "remove" || a === "transfer" || a === "resend") && only(b, ["action", "membershipId"]) && isId(b.membershipId))
     return { action: a, membershipId: b.membershipId };
   if (a === "approve" && only(b, ["action", "membershipId", "role", "isSigner"]) && isId(b.membershipId) && isRole(b.role) && typeof b.isSigner === "boolean")
     return { action: a, membershipId: b.membershipId, role: b.role, isSigner: b.isSigner };
@@ -54,7 +55,7 @@ export function checkTeam(b: unknown): TeamAction | null {
 }
 
 // The function and its arguments for every action but invite (which needs the token and the email too).
-function callFor(user: string, b: Exclude<TeamAction, { action: "invite" }>): [string, unknown[]] {
+function callFor(user: string, b: Exclude<TeamAction, { action: "invite" | "resend" }>): [string, unknown[]] {
   switch (b.action) {
     case "accept": return ["select private.team_accept($1, $2) r", [user, hashToken(b.token)]];
     case "request": return ["select private.team_request($1, $2) r", [user, b.organisationId]];
@@ -70,7 +71,7 @@ function callFor(user: string, b: Exclude<TeamAction, { action: "invite" }>): [s
 const STATUS: Record<string, number> = {
   BAD_REQUEST: 400, VIEWER_NOT_SIGNER: 400, REFUSED: 403, EMAIL_NOT_VERIFIED: 403, NOT_OWNER: 403, NOT_ALLOWED_DOMAIN: 403,
   NOT_A_MEMBER: 403, MEMBER_NOT_FOUND: 404, INVITE_NOT_VALID: 404, TEAM_FULL: 409, ALREADY_IN_TEAM: 409, ALREADY_IN_A_COMPANY: 409,
-  OWNER_MUST_TRANSFER: 409, ORGANISATION_NOT_AVAILABLE: 409,
+  OWNER_MUST_TRANSFER: 409, ORGANISATION_NOT_AVAILABLE: 409, RESEND_TOO_SOON: 429,
 };
 // The functions raise 'team refused: CODE ...'. A code this file does not know is REFUSED (fail closed, no detail). A banned email
 // domain is REFUSED too, the same as a blocked login, so the reply never says what is banned (#191).
@@ -89,20 +90,22 @@ export function teamRefusal(e: unknown): Refusal | null {
 /** The link in the invite email. There is no page yet: the page will read the token and POST { action: "accept", token }. */
 export const inviteLink = (token: string) => `${portalOrigin()}/team/accept?token=${token}`;
 
-// The invite runs in one transaction with the email: if the email cannot be sent, the invite is undone, so no invite exists that
-// nobody was told about. The raw token lives only in this function and the email.
-async function invite(user: string, b: Extract<TeamAction, { action: "invite" }>): Promise<Response> {
+// The invite (and a resend) runs in one transaction with the email: if the email cannot be sent, the change is undone, so no invite exists that
+// nobody was told about and a resend that failed leaves the old link working. The raw token lives only in this function and the email.
+async function invite(user: string, b: Extract<TeamAction, { action: "invite" | "resend" }>): Promise<Response> {
   const { token, hash } = newToken();
   const c = await getPool().connect();
   try {
     await c.query("begin");
-    const r = (await c.query("select private.team_invite($1, $2, $3, $4, $5) r", [user, b.email, b.role, b.isSigner, hash])).rows[0].r;
-    try { await portalSend()("portal", "invite", b.email, inviteLink(token)); } catch {
+    const r = b.action === "invite"
+      ? (await c.query("select private.team_invite($1, $2, $3, $4, $5) r", [user, b.email, b.role, b.isSigner, hash])).rows[0].r
+      : (await c.query("select private.team_resend($1, $2, $3) r", [user, b.membershipId, hash])).rows[0].r;
+    try { await portalSend()("portal", "invite", b.action === "invite" ? b.email : r.email, inviteLink(token)); } catch {
       await c.query("rollback");
       return no(502, "EMAIL_FAILED");
     }
     await c.query("commit");
-    return ok(r);
+    return ok(b.action === "invite" ? r : { membershipId: r.membershipId, expiresAt: r.expiresAt }); // a resend does not repeat the address
   } catch (e) {
     await c.query("rollback").catch(() => {});
     const r = teamRefusal(e);
@@ -116,10 +119,10 @@ export async function teamPost(request: Request): Promise<Response> {
   if (read instanceof Response) return read;
   const { login, body } = read;
   // C4: the actions that grant or move power need a sign-in in the last 10 minutes (transfer with a stolen owner session is a takeover).
-  // remove, refuse, leave, request and accept only reduce access or are the invitee's own step.
+  // remove, refuse, leave, request and accept only reduce access or are the invitee's own step; resend repeats an invite already made (B55).
   if (FRESH_ACTIONS.has(body.action) && !login.fresh) return no(403, "REAUTH_REQUIRED");
   if (!(await withinLimit(`team:${login.userId}`, TEAM_RATE))) return no(429, "TOO_MANY_REQUESTS");
-  if (body.action === "invite") return invite(login.userId, body);
+  if (body.action === "invite" || body.action === "resend") return invite(login.userId, body);
   try {
     return ok((await getPool().query(...callFor(login.userId, body))).rows[0].r);
   } catch (e) {
@@ -140,8 +143,10 @@ export async function teamGet(request: Request): Promise<Response> {
     return ok({ team: null, joinRequest: rows[0] ? { membershipId: rows[0].id, organisationId: rows[0].organisation_id } : null });
   }
   const owner = m.role === "account_owner";
+  // invitedAt: the last send (invite or resend), always 7 days before the expiry. ponytail: derived, a column if the invite length ever varies.
   const { rows } = await getPool().query(
-    `select m.id, m.status, m.role, m.is_signer, coalesce(u.email, m.invited_email) email, u.name, m.joined_at, m.invite_expires_at
+    `select m.id, m.status, m.role, m.is_signer, coalesce(u.email, m.invited_email) email, u.name, m.joined_at, u.last_active_at, m.invite_expires_at,
+            m.invite_expires_at - interval '7 days' invited_at
        from membership m left join portal_user u on u.id = m.portal_user_id
       where m.organisation_id = $1 and (m.status = 'active' or ($2 and m.status in ('invited', 'join_requested')))
       order by m.id`, [m.organisationId, owner]);
@@ -149,9 +154,9 @@ export async function teamGet(request: Request): Promise<Response> {
   return ok({
     team: {
       organisationId: m.organisationId, myMembershipId: m.id, myRole: m.role,
-      members: pick("active").map((r) => ({ membershipId: r.id, name: r.name, email: r.email, role: r.role, isSigner: r.is_signer, joinedAt: r.joined_at })),
+      members: pick("active").map((r) => ({ membershipId: r.id, name: r.name, email: r.email, role: r.role, isSigner: r.is_signer, joinedAt: r.joined_at, lastActiveAt: r.last_active_at })),
       ...(owner ? {
-        invites: pick("invited").map((r) => ({ membershipId: r.id, email: r.email, role: r.role, isSigner: r.is_signer, expiresAt: r.invite_expires_at })),
+        invites: pick("invited").map((r) => ({ membershipId: r.id, email: r.email, role: r.role, isSigner: r.is_signer, invitedAt: r.invited_at, expiresAt: r.invite_expires_at })),
         requests: pick("join_requested").map((r) => ({ membershipId: r.id, name: r.name, email: r.email })),
       } : {}),
     },
