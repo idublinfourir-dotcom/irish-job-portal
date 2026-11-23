@@ -27,7 +27,7 @@ describe("measure", () => {
 });
 
 describe.each(APPS)("%s build", (app) => {
-  const built = existsSync(path.join(import.meta.dirname, "../../../apps", app, ".next/server/app/index.html"));
+  const built = existsSync(path.join(import.meta.dirname, "../../../apps", app, ".next/server/app/kit.html"));
   it.skipIf(!built)("stays within the shared CSS and first-load JS budget", () => {
     expect(appBudget(app).problems).toEqual([]);
   });

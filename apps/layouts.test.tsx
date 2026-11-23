@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from "vitest";
 import AdminLayout, { metadata as adminMeta } from "./admin/app/layout";
 import AdminPage from "./admin/app/page";
 import CandidateLayout, { metadata as candidateMeta } from "./candidate/app/layout";
-import CandidatePage from "./candidate/app/page";
 import PortalLayout, { metadata as portalMeta } from "./portal/app/layout";
 import PortalPage from "./portal/app/page";
 
@@ -13,6 +12,9 @@ vi.mock("next/font/google", () => ({
   Outfit: () => ({ variable: "outfit-var" }),
   DM_Sans: () => ({ variable: "dm-sans-var" }),
 }));
+
+// The candidate home page reads the database, so it has its own tests (candidate/app/_home, packages/db/test/home-page.test.ts); the layout is tried around a stand-in.
+const CandidatePage = () => <p>Nothing here yet.</p>;
 
 const render = (L: typeof CandidateLayout, P: () => React.ReactNode) => html(<L>{P()}</L>);
 

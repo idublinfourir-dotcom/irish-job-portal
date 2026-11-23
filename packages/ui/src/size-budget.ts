@@ -1,7 +1,7 @@
 // The size budget of check.yml, run after `npm run check` has built the three apps: `node packages/ui/src/size-budget.ts`.
 // Reads the prerendered stub page (.next/server/app/index.html), sums the gzip size of the scripts and the stylesheet it loads, and fails over budget.
 // Measured 23 Nov 2026 with the kit in place: first-load JS 250 KB gzip (mostly React, Next and Sentry), CSS 5.6 KB gzip, in every app.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 
@@ -11,7 +11,7 @@ const gz = (b: Buffer) => gzipSync(b).length;
 
 /** The sizes of what a page's HTML loads from `.next/static`. */
 export function measure(nextDir: string, html: string) {
-  const files = (ext: string) => [...new Set([...html.matchAll(new RegExp(`(?:src|href)="/_next/(static/[^"]+\\.${ext})"`, "g"))].map((m) => m[1]!))].map((f) => readFileSync(path.join(nextDir, f)));
+  const files = (ext: string) => [...new Set([...html.matchAll(new RegExp(`/_next/(static/[^"\\\\]+\\.${ext})`, "g"))].map((m) => m[1]!))].map((f) => readFileSync(path.join(nextDir, f)));
   const js = files("js");
   const css = files("css");
   return { jsGzip: js.reduce((n, b) => n + gz(b), 0), cssGzip: css.reduce((n, b) => n + gz(b), 0), cssRaw: css.reduce((n, b) => n + b.length, 0), jsFiles: js.length, cssFiles: css.length };
@@ -31,7 +31,9 @@ export const APPS = ["candidate", "portal", "admin"] as const;
 /** Reads an app's build; a missing build throws. */
 export function appBudget(app: string) {
   const next = path.join(import.meta.dirname, "../../../apps", app, ".next");
-  const m = measure(next, readFileSync(path.join(next, "server/app/index.html"), "utf8"));
+  // The candidate home page reads the database, so it is rendered on request and has no index.html; /kit (the production 404 shell, same layout and client code, its chunk paths sit in the page data) stands in.
+  const file = existsSync(path.join(next, "server/app/index.html")) ? "index.html" : "kit.html";
+  const m = measure(next, readFileSync(path.join(next, "server/app", file), "utf8"));
   return { m, problems: overBudget(m) };
 }
 
