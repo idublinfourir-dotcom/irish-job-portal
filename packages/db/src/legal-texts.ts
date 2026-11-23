@@ -13,7 +13,7 @@ import { AUDIT } from "./trust-safety";
 type Q = Pick<pg.Pool, "query">;
 type Db = Pick<pg.Pool, "query" | "connect">;
 
-export const LEGAL_PURPOSES = ["signup_terms", "portal_signup_terms", "privacy_notice"] as const;
+export const LEGAL_PURPOSES = ["signup_terms", "portal_signup_terms", "privacy_notice", "cookie_policy", "employer_acceptable_use", "data_retention"] as const; // the last three: B20, #290
 export type LegalPurpose = (typeof LEGAL_PURPOSES)[number];
 export const MAX_LEGAL_BODY = 100_000; // characters
 const KIND = "terms_privacy_page";

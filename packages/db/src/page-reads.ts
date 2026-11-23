@@ -2,10 +2,10 @@
 // route share the visitor read limit. Run as app_candidate. Pages reach them through apps/candidate/lib/data.ts.
 import type pg from "pg";
 import { REGISTRATION_BODIES, SOC2010_CODES, socSlug, socTitle } from "@portal/rules";
-import { getGuide } from "./content";
+import { getGuide, getPermitNotice, listGuides, listHelp } from "./content";
 import type { Work } from "./public-read";
 import { getRules } from "./rules-data";
-import { sectorCounts } from "./search";
+import { parseSearch, sectorCounts } from "./search";
 
 type Db = Pick<pg.Pool, "query">;
 
@@ -35,8 +35,12 @@ export async function occupationPicker(db: Db): Promise<{ occupations: PickerEnt
   return { occupations: [...SOC2010_CODES].sort().map((code) => ({ code, title: socTitle(code)!, slug: socSlug(code)!, listStatus: status.get(code) ?? "other" })) };
 }
 
-export const sectorsRead: Work = async (db) => ({ sectors: await sectorCounts(db) });
+// The live jobs per sector for the search in the query (the job list's own filter keys; the sector filter itself is left out); no filter counts all live jobs.
+export const sectorsRead: Work = async (db, q) => ({ sectors: await sectorCounts(db, parseSearch(q)) });
 export const guideRead: Work = (db, q) => getGuide(db, q.get("slug") ?? "");
+export const guidesRead: Work = (db) => listGuides(db); // B15: GET /api/guides
+export const helpListRead: Work = (db) => listHelp(db); // B19: GET /api/help/list
+export const permitNoticeRead: Work = (db) => getPermitNotice(db); // #291: GET /api/permit-notice; null (404) when staff have it off
 export const minimumsRead: Work = (db) => minimumsInForce(db);
 export const occupationsRead: Work = (db) => occupationPicker(db);
 

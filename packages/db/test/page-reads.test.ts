@@ -164,6 +164,22 @@ describe("B1: the data layer reads and the view count", () => {
     expect(r.ok && (r.data as { sectors: { sector: string; jobs: number }[] }).sectors.find((s) => s.sector === "care")?.jobs).toBe(0);
     expect(r.ok && (r.data as { sectors: unknown[] }).sectors).toHaveLength(8);
   });
+  it("counts the sectors for a search: the filters narrow the counts, the sector filter itself does not, and a bad filter is 400", async () => {
+    const n = async (query?: Record<string, string>) => {
+      const r = await as(undefined, () => D.readSectors(query));
+      return r.ok ? Object.fromEntries((r.data as { sectors: { sector: string; jobs: number }[] }).sectors.map((s) => [s.sector, s.jobs])) : r;
+    };
+    expect((await n({ occupationCode: "1122" })) as Record<string, number>).toMatchObject({ IT: 4, health: 1, care: 0 });
+    expect((await n({ occupationCode: "2136" })) as Record<string, number>).toMatchObject({ IT: 0, health: 0 });
+    expect((await n({ badge: "critical_skills_eligible" })) as Record<string, number>).toMatchObject({ IT: 4, health: 1 });
+    expect((await n({ sector: "health", occupationCode: "1122" })) as Record<string, number>).toMatchObject({ IT: 4, health: 1 }); // the sector filter does not count
+    expect(await n({ occupationCode: "" })).toMatchObject({ IT: 4 }); // a blank select means any
+    for (const query of <Record<string, string>[]>[{ occupationCode: "1122'; drop table job;--" }, { salaryMin: "x" }, { badge: "nope" }, { postedWithin: "-1" }, { q: "x".repeat(5000) }, { sector: "nope" }])
+      expect(await n(query), JSON.stringify(query)).toMatchObject({ ok: false, status: 400, code: "BAD_REQUEST" });
+    expect(await as(undefined, () => D.readSectors([["county", "Cork"], ["county", "Kerry"]]))).toMatchObject({ ok: false, status: 400 }); // a filter twice
+    const [, c] = await counted(() => as(undefined, () => D.readSectors({ occupationCode: "1122" })));
+    expect(c).toBeLessThanOrEqual(BUDGET.sectors); // 2 rate counts and one grouped read
+  });
   it("reads a published guide by slug; a draft, a help page, an unknown, a missing or a hostile slug is a clean 404", async () => {
     expect(await as(undefined, () => D.readGuide({ slug: "a-guide" }))).toMatchObject({ ok: true, data: { kind: "guide", slug: "a-guide", checkedOn: "2026-11-01" } });
     for (const slug of ["draft-guide", "a-help", "nope", "", "A-GUIDE", "a-guide'; drop table job;--", "../a-guide", "a".repeat(5000)])

@@ -10,8 +10,8 @@ export const dynamic = "force-dynamic";
 
 const MAX_BODY = 110_000; // characters: a 50,000-character text with its JSON escaping, and the other fields
 const ACTIONS: Record<string, Spec> = {
-  create: { need: ["kind", "slug", "title", "body"], may: ["sourceUrl", "checkedOn"] },
-  edit: { need: ["id"], may: ["title", "body", "sourceUrl", "checkedOn"] },
+  create: { need: ["kind", "slug", "title", "body"], may: ["sourceUrl", "checkedOn", "category", "effectiveFrom"] },
+  edit: { need: ["id"], may: ["title", "body", "sourceUrl", "checkedOn", "category", "effectiveFrom"] },
   publish: { need: ["id"] },
   withdraw: { need: ["id"] },
 };
@@ -19,6 +19,7 @@ const ACTIONS: Record<string, Spec> = {
 const text: Field["0"] = (v) => typeof v === "string";
 const FIELDS: Record<string, Field> = {
   id: [id19, "bad_id"], kind: [text, "bad_kind"], slug: [text, "bad_slug"], title: [text, "bad_title"], body: [text, "bad_body_text"], sourceUrl: [text, "bad_source_url"], checkedOn: [text, "bad_checked_on"],
+  category: [text, "bad_category"], effectiveFrom: [text, "bad_effective_from"],
 };
 
 export async function GET(request: Request) {
@@ -54,8 +55,8 @@ export async function POST(request: Request) {
     const s = (k: string) => b[k] as string;
     const o = (k: string) => b[k] as string | undefined;
     switch (b.action) {
-      case "create": return Response.json({ ok: true, ...(await createContentDraft(db, staff, { kind: s("kind"), slug: s("slug"), title: s("title"), body: s("body"), sourceUrl: o("sourceUrl"), checkedOn: o("checkedOn") })) });
-      case "edit": await editContentDraft(db, staff, s("id"), { title: o("title"), body: o("body"), sourceUrl: o("sourceUrl"), checkedOn: o("checkedOn") }); break;
+      case "create": return Response.json({ ok: true, ...(await createContentDraft(db, staff, { kind: s("kind"), slug: s("slug"), title: s("title"), body: s("body"), sourceUrl: o("sourceUrl"), checkedOn: o("checkedOn"), category: o("category"), effectiveFrom: o("effectiveFrom") })) });
+      case "edit": await editContentDraft(db, staff, s("id"), { title: o("title"), body: o("body"), sourceUrl: o("sourceUrl"), checkedOn: o("checkedOn"), category: o("category"), effectiveFrom: o("effectiveFrom") }); break;
       case "publish": await publishContent(db, staff, s("id")); break;
       case "withdraw": await withdrawContent(db, staff, s("id")); break;
     }

@@ -42,7 +42,7 @@ export const reasonCode: Field["0"] = (v) => typeof v === "string" && /^[a-z][a-
 
 const STATUS = new Map<string, number>(Object.entries({
   bad_body: 400, bad_action: 400, bad_cursor: 400, bad_query: 400, bad_staff_id: 400, bad_request_id: 400, bad_role: 400, bad_id: 400, bad_item_id: 400, bad_reason: 400, bad_input: 400,
-  bad_kind: 400, bad_status: 400, bad_slug: 400, bad_title: 400, bad_body_text: 400, bad_source_url: 400, bad_checked_on: 400, nothing_to_change: 400,
+  bad_kind: 400, bad_status: 400, bad_slug: 400, bad_title: 400, bad_body_text: 400, bad_source_url: 400, bad_checked_on: 400, bad_category: 400, bad_effective_from: 400, nothing_to_change: 400,
   bad_object_type: 400, bad_object_id: 400, bad_from: 400, bad_to: 400, bad_range: 400,
   bad_occupation_code: 400, bad_salary: 400, bad_user_id: 400, bad_message_id: 400, bad_queue: 400, bad_domain: 400, bad_organisation_id: 400,
   bad_text: 400, bad_data: 400, bad_key: 400, bad_value: 400, bad_email: 400,

@@ -1026,7 +1026,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [id, kind, slug, title, body, sourceUrl, checkedOn, publishedAt, updatedAt]
+                required: [id, kind, slug, title, body, sourceUrl, checkedOn, publishedAt, updatedAt, category, effectiveFrom]
                 properties:
                   id: { $ref: '#/components/schemas/Id' }
                   kind: { const: help }
@@ -1037,7 +1037,9 @@ paths:
                   checkedOn: { type: [string, 'null'] }
                   publishedAt: { $ref: '#/components/schemas/Timestamp' }
                   updatedAt: { $ref: '#/components/schemas/Timestamp' }
-              example: { id: '12', kind: help, slug: not-sure, title: Not sure?, body: Placeholder text., sourceUrl: null, checkedOn: null, publishedAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z' }
+                  category: { type: [string, 'null'], description: "B19: the help group (report_problem, permit_services, jobs_badges or account); null when staff set none.", example: permit_services }
+                  effectiveFrom: { type: [string, 'null'], description: "B17: the day an update's rule starts (a date, YYYY-MM-DD); null for other kinds.", example: null }
+              example: { id: '12', kind: help, slug: not-sure, title: Not sure?, body: Placeholder text., sourceUrl: null, checkedOn: null, publishedAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z', category: permit_services, effectiveFrom: null }
         '404': { $ref: '#/components/responses/PublicNotFound' }
         '429': { $ref: '#/components/responses/PublicTooMany' }
 
@@ -1048,12 +1050,14 @@ paths:
       summary: The updates feed, newest first
       description: |
         The published updates (news on permits and rules), 20 a page, newest first. `after` is the `next` of the page before; a visitor
-        pages it too (the 6-job cap is for job lists only). A cursor this route did not make is 400.
+        pages it too (the 6-job cap is for job lists only). A cursor this route did not make is 400. `category` (B17) keeps one type of update; any
+        other value is 400. Each update carries its `category` and `effectiveFrom` (the day its rule starts).
       security: [{}, { candidateSession: [] }]
       x-roles: [anyone]
       x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
       parameters:
         - { name: after, in: query, schema: { type: string, maxLength: 200, pattern: '^[A-Za-z0-9_-]+$' } }
+        - { name: category, in: query, description: "B17: only updates of this type.", schema: { type: string, enum: [salary_minimums, quotas, occupation_lists, processing] } }
       responses:
         '200':
           description: One page of updates.
@@ -1068,7 +1072,7 @@ paths:
                     maxItems: 20
                     items:
                       type: object
-                      required: [id, kind, slug, title, body, sourceUrl, checkedOn, publishedAt, updatedAt]
+                      required: [id, kind, slug, title, body, sourceUrl, checkedOn, publishedAt, updatedAt, category, effectiveFrom]
                       properties:
                         id: { $ref: '#/components/schemas/Id' }
                         kind: { const: update }
@@ -1079,11 +1083,153 @@ paths:
                         checkedOn: { type: [string, 'null'] }
                         publishedAt: { $ref: '#/components/schemas/Timestamp' }
                         updatedAt: { $ref: '#/components/schemas/Timestamp' }
+                        category: { type: [string, 'null'], description: "B17: the update's type (salary_minimums, quotas, occupation_lists or processing); null when staff set none.", example: salary_minimums }
+                        effectiveFrom: { type: [string, 'null'], description: "B17: the day an update's rule starts (a date, YYYY-MM-DD); null for other kinds.", example: '2027-01-01' }
                   next: { type: [string, 'null'] }
               example:
-                updates: [{ id: '31', kind: update, slug: new-minimums, title: Placeholder update, body: Placeholder text., sourceUrl: 'https://enterprise.gov.ie/', checkedOn: '2026-11-01', publishedAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z' }]
+                updates: [{ id: '31', kind: update, slug: new-minimums, title: Placeholder update, body: Placeholder text., sourceUrl: 'https://enterprise.gov.ie/', checkedOn: '2026-11-01', publishedAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z', category: salary_minimums, effectiveFrom: '2027-01-01' }]
                 next: null
         '400': { $ref: '#/components/responses/PublicBadRequest' }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
+  /api/guides:
+    get:
+      operationId: listGuides
+      tags: [public]
+      summary: Every published guide
+      description: |
+        B15. The published guides by title (then slug), at most 200: slug, title and the day the guide was last checked against its source.
+        Drafts and withdrawn guides are never listed. A page links each one to `/guides/<slug>` and reads it with `GET /api/guide`.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      responses:
+        '200':
+          description: The guides.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [guides]
+                properties:
+                  guides:
+                    type: array
+                    maxItems: 200
+                    items:
+                      type: object
+                      required: [slug, title, checkedOn]
+                      properties:
+                        slug: { type: string, description: The address part, example: living-in-dublin }
+                        title: { type: string, example: Living in Dublin }
+                        checkedOn: { type: [string, 'null'], description: "The day staff last checked the guide against its source (YYYY-MM-DD).", example: '2026-11-01' }
+              example: { guides: [{ slug: living-in-dublin, title: Living in Dublin, checkedOn: '2026-11-01' }] }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
+  /api/guide:
+    get:
+      operationId: getGuide
+      tags: [public]
+      summary: A published guide by slug
+      description: |
+        B15. One guide by slug, from the published guides only: a draft or withdrawn guide, another kind's slug, an unknown or malformed slug
+        (not lowercase letters, digits and hyphens, at most 100) is 404 `NOT_FOUND`. The body is stored as staff typed it (plain text today;
+        the body format, Q2, is not decided).
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      parameters:
+        - { name: slug, in: query, required: true, schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,99}$' } }
+      responses:
+        '200':
+          description: The guide.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, kind, slug, title, body, sourceUrl, checkedOn, publishedAt, updatedAt, category, effectiveFrom]
+                properties:
+                  id: { $ref: '#/components/schemas/Id' }
+                  kind: { const: guide }
+                  slug: { type: string }
+                  title: { type: string }
+                  body: { type: string, description: "Plain text as staff typed it; the body format (Q2) is not decided." }
+                  sourceUrl: { type: [string, 'null'] }
+                  checkedOn: { type: [string, 'null'] }
+                  publishedAt: { $ref: '#/components/schemas/Timestamp' }
+                  updatedAt: { $ref: '#/components/schemas/Timestamp' }
+                  category: { type: [string, 'null'], description: "Always null for this kind." , example: null }
+                  effectiveFrom: { type: [string, 'null'], description: "Always null for this kind.", example: null }
+              example: { id: '7', kind: guide, slug: living-in-dublin, title: Living in Dublin, body: Placeholder text., sourceUrl: 'https://enterprise.gov.ie/', checkedOn: '2026-11-01', publishedAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z', category: null, effectiveFrom: null }
+        '404': { $ref: '#/components/responses/PublicNotFound' }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
+  /api/help/list:
+    get:
+      operationId: listHelpPages
+      tags: [public]
+      summary: Every published help page
+      description: |
+        B19. The published help pages by category, then title (pages with no category last), at most 200: slug, title and category. Drafts and withdrawn pages
+        are never listed. A page reads one with `GET /api/help`. Help text search is not built.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      responses:
+        '200':
+          description: The help pages.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pages]
+                properties:
+                  pages:
+                    type: array
+                    maxItems: 200
+                    items:
+                      type: object
+                      required: [slug, title, category]
+                      properties:
+                        slug: { type: string, example: who-needs-a-permit }
+                        title: { type: string, example: Who needs an employment permit? }
+                        category: { type: [string, 'null'], enum: [report_problem, permit_services, jobs_badges, account, null], description: The help group the page belongs to., example: permit_services }
+              example: { pages: [{ slug: who-needs-a-permit, title: Who needs an employment permit?, category: permit_services }] }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
+
+  /api/permit-notice:
+    get:
+      operationId: getPermitNotice
+      tags: [public]
+      summary: The notice for the permit pages while DETE's portal is closed
+      description: |
+        Decision #291. The permit services page and the request form show this notice while DETE's Employment Permits portal is closed. Staff switch it
+        on (publish the notice with slug `dete-portal-closed`) and off (withdraw it) and edit its text in the content editor, with no code change.
+        404 `NOT_FOUND` means it is off: the page shows nothing.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      responses:
+        '200':
+          description: The notice.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, kind, slug, title, body, sourceUrl, checkedOn, publishedAt, updatedAt, category, effectiveFrom]
+                properties:
+                  id: { $ref: '#/components/schemas/Id' }
+                  kind: { const: notice }
+                  slug: { type: string }
+                  title: { type: string }
+                  body: { type: string, description: "Plain text as staff typed it; the body format (Q2) is not decided." }
+                  sourceUrl: { type: [string, 'null'] }
+                  checkedOn: { type: [string, 'null'] }
+                  publishedAt: { $ref: '#/components/schemas/Timestamp' }
+                  updatedAt: { $ref: '#/components/schemas/Timestamp' }
+                  category: { type: [string, 'null'], description: "Always null for this kind." , example: null }
+                  effectiveFrom: { type: [string, 'null'], description: "Always null for this kind.", example: null }
+              example: { id: '55', kind: notice, slug: dete-portal-closed, title: DETE's portal is closed, body: Placeholder text., sourceUrl: null, checkedOn: null, publishedAt: '2026-11-19T10:00:00.000Z', updatedAt: '2026-11-19T10:00:00.000Z', category: null, effectiveFrom: null }
+        '404': { $ref: '#/components/responses/PublicNotFound' }
         '429': { $ref: '#/components/responses/PublicTooMany' }
 
   /api/checker:
@@ -1222,7 +1368,7 @@ paths:
       tags: [public]
       summary: The legal text in force for a purpose
       description: |
-        Step 15 R5. The newest published version of one legal purpose of this site: signup_terms or privacy_notice. Staff publish
+        Step 15 R5. The newest published version of one legal purpose of this site: signup_terms, privacy_notice, cookie_policy, employer_acceptable_use or data_retention (B20, decision #290: the cookie policy lists every cookie the site sets). Staff publish
         a version at the admin site's `/api/legal-texts` (two people); new sign-ups consent to the version shown here. No login is needed.
         No version yet is 404 `NOT_FOUND`; any other purpose, or none, is 400 `BAD_REQUEST`. The real wording waits for the solicitor and
         the entity: today only placeholder texts exist.
@@ -1230,7 +1376,7 @@ paths:
       x-roles: [anyone]
       x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
       parameters:
-        - { name: purpose, in: query, required: true, schema: { type: string, enum: [signup_terms, privacy_notice] } }
+        - { name: purpose, in: query, required: true, schema: { type: string, enum: [signup_terms, privacy_notice, cookie_policy, employer_acceptable_use, data_retention] } }
       responses:
         '200':
           description: The text in force.
@@ -1241,7 +1387,7 @@ paths:
                 additionalProperties: false
                 required: [purpose, version, body, publishedAt]
                 properties:
-                  purpose: { type: string, enum: [signup_terms, privacy_notice] }
+                  purpose: { type: string, enum: [signup_terms, privacy_notice, cookie_policy, employer_acceptable_use, data_retention] }
                   version: { type: string }
                   body: { type: string, description: Plain text; line breaks are kept. }
                   publishedAt: { type: string, description: 'The database time, as "2026-11-19 09:30:00.123456+00".' }

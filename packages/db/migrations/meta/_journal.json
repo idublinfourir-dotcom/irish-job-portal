@@ -463,6 +463,13 @@
       "when": 1794300069000,
       "tag": "0069_audit_filters",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1794300072000,
+      "tag": "0072_content_extras",
+      "breakpoints": true
     }
   ]
 }

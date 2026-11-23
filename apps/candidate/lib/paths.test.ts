@@ -1,7 +1,7 @@
 // The public addresses of decision #288, made in one place (paths.ts). No database.
 import { describe, expect, it } from "vitest";
 import { occupationCodeOfSlug, occupationSlug } from "./occupations";
-import { companyPath, guidePath, jobIdOf, jobPath, occupationPath, updatePath } from "./paths";
+import { companyPath, guidePath, helpPath, jobIdOf, jobPath, legalPath, occupationPath, staticPath, updatePath } from "./paths";
 
 describe("the job address", () => {
   it("is title, county and id, in lower-case words", () => {
@@ -40,5 +40,20 @@ describe("the other addresses", () => {
   it("encode a hostile slug rather than pass it through", () => {
     for (const f of [companyPath, guidePath, updatePath, occupationPath]) expect(f("a/b?c#d ../").split("/").length, f.name).toBe(3);
     expect(companyPath("a/b")).toBe("/companies/a%2Fb");
+  });
+});
+
+describe("the help, legal and static addresses (B21)", () => {
+  it("make a help address from its slug, escaped", () => {
+    expect(helpPath("who-needs-a-permit")).toBe("/help/who-needs-a-permit");
+    expect(helpPath("a/b?c")).toBe("/help/a%2Fb%3Fc");
+  });
+  it("give each public legal text its page and any other purpose none", () => {
+    expect(["privacy_notice", "signup_terms", "cookie_policy", "employer_acceptable_use", "data_retention"].map(legalPath)).toEqual(["/privacy", "/terms", "/cookies", "/employer-acceptable-use", "/data-retention"]);
+    for (const p of ["portal_signup_terms", "visibility", "", "__proto__", "constructor", "toString"]) expect(legalPath(p), p).toBeNull();
+  });
+  it("give every static page of the sitemap its address and an unknown key none", () => {
+    expect(["home", "jobs", "companies", "guides", "updates", "help", "eligibility-checker", "permit-services"].map(staticPath)).toEqual(["/", "/jobs", "/companies", "/guides", "/updates", "/help", "/eligibility-checker", "/permit-services"]);
+    for (const k of ["", "nope", "__proto__", "constructor"]) expect(staticPath(k), k).toBeNull();
   });
 });

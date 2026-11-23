@@ -227,7 +227,7 @@ describe("the new routes against the rate limit, the spec and the budget", () =>
 describe("the sitemap read (S13)", () => {
   it("lists every live job and no job of any other status, nor an expired one", async () => {
     const pool = src.getPool();
-    expect(await src.sitemapIds(pool)).toEqual(["jobs-0", "companies-0", "occupations-0"]);
+    expect(await src.sitemapIds(pool)).toEqual(["jobs-0", "companies-0", "occupations-0", "pages-0", "guides-0", "updates-0", "help-0"]);
     const jobs = (await src.sitemapPart(pool, "jobs-0"))!;
     const live = (await su.query("select id::text from job where status = 'live' and closes_at > now() order by id")).rows.map((r) => r.id);
     expect(jobs.map((j) => j.key)).toEqual(live);

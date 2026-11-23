@@ -5,8 +5,8 @@
 import "server-only";
 import { headers } from "next/headers";
 import {
-  checkerRead, companyRead, countJobView, gatedRead, getPool, guideRead, helpRead, jobRead, jobsRead, legalRead, minimumsRead, occupationRead, occupationsRead, registrationBodiesRead, sectorsRead,
-  similarRead, sitemapIds, sitemapPart, updatesRead, type ReadResult, type SitemapEntry, type Work,
+  checkerRead, companyRead, countJobView, gatedRead, getPool, guideRead, guidesRead, helpListRead, helpRead, jobRead, jobsRead, legalRead, minimumsRead, occupationRead, occupationsRead,
+  permitNoticeRead, registrationBodiesRead, sectorsRead, similarRead, sitemapIds, sitemapIndexXml, sitemapPart, updatesRead, type ReadResult, type SitemapEntry, type Work,
 } from "@portal/db";
 import { candidateSettings, googleSettings } from "@portal/auth";
 import { alertsGet } from "./alerts";
@@ -24,11 +24,18 @@ export const readSimilar = read(similarRead);
 export const readCompany = read(companyRead);
 export const readOccupation = read(occupationRead);
 export const readHelp = read(helpRead);
-export const readUpdates = read(updatesRead);
+export const readUpdates = read(updatesRead); // ?after, ?category (B17)
 export const readChecker = read(checkerRead);
-export const readLegal = read(legalRead); // R5: ?purpose=signup_terms or privacy_notice
+export const readLegal = read(legalRead); // R5, B20: ?purpose=signup_terms, privacy_notice, cookie_policy, employer_acceptable_use or data_retention
 export const readSectors = read(sectorsRead); // B1: the sectors with their live job counts
 export const readGuide = read(guideRead); // B1: ?slug
+export const readGuides = read(guidesRead); // B15: every guide, { slug, title, checkedOn }
+export const readHelpList = read(helpListRead); // B19: every help page, { slug, title, category }
+/** #291: the notice for the permit pages while DETE's portal is closed. `{ ok: true, data: null }` when staff have it off, so a page shows nothing. */
+export const readPermitNotice = async (): Promise<ReadResult> => {
+  const r = await read(permitNoticeRead)();
+  return !r.ok && r.status === 404 ? { ok: true, data: null } : r;
+};
 export const readMinimums = read(minimumsRead); // B5: the minimums in force, no occupation
 export const readOccupations = read(occupationsRead); // B12: every code with title, slug and list status, for the pickers
 export const readRegistrationBodies = read(registrationBodiesRead); // B39: the profile's registration body dropdown
@@ -79,4 +86,6 @@ function kept<T>(key: string, load: () => Promise<T>): Promise<T> {
 }
 export const readSitemapIds = () => kept("ids", () => sitemapIds(getPool()));
 export const readSitemapPart = (id: string): Promise<SitemapEntry[] | null> => kept(`part:${id}`, () => sitemapPart(getPool(), id));
+/** B21: the sitemap index file (/sitemap-index.xml), listing every file of readSitemapIds. */
+export const readSitemapIndex = async () => sitemapIndexXml(siteOrigin(), await readSitemapIds());
 export const siteOrigin = () => new URL(candidateSettings(process.env).baseURL).origin;
