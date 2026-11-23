@@ -1,7 +1,8 @@
 // The size budget of check.yml, run after `npm run check` has built the three apps: `node packages/ui/src/size-budget.ts`.
-// Reads the prerendered stub page (.next/server/app/index.html), sums the gzip size of the scripts and the stylesheet it loads, and fails over budget.
+// Reads the prerendered stub page (.next/server/app/index.html), or, when the layout reads the session and the page is dynamic (step 16 wave 1), the
+// files the build manifests list for the home page (polyfills, root main files, the layout's and page's chunks and styles); sums the gzip size of the scripts and the stylesheet it loads, and fails over budget.
 // Measured 23 Nov 2026 with the kit in place: first-load JS 250 KB gzip (mostly React, Next and Sentry), CSS 5.6 KB gzip, in every app.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 
@@ -26,12 +27,24 @@ export function overBudget(m: ReturnType<typeof measure>): string[] {
   return out;
 }
 
+/** The HTML-shaped list of what the home page loads, from the build manifests, for an app whose home page is not prerendered. */
+export function manifestHtml(nextDir: string): string {
+  const read = (f: string) => readFileSync(path.join(nextDir, f), "utf8");
+  const build = JSON.parse(read("build-manifest.json")) as { polyfillFiles: string[]; rootMainFiles: string[] };
+  const ref = read("server/app/page_client-reference-manifest.js");
+  // entryJSFiles lists plain paths, entryCSSFiles lists { path } objects; only the layout's and the page's entries count (not global-error's).
+  const js = [...build.polyfillFiles, ...build.rootMainFiles, ...[...ref.matchAll(/app\/(?:layout|page)":\[("static[^\]]*)\]/g)].flatMap((m) => m[1]!.match(/static\/[^"]+\.js/g) ?? [])];
+  const css = [...ref.matchAll(/app\/(?:layout|page)":\[(\{[^\]]*)\]/g)].flatMap((m) => m[1]!.match(/static\/[^"]+\.css/g) ?? []);
+  return [...js.map((f) => `<script src="/_next/${f}">`), ...css.map((f) => `<link href="/_next/${f}">`)].join("");
+}
+
 export const APPS = ["candidate", "portal", "admin"] as const;
 
 /** Reads an app's build; a missing build throws. */
 export function appBudget(app: string) {
   const next = path.join(import.meta.dirname, "../../../apps", app, ".next");
-  const m = measure(next, readFileSync(path.join(next, "server/app/index.html"), "utf8"));
+  const page = path.join(next, "server/app/index.html");
+  const m = measure(next, existsSync(page) ? readFileSync(page, "utf8") : manifestHtml(next));
   return { m, problems: overBudget(m) };
 }
 

@@ -212,6 +212,14 @@ describe("portal shell", () => {
     for (const t of ["Dashboard", "Jobs", "Post a job", "Permit services", "Company profile", "Team", "Account status", "Help"]) expect(h).toContain(t);
     for (const t of ["Applicants", "Candidate search", "Contact requests"]) expect(h).not.toContain(t);
   });
+  it("without a role key shows every Launch A link; with one hides what the role cannot use", () => {
+    const l = (roleKey: "viewer" | "poster" | "recruiter" | "account_owner") => [...html(<PortalShell companyName="A B" role="x" roleKey={roleKey}>x</PortalShell>).matchAll(/<a [^>]*>([^<]*)/g)].map((m) => m[1]!);
+    expect(l("viewer")).not.toContain("Post a job");
+    expect(l("viewer")).not.toContain("Permit services");
+    expect(l("poster")).toContain("Post a job");
+    expect(l("poster")).not.toContain("Permit services");
+    expect(l("recruiter")).toContain("Permit services");
+  });
   it("shows company, role, initials, a count and the current page", () => {
     for (const t of ["Harbourline Hotels", "Account owner", ">HH<", "data-count"]) expect(h).toContain(t);
     expect(h).toContain('aria-current="page"');
@@ -221,7 +229,7 @@ describe("portal shell", () => {
 describe("admin shell", () => {
   const links = (roles: readonly (typeof ADMIN_ROLES)[number][]) => [...html(<AdminShell roles={roles} name="Dara">x</AdminShell>).matchAll(/<a [^>]*>([^<]*)/g)].map((m) => m[1]!);
   it("says internal, staff only", () => expect(html(<AdminShell roles={[]} name="D">x</AdminShell>)).toContain("Internal, staff only"));
-  it("hides every link that needs a role for a member with none", () => expect(links([])).toEqual(["Skip to content", "Overview", "Audit log"]));
+  it("hides every link that needs a role for a member with none", () => expect(links([])).toEqual(["Skip to content", "Overview", "Rules data", "Audit log"]));
   it("shows a link only to the role that may open it", () => {
     expect(links(["account_reviewer"])).toContain("Account reviews");
     expect(links(["account_reviewer"])).not.toContain("Fetched jobs");
@@ -230,6 +238,14 @@ describe("admin shell", () => {
     expect(links(["content_editor"])).not.toContain("Staff and roles");
     expect(links(["administrator"])).toContain("Staff and roles");
     expect(links(["administrator"])).not.toContain("Account reviews");
+  });
+  it("lists the links by the backend roles (admin.yaml x-roles of each page's read)", () => {
+    expect(links(["administrator"])).toEqual(expect.arrayContaining(["Services cases", "Big-company list", "Name merges", "Manual posting", "Content editor", "Staff and roles"]));
+    expect(links(["fetched_job_reviewer"])).toContain("Name merges");
+    expect(links(["fetched_job_reviewer"])).not.toContain("Manual posting");
+    expect(links(["trust_and_safety"])).toEqual(expect.arrayContaining(["Reports and strikes", "Ban list", "Manual posting", "Name merges"]));
+    expect(links(["rules_data_editor"])).toEqual(expect.arrayContaining(["Big-company list", "Content editor"]));
+    expect(links(["services_case_handler"])).not.toContain("Content editor");
   });
   it("shows all the links to staff holding all seven roles", () => {
     const all = links(ADMIN_ROLES);

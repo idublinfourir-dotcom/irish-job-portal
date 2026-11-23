@@ -11,6 +11,7 @@
   "dependencies": {
     "@portal/auth": "*",
     "@portal/db": "*",
+    "@portal/rules": "*",
     "@portal/ui": "*",
     "@sentry/nextjs": "11.14.0",
     "botid": "1.5.13",

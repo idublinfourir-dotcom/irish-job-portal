@@ -1,6 +1,7 @@
 import { A } from "./link";
 import type { ReactNode } from "react";
 import { cx, SITE_NAME } from "./cx";
+import { adminLinks, portalLinks, type AdminRole, type PortalRole } from "./nav-links";
 
 type Link = { label: string; href: string };
 type Group = { title?: string; links: Link[] };
@@ -52,24 +53,8 @@ const initials = (name: string) =>
     .map((w) => w[0]!.toUpperCase())
     .join("");
 
-// Applicants, Candidate search and Contact requests are Launch B: left out for now.
-export const PORTAL_NAV: Group[] = [
-  {
-    links: [
-      { label: "Dashboard", href: "/" },
-      { label: "Jobs", href: "/jobs" },
-      { label: "Post a job", href: "/jobs/new" },
-      { label: "Permit services", href: "/permit-services" },
-      { label: "Company profile", href: "/company" },
-      { label: "Team", href: "/team" },
-      { label: "Account status", href: "/account-status" },
-      { label: "Help", href: "/help" },
-    ],
-  },
-];
-
-/** The employer sidebar (frames NE2, E08). Company name and role are props. */
-export function PortalShell({ companyName, role, counts, current, children }: { companyName: string; role: string; counts?: Record<string, number | undefined>; current?: string; children: ReactNode }) {
+/** The employer sidebar (frames NE2, E08). Company name and role are props; `roleKey` (the member's role) hides the links it cannot use, unset shows every link. */
+export function PortalShell({ companyName, role, roleKey, counts, current, children }: { companyName: string; role: string; roleKey?: PortalRole; counts?: Record<string, number | undefined>; current?: string; children: ReactNode }) {
   return (
     <Sidebar
       brand={<>{SITE_NAME} <span className="font-sans text-small font-normal text-muted">for employers</span></>}
@@ -82,7 +67,7 @@ export function PortalShell({ companyName, role, counts, current, children }: { 
           </span>
         </p>
       }
-      groups={PORTAL_NAV}
+      groups={portalLinks(roleKey)}
       counts={counts}
       current={current}
     >
@@ -91,46 +76,9 @@ export function PortalShell({ companyName, role, counts, current, children }: { 
   );
 }
 
-export const ADMIN_ROLES = ["account_reviewer", "fetched_job_reviewer", "rules_data_editor", "trust_and_safety", "services_case_handler", "content_editor", "administrator"] as const;
-export type AdminRole = (typeof ADMIN_ROLES)[number];
-
-type AdminLink = Link & { roles?: AdminRole[] };
-// Who sees a link. No role stands in for another (#104), so the administrator is listed only where it can open the page.
-// This hides links only; every page and route still checks the role itself. Placeholder mapping: the owner reviews each cell (D104).
-const ADMIN_NAV: { title: string; links: AdminLink[] }[] = [
-  {
-    title: "Queues",
-    links: [
-      { label: "Overview", href: "/" },
-      { label: "Account reviews", href: "/account-reviews", roles: ["account_reviewer"] },
-      { label: "Fetched jobs", href: "/fetched-jobs", roles: ["fetched_job_reviewer"] },
-      { label: "Reports and strikes", href: "/reports", roles: ["trust_and_safety"] },
-      { label: "Services cases", href: "/services", roles: ["services_case_handler"] },
-    ],
-  },
-  {
-    title: "Data",
-    links: [
-      { label: "Rules data", href: "/rules", roles: ["rules_data_editor"] },
-      { label: "Big-company list", href: "/big-companies", roles: ["rules_data_editor"] },
-      { label: "Name merges", href: "/name-merges", roles: ["account_reviewer", "fetched_job_reviewer"] },
-      { label: "Ban list", href: "/bans", roles: ["trust_and_safety"] },
-    ],
-  },
-  {
-    title: "Tools",
-    links: [
-      { label: "Manual posting", href: "/manual-posting", roles: ["fetched_job_reviewer"] },
-      { label: "Content editor", href: "/content", roles: ["content_editor"] },
-      { label: "Audit log", href: "/audit" },
-      { label: "Staff and roles", href: "/staff", roles: ["administrator"] },
-    ],
-  },
-];
-
 /** The staff sidebar (frame ND1). A link with `roles` shows only to staff holding one of them. */
 export function AdminShell({ roles, name, counts, current, children }: { roles: readonly AdminRole[]; name: string; counts?: Record<string, number | undefined>; current?: string; children: ReactNode }) {
-  const groups = ADMIN_NAV.map((g) => ({ title: g.title, links: g.links.filter((l) => !l.roles || l.roles.some((r) => roles.includes(r))) })).filter((g) => g.links.length);
+  const groups = adminLinks(roles);
   return (
     <Sidebar
       brand={<>{SITE_NAME} admin</>}
