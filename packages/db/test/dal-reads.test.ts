@@ -234,6 +234,9 @@ describe("the sitemap read (S13)", () => {
     expect(live).toHaveLength(8);
     for (const s of ["draft", "in_review", "under_review", "hidden", "closed", "expired"]) expect(jobs.map((j) => j.key), s).not.toContain(status[s]);
     expect(jobs.every((j) => j.kind === "job" && !Number.isNaN(Date.parse(j.lastModified!)))).toBe(true);
+    // #288: the address is made from the title and county as well as the id
+    const named = (await su.query("select id::text, title, county from job where status = 'live' and closes_at > now() order by id")).rows;
+    expect(jobs.map((j) => [j.key, j.title, j.county])).toEqual(named.map((r) => [r.id, r.title, r.county]));
   });
   it("lists the companies with a page (not rejected, closed or merged) and the occupations on the lists", async () => {
     const pool = src.getPool();

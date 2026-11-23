@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import lists from "../../fetcher/data/occupation-lists.json";
 import soc from "../data/soc2010-unit-groups.json";
-import { isSoc2010, SOC2010_CODES, socTitle } from "./soc";
+import { isSoc2010, SOC2010_CODES, socCodeOfSlug, socSlug, socTitle } from "./soc";
 
 describe("the SOC 2010 reader", () => {
   it("holds the 369 unit groups ONS counts, four digits each, with a title", () => {
@@ -29,5 +29,22 @@ describe("the SOC 2010 reader", () => {
     const t = performance.now();
     for (let i = 0; i < 100_000; i++) isSoc2010(i % 2 ? "9999" : "2136");
     expect(performance.now() - t).toBeLessThan(200); // measured about 3 ms; a scan of 369 would be about 100x slower
+  });
+  it("gives each code its own name slug (#288), and the slug gives the code back", () => {
+    const slugs = new Set<string>();
+    for (const code of SOC2010_CODES) {
+      const s = socSlug(code)!;
+      expect(s, code).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+      expect(s.length).toBeLessThanOrEqual(80);
+      expect(socCodeOfSlug(s)).toBe(code);
+      slugs.add(s);
+    }
+    expect(slugs.size).toBe(369);
+    expect(socSlug("1115")).toBe("chief-executives-and-senior-officials");
+    expect(socSlug("9999")).toBeNull();
+  });
+  it("answers null for a slug that is not one: other shapes, a code, a changed case, hostile text", () => {
+    for (const s of ["", "1115", "Chief-Executives-And-Senior-Officials", "chief-executives-and-senior-officials ", "chief-executives", "__proto__", "constructor", "../x", "a".repeat(10_000), null, undefined, 1115, {}, ["nurses"]])
+      expect(socCodeOfSlug(s), JSON.stringify(s)).toBeNull();
   });
 });

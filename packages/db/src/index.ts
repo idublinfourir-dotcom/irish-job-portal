@@ -69,6 +69,7 @@ export * from "./content";
 export * from "./public-pages";
 export * from "./candidate-route";
 export * from "./public-read";
+export * from "./page-reads";
 export * from "./candidate";
 export * from "./files";
 export { sharpWorks } from "./file-disarm";

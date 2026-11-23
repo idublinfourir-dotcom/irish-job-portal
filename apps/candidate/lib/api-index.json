@@ -13,6 +13,8 @@
     "getHelpPage": "GET /api/help",
     "listUpdates": "GET /api/updates",
     "checkEligibility": "GET /api/checker",
+    "getMinimums": "GET /api/minimums",
+    "listOccupations": "GET /api/occupations",
     "getLegalText": "GET /api/legal",
     "sendContactMessage": "POST /api/contact",
     "reportJob": "POST /api/report (candidate)",

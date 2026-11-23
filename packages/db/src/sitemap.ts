@@ -12,10 +12,11 @@ const COMPANY_PAGE = "o.status not in ('rejected', 'closed') and o.merged_into_i
 // ponytail: offset over the live rows, which is the whole live set at most; a keyset on id when one part's offset gets slow
 export const SITEMAP_QUERIES = {
   counts: `select (select count(*) from job where ${LIVE})::int as jobs, (select count(*) from organisation o where ${COMPANY_PAGE})::int as companies`,
-  jobs: `select job.id::text as key, job.posted_at from job where ${LIVE} order by job.id limit ${SITEMAP_URLS} offset $1`,
+  jobs: `select job.id::text as key, job.title, job.county, job.posted_at from job where ${LIVE} order by job.id limit ${SITEMAP_URLS} offset $1`,
   companies: `select o.slug as key from organisation o where ${COMPANY_PAGE} order by o.id limit ${SITEMAP_URLS} offset $1`,
 };
-export type SitemapEntry = { kind: "job" | "company" | "occupation"; key: string; lastModified?: string };
+/** `title` and `county` only on a job: its address is made from them and the id (#288). */
+export type SitemapEntry = { kind: "job" | "company" | "occupation"; key: string; title?: string; county?: string | null; lastModified?: string };
 
 export const partIds = (kind: string, n: number) => Array.from({ length: Math.max(1, Math.ceil(n / SITEMAP_URLS)) }, (_, i) => `${kind}-${i}`);
 const occupationCodes = async (db: Db) => [...new Set((await getRules(db)).occupationLists.map((e) => e.code))].sort();
@@ -33,6 +34,6 @@ export async function sitemapPart(db: Db, id: string): Promise<SitemapEntry[] | 
   const offset = Number(m[2]) * SITEMAP_URLS;
   if (m[1] === "occupations") return (await occupationCodes(db)).slice(offset, offset + SITEMAP_URLS).map((key) => ({ kind: "occupation", key }));
   if (m[1] === "companies") return (await db.query<{ key: string }>(SITEMAP_QUERIES.companies, [offset])).rows.map((r) => ({ kind: "company", key: r.key }));
-  const rows = (await db.query<{ key: string; posted_at: Date }>(SITEMAP_QUERIES.jobs, [offset])).rows;
-  return rows.map((r) => ({ kind: "job", key: r.key, lastModified: r.posted_at.toISOString() }));
+  const rows = (await db.query<{ key: string; title: string; county: string | null; posted_at: Date }>(SITEMAP_QUERIES.jobs, [offset])).rows;
+  return rows.map((r) => ({ kind: "job", key: r.key, title: r.title, county: r.county, lastModified: r.posted_at.toISOString() }));
 }
