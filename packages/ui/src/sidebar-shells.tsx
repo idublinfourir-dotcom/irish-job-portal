@@ -1,13 +1,13 @@
 import { A } from "./link";
 import type { ReactNode } from "react";
-import { cx, SITE_NAME } from "./cx";
+import { SITE_NAME } from "./cx";
 import { adminLinks, portalLinks, type AdminRole, type PortalRole } from "./nav-links";
+import { NavItem } from "./nav-item";
 
 type Link = { label: string; href: string };
 type Group = { title?: string; links: Link[] };
 
-const item = (current: boolean) =>
-  cx("flex min-h-11 shrink-0 items-center justify-between gap-3 rounded-control px-3 font-semibold", current ? "bg-green-tint text-ink" : "text-ink hover:bg-hover-light");
+const ITEM = { base: "flex min-h-11 shrink-0 items-center justify-between gap-3 rounded-control px-3 font-semibold", on: "bg-green-tint text-ink", off: "text-ink hover:bg-hover-light" };
 
 /** One sidebar frame for the portal and the admin. Small screens: the nav is a row you scroll sideways, so it needs no script. */
 function Sidebar({ brand, tag, who, groups, counts = {}, current, children }: { brand: ReactNode; tag?: string; who: ReactNode; groups: Group[]; counts?: Record<string, number | undefined>; current?: string; children: ReactNode }) {
@@ -25,14 +25,14 @@ function Sidebar({ brand, tag, who, groups, counts = {}, current, children }: { 
             <div key={g.title ?? i} className="flex gap-1 md:flex-col" role={g.title ? "group" : undefined} aria-label={g.title}>
               {g.title && <p className="hidden px-3 pt-2 text-small font-semibold uppercase tracking-wide text-muted md:block">{g.title}</p>}
               {g.links.map((l) => (
-                <A key={l.href} href={l.href} aria-current={l.href === current ? "page" : undefined} className={item(l.href === current)}>
+                <NavItem key={l.href} href={l.href} current={current} {...ITEM}>
                   {l.label}
                   {counts[l.label] !== undefined && (
                     <span data-count className="rounded-pill bg-white px-2 text-small">
                       {counts[l.label]}
                     </span>
                   )}
-                </A>
+                </NavItem>
               ))}
             </div>
           ))}
