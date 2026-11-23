@@ -197,6 +197,18 @@ export async function setStage(db: pg.Pool, userId: string, b: { jobId: string; 
   return { ok: true, offerHint: b.stage === "offer" }; // #86: "Got an offer? We can handle your permit"
 }
 
+/** B31 (#86): everything the candidate tracks, newest change first, at most 200 rows (`count` is the number tracked in all). A job that is no longer live
+ *  shows only title, employer and reason, as in the saved list; route, stage and updatedAt always stay. Stages: redirect applied, interview, offer,
+ *  rejected, withdrawn; on site applied, viewed, shortlisted, rejected, offer, hired, withdrawn. One statement on the (candidate, job) key. */
+export async function listTracker(db: pg.Pool, userId: string) {
+  const r = await db.query(
+    `select ${CARD}, ${LIVE} as live, ${REASON}, t.route, t.stage, t.updated_at as "updatedAt", count(*) over ()::int as count
+     from tracker_entry t join job j on j.id = t.job_id where t.candidate_user_id = $1 order by t.updated_at desc, t.id desc limit 200`, [userId]);
+  const count: number = r.rows[0]?.count ?? 0;
+  const tracker = r.rows.map((x) => { delete x.count; return { ...stripIfClosed(x), route: x.route, stage: x.stage, updatedAt: x.updatedAt }; });
+  return { tracker, count };
+}
+
 // ===== one saved or tracked job, even when closed (#57, D4) =====
 const SIMILAR = 5;
 export const LIVE_SIMILAR = 6; // S9: "more jobs like this" under a live job
@@ -252,6 +264,24 @@ export async function putSettings(db: pg.Pool, userId: string, s: Record<string,
     `insert into candidate_notification_preference(candidate_user_id, category, channel, enabled) select $1, k, 'email', v from unnest($2::text[], $3::boolean[]) as t(k, v)
      on conflict (candidate_user_id, category, channel) where candidate_user_id is not null do update set enabled = excluded.enabled`, [userId, keys, keys.map((k) => s[k])]);
   return getSettings(db, userId);
+}
+
+/** B41: who accessed or received this candidate's data (the same list as the export's `whoAccessedOrReceivedYourData`: an organisation's name, "Portal staff"
+ *  or "Portal system", the action and the time), newest first, at most 200. Never an id or a staff name; an access the candidate made themselves is not in it.
+ *  Launch B writes the rows, so it is empty at Launch A. ponytail: runs the export's private function (migration 0025) and keeps one key, no new migration;
+ *  a dedicated function with a SQL limit if the other two lists grow. */
+export async function dataAccessLog(db: pg.Pool, userId: string) {
+  const r = await db.query("select private.candidate_export_extras($1) -> 'whoAccessedOrReceivedYourData' as log", [userId]);
+  return { log: (r.rows[0].log as { by: string; action: string; at: string }[]).slice(0, 200) };
+}
+
+/** B40: when the password last changed (null for a login with no password, Google only) and the sign-in methods on the account (`credential`, `google`).
+ *  Better Auth stamps `candidate_account.updated_at` when the password is changed or reset. */
+export async function getSecurity(db: pg.Pool, userId: string) {
+  const r = await db.query(
+    `select (select a.updated_at from candidate_account a where a.user_id = $1 and a.provider_id = 'credential') as "passwordChangedAt",
+            (select coalesce(array_agg(distinct a.provider_id order by a.provider_id), '{}') from candidate_account a where a.user_id = $1) as "signInMethods"`, [userId]);
+  return r.rows[0] as { passwordChangedAt: Date | null; signInMethods: string[] };
 }
 
 // ===== delete the account (D2) =====

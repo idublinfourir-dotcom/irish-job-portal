@@ -1,7 +1,7 @@
 // Step 16 (B1, B5, B12): the reads the candidate pages need that no route had, each a Work of the public gate (public-read.ts) so a page and its
 // route share the visitor read limit. Run as app_candidate. Pages reach them through apps/candidate/lib/data.ts.
 import type pg from "pg";
-import { SOC2010_CODES, socSlug, socTitle } from "@portal/rules";
+import { REGISTRATION_BODIES, SOC2010_CODES, socSlug, socTitle } from "@portal/rules";
 import { getGuide } from "./content";
 import type { Work } from "./public-read";
 import { getRules } from "./rules-data";
@@ -39,3 +39,7 @@ export const sectorsRead: Work = async (db) => ({ sectors: await sectorCounts(db
 export const guideRead: Work = (db, q) => getGuide(db, q.get("slug") ?? "");
 export const minimumsRead: Work = (db) => minimumsInForce(db);
 export const occupationsRead: Work = (db) => occupationPicker(db);
+
+// ===== B39: the registration bodies, for the profile's dropdown =====
+/** The bodies the profile may name (decision #269's code file), as id, name and the body's own page. The profile's `registrationBody` stays free text (max 120), so a value typed earlier still reads back. */
+export const registrationBodiesRead: Work = async () => ({ bodies: Object.values(REGISTRATION_BODIES).map(({ id, name, url }) => ({ id, name, url })) });

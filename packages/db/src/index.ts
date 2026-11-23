@@ -71,6 +71,7 @@ export * from "./candidate-route";
 export * from "./public-read";
 export * from "./page-reads";
 export * from "./candidate";
+export * from "./candidate-notices";
 export * from "./files";
 export { sharpWorks } from "./file-disarm";
 export * from "./services-request";

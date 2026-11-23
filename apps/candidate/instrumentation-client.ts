@@ -7,7 +7,7 @@ import { sentryOptions } from "@portal/auth/sentry";
 initBotId({
   protect: [
     "/api/auth/candidate/sign-up/email", "/api/auth/candidate/sign-in/email", "/api/auth/candidate/request-password-reset",
-    "/api/auth/candidate/send-verification-email", "/api/auth/candidate/sign-in/social", "/api/report", "/api/contact",
+    "/api/auth/candidate/send-verification-email", "/api/auth/candidate/change-unverified-email", "/api/auth/candidate/sign-in/social", "/api/report", "/api/contact",
   ].map((path) => ({ path, method: "POST" })),
 });
 

@@ -213,7 +213,7 @@ describe("tracker (M2) and withdraw", () => {
     expect(b.json.cases.at(-1)).toMatchObject({ status: "decision", decisionOutcome: "granted" });
     expect(b.json.cases.at(-2).documentCount).toBe(1);
     const o = await call(R.one, "GET", p, { params: { id: ids[0]! } });
-    expect(Object.keys(o.json.case).sort()).toEqual(["createdAt", "decisionOutcome", "documentCount", "id", "jobId", "jobTitle", "lastChangeAt", "permitType", "status"]);
+    expect(Object.keys(o.json.case).sort()).toEqual(["createdAt", "decisionOutcome", "documentCount", "documentsNeeded", "employerName", "id", "jobId", "jobTitle", "lastChangeAt", "payer", "permitType", "status"]); // B32 added employerName, payer, documentsNeeded
     // the view itself: app_candidate reads the 0061 columns
     expect((await db.pool("app_candidate").query("select decision_outcome, documents_needed, referral_solicitor_id from candidate_services_case where id = $1", [ids[0]])).rows)
       .toEqual([{ decision_outcome: "granted", documents_needed: [], referral_solicitor_id: null }]);

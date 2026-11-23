@@ -6,6 +6,7 @@
 import type pg from "pg";
 import { BadEligibilityInput, registrationFor } from "@portal/rules";
 import { QueueRefused } from "./admin-queue";
+import { documentLabels } from "./case-document-codes";
 import { CANDIDATE_MAX_BODY, CANDIDATE_RATE, hasControl, inTransaction, isObject, only, Refuse, withinRate } from "./candidate-route";
 import { getPool } from "./index";
 import type { Side } from "./files";
@@ -164,7 +165,12 @@ async function createCase(db: pg.Pool, side: Side, who: Who, b: CaseRequest) {
 // ===== tracker (M2)
 const FIELDS = (side: Side) => `c.id::text as id, c.status, c.decision_outcome as "decisionOutcome", c.permit_type as "permitType", c.job_id::text as "jobId", j.title as "jobTitle",
   c.created_at::text as "createdAt", coalesce((select max(t.at) from private.${side}_case_timeline($1, c.id) t), c.created_at)::text as "lastChangeAt",
-  (select count(*)::int from ${side}_case_document d where d.services_case_id = c.id and d.storage_key is not null) as "documentCount"`;
+  (select count(*)::int from ${side}_case_document d where d.services_case_id = c.id and d.storage_key is not null) as "documentCount"${MORE[side]}`;
+// B32: what the candidate's case page also shows: the employer's name (the job's, else the company's: a case with no job and no company has none), who pays
+// (employer, agency or null) and the documents we are asking for now, as codes (labelled in `shape`). Never a staff name, id or note (#272). The portal rows
+// stay as they were (B53 adds its own).
+const MORE = { candidate: `, coalesce(j.employer_name, (select o.display_name from organisation o where o.id = c.organisation_id)) as "employerName", c.payer, c.documents_needed as "documentsNeeded"`, portal: "" };
+const shape = (side: Side, r: Record<string, unknown>) => (side === "candidate" ? { ...r, documentsNeeded: documentLabels(r.documentsNeeded as string[]) } : r);
 // A list takes its page on the index first (the same rule as the reader's), then the wrapper confirms each row of the page, so the cost of a page
 // does not grow with the number of cases (each wrapper call is a few dozen buffer hits of function planning).
 const PAGE = (side: Side, where: string) => `select ${FIELDS(side)} from (select * from ${side}_services_case where ${where} and id < $2::bigint order by id desc limit ${CASE_PAGE + 1}) c
@@ -181,14 +187,14 @@ async function readOne(db: Pick<pg.Pool, "query">, side: Side, who: { userId: st
   if (!validId(id)) throw new Refuse(404, "CASE_NOT_FOUND");
   const r = (await db.query(TRACKER_SQL[side].one, [who.userId, id])).rows[0];
   if (!r) throw new Refuse(404, "CASE_NOT_FOUND");
-  return r;
+  return shape(side, r);
 }
 
 async function listCases(db: pg.Pool, side: Side, who: Who, after: string | null) {
   const from = after === null ? MAX_ID : decodeIdCursor("services_cases", after);
   const all = (await db.query(TRACKER_SQL[side].list, side === "candidate" ? [who.userId, from] : [who.userId, from, COMPANY_READERS.includes(who.role ?? "") ? who.organisationId : null])).rows;
   const rows = all.slice(0, CASE_PAGE);
-  return { cases: rows, next: all.length > CASE_PAGE ? encodeIdCursor("services_cases", rows.at(-1)!.id) : null };
+  return { cases: rows.map((r) => shape(side, r)), next: all.length > CASE_PAGE ? encodeIdCursor("services_cases", rows.at(-1)!.id) : null };
 }
 
 // ===== the four routes of each side
