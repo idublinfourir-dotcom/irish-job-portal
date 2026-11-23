@@ -44,7 +44,7 @@ export function checkOrigin(origin: string | null, own: string): void {
 }
 
 const STATUS = new Map<string, number>(Object.entries({
-  bad_body: 400, bad_action: 400, bad_item_id: 400, bad_reason: 400, bad_question: 400, bad_cursor: 400, bad_input: 400, bad_query: 400, bad_domain: 400,
+  bad_body: 400, bad_action: 400, bad_item_id: 400, bad_reason: 400, bad_question: 400, bad_tab: 400, bad_cursor: 400, bad_input: 400, bad_query: 400, bad_domain: 400,
   bad_origin: 403, not_reviewer: 403, not_active_staff: 403,
   not_found: 404,
   already_decided: 409, not_claimed: 409, not_claimer: 409, claimed_by_other: 409, organisation_not_pending: 409, has_permit_history: 409,

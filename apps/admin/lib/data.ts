@@ -6,7 +6,7 @@
 import "server-only";
 import { headers } from "next/headers";
 import {
-  getAccountReview, getContact, getContentPage, getFloorCheck, getItem, getJobQueueItem, getPool, getReport, getServiceCase, getCase, latestPermitRises, listAccountReviews, listAudit,
+  type ApproveInput, dryRunApprove, getAccountReview, getContact, getContentPage, getFloorCheck, getItem, getJobQueueItem, getPool, getReport, getServiceCase, getCase, latestPermitRises, listAccountReviews, listAudit,
   listContact, listContentPages, listCases, listDomains, listFloorChecks, listJobQueue, listManualPosts, listOwnerReassigns, listQueue, listReports, listRules, listServiceCases,
   listSolicitors, listStaff, listStaleContent, previewCompanies, previewContentPage, signupNoCounts, staffMe, deteLinkSuggestions,
 } from "@portal/db";
@@ -14,9 +14,10 @@ import {
   accuracySample, fetchedDecisions, listCandidateMerges, listCompanySeed, listDataRequests, listOverdue, listScheduledChecks, listSettings, myCounts, targetCounts,
 } from "@portal/db/staff-tools";
 import { listLegal } from "@portal/db/legal-texts";
+import { queueRules } from "./queue-rules";
 import { requireStaff } from "./staff";
 
-export type { AuditFilter, AuditRow } from "@portal/db";
+export type { ApproveInput, AuditFilter, AuditRow, DryRun } from "@portal/db";
 
 type Pool = ReturnType<typeof getPool>;
 /** A read run as the signed-in staff member: `fn(pool, staffId, ...args)`. */
@@ -30,6 +31,7 @@ export const readCounts = asStaff(myCounts); // (options?) { merges: true } adds
 // lists and items of the review queues
 export const readFetchedJobs = asStaff(listQueue);
 export const readFetchedJob = asStaff(getItem);
+export const readFetchedJobDryRun = asStaff(async (db: Pool, staff: string, id: string, input: ApproveInput) => dryRunApprove(db, staff, id, input, await queueRules(db))); // what Approve would do, nothing written
 export const readFetchedDecisions = asStaff(fetchedDecisions);
 export const readAccountReviews = asStaff(listAccountReviews);
 export const readAccountReview = asStaff(getAccountReview);

@@ -22,13 +22,13 @@ function refusal(e: unknown): Response {
 export async function GET(request: Request) {
   try {
     const staff = await requireStaff(request.headers);
-    const q = readQuery(request.url, ["id", "after"]);
+    const q = readQuery(request.url, ["id", "after", "tab"]);
     const id = q.id ?? null;
     if (id !== null) {
       const found = await getAccountReview(getPool(), staff, id);
       return found ? Response.json({ item: found }) : fail("not_found", 404);
     }
-    return Response.json(await listAccountReviews(getPool(), staff, { after: q.after }));
+    return Response.json(await listAccountReviews(getPool(), staff, { after: q.after, tab: q.tab }));
   } catch (e) {
     return refusal(e);
   }

@@ -1,5 +1,5 @@
 // The fetched-job queue (#193, #234 D7), for staff holding fetched_job_reviewer: GET lists the open and claimed items (?after=) or shows one with the advert
-// text (?id=); POST claims, releases, approves (the claimer's occupation code, pay and contract; the rules re-run) or rejects (a reason code). The role check is
+// text, the quoted evidence and the matcher model (?id=); the list takes ?stage= (one category tab) and gives the count per stage; POST claims, releases, approves (the claimer's occupation code, pay and contract; the rules re-run) or rejects (a reason code). The role check is
 // inside each database call, reads included.
 import { staffSettings } from "@portal/auth";
 import { approve, claim, getItem, getPool, listQueue, reject, release } from "@portal/db";
@@ -25,12 +25,12 @@ const FIELDS: Record<string, Field> = {
 export async function GET(request: Request) {
   try {
     const staff = await requireStaff(request.headers);
-    const q = readQuery(request.url, ["id", "after"]);
+    const q = readQuery(request.url, ["id", "after", "stage"]);
     if (q.id !== undefined) {
       const found = await getItem(getPool(), staff, q.id);
       return found ? Response.json({ item: found }) : Response.json({ error: "not_found" }, { status: 404 });
     }
-    return Response.json(await listQueue(getPool(), staff, { after: q.after }));
+    return Response.json(await listQueue(getPool(), staff, { after: q.after, stage: q.stage }));
   } catch (e) {
     return refuse(e, "fetched-jobs");
   }

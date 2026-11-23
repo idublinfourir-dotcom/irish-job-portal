@@ -31,6 +31,7 @@
     "getEmployerJobAuthority": "GET /api/employer-jobs/authority (account_reviewer, administrator)",
     "listFetchedJobQueue": "GET /api/fetched-jobs (fetched_job_reviewer)",
     "actOnFetchedJobItem": "POST /api/fetched-jobs (fetched_job_reviewer)",
+    "dryRunFetchedJobApprove": "GET /api/fetched-jobs/dry-run (fetched_job_reviewer)",
     "listManualPosts": "GET /api/manual-jobs (account_reviewer, trust_and_safety, administrator)",
     "actOnManualPost": "POST /api/manual-jobs (account_reviewer)",
     "listSponsorConfirmations": "GET /api/manual-jobs/sponsor-confirmation (account_reviewer, trust_and_safety, administrator)",
