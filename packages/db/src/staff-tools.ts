@@ -6,6 +6,7 @@
 import type pg from "pg";
 import { QueueRefused } from "./admin-queue";
 import { parseSeed, seedRows, type SeedResult, type SeedRow } from "./company-seed";
+import { DETE_LINK_VIEWERS, deteLinkSuggestions } from "./dete-links";
 import { fileStore } from "./file-store";
 import { validId } from "./search";
 import { staffCounts, type StaffCounts } from "./staff-counts";
@@ -493,7 +494,11 @@ export async function targetCounts(db: Q, staff: string): Promise<TargetCounts> 
 }
 
 // ===== Q11: the signed-in member's counts =====
-/** Any active staff login: the counts its roles cover (none for a login with no role). The role read and one counts statement. */
-export async function myCounts(db: Q, staff: string): Promise<StaffCounts> {
-  return staffCounts(db, staff, await staffRoles(db, staff));
+/** Any active staff login: the counts its roles cover (none for a login with no role). The role read and one counts statement (`merges` adds the suggestion count, 4 more). */
+export async function myCounts(db: Q, staff: string, o: { merges?: boolean } = {}): Promise<StaffCounts> {
+  const roles = await staffRoles(db, staff);
+  const counts = await staffCounts(db, staff, roles);
+  // B57: the suggestion count runs the name matcher over the whole DETE list, so it is asked for (the name merges page), never part of every sidebar read.
+  if (o.merges && DETE_LINK_VIEWERS.some((r) => roles.includes(r))) counts.mergeSuggestions = (await deteLinkSuggestions(db, staff, 1)).total;
+  return counts;
 }

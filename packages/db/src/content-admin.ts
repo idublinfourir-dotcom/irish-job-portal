@@ -113,15 +113,19 @@ export async function listContentPages(db: Q, staff: string, o: { kind?: string;
   return { items: rows.map(summary), next: all.length > CONTENT_PAGE && last ? Buffer.from(JSON.stringify({ t: last.updated_text, i: last.id })).toString("base64url") : null };
 }
 
-// Q14 (20c: "a list of stale checked-on dates"): published guides whose checked-on date is over STALE_DAYS old, oldest first, on content_page_stale_idx
-// (checked_on) where kind = 'guide' and status = 'published'. ponytail: 90 days is a placeholder until the owner names the period; guides only, as the index.
+// Q14 (20c: "a list of stale checked-on dates"; B74 adds help and occupation pages): published guides, help and occupation pages whose checked-on date is over STALE_DAYS old,
+// oldest first. A help page with no checked-on date is not listed: help may be published without one. ponytail: 90 days is a placeholder until the owner names the period;
+// content_page_stale_idx covers guides only, and the table is a few hundred rows (one text per occupation), so the other kinds are read by a scan.
 export const STALE_DAYS = 90;
-export const CONTENT_STALE = `select ${COLS} from content_page where kind = 'guide' and status = 'published' and checked_on < current_date - $1::int order by checked_on, id limit 101`;
+export const STALE_KINDS = ["guide", "help", "occupation"] as const;
+export const CONTENT_STALE =
+  `select ${COLS} from content_page where kind = any($2::text[]) and status = 'published' and checked_on < current_date - $1::int order by checked_on, id limit 101`;
 
-/** Published guides not checked for STALE_DAYS, oldest first, at most 100. */
-export async function listStaleGuides(db: Q, staff: string) {
+/** Published guides, help and occupation pages (or one of those kinds) not checked for STALE_DAYS, oldest first, at most 100. Any other kind is bad_kind. */
+export async function listStaleContent(db: Q, staff: string, kind?: string) {
+  if (kind !== undefined && !(STALE_KINDS as readonly string[]).includes(kind)) throw new QueueRefused("bad_kind");
   await requireRole(db, staff, EDITORS, "not_content_staff");
-  const rows = (await db.query<ContentRow>(CONTENT_STALE, [STALE_DAYS])).rows;
+  const rows = (await db.query<ContentRow>(CONTENT_STALE, [STALE_DAYS, kind === undefined ? STALE_KINDS : [kind]])).rows;
   return { staleDays: STALE_DAYS, items: rows.slice(0, 100).map(summary), truncated: rows.length > 100 };
 }
 
@@ -131,6 +135,12 @@ export async function getContentPage(db: Q, staff: string, id: string) {
   if (!validId(id)) return null;
   const r = (await db.query<ContentRow & { body: string }>(CONTENT_ONE, [id])).rows[0];
   return r ? { ...summary(r), body: r.body } : null;
+}
+
+/** What the public page of this content page would be made from, whatever its state (B74): the fields the public reads give (content.ts ContentPage), plus the state. null for an unknown id. */
+export async function previewContentPage(db: Q, staff: string, id: string) {
+  const p = await getContentPage(db, staff, id);
+  return p && { id: p.id, kind: p.kind, slug: p.slug, title: p.title, body: p.body, sourceUrl: p.sourceUrl, checkedOn: p.checkedOn, publishedAt: p.publishedAt, updatedAt: p.updatedAt, status: p.status };
 }
 
 // ===== writes =====

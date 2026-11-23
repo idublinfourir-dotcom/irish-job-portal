@@ -11,10 +11,10 @@ import { assertPageBudget, measurePages } from "./perf/pages";
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 
-// Measured on 13 November 2026: requireStaff is 2 statements, the role check 1, the page 1 (4 in all). Medians over 9 warm calls through the route on a log of
+// Measured on 13 November 2026: requireStaff is 2 statements, the role check 1, the page 1 (4 in all; B59 adds one read for the staff names and object labels, 5). Medians over 9 warm calls through the route on a log of
 // 30,000 rows: 1 to 3 ms. Pages are 8 kB pages touched by one page of 51 rows (planning + execution + serialisation), measured: no filter 10, one staff member 23,
-// a rare action 7 (through audit_event_action_idx, 0023; without it the whole log is read), a two-day range 7, one object 11, every filter together 19. Limits are about 3 times that.
-const BUDGET = { statements: 4, ms: 15, pages: { none: 40, staff: 80, rare: 30, range: 30, object: 40, combined: 60 } };
+// a rare action 7 (through audit_event_action_idx, 0023; without it the whole log is read), a two-day range 7, one object 11, every filter together 19, kind data_access 10 and one case 10 (through the 0069 indexes; without them each read the whole log, 498 pages). Limits are about 3 times that.
+const BUDGET = { statements: 5, ms: 15, pages: { none: 40, staff: 80, rare: 30, range: 30, object: 40, combined: 60, kind: 30, case: 30 } };
 
 let db: TestDb, h: Awaited<ReturnType<typeof staffHarness>>, route: Route, su: pg.Pool;
 const get = (who: string | null, query = "", o: Parameters<typeof h.call>[4] = {}) => h.call(route, "/api/audit", who, undefined, { ...o, query });
@@ -114,7 +114,8 @@ describe("the page", () => {
   });
   it("shows what an auditor needs and no more: ids, codes and the changed values, never a password or a token", async () => {
     const r = await h.ok(get("ad1", q({ action: "test.act1" })));
-    expect(Object.keys(r.events[0]).sort()).toEqual(["action", "actor", "after", "at", "before", "changedColumns", "id", "kind", "objectId", "objectType", "reasonCode", "relatedCase", "roleInForce", "secondStaff", "source"]);
+    expect(Object.keys(r.events[0]).sort()).toEqual(["action", "actor", "after", "at", "before", "changedColumns", "id", "kind", "objectId", "objectLabel", "objectType", "reasonCode", "relatedCase", "roleInForce", "secondStaff", "secondStaffName", "source"]);
+    expect(Object.keys(r.events[0].actor).sort()).toEqual(["candidate", "portal", "staff", "staffName", "system"]);
     expect(JSON.stringify(r)).not.toMatch(/password|token|hash/i);
   });
 });
@@ -156,7 +157,8 @@ describe("filters", () => {
   it("refuses an unknown or repeated query parameter", async () => {
     await h.no(get("ad1", "?x=1"), 400, "bad_query");
     await h.no(get("ad1", "?action=a&action=b"), 400, "bad_query");
-    await h.no(get("ad1", "?kind=security"), 400, "bad_query");
+    await h.no(get("ad1", "?kind=security&kind=security"), 400, "bad_query");
+    await h.no(get("ad1", "?case=a&case=b"), 400, "bad_query");
   });
 });
 
@@ -178,12 +180,14 @@ describe("performance", () => {
        select 'admin_action', ($1::text[])[1 + g % $2], 'bulk.act' || (g % 25), 'org', (g % 5000)::text, 'panel', now() - make_interval(mins => g * 25)
          from generate_series(1, 30000) g`, [actors, actors.length]);
     await su.query("insert into audit_event(kind, actor_staff_user_id, action, object_type, object_id, source, at) select 'admin_action', $1, 'rare.action', 'org', 'rare' || g, 'panel', now() - make_interval(days => g * 30) from generate_series(1, 10) g", [h.staff.ad1]);
+    // B59: ten personal data views and ten rows of one case, a month apart, among the 30,000 (0069 indexes both filters)
+    await su.query("insert into audit_event(kind, actor_staff_user_id, action, object_type, object_id, related_case, source, at) select 'data_access', $1, 'case_document.open', 'case_document', g::text, case when g <= 10 then 'strike:7' end, 'panel', now() - make_interval(days => g * 30) from generate_series(1, 10) g", [h.staff.ad1]);
     await su.query("vacuum (analyze) audit_event");
     const [, n] = await counted(() => get("ad1", q({ action: "bulk.act3" })));
     expect(n).toBe(BUDGET.statements);
     const ms = await median(() => get("ad1", q({ action: "bulk.act3" })));
     expect(ms).toBeLessThan(BUDGET.ms);
-    const none = [null, null, null, null, null, null, null, null];
+    const none = [null, null, null, null, null, null, null, null, null, null];
     const stmt = (i: Record<number, unknown>) => ({ text: AUDIT_PAGE_SQL, values: none.map((v, k) => i[k] ?? v) });
     const client = await su.connect();
     try {
@@ -194,6 +198,8 @@ describe("performance", () => {
         range: stmt({ 4: "2026-10-01", 5: "2026-10-03" }),
         object: stmt({ 3: "42" }),
         combined: stmt({ 0: h.staff.ad1, 1: "bulk.act3", 2: "org", 3: "42", 4: "2025-01-01", 5: "2026-12-31" }),
+        kind: stmt({ 8: "data_access" }),
+        case: stmt({ 9: "strike:7" }),
       })) assertPageBudget(`audit page, ${name} filter`, await measurePages(client, [values]), BUDGET.pages[name as keyof typeof BUDGET.pages]);
     } finally { client.release(); }
   });
