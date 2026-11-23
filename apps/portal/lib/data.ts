@@ -5,6 +5,7 @@
 // Component fails the build. The wall test beside it (data.test.ts) keeps pages from reaching round it.
 import "server-only";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import type { PortalLogin } from "@portal/auth";
 import { agencyJobs } from "./agency-jobs";
 import { caseList } from "./cases";
@@ -44,4 +45,30 @@ export const readAgencyJobs = read(agencyJobs, "/api/portal/agency-jobs"); // ?a
 export async function readLogin(): Promise<PortalLogin | null> {
   const login = await portalLogin(new Request(new URL("/api/portal/session", portalOrigin()), { headers: await headers() }));
   return login instanceof Response ? null : login;
+}
+
+/** Where a signed-out visitor goes. The sign-in page itself is built in step 16 wave 3 (P13); change the path here only. */
+export const PORTAL_SIGN_IN = "/sign-in";
+/** A page's guard: the signed-in login, or a redirect to the sign-in page (no session, or a blocked login). The roles of each page's own routes still apply. */
+export async function requireLogin(): Promise<PortalLogin> {
+  const login = await readLogin().catch(() => null);
+  if (!login) redirect(PORTAL_SIGN_IN);
+  return login;
+}
+
+/**
+ * P3: what the sidebar shows: the signed-in member's company name (the company read) and role (the login), or null for a visitor, a login with no company
+ * yet, or any failure (the frame must not be why a page fails; sign-up and sign-in pages share this layout and show the bare page). Two session checks, run together.
+ * ponytail: a one-statement read of name and role in lib/profile.ts would halve the cost; add it if the sidebar's statements matter.
+ */
+export async function readShell(): Promise<{ companyName: string; role: string } | null> {
+  await headers(); // outside the try: while Next prerenders, this throws its own "dynamic page" signal, which must not be swallowed (a swallowed one bakes the signed-out frame into a static page)
+  try {
+    const [login, company] = await Promise.all([readLogin(), readCompany()]);
+    const name = (company.body.company as { name?: unknown } | undefined)?.name;
+    const role = login?.membership?.role;
+    return company.status === 200 && typeof name === "string" && role ? { companyName: name, role } : null;
+  } catch {
+    return null;
+  }
 }

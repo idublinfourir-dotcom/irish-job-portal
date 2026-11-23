@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { DM_Sans, Outfit } from "next/font/google";
-import { AdminShell } from "@portal/ui";
+import { ADMIN_ROLES, AdminShell, SITE_NAME, type AdminRole } from "@portal/ui";
+import { readSidebar } from "../lib/data";
 import "./globals.css";
 
 // The two fonts, as the CSS variables packages/ui/src/tokens.css uses.
@@ -9,18 +10,30 @@ const outfit = Outfit({ subsets: ["latin"], weight: "600", variable: "--font-out
 const dmSans = DM_Sans({ subsets: ["latin"], weight: ["400", "600"], variable: "--font-dm-sans", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Admin",
+  title: `${SITE_NAME} admin`,
   robots: { index: false, follow: false },
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+const isRole = (r: string): r is AdminRole => (ADMIN_ROLES as readonly string[]).includes(r);
+
+/**
+ * P4: a signed-in staff member gets the sidebar with their name, their roles, their queue counts and only the links their roles may open. A visitor gets the
+ * bare page (the staff sign-in and reset pages share this layout). The global search box stays out until B58 exists.
+ */
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const me = await readSidebar();
   return (
     <html lang="en" className={`${outfit.variable} ${dmSans.variable}`}>
       <body>
-        {/* ponytail: no roles until the admin pages read the signed-in staff member; only the links every staff member may open show */}
-        <AdminShell roles={[]} name="Staff">
-          {children}
-        </AdminShell>
+        {me ? (
+          <AdminShell roles={me.roles.filter(isRole)} name={me.name} counts={me.counts}>
+            {children}
+          </AdminShell>
+        ) : (
+          <main id="main" className="mx-auto min-h-screen max-w-page p-4 md:p-8">
+            {children}
+          </main>
+        )}
       </body>
     </html>
   );

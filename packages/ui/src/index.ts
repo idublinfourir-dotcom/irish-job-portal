@@ -6,5 +6,6 @@ export * from "./display";
 export * from "./nav";
 export * from "./dialog";
 export * from "./candidate-shell";
+export * from "./nav-links";
 export * from "./sidebar-shells";
 export * from "./link";

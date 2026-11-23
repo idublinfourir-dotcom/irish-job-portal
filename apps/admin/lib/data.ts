@@ -15,6 +15,7 @@ import {
 } from "@portal/db/staff-tools";
 import { listLegal } from "@portal/db/legal-texts";
 import { queueRules } from "./queue-rules";
+import { sidebarCounts } from "./sidebar";
 import { requireStaff } from "./staff";
 
 export type { ApproveInput, AuditFilter, AuditRow, DryRun } from "@portal/db";
@@ -27,6 +28,20 @@ const asStaff = <A extends unknown[], R>(fn: (db: Pool, staff: string, ...a: A) 
 // who is signed in, and the sidebar
 export const readMe = asStaff(staffMe);
 export const readCounts = asStaff(myCounts); // (options?) { merges: true } adds the name-merge suggestion count
+/**
+ * P4: what the sidebar shows: the signed-in staff member's name, roles and queue counts (staffMe and myCounts, as GET /api/staff/me and /me/counts), or null for a
+ * visitor, a disabled login or any failure (the sign-in pages share the layout and show the bare page; every page and route still checks its own role).
+ */
+export async function readSidebar(): Promise<{ name: string; roles: string[]; counts: Record<string, number | undefined> } | null> {
+  const h = await headers(); // outside the try: Next's own "dynamic page" signal while prerendering must not be swallowed (it would bake the signed-out frame into a static page)
+  try {
+    const staff = await requireStaff(h);
+    const me = await staffMe(getPool(), staff);
+    return { name: me.name, roles: me.roles, counts: sidebarCounts(await myCounts(getPool(), staff)) };
+  } catch {
+    return null;
+  }
+}
 
 // lists and items of the review queues
 export const readFetchedJobs = asStaff(listQueue);

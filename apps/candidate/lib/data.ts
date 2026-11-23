@@ -5,10 +5,11 @@
 import "server-only";
 import { headers } from "next/headers";
 import {
-  checkerRead, companyRead, countJobView, gatedRead, getPool, guideRead, guidesRead, helpListRead, helpRead, jobRead, jobsRead, legalRead, minimumsRead, occupationRead, occupationsRead,
+  checkerRead, companyRead, countJobView, gatedRead, getPool, getRules, guideRead, guidesRead, helpListRead, helpRead, jobRead, jobsRead, legalRead, minimumsRead, occupationRead, occupationsRead,
   permitNoticeRead, registrationBodiesRead, sectorsRead, similarRead, sitemapIds, sitemapIndexXml, sitemapPart, updatesRead, type ReadResult, type SitemapEntry, type Work,
 } from "@portal/db";
 import { candidateSettings, googleSettings } from "@portal/auth";
+import { standingLine } from "@portal/rules";
 import { alertsGet } from "./alerts";
 import { dataAccessGet, jobGet, noticesGet, profileGet, promptsGet, savedList, securityGet, settingsGet, trackerGet } from "./account";
 import { caseList, caseRead, caseTimeline } from "./cases";
@@ -89,3 +90,20 @@ export const readSitemapPart = (id: string): Promise<SitemapEntry[] | null> => k
 /** B21: the sitemap index file (/sitemap-index.xml), listing every file of readSitemapIds. */
 export const readSitemapIndex = async () => sitemapIndexXml(siteOrigin(), await readSitemapIds());
 export const siteOrigin = () => new URL(candidateSettings(process.env).baseURL).origin;
+
+/** P1: whether a candidate is signed in, for a page that shows something different to them (the home page hides its "Create a free account" block). The page's own session check, not a gated read: it costs no read-limit count. A failure counts as signed out. */
+export const readSignedIn = async (): Promise<boolean> => signedInCandidate(await headers()).then((l) => !("refused" in l), () => false);
+
+/**
+ * P1: what the site frame (header and footer) needs on every page: whether a candidate is signed in, and the standing line with the day the rules were last
+ * checked. The day comes from the rules in force (the same value as GET /api/minimums, rulesCheckedOn), kept by getRules, so a warm read costs no statement; the
+ * session check is the page's own (signedInCandidate), not a gated read, so the frame never counts against the visitor's read limit. A failure shows the signed-out
+ * frame without the line or the site origin (origin is for the JSON-LD): the frame must never be the reason a page (or the error page) fails; the page's own read shows the real error.
+ */
+export async function readSiteFrame(): Promise<{ signedIn: boolean; standingLine: string | null; origin: string | null }> {
+  const [signedIn, line] = await Promise.all([
+    readSignedIn(),
+    getRules(getPool()).then((r) => standingLine(r.minimums.checkedOn), () => null),
+  ]);
+  return { signedIn, standingLine: line, origin: (() => { try { return siteOrigin(); } catch { return null; } })() };
+}
