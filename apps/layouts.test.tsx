@@ -7,7 +7,6 @@ import AdminLayout from "./admin/app/layout";
 import CandidateLayout, { generateMetadata as candidateMeta } from "./candidate/app/layout";
 import PortalLayout, { metadata as portalMeta } from "./portal/app/layout";
 import AdminPage from "./admin/app/page";
-import CandidatePage from "./candidate/app/page";
 import PortalPage from "./portal/app/page";
 import { metadata as adminMeta } from "./admin/app/layout";
 
@@ -25,6 +24,8 @@ vi.mock("./candidate/lib/data", () => ({ readSiteFrame: async () => frame.value 
 vi.mock("./portal/lib/data", () => ({ readShell: async () => shell.value }));
 vi.mock("./admin/lib/data", () => ({ readSidebar: async () => sidebar.value }));
 
+// The candidate home page reads the database, so it has its own tests (candidate/app/_home, packages/db/test/home-page.test.ts); the layout is tried around a stand-in.
+const CandidatePage = () => <p>Nothing here yet.</p>;
 const candidate = async () => html(await CandidateLayout({ children: CandidatePage() }));
 const portal = async () => html(await PortalLayout({ children: PortalPage() }));
 const admin = async () => html(await AdminLayout({ children: AdminPage() }));
