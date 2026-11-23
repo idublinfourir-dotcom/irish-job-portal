@@ -54,16 +54,17 @@ async function counted<T>(fn: () => Promise<T>): Promise<[T, number]> {
   pg.Client.prototype.query = function (this: pg.Client, ...a: unknown[]) { c++; return (q as (...x: unknown[]) => unknown).apply(this, a); } as typeof q;
   try { return [await fn(), c]; } finally { pg.Client.prototype.query = q; }
 }
-const AUTH_PATHS = ["sign-up/email", "sign-in/email", "request-password-reset", "send-verification-email"];
+const AUTH_PATHS = ["sign-up/email", "sign-in/email", "request-password-reset", "send-verification-email", "change-unverified-email"];
 const calls = (who = person("x")) => [
   ["sign-up/email", who], ["sign-in/email", { email: who.email, password: who.password }],
   ["request-password-reset", { email: who.email, redirectTo: "/" }], ["send-verification-email", { email: who.email }],
+  ["change-unverified-email", { email: who.email, password: who.password, newEmail: "fake.bot.moved@example.test" }], // B40
 ] as const;
 
 describe("BOT_CHECK=on, the fake says bot", () => {
   beforeEach(() => verdict.mockResolvedValue({ isBot: true, isHuman: false, isVerifiedBot: false, bypassed: false }));
 
-  it("refuses sign-up, sign-in, the reset request and the resend with 403 and only the code; nothing is read or written", async () => {
+  it("refuses sign-up, sign-in, the reset request, the resend and the change of an unconfirmed address with 403 and only the code; nothing is read or written", async () => {
     const [res, statements] = await counted(async () => {
       const out = [];
       for (const [p, body] of calls(person("refused"))) { const r = await AUTH(post(`/api/auth/candidate/${p}`, body)); out.push([r.status, await r.text()]); }

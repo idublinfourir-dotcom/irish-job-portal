@@ -6,6 +6,7 @@ import type { Pool } from "pg";
 import { COUNT_NO, checkPortalSignup, checkSignup, signupPlugin, writeConsent, type Answers } from "./signup";
 import { emailLimitPlugin } from "./email-limit";
 import { isFresh, reauthPlugin } from "./reauth";
+import { UNVERIFIED_PATH, unverifiedEmailPlugin } from "./unverified-email";
 
 export { readAnswers, readPortalAnswers, checkSignup, checkPortalSignup, currentTermsId, writeConsent, type Answers, type PortalAnswers } from "./signup";
 export { createFakeEmail, type FakeEmail } from "./fake-email";
@@ -105,7 +106,9 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
   // C1: the dormant rules (retention rules 3 to 5, 0002_functions.sql) read last_active_at, so a sign-in and each session refresh set it;
   // a trigger then clears inactive_warned_at, which cancels a warning already sent. A refresh of a row deleted meanwhile passes null.
   const touchActive = async (s: { userId: string } | null) => void (s && (await database.query("update candidate_user set last_active_at = now() where id = $1", [s.userId])));
-  return betterAuth({
+  // The unverified-email plugin sends the confirmation through the finished instance (set just below), so the link is Better Auth's own.
+  const later: { send?: (body: { email: string }) => Promise<unknown> } = {};
+  const auth = betterAuth({
     appName: `portal-${name}`,
     baseURL,
     basePath: `/api/auth/${name}`,
@@ -128,7 +131,7 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
       fields: { lastRequest: "last_request" },
       customRules: {
         "/sign-in/email": { window: 60, max: 5 }, "/sign-up/email": { window: 60, max: 5 }, "/sign-in/social": { window: 60, max: 5 },
-        "/request-password-reset": { window: 300, max: 3 }, "/send-verification-email": { window: 300, max: 3 }, "/change-email": { window: 300, max: 3 },
+        "/request-password-reset": { window: 300, max: 3 }, "/send-verification-email": { window: 300, max: 3 }, "/change-email": { window: 300, max: 3 }, [UNVERIFIED_PATH]: { window: 300, max: 5 },
       },
     },
     ...(name === "candidate" && google ? { socialProviders: { google } } : {}),
@@ -146,7 +149,8 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
       ...(name === "staff" ? { expiresIn: STAFF_IDLE_SECONDS, updateAge: STAFF_REFRESH_SECONDS } : {}),
     },
     // Staff: server calls (requireStaff) refresh the session row, and this sends the new cookie back in Next.js route handlers and server actions.
-    plugins: name === "staff" ? [nextCookies()] : name === "candidate" || name === "portal" ? [emailLimitPlugin(database, name, secret), signupPlugin(database, name), reauthPlugin(name, secret)] : [],
+    plugins: name === "staff" ? [nextCookies()] : name === "candidate" || name === "portal"
+      ? [emailLimitPlugin(database, name, secret), signupPlugin(database, name), reauthPlugin(name, secret), ...(name === "candidate" ? [unverifiedEmailPlugin((b) => later.send!(b))] : [])] : [],
     // A Google sign-in joins an existing account with the same email only when Google says the email is verified AND that account's
     // email was confirmed here (Better Auth's defaults, written out so a change shows in review). No trusted providers: Google's word
     // alone is not enough for an unconfirmed email-and-password account, so there is no silent takeover.
@@ -218,6 +222,8 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
     // consent_record's id is made by the database (identity column); every other table keeps Better Auth's own ids.
     advanced: { ...(background ? { backgroundTasks: { handler: background } } : {}), disableOriginCheck: false, database: { generateId: ({ model }: { model: string }) => (model === "consentRecord" ? false : generateRandomString(32, "a-z", "A-Z", "0-9")) }, cookiePrefix: name, useSecureCookies: secure, ipAddress: { ipAddressHeaders: ["x-vercel-forwarded-for"] } },
   });
+  later.send = (body) => auth.api.sendVerificationEmail({ body });
+  return auth;
 }
 
 /** A request with no usable staff session. `why` is "no_session" or "not_active". */

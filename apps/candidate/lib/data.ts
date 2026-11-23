@@ -5,12 +5,12 @@
 import "server-only";
 import { headers } from "next/headers";
 import {
-  checkerRead, companyRead, countJobView, gatedRead, getPool, guideRead, helpRead, jobRead, jobsRead, legalRead, minimumsRead, occupationRead, occupationsRead, sectorsRead,
+  checkerRead, companyRead, countJobView, gatedRead, getPool, guideRead, helpRead, jobRead, jobsRead, legalRead, minimumsRead, occupationRead, occupationsRead, registrationBodiesRead, sectorsRead,
   similarRead, sitemapIds, sitemapPart, updatesRead, type ReadResult, type SitemapEntry, type Work,
 } from "@portal/db";
-import { candidateSettings } from "@portal/auth";
+import { candidateSettings, googleSettings } from "@portal/auth";
 import { alertsGet } from "./alerts";
-import { profileGet, promptsGet, savedList, settingsGet, jobGet } from "./account";
+import { dataAccessGet, jobGet, noticesGet, profileGet, promptsGet, savedList, securityGet, settingsGet, trackerGet } from "./account";
 import { caseList, caseRead, caseTimeline } from "./cases";
 import { signedInCandidate } from "./candidate";
 import { cvRead } from "./files";
@@ -31,6 +31,9 @@ export const readSectors = read(sectorsRead); // B1: the sectors with their live
 export const readGuide = read(guideRead); // B1: ?slug
 export const readMinimums = read(minimumsRead); // B5: the minimums in force, no occupation
 export const readOccupations = read(occupationsRead); // B12: every code with title, slug and list status, for the pickers
+export const readRegistrationBodies = read(registrationBodiesRead); // B39: the profile's registration body dropdown
+/** B40: which sign-in providers are on. Google only when both of its settings are set (off in production until G10), so a page hides its buttons otherwise. Reads no database. */
+export const readSignInProviders = () => ({ google: googleSettings(process.env) !== undefined });
 
 /** B1 (S12): counts one view of a job today; false when it is not live. Call it after readJob answered ok, which already counted the visit against the read limit. */
 export const countView = (jobId: string) => countJobView(getPool(), jobId);
@@ -49,6 +52,11 @@ export const readProfile = () => mine(profileGet);
 export const readCv = () => mine(cvRead);
 export const readSaved = (query?: Query) => mine(savedList, query);
 export const readAlerts = () => mine(alertsGet);
+export const readAlert = (id: string) => mine(alertsGet, { id }); // one alert for the edit form (/account/alerts?edit=<id>); 404 ALERT_NOT_FOUND for another candidate's
+export const readTracker = () => mine(trackerGet); // B31
+export const readNotices = (query?: Query) => mine(noticesGet, query); // B38: ?after=
+export const readSecurity = () => mine(securityGet); // B40: passwordChangedAt and signInMethods
+export const readDataAccess = () => mine(dataAccessGet); // B41: who viewed my data
 export const readDidYouApply = () => mine(promptsGet);
 export const readNotificationSettings = () => mine(settingsGet);
 export const readMyJob = (jobId: string) => mine(jobGet, { id: jobId }); // saved or tracked state of one job
