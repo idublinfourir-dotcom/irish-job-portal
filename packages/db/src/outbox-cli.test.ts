@@ -78,6 +78,14 @@ describe("notice emails", () => {
     expect(m.text).toContain("Reports in the last 24 hours: 4");
     expect(m.html + m.text).not.toMatch(/<script|href=/);
   });
+  it("a candidate notice (settings on) ends with a Notification settings link on the site; with no site, or off, there is none (B75)", () => {
+    const m = noticeEmail("account_merged", SITE, [], true);
+    expect(m.html).toContain(`href="${SITE}/account/settings"`);
+    expect(m.text).toContain(`Notification settings: ${SITE}/account/settings`);
+    expect(noticeEmail("account_merged", SITE).html).not.toContain("/account/settings");
+    expect(noticeEmail("account_merged", null, [], true).html).not.toContain("href=");
+    for (const part of [m.text, m.html]) expect(part).not.toMatch(/Unsubscribe|[\u2013\u2014]/);
+  });
   it("with no site known (a staff or contact row) there is no button and no link", () => {
     expect(noticeEmail("team_removed", null).html).not.toContain("href=");
   });

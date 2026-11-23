@@ -5,7 +5,7 @@
 // or search.ts (a directory import): it reads the same SOC data file for titles and keeps a copy of search.ts's salaryLine. Both copies are
 // tested against the originals in packages/db/test/job-alert-email.test.ts.
 import soc from "../../rules/data/soc2010-unit-groups.json" with { type: "json" };
-import { esc, FONT, linkHtml, render, SITE_NAME, SMALL } from "../../auth/src/email-layout.ts";
+import { C, esc, FONT, href, linkHtml, pillHtml, render, SITE_NAME, SMALL } from "../../auth/src/email-layout.ts";
 
 const TITLES: ReadonlyMap<string, string> = new Map(soc.unit_groups.map((u) => [u.code, u.title]));
 export const MAX_ALERTS = 10; // D1: the shared shape caps a row at 10 alerts and 20 jobs each; the reader applies the same caps to a hostile row
@@ -15,7 +15,7 @@ export type AlertRow = {
   id: string; candidate_user_id: string; occupation_code: string | null; sector: string | null; county: string | null; salary_min: number | null;
   badge: string | null; frequency: string; unsubscribe_token: string;
 };
-export type JobRow = { id: string; title: string; employer_name: string; county: string | null; salary_low: number | null; salary_high: number | null; pay_grade: string | null };
+export type JobRow = { id: string; title: string; employer_name: string; county: string | null; salary_low: number | null; salary_high: number | null; pay_grade: string | null; badge: string | null };
 export type RowAlert = { alertId: string; jobIds: string[] };
 
 /** The row's `alerts`, read defensively (params is jsonb): whole-number ids only, at most 10 alerts and 20 jobs each. */
@@ -56,6 +56,31 @@ export function filtersInWords(a: AlertRow): string {
   return `${parts.length ? parts.join(", ") : "all new jobs"} (${a.frequency === "weekly" ? "weekly" : "daily"})`;
 }
 
+const BADGES: Record<string, { label: string; word: string; bg: string }> = {
+  critical_skills_eligible: { label: "Critical Skills eligible", word: "Critical", bg: C.critical },
+  sponsor_confirmed: { label: "Sponsor confirmed", word: "Sponsor", bg: C.sponsor },
+};
+/** A job's pay for the alert row: the number line, or the public pay scale label (with its grade) when the job has only a grade. */
+export const payText = (j: JobRow): string | null =>
+  j.salary_low !== null || j.salary_high !== null ? salaryLine(j.salary_low, j.salary_high, null) : line(j.pay_grade) ? `Public pay scale (${line(j.pay_grade)})` : null;
+
+/** A short name for an alert, from its filters (alerts have no name of their own): "Nurses in Cork", at most 40 characters; null for "all new jobs". */
+export function alertName(a: AlertRow): string | null {
+  const base = (a.occupation_code && line(TITLES.get(a.occupation_code))) || line(a.sector), county = line(a.county);
+  const name = [base, county && (base ? `in ${county}` : county)].filter(Boolean).join(" ");
+  return name ? (name.length > 40 ? `${name.slice(0, 37)}...` : name) : null;
+}
+
+/** The alert's own results page: the same keys search.ts reads (a test holds this equal to search.ts searchParams). */
+export function resultsUrl(site: string, a: AlertRow): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of [["occupationCode", a.occupation_code], ["sector", a.sector], ["county", a.county], ["salaryMin", a.salary_min], ["badge", a.badge]] as const)
+    if (v !== null && v !== "") q.set(k, String(v));
+  return `${site}/jobs${q.size ? `?${q}` : ""}`;
+}
+/** The candidate's alert page opens this alert for editing (the page is built in step 16 P17; the id is the alert's own number). */
+export const editUrl = (site: string, a: AlertRow) => `${site}/account/alerts?edit=${encodeURIComponent(a.id)}`;
+
 const link = (site: string, token: string, scope: "one" | "all") => `${site}/api/alerts/unsubscribe?token=${encodeURIComponent(token)}&scope=${scope}`;
 
 /** SITE_URL as an https origin (no path, no login in it), or null. */
@@ -68,35 +93,38 @@ export function siteOrigin(v: string | undefined): string | null {
  * An alert not in `found` or owned by another candidate is left out, and so is a job not in `live`. Null when nothing is left.
  */
 export function buildAlertEmail(candidate: string, alerts: RowAlert[], found: Map<string, AlertRow>, live: Map<string, JobRow>, site: string) {
-  const blocks: string[] = [], html: string[] = [];
-  let first: AlertRow | undefined;
+  const blocks: string[] = [], html: string[] = [], seen = new Set<string>(), shown: AlertRow[] = [];
   for (const r of alerts) {
     const a = found.get(r.alertId);
     if (!a || a.candidate_user_id !== candidate) continue;
     const jobs = r.jobIds.map((id) => live.get(id)).filter((j): j is JobRow => !!j);
     if (!jobs.length) continue;
-    first ??= a;
-    const facts = (j: JobRow) => [line(j.employer_name), line(j.county), salaryLine(j.salary_low, j.salary_high, j.pay_grade)].filter(Boolean).join(", ");
-    const lines = jobs.map((j) => `- ${[line(j.title), facts(j)].filter(Boolean).join(", ")}\n  ${site}/jobs/${j.id}`);
-    blocks.push(`Your alert: ${filtersInWords(a)}\n${lines.join("\n")}\nStop this alert: ${link(site, a.unsubscribe_token, "one")}`);
+    shown.push(a);
+    jobs.forEach((j) => seen.add(j.id));
+    const facts = (j: JobRow) => [line(j.employer_name), line(j.county), payText(j)].filter(Boolean).join(", ");
+    const badge = (j: JobRow) => BADGES[j.badge ?? ""];
+    const lines = jobs.map((j) => `- ${[line(j.title), facts(j), badge(j)?.label].filter(Boolean).join(", ")}\n  ${site}/jobs/${j.id}`);
+    const results = resultsUrl(site, a), edit = editUrl(site, a), stop = link(site, a.unsubscribe_token, "one");
+    blocks.push(`Your alert: ${filtersInWords(a)}\n${lines.join("\n")}\nSee these jobs: ${results}\nEdit this alert: ${edit}\nStop this alert: ${stop}`);
     html.push(
-      `<p style="margin:8px 0 8px;font-size:14px;line-height:20px;font-weight:700;color:#1f2933;${FONT}">Your alert: ${esc(filtersInWords(a))}</p>` +
-      jobs.map((j) => `<p style="margin:0 0 12px;font-size:16px;line-height:22px;color:#1f2933;${FONT}">${linkHtml(`${site}/jobs/${j.id}`, line(j.title) || "A job")}<br>` +
-        `<span style="font-size:14px;color:#52606d">${esc(facts(j))}</span></p>`).join("") +
-      `<p style="${SMALL}">${linkHtml(link(site, a.unsubscribe_token, "one"), "Stop this alert")}</p>`,
+      `<p style="margin:12px 0 8px;font-size:14px;line-height:20px;font-weight:600;color:${C.ink};${FONT}">Your alert: ${esc(filtersInWords(a))}</p>` +
+      jobs.map((j) => `<p style="margin:0 0 12px;font-size:16px;line-height:22px;color:${C.ink}"><a href="${href(`${site}/jobs/${j.id}`)}" style="color:${C.green}">${esc(line(j.title) || "A job")}</a>` +
+        `${badge(j) ? ` ${pillHtml(badge(j)!.word, badge(j)!.bg)}` : ""}<br><span style="font-size:14px">${esc(facts(j))}</span></p>`).join("") +
+      `<p style="${SMALL}">${linkHtml(results, "See these jobs")} &middot; ${linkHtml(edit, "Edit this alert")} &middot; ${linkHtml(stop, "Stop this alert")}</p>`,
     );
   }
+  const first = shown[0];
   if (!first) return null;
-  const all = link(site, first.unsubscribe_token, "all");
-  const m = render("New jobs matching your job alerts", {
-    heading: "New jobs for you",
+  const all = link(site, first.unsubscribe_token, "all"), n = seen.size, name = shown.length === 1 ? alertName(first) : null;
+  const m = render(`${n} new ${n === 1 ? "job" : "jobs"}${shown.length > 1 ? ` from ${shown.length} of your alerts` : name ? `: ${name}` : ""}`, {
+    heading: `${n} new ${n === 1 ? "job" : "jobs"} for you`,
     paragraphs: ["These jobs were added since your last alert and match what you asked for."],
     extra: {
       html: `${html.join("")}<p style="${SMALL}">${linkHtml(all, "Stop all your job alerts")}</p>`,
       text: `${blocks.join("\n\n")}\n\nStop all your job alerts: ${all}`,
     },
-    button: { label: "See all jobs", url: `${site}/jobs` },
-    footer: `You got this email because you set up a job alert on ${SITE_NAME}. Use the links above to stop one alert or all of them.`,
+    button: shown.length === 1 ? { label: "See all new jobs", url: resultsUrl(site, first) } : { label: "See all jobs", url: `${site}/jobs` },
+    footer: `You got this email because you set up a job alert on ${SITE_NAME}. Use the links above to change one alert, stop one, or stop all of them.`,
   });
   return { ...m, headers: { "List-Unsubscribe": `<${all}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } };
 }
