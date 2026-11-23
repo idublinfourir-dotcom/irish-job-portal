@@ -90,8 +90,8 @@ export const occupationRead: Work = async (db, q, visitor) => {
   return o && { ...o, jobs: shown(o.jobs, visitor) };
 };
 export const helpRead: Work = (db, q) => getHelp(db, q.get("slug") ?? "");
-// The updates feed (GET /api/updates): ?after, the `next` of the page before. News, not jobs: a visitor pages it too.
-export const updatesRead: Work = (db, q) => listUpdates(db, q.get("after") ?? undefined);
+// The updates feed (GET /api/updates): ?after, the `next` of the page before, and ?category (B17). News, not jobs: a visitor pages it too.
+export const updatesRead: Work = (db, q) => listUpdates(db, q.get("after") ?? undefined, q.get("category") ?? undefined);
 
 // The eligibility checker (GET /api/checker). Strict: every key at most once, no other key, each value in its shape, else 400 before any statement.
 const CHECKER_KEYS = ["occupationCode", "annualPay", "relevantDegree", "degreeAwardMonth", "contractMonths", "weeklyHours", "title"];
@@ -124,7 +124,9 @@ export const checkerRead: Work = async (db, q) => {
 // ===== R5: the legal text in force (legal-texts.ts publishes it) =====
 export const LEGAL_IN_FORCE =
   "select purpose, version, body, published_at::text as published_at from consent_text where purpose = $1 order by published_at desc, id desc limit 1";
-export const SITE_PURPOSES = { candidate: ["signup_terms", "privacy_notice"], portal: ["portal_signup_terms", "privacy_notice"] } as const;
+// The cookie policy, the employer acceptable use text and the data retention text are public pages of both sites (B20, #290).
+const SHARED_TEXTS = ["privacy_notice", "cookie_policy", "employer_acceptable_use", "data_retention"] as const;
+export const SITE_PURPOSES = { candidate: ["signup_terms", ...SHARED_TEXTS], portal: ["portal_signup_terms", ...SHARED_TEXTS] } as const;
 
 /** The text in force for one of the site's purposes, or null before any version. Another purpose is 400. */
 export async function legalInForce(db: Pick<pg.Pool, "query">, site: keyof typeof SITE_PURPOSES, purpose: string | null) {

@@ -5,7 +5,7 @@
 import type pg from "pg";
 import { isSoc2010 } from "@portal/rules";
 import { QueueRefused } from "./admin-queue";
-import { validSlug } from "./content";
+import { HELP_CATEGORIES, UPDATE_CATEGORIES, validSlug } from "./content";
 import { isTime, validId } from "./search";
 import { requireRole } from "./staff-admin";
 import { AUDIT } from "./trust-safety";
@@ -13,7 +13,7 @@ import { AUDIT } from "./trust-safety";
 type Q = Pick<pg.Pool, "query">;
 type Db = Pick<pg.Pool, "query" | "connect">;
 
-export const KINDS = ["guide", "update", "help", "occupation"] as const;
+export const KINDS = ["guide", "update", "help", "occupation", "notice"] as const;
 export type Kind = (typeof KINDS)[number];
 export const STATUSES = ["draft", "published", "withdrawn"] as const;
 export const MAX_TITLE = 200;
@@ -21,7 +21,7 @@ export const MAX_BODY_CHARS = 50_000;
 export const MAX_SOURCE_URL = 500;
 export const CONTENT_PAGE = 20;
 /** Who publishes what. A content editor does not publish a guide or an occupation text: they state rules and numbers, so a rules-data editor approves them (20c). */
-export const PUBLISHER: Record<Kind, "content_editor" | "rules_data_editor"> = { help: "content_editor", update: "content_editor", guide: "rules_data_editor", occupation: "rules_data_editor" };
+export const PUBLISHER: Record<Kind, "content_editor" | "rules_data_editor"> = { help: "content_editor", update: "content_editor", notice: "content_editor", guide: "rules_data_editor", occupation: "rules_data_editor" };
 
 const ctrl = /[\p{Cc}\p{Cf}]/u;
 const title = (v: unknown) => typeof v === "string" && v.trim().length > 0 && v.length <= MAX_TITLE && !ctrl.test(v);
@@ -41,14 +41,31 @@ function checkedOn(v: unknown): boolean {
   return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === v && v <= new Date().toISOString().slice(0, 10);
 }
 
-export type Draft = { kind: string; slug: string; title: string; body: string; sourceUrl?: string; checkedOn?: string };
-export type Edit = { title?: string; body?: string; sourceUrl?: string; checkedOn?: string };
+/** The day an update's rule starts: a real calendar day, any year (it may be in the future, unlike checked-on). */
+function effectiveFrom(v: unknown): boolean {
+  if (typeof v !== "string" || !/^\d{4}-\d\d-\d\d$/.test(v)) return false;
+  const t = Date.parse(`${v}T00:00:00Z`);
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === v;
+}
+const category = (v: unknown) => typeof v === "string" && ([...UPDATE_CATEGORIES, ...HELP_CATEGORIES] as readonly string[]).includes(v);
+
+export type Draft = { kind: string; slug: string; title: string; body: string; sourceUrl?: string; checkedOn?: string; category?: string; effectiveFrom?: string };
+export type Edit = { title?: string; body?: string; sourceUrl?: string; checkedOn?: string; category?: string; effectiveFrom?: string };
 
 function checkFields(i: Edit): void {
   if (i.title !== undefined && !title(i.title)) throw new QueueRefused("bad_title");
   if (i.body !== undefined && !body(i.body)) throw new QueueRefused("bad_body_text");
   if (i.sourceUrl !== undefined && !sourceUrl(i.sourceUrl)) throw new QueueRefused("bad_source_url");
   if (i.checkedOn !== undefined && !checkedOn(i.checkedOn)) throw new QueueRefused("bad_checked_on");
+  if (i.category !== undefined && !category(i.category)) throw new QueueRefused("bad_category");
+  if (i.effectiveFrom !== undefined && !effectiveFrom(i.effectiveFrom)) throw new QueueRefused("bad_effective_from");
+}
+/** The database's own pairing rules (an update's category is not a help category; only an update has an effective day) as short codes. */
+function pairing(e: unknown): never {
+  const k = (e as { code?: string; constraint?: string });
+  if (k.code === "23514" && k.constraint === "content_page_category_check") throw new QueueRefused("bad_category");
+  if (k.code === "23514" && k.constraint === "content_page_effective_check") throw new QueueRefused("bad_effective_from");
+  throw e;
 }
 /** Slug rules: lower-case letters, digits and hyphens as the public reads accept (content.ts); an occupation page's slug is its SOC 2010 code (0018). */
 export function checkSlug(kind: string, slug: unknown): string {
@@ -78,14 +95,15 @@ async function writer<T>(db: Db, staff: string, any: readonly string[], why: str
 
 // ===== reads: a content editor, a rules-data editor or an administrator =====
 const COLS =
-  "id::text as id, kind, slug, title, status, source_url, checked_on::text as checked_on, published_at::text as published_at, updated_by_staff_user_id, updated_at::text as updated_text";
+  "id::text as id, kind, slug, title, status, source_url, checked_on::text as checked_on, published_at::text as published_at, updated_by_staff_user_id, updated_at::text as updated_text, " +
+  "category, effective_from::text as effective_from";
 export type ContentRow = {
   id: string; kind: string; slug: string; title: string; status: string; source_url: string | null; checked_on: string | null; published_at: string | null;
-  updated_by_staff_user_id: string | null; updated_text: string;
+  updated_by_staff_user_id: string | null; updated_text: string; category: string | null; effective_from: string | null;
 };
 const summary = (r: ContentRow) => ({
   id: r.id, kind: r.kind, slug: r.slug, title: r.title, status: r.status, sourceUrl: r.source_url, checkedOn: r.checked_on, publishedAt: r.published_at,
-  updatedBy: r.updated_by_staff_user_id, updatedAt: r.updated_text,
+  updatedBy: r.updated_by_staff_user_id, updatedAt: r.updated_text, category: r.category, effectiveFrom: r.effective_from,
 });
 // Newest change first on (updated_at, id). ponytail: no index on updated_at; the table is a few hundred rows (guides, help, updates, one text per occupation).
 export const CONTENT_LIST =
@@ -140,12 +158,12 @@ export async function getContentPage(db: Q, staff: string, id: string) {
 /** What the public page of this content page would be made from, whatever its state (B74): the fields the public reads give (content.ts ContentPage), plus the state. null for an unknown id. */
 export async function previewContentPage(db: Q, staff: string, id: string) {
   const p = await getContentPage(db, staff, id);
-  return p && { id: p.id, kind: p.kind, slug: p.slug, title: p.title, body: p.body, sourceUrl: p.sourceUrl, checkedOn: p.checkedOn, publishedAt: p.publishedAt, updatedAt: p.updatedAt, status: p.status };
+  return p && { id: p.id, kind: p.kind, slug: p.slug, title: p.title, body: p.body, sourceUrl: p.sourceUrl, checkedOn: p.checkedOn, publishedAt: p.publishedAt, updatedAt: p.updatedAt, category: p.category, effectiveFrom: p.effectiveFrom, status: p.status };
 }
 
 // ===== writes =====
 const INSERT =
-  "insert into content_page(kind, slug, title, body, source_url, checked_on, updated_by_staff_user_id) values ($1,$2,$3,$4,$5,$6::date,$7) returning id::text as id";
+  "insert into content_page(kind, slug, title, body, source_url, checked_on, updated_by_staff_user_id, category, effective_from) values ($1,$2,$3,$4,$5,$6::date,$7,$8,$9::date) returning id::text as id";
 /** A new draft. Only a content editor writes drafts. */
 export async function createContentDraft(db: Db, staff: string, d: Draft): Promise<{ id: string }> {
   if (!isKind(d.kind)) throw new QueueRefused("bad_kind");
@@ -155,19 +173,19 @@ export async function createContentDraft(db: Db, staff: string, d: Draft): Promi
   checkFields(d);
   return writer(db, staff, ["content_editor"], "not_content_editor", async (c) => {
     try {
-      const id = (await c.query<{ id: string }>(INSERT, [d.kind, d.slug, d.title, d.body, d.sourceUrl ?? null, d.checkedOn ?? null, staff])).rows[0]!.id;
+      const id = (await c.query<{ id: string }>(INSERT, [d.kind, d.slug, d.title, d.body, d.sourceUrl ?? null, d.checkedOn ?? null, staff, d.category ?? null, d.effectiveFrom ?? null])).rows[0]!.id;
       await audit(c, staff, "create", id, { kind: d.kind, slug: d.slug });
       return { id };
     } catch (e) {
       if ((e as { code?: string }).code === "23505") throw new QueueRefused("slug_taken");
-      throw e;
+      return pairing(e);
     }
   });
 }
 
 const EDIT =
   "update content_page set title = coalesce($2, title), body = coalesce($3, body), source_url = coalesce($4, source_url), checked_on = coalesce($5::date, checked_on), " +
-  "updated_by_staff_user_id = $6, updated_at = now() where id = $1::bigint and status in ('draft','withdrawn') returning kind, slug";
+  "category = coalesce($7, category), effective_from = coalesce($8::date, effective_from), updated_by_staff_user_id = $6, updated_at = now() where id = $1::bigint and status in ('draft','withdrawn') returning kind, slug";
 const STATE = "select status from content_page where id = $1::bigint";
 /** Edits a draft (or a withdrawn page, to fix it before publishing again). A published page is withdrawn first. Kind and slug never change. */
 export async function editContentDraft(db: Db, staff: string, id: string, e: Edit): Promise<void> {
@@ -175,7 +193,7 @@ export async function editContentDraft(db: Db, staff: string, id: string, e: Edi
   checkFields(e);
   if (Object.values(e).every((v) => v === undefined)) throw new QueueRefused("nothing_to_change");
   await writer(db, staff, ["content_editor"], "not_content_editor", async (c) => {
-    const r = (await c.query(EDIT, [id, e.title ?? null, e.body ?? null, e.sourceUrl ?? null, e.checkedOn ?? null, staff])).rows[0];
+    const r = (await c.query(EDIT, [id, e.title ?? null, e.body ?? null, e.sourceUrl ?? null, e.checkedOn ?? null, staff, e.category ?? null, e.effectiveFrom ?? null]).catch(pairing)).rows[0];
     if (!r) throw new QueueRefused((await c.query(STATE, [id])).rowCount ? "not_editable" : "not_found");
     await audit(c, staff, "edit", id, { fields: Object.keys(e).filter((k) => (e as Record<string, unknown>)[k] !== undefined) });
   });

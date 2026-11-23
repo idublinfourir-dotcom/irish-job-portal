@@ -398,7 +398,7 @@ describe("B74: stale help and occupation pages, and the draft preview", () => {
       const r = await get("content", "/api/content", "only_content_editor", q({ id, preview: "1" }));
       expect(r.status).toBe(200);
       expect(Object.keys(r.json)).toEqual(["item"]);
-      expect(Object.keys(r.json.item).sort()).toEqual(["body", "checkedOn", "id", "kind", "publishedAt", "slug", "sourceUrl", "status", "title", "updatedAt"]);
+      expect(Object.keys(r.json.item).sort()).toEqual(["body", "category", "checkedOn", "effectiveFrom", "id", "kind", "publishedAt", "slug", "sourceUrl", "status", "title", "updatedAt"]);
       expect([r.json.item.status, r.json.item.kind, r.json.item.body]).toEqual([status, kind, "Fake body"]);
       expect(replyProblems(spec, "GET", "/api/content", r.status, r.json)).toEqual([]);
     }
@@ -420,7 +420,7 @@ describe("B74: stale help and occupation pages, and the draft preview", () => {
   it("the plain read of one page and the list are unchanged", async () => {
     const id = (await one("select id::text id from content_page where slug = 'pv-draft'")).id;
     const r = await h.ok(get("content", "/api/content", "only_content_editor", q({ id })));
-    expect(Object.keys(r.item).sort()).toEqual(["body", "checkedOn", "id", "kind", "publishedAt", "slug", "sourceUrl", "status", "title", "updatedAt", "updatedBy"]);
+    expect(Object.keys(r.item).sort()).toEqual(["body", "category", "checkedOn", "effectiveFrom", "id", "kind", "publishedAt", "slug", "sourceUrl", "status", "title", "updatedAt", "updatedBy"]);
     expect((await h.ok(get("content", "/api/content", "only_content_editor", q({ kind: "guide" })))).items.length).toBeGreaterThan(0);
   });
 });

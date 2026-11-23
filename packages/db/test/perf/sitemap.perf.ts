@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import pg from "pg";
 import { createTestDb, urlFor, type TestDb } from "../db";
-import { SITEMAP_QUERIES } from "../../src/sitemap";
+import { LEGAL_PAGES, SITEMAP_QUERIES } from "../../src/sitemap";
 import { assertPageBudget, measurePages, type PageCost, type Statement } from "./pages";
 
 vi.setConfig({ testTimeout: 600_000, hookTimeout: 600_000 });
@@ -15,6 +15,9 @@ vi.setConfig({ testTimeout: 600_000, hookTimeout: 600_000 });
 export const COUNTS_PAGES = 250;
 export const JOBS_PAGES = 120;
 export const COMPANIES_PAGES = 750;
+// Step 16 (B21): the content parts (one statement each, the view scan of content.perf.ts), the legal texts in force and the occupation text dates.
+export const CONTENT_PAGES = 250;
+export const LEGAL_PAGES_BUDGET = 20;
 export const MS_LIMIT = 150;
 
 let db: TestDb;
@@ -36,6 +39,12 @@ beforeAll(async () => {
               case when g % 10 = 9 and s = 'live' then now() - interval '1 day' else now() + interval '20 days' end, 'https://example.test/a', to_tsvector('english', 'perf'), now() - (g || ' minutes')::interval
        from generate_series(1, 10000) g,
             lateral (select case when g <= 1000 then 'live' when g <= 1100 then 'draft' when g <= 1200 then 'in_review' when g <= 1350 then 'under_review' when g <= 1500 then 'hidden' else 'closed' end as s) x`);
+    await k.query(
+      `insert into content_page(kind, slug, title, body, source_url, checked_on, status, published_at)
+       select (array['update', 'guide', 'help'])[1 + g % 3], 'perf-' || g, 'Perf ' || g, 'Fake text', 'https://enterprise.gov.ie/', '2026-11-01', 'published', now() from generate_series(1, 900) g;
+       insert into content_page(kind, slug, title, body, source_url, checked_on, status, published_at)
+       select 'occupation', (1000 + g)::text, 'Occupation ' || g, 'Fake text', 'https://enterprise.gov.ie/', '2026-11-01', 'published', now() from generate_series(0, 119) g;
+       insert into consent_text(purpose, version, body) select p, 'v' || v, 'Fake text' from unnest(array['privacy_notice', 'signup_terms', 'cookie_policy', 'employer_acceptable_use', 'data_retention']) p, generate_series(1, 4) v`);
   } finally {
     await k.end();
   }
@@ -60,6 +69,9 @@ it("the sitemap ids and each first part stay under their page and time budgets",
     await page("sitemap ids (counts)", [SITEMAP_QUERIES.counts], COUNTS_PAGES);
     await page("sitemap jobs-0", [{ text: SITEMAP_QUERIES.jobs, values: [0] }], JOBS_PAGES);
     await page("sitemap companies-0", [{ text: SITEMAP_QUERIES.companies, values: [0] }], COMPANIES_PAGES);
+    for (const kind of ["guide", "update", "help"]) await page(`sitemap ${kind}s part`, [{ text: SITEMAP_QUERIES.content, values: [kind] }], CONTENT_PAGES);
+    await page("sitemap occupation text dates", [SITEMAP_QUERIES.occupationTexts], CONTENT_PAGES);
+    await page("sitemap legal texts", [{ text: SITEMAP_QUERIES.legal, values: [LEGAL_PAGES] }], LEGAL_PAGES_BUDGET);
   } finally {
     c.release();
   }

@@ -493,7 +493,7 @@ paths:
       tags: [public]
       summary: The legal text in force for a purpose
       description: |
-        Step 15 R5. The newest published version of one legal purpose of this site: portal_signup_terms or privacy_notice. Staff publish
+        Step 15 R5. The newest published version of one legal purpose of this site: portal_signup_terms, privacy_notice, cookie_policy, employer_acceptable_use or data_retention (B20, decision #290). Staff publish
         a version at the admin site's `/api/legal-texts` (two people); new sign-ups consent to the version shown here. No login is needed.
         No version yet is 404 `NOT_FOUND`; any other purpose, or none, is 400 `BAD_REQUEST`. The real wording waits for the solicitor and
         the entity: today only placeholder texts exist. A signed-in session is not read.
@@ -501,7 +501,7 @@ paths:
       x-roles: [anyone]
       x-rate-limit: 60 a minute and 600 an hour per client address, signed in or not
       parameters:
-        - { name: purpose, in: query, required: true, schema: { type: string, enum: [portal_signup_terms, privacy_notice] } }
+        - { name: purpose, in: query, required: true, schema: { type: string, enum: [portal_signup_terms, privacy_notice, cookie_policy, employer_acceptable_use, data_retention] } }
       responses:
         '200':
           description: The text in force.
@@ -512,7 +512,7 @@ paths:
                 additionalProperties: false
                 required: [purpose, version, body, publishedAt]
                 properties:
-                  purpose: { type: string, enum: [portal_signup_terms, privacy_notice] }
+                  purpose: { type: string, enum: [portal_signup_terms, privacy_notice, cookie_policy, employer_acceptable_use, data_retention] }
                   version: { type: string }
                   body: { type: string, description: Plain text; line breaks are kept. }
                   publishedAt: { type: string, description: 'The database time, as "2026-11-19 09:30:00.123456+00".' }

@@ -12,3 +12,10 @@ export const companyPath = (companySlug: string) => `/companies/${encodeURICompo
 export const occupationPath = (nameSlug: string) => `/occupations/${encodeURIComponent(nameSlug)}`;
 export const guidePath = (guideSlug: string) => `/guides/${encodeURIComponent(guideSlug)}`;
 export const updatePath = (updateSlug: string) => `/updates/${encodeURIComponent(updateSlug)}`;
+export const helpPath = (helpSlug: string) => `/help/${encodeURIComponent(helpSlug)}`;
+/** The legal text of a consent purpose (frame C22's sidebar); a purpose with no public page gives null. */
+const LEGAL = new Map([["privacy_notice", "/privacy"], ["signup_terms", "/terms"], ["cookie_policy", "/cookies"], ["employer_acceptable_use", "/employer-acceptable-use"], ["data_retention", "/data-retention"]]);
+export const legalPath = (purpose: string) => LEGAL.get(purpose) ?? null;
+/** The pages with no data behind them (`STATIC_PAGES` in packages/db/src/sitemap.ts). */
+const STATIC = new Map([["home", "/"], ["jobs", "/jobs"], ["companies", "/companies"], ["guides", "/guides"], ["updates", "/updates"], ["help", "/help"], ["eligibility-checker", "/eligibility-checker"], ["permit-services", "/permit-services"]]);
+export const staticPath = (key: string) => STATIC.get(key) ?? null;

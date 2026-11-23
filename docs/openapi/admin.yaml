@@ -260,7 +260,7 @@ components:
       required: [id, kind, slug, title, status, updatedAt]
       properties:
         id: { $ref: '#/components/schemas/Id' }
-        kind: { type: string, enum: [guide, update, help, occupation] }
+        kind: { type: string, enum: [guide, update, help, occupation, notice] }
         slug: { type: string }
         title: { type: string }
         status: { type: string, enum: [draft, published, withdrawn] }
@@ -269,6 +269,8 @@ components:
         publishedAt: { type: [string, 'null'] }
         updatedBy: { type: [string, 'null'] }
         updatedAt: { $ref: '#/components/schemas/DbTime' }
+        category: { type: [string, 'null'], enum: [salary_minimums, quotas, occupation_lists, processing, report_problem, permit_services, jobs_badges, account, null], description: "B17, B19: an update's type (salary_minimums, quotas, occupation_lists, processing) or a help page's group (report_problem, permit_services, jobs_badges, account); null for the other kinds.", example: quotas }
+        effectiveFrom: { type: [string, 'null'], description: "B17: the day an update's rule starts; null for the other kinds.", example: '2027-01-01' }
     JobQueueItem:
       type: object
       required: [id, queue, status, jobId, jobStatus, title, organisationId, company]
@@ -1618,7 +1620,7 @@ paths:
       x-rate-limit: none
       parameters:
         - { name: id, in: query, required: false, schema: { type: string }, example: '41' }
-        - { name: kind, in: query, required: false, schema: { type: string, enum: [guide, update, help, occupation] } }
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [guide, update, help, occupation, notice] } }
         - { name: status, in: query, required: false, schema: { type: string, enum: [draft, published, withdrawn] } }
         - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Cursor' } }
         - { name: stale, in: query, required: false, schema: { const: '1' } }
@@ -1651,7 +1653,7 @@ paths:
                         required: [id, kind, slug, title, body, sourceUrl, checkedOn, publishedAt, updatedAt, status]
                         properties:
                           id: { $ref: '#/components/schemas/Id' }
-                          kind: { type: string, enum: [guide, update, help, occupation] }
+                          kind: { type: string, enum: [guide, update, help, occupation, notice] }
                           slug: { type: string, example: how-to-apply }
                           title: { type: string, example: How to apply }
                           body: { type: string, example: "First, check the job page." }
@@ -1659,6 +1661,8 @@ paths:
                           checkedOn: { type: [string, 'null'], example: '2026-11-01' }
                           publishedAt: { type: [string, 'null'], description: "Null for a draft.", example: null }
                           updatedAt: { $ref: '#/components/schemas/DbTime' }
+                          category: { type: [string, 'null'], enum: [salary_minimums, quotas, occupation_lists, processing, report_problem, permit_services, jobs_badges, account, null], description: "B17, B19: an update's type (salary_minimums, quotas, occupation_lists, processing) or a help page's group (report_problem, permit_services, jobs_badges, account); null for the other kinds.", example: quotas }
+                          effectiveFrom: { type: [string, 'null'], description: "B17: the day an update's rule starts; null for the other kinds.", example: '2027-01-01' }
                           status: { type: string, enum: [draft, published, withdrawn], example: draft }
                   - type: object
                     required: [staleDays, items, truncated]
@@ -1684,7 +1688,7 @@ paths:
       operationId: actOnContentPage
       summary: Create or edit a draft, publish or withdraw a page
       description: >-
-        `create` (content_editor) writes a new draft; an occupation page's slug is its SOC 2010 code. `edit` (content_editor) changes a
+        `create` (content_editor) writes a new draft; an occupation page's slug is its SOC 2010 code. Kind `notice` (decision #291) is a short notice staff switch on (publish) and off (withdraw): the permit pages show the published one with slug `dete-portal-closed` (GET /api/permit-notice on the candidate site); like help it needs no source or checked-on date. `edit` (content_editor) changes a
         draft or a withdrawn page; kind and slug never change and a published page is withdrawn first. `publish`: a content_editor
         publishes help and update pages, a rules_data_editor guides and occupation texts; anything but help needs a source and a
         checked-on date. `withdraw` (content_editor) takes any published page down. Title 1 to 200 characters, body 1 to 50,000
@@ -1705,12 +1709,14 @@ paths:
                   required: [action, kind, slug, title, body]
                   properties:
                     action: { const: create }
-                    kind: { type: string, enum: [guide, update, help, occupation] }
+                    kind: { type: string, enum: [guide, update, help, occupation, notice] }
                     slug: { type: string }
                     title: { type: string, maxLength: 200 }
                     body: { type: string, maxLength: 50000 }
                     sourceUrl: { type: string, maxLength: 500 }
                     checkedOn: { $ref: '#/components/schemas/Date' }
+                    category: { type: string, enum: [salary_minimums, quotas, occupation_lists, processing, report_problem, permit_services, jobs_badges, account], description: "B17, B19: an update takes one of the first four, a help page one of the last four, any other kind none (`bad_category`).", example: quotas }
+                    effectiveFrom: { $ref: '#/components/schemas/Date', description: "B17: updates only (`bad_effective_from` for another kind). Unlike checkedOn it may be a future day." }
                 - type: object
                   additionalProperties: false
                   required: [action, id]
@@ -1721,6 +1727,8 @@ paths:
                     body: { type: string, maxLength: 50000 }
                     sourceUrl: { type: string, maxLength: 500 }
                     checkedOn: { $ref: '#/components/schemas/Date' }
+                    category: { type: string, enum: [salary_minimums, quotas, occupation_lists, processing, report_problem, permit_services, jobs_badges, account], description: "B17, B19: an update takes one of the first four, a help page one of the last four, any other kind none (`bad_category`).", example: quotas }
+                    effectiveFrom: { $ref: '#/components/schemas/Date', description: "B17: updates only (`bad_effective_from` for another kind). Unlike checkedOn it may be a future day." }
                 - type: object
                   additionalProperties: false
                   required: [action, id]
@@ -1743,7 +1751,7 @@ paths:
         '400':
           description: >-
             `bad_body`: not one JSON object, an unknown or missing field, or over 110,000 characters. `bad_action`: unknown action.
-            `bad_id`, `bad_kind`, `bad_slug`, `bad_title`, `bad_body_text`, `bad_source_url`, `bad_checked_on`: a field of the wrong type or
+            `bad_id`, `bad_kind`, `bad_slug`, `bad_title`, `bad_body_text`, `bad_source_url`, `bad_checked_on`, `bad_category`, `bad_effective_from`: a field of the wrong type or
             outside its rules. `nothing_to_change`: an edit with no field.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_slug } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
@@ -1757,7 +1765,7 @@ paths:
           description: "`not_found`: no such page."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
         '409':
-          description: "`slug_taken`: a page with this kind and slug exists. `not_editable`: edit of a published page. `already_published`: publish of a published page. `not_published`: withdraw of a page that is not published. `needs_source_and_checked_on`: publish of a non-help page without both."
+          description: "`slug_taken`: a page with this kind and slug exists. `not_editable`: edit of a published page. `already_published`: publish of a published page. `not_published`: withdraw of a page that is not published. `needs_source_and_checked_on`: publish of a page that is not help or a notice without both."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: needs_source_and_checked_on } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/employer-jobs:
@@ -3977,8 +3985,8 @@ paths:
       operationId: listLegalTexts
       summary: List the legal text versions and the pending proposals
       description: >-
-        Step 15 R5. Every version of the three legal purposes (`signup_terms` for candidates, `portal_signup_terms` for employers and agencies,
-        `privacy_notice`), newest first within a purpose (the first of a purpose is the text in force), each with its body, and the proposals
+        Step 15 R5. Every version of the six legal purposes (`signup_terms` for candidates, `portal_signup_terms` for employers and agencies,
+        `privacy_notice`, and the public texts `cookie_policy`, `employer_acceptable_use`, `data_retention`), newest first within a purpose (the first of a purpose is the text in force), each with its body, and the proposals
         waiting for an administrator. The real wording waits for the solicitor and the entity; the placeholders come from signup-terms-cli.ts.
         No query key is allowed.
       security: [{ staffSession: [] }]
@@ -4000,7 +4008,7 @@ paths:
                       required: [id, purpose, version, body, publishedAt, requestId]
                       properties:
                         id: { $ref: '#/components/schemas/Id' }
-                        purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice] }
+                        purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice, cookie_policy, employer_acceptable_use, data_retention] }
                         version: { type: string }
                         body: { type: string }
                         publishedAt: { $ref: '#/components/schemas/DbTime' }
@@ -4012,7 +4020,7 @@ paths:
                       required: [requestId, purpose, version, body, proposedBy, createdAt]
                       properties:
                         requestId: { $ref: '#/components/schemas/Id' }
-                        purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice] }
+                        purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice, cookie_policy, employer_acceptable_use, data_retention] }
                         version: { type: string }
                         body: { type: string }
                         proposedBy: { $ref: '#/components/schemas/LoginId' }
@@ -4054,7 +4062,7 @@ paths:
                   required: [action, purpose, version, body]
                   properties:
                     action: { const: propose }
-                    purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice] }
+                    purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice, cookie_policy, employer_acceptable_use, data_retention] }
                     version: { type: string, pattern: '^[a-z0-9][a-z0-9._-]{0,63}$' }
                     body: { type: string, minLength: 1, maxLength: 100000 }
                 - type: object
@@ -4076,7 +4084,7 @@ paths:
                   ok: { const: true }
                   requestId: { $ref: '#/components/schemas/Id' }
                   id: { $ref: '#/components/schemas/Id' }
-                  purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice] }
+                  purpose: { type: string, enum: [signup_terms, portal_signup_terms, privacy_notice, cookie_policy, employer_acceptable_use, data_retention] }
                   version: { type: string }
                   publishedAt: { $ref: '#/components/schemas/DbTime' }
               example: { ok: true, requestId: '131' }

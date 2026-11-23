@@ -2,10 +2,10 @@ import type { SitemapEntry } from "@portal/db";
 import type { MetadataRoute } from "next";
 import { readSitemapIds, readSitemapPart, siteOrigin } from "../lib/data";
 import { occupationSlug } from "../lib/occupations";
-import { companyPath, jobPath, occupationPath } from "../lib/paths";
+import { companyPath, guidePath, helpPath, jobPath, legalPath, occupationPath, staticPath, updatePath } from "../lib/paths";
 
-// S13: /sitemap/<id>.xml, one file per part of live jobs, company pages and occupation pages (packages/db/src/sitemap.ts). Read at request time:
-// the build has no database. No robots file yet (it waits for the pages); it will list these files.
+// S13: /sitemap/<id>.xml, one file per part of live jobs, company pages and occupation pages, plus the static pages, legal texts, guides, updates and
+// help pages (packages/db/src/sitemap.ts). /sitemap-index.xml lists them all (app/sitemap-index.xml/route.ts). Read at request time: the build has no database.
 export const dynamic = "force-dynamic";
 
 export async function generateSitemaps() {
@@ -13,9 +13,22 @@ export async function generateSitemaps() {
   if (process.env.NEXT_PHASE === "phase-production-build") return [];
   return (await readSitemapIds()).map((id) => ({ id }));
 }
+const path = (e: SitemapEntry) => {
+  switch (e.kind) {
+    case "job": return jobPath({ id: e.key, title: e.title ?? "", county: e.county ?? null });
+    case "company": return companyPath(e.key);
+    case "occupation": return occupationPath(occupationSlug(e.key) ?? e.key);
+    case "guide": return guidePath(e.key);
+    case "update": return updatePath(e.key);
+    case "help": return helpPath(e.key);
+    case "legal": return legalPath(e.key);
+    case "page": return staticPath(e.key);
+  }
+};
 export default async function sitemap(props: { id: Promise<string> }): Promise<MetadataRoute.Sitemap> {
   const origin = siteOrigin();
-  const path = (e: SitemapEntry) =>
-    e.kind === "job" ? jobPath({ id: e.key, title: e.title ?? "", county: e.county ?? null }) : e.kind === "company" ? companyPath(e.key) : occupationPath(occupationSlug(e.key) ?? e.key);
-  return ((await readSitemapPart(await props.id)) ?? []).map((e) => ({ url: origin + path(e), ...(e.lastModified ? { lastModified: e.lastModified } : {}) }));
+  return ((await readSitemapPart(await props.id)) ?? []).flatMap((e) => {
+    const p = path(e);
+    return p === null ? [] : [{ url: origin + p, ...(e.lastModified ? { lastModified: e.lastModified } : {}) }];
+  });
 }
