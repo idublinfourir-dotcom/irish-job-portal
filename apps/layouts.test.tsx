@@ -39,16 +39,16 @@ beforeEach(() => {
 describe("candidate layout (P1)", () => {
   it("signed out: the public nav, the page and both fonts", async () => {
     const h = await candidate();
-    for (const t of ["Find jobs", "Companies", "Guides", "Eligibility checker", "Permit services", "For employers", "Log in", "Create account", "Nothing here yet."]) expect(h).toContain(t);
+    for (const t of ["Find a job", "Companies", "Guides", "Eligibility checker", "Permit services", "For employers", "Sign in", "Create free account", "Nothing here yet."]) expect(h).toContain(t);
     expect(h).toContain('lang="en"');
     expect(h).toContain("outfit-var dm-sans-var");
     expect(h).not.toContain("Sign out");
   });
-  it("signed in: the account nav and sign out, no log in", async () => {
+  it("signed in: the account nav and sign out, no sign in", async () => {
     frame.value.signedIn = true;
     const h = await candidate();
     for (const t of ["Account", "Tracker", "Saved", "Alerts", "Sign out"]) expect(h).toContain(t);
-    expect(h).not.toContain("Create account");
+    expect(h).not.toContain("Create free account");
   });
   it("footer: the standing line with the date it was given, the GeoNames credit, the report line, the Cookies link", async () => {
     const h = await candidate();

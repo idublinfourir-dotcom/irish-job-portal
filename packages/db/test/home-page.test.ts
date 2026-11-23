@@ -13,7 +13,7 @@ const { state } = vi.hoisted(() => ({ state: { headers: new Headers() } }));
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({ headers: async () => state.headers }));
 
-const BUDGET = { statements: 15, medianMs: 30 }; // measured: 15 statements (5 reads x 2 rate counts + their work), median 2.9 ms
+const BUDGET = { statements: 17, medianMs: 30 }; // measured 23 Nov 2026: 17 statements (6 reads, the occupation cards added one: its rate count and its query), median 2.2 ms
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
 const BASE = "http://localhost:3000";
@@ -78,7 +78,7 @@ async function counted<T>(fn: () => Promise<T>): Promise<[T, number]> {
   try { return [await fn(), c]; } finally { pg.Client.prototype.query = q; }
 }
 const page = async (sector?: string | string[]) => renderToStaticMarkup(await P.default({ searchParams: Promise.resolve({ sector }) }));
-const articles = (h: string) => (h.match(/<h3 class="text-xl"><a [^>]*href="\/jobs\//g) ?? []).length; // job cards (not the guide and update cards)
+const articles = (h: string) => (h.match(/data-job-card/g) ?? []).length; // job cards (not the guide and update cards)
 
 describe("home page reads", () => {
   it("a visitor gets the live jobs capped at 6 with the sign-in flag and count, the sectors with live counts, the minimums, guides and updates", async () => {

@@ -2,11 +2,13 @@
 // Reads the prerendered stub page (.next/server/app/index.html), or, when the layout reads the session and the page is dynamic (step 16 wave 1), the
 // files the build manifests list for the home page (polyfills, root main files, the layout's and page's chunks and styles); sums the gzip size of the scripts and the stylesheet it loads, and fails over budget.
 // Measured 23 Nov 2026 with the kit in place: first-load JS 250 KB gzip (mostly React, Next and Sentry), CSS 5.6 KB gzip, in every app.
+// Re-measured 23 Nov 2026 after the home page took the Figma look (frame N01): candidate CSS 8.4 KB gzip, 40 KB raw (the frame's card shapes and
+// sizes); portal and admin unchanged at 5.6 KB. CSS budget raised to about 20 percent over that; the JS budget is unchanged.
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 
-export const BUDGET = { jsGzipBytes: 275_000, cssGzipBytes: 8_000, cssRawBytes: 32_000 };
+export const BUDGET = { jsGzipBytes: 275_000, cssGzipBytes: 10_000, cssRawBytes: 48_000 };
 
 const gz = (b: Buffer) => gzipSync(b).length;
 

@@ -1,19 +1,20 @@
 import { A } from "./link";
 import type { ReactNode } from "react";
 import { Button } from "./button";
-import { cx, SITE_NAME } from "./cx";
+import { cx, SITE_NAME, SITE_WORDMARK } from "./cx";
 import { Icon } from "./icons";
 
-// Paths are placeholders until the page slices fix them (#288); change them here only.
+// Paths are placeholders until the page slices fix them (#288); change them here only. The header follows frame N01: five links, then the
+// employer link, Sign in and the main button; the eligibility checker sits in the footer and the mobile menu.
 const PUBLIC_NAV = [
-  { label: "Find jobs", href: "/jobs" },
+  { label: "Home", href: "/" },
+  { label: "Find a job", href: "/jobs" },
   { label: "Companies", href: "/companies" },
   { label: "Guides", href: "/guides" },
-  { label: "Eligibility checker", href: "/eligibility-checker" },
   { label: "Permit services", href: "/permit-services" },
-  { label: "For employers", href: "/employers" },
 ];
 const SIGNED_IN_NAV = [
+  { label: "Find a job", href: "/jobs" },
   { label: "Account", href: "/account" },
   { label: "Tracker", href: "/account/tracker" },
   { label: "Saved", href: "/account/saved" },
@@ -21,98 +22,132 @@ const SIGNED_IN_NAV = [
 ];
 const SIGN_OUT = "/api/auth/sign-out";
 
-const link = "inline-flex min-h-11 items-center px-2 font-semibold hover:underline underline-offset-4";
+const link = "inline-flex min-h-11 items-center whitespace-nowrap px-2.5 text-[15px] font-medium text-ink/80 hover:text-ink";
+const menuLink = "inline-flex min-h-11 items-center px-2 font-semibold hover:underline underline-offset-4";
 
-function SignOut() {
+function SignOut({ className = link }: { className?: string }) {
   return (
     <form method="post" action={SIGN_OUT}>
-      <button type="submit" className={cx(link, "cursor-pointer")}>
+      <button type="submit" className={cx(className, "cursor-pointer")}>
         Sign out
       </button>
     </form>
   );
 }
 
-/** The public header, or the signed-in one when `signedIn`. The mobile menu is a native <details>, so it needs no script. */
+export function Wordmark({ className }: { className?: string }) {
+  return (
+    <A href="/" aria-label={`${SITE_NAME}, home`} className={cx("font-heading text-xl font-semibold tracking-tight text-deep-green no-underline", className)}>
+      {SITE_WORDMARK}
+    </A>
+  );
+}
+
+/** The public header, or the signed-in one when `signedIn`: a floating white pill (frame N01). The mobile menu is a native <details>, so it needs no script. */
 export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
   const items = signedIn ? SIGNED_IN_NAV : PUBLIC_NAV;
   return (
-    <header className="border-b border-line bg-cream">
-      <div className="mx-auto flex max-w-page items-center justify-between gap-4 px-4 py-2">
-        <A href="/" className="font-heading text-xl font-semibold text-deep-green">
-          {SITE_NAME}
-        </A>
-        <nav aria-label="Main" className="hidden items-center gap-1 lg:flex">
-          {items.map((i) => (
-            <A key={i.href} href={i.href} className={link}>
-              {i.label}
-            </A>
-          ))}
-          {signedIn ? (
-            <SignOut />
-          ) : (
-            <>
-              <A href="/login" className={link}>
-                Log in
-              </A>
-              <Button href="/signup" size="sm">
-                Create account
-              </Button>
-            </>
-          )}
-        </nav>
-        <details className="group relative lg:hidden" data-menu>
-          <summary className="grid size-11 cursor-pointer list-none place-items-center rounded-control hover:bg-hover-light" aria-label="Menu">
-            <Icon name="menu" className="group-open:hidden" />
-            <Icon name="close" className="hidden group-open:block" />
-          </summary>
-          <nav aria-label="Mobile" className="absolute right-0 z-10 mt-2 flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-1 rounded-card border border-line bg-white p-3 shadow-pop">
+    <header className="relative z-10 px-4 pt-4">
+      <div className="mx-auto flex max-w-[66rem] items-center justify-between gap-4 rounded-pill bg-white py-2 pl-6 pr-2 shadow-pop">
+        <Wordmark />
+        <nav aria-label="Main" className="hidden flex-1 items-center lg:flex">
+          <div className="flex flex-1 items-center justify-center gap-1">
             {items.map((i) => (
               <A key={i.href} href={i.href} className={link}>
                 {i.label}
               </A>
             ))}
-            <A href="/help" className={link}>
-              Help
+          </div>
+          {signedIn ? (
+            <SignOut />
+          ) : (
+            <div className="flex items-center gap-1">
+              <A href="/employers" className={link}>
+                For employers
+              </A>
+              <A href="/login" className={link}>
+                Sign in
+              </A>
+              <Button href="/signup" className="ml-2">
+                Create free account <Icon name="arrow" size={16} />
+              </Button>
+            </div>
+          )}
+        </nav>
+        <div className="flex items-center gap-2 lg:hidden">
+          {!signedIn && (
+            <A href="/login" className="px-2 text-small font-semibold">
+              Sign in
             </A>
-            {signedIn ? (
-              <SignOut />
-            ) : (
-              <>
-                <Button href="/signup">Create free account</Button>
-                <Button href="/login" variant="outline">
-                  Log in
-                </Button>
-              </>
-            )}
-          </nav>
-        </details>
+          )}
+          <details className="group relative" data-menu>
+            <summary className="grid size-11 cursor-pointer list-none place-items-center rounded-pill bg-ink text-white" aria-label="Menu">
+              <Icon name="menu" className="group-open:hidden" />
+              <Icon name="close" className="hidden group-open:block" />
+            </summary>
+            <nav aria-label="Mobile" className="absolute right-0 z-10 mt-2 flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-1 rounded-card border border-line bg-white p-3 shadow-pop">
+              {items.map((i) => (
+                <A key={i.href} href={i.href} className={menuLink}>
+                  {i.label}
+                </A>
+              ))}
+              <A href="/eligibility-checker" className={menuLink}>
+                Eligibility checker
+              </A>
+              <A href="/help" className={menuLink}>
+                Help
+              </A>
+              {signedIn ? (
+                <SignOut className={menuLink} />
+              ) : (
+                <>
+                  <A href="/employers" className={menuLink}>
+                    For employers
+                  </A>
+                  <Button href="/signup">Create free account</Button>
+                  <Button href="/login" variant="outline">
+                    Sign in
+                  </Button>
+                </>
+              )}
+            </nav>
+          </details>
+        </div>
       </div>
     </header>
   );
 }
 
 const FOOTER_GROUPS = [
-  { title: "Jobs", links: [["Find jobs", "/jobs"], ["Companies", "/companies"]] },
-  { title: "Help", links: [["Guides", "/guides"], ["Government updates", "/updates"], ["Eligibility checker", "/eligibility-checker"], ["Help and contact", "/help"]] },
-  { title: "Services", links: [["Permit services", "/permit-services"], ["For employers", "/employers"]] },
-  { title: "Legal", links: [["Terms", "/terms"], ["Privacy", "/privacy"], ["Cookies", "/cookies"]] },
+  { title: "Candidates", links: [["Find a job", "/jobs"], ["Companies", "/companies"], ["Eligibility checker", "/eligibility-checker"], ["Guides", "/guides"], ["Government updates", "/updates"]] },
+  { title: "Employers", links: [["For employers", "/employers"], ["Permit services", "/permit-services"]] },
+  { title: SITE_WORDMARK, links: [["Help and contact", "/help"], ["Terms", "/terms"], ["Privacy", "/privacy"], ["Cookies", "/cookies"]] },
 ] as const;
 
 const EXT = { target: "_blank", rel: "noopener noreferrer", className: "underline underline-offset-2" } as const;
 
-/** `standingLine` and `rulesCheckedOn` come from the page's data, never typed here. */
+/**
+ * The dark footer with rounded top corners (frame N01). A page whose last block is a dark band marked data-join (the home page's join band)
+ * runs straight into it: the footer then drops its gap and corners. `standingLine` and `rulesCheckedOn` come from the page's data, never typed here.
+ */
 export function SiteFooter({ standingLine, rulesCheckedOn }: { standingLine?: ReactNode; rulesCheckedOn?: string }) {
   return (
-    <footer className="mt-16 border-t border-line bg-sand">
-      <div className="mx-auto grid max-w-page gap-8 px-4 py-10 sm:grid-cols-2 lg:grid-cols-4">
+    <footer className="mt-16 rounded-t-[2.5rem] bg-ink text-white/75 [main:has(>[data-join]:last-child)+&]:mt-0 [main:has(>[data-join]:last-child)+&]:rounded-none">
+      <div className="mx-auto grid max-w-page gap-10 px-4 pb-10 pt-14 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
+        <div className="flex flex-col gap-3">
+          <Wordmark />
+          <p className="max-w-xs text-small">Jobs in Ireland where an employment permit is realistic. Free for candidates.</p>
+          <p className="max-w-xs text-small text-peach">
+            No genuine employer asks you to pay for a job offer. <A href="/report" className="underline underline-offset-2">Report it.</A>
+          </p>
+        </div>
         {FOOTER_GROUPS.map((g) => (
           <nav key={g.title} aria-label={g.title}>
-            <h2 className="mb-2 text-base">{g.title}</h2>
+            <h2 className="mb-2 text-base text-white">{g.title}</h2>
             <ul className="flex flex-col">
               {g.links.map(([label, href]) => (
                 <li key={href}>
-                  <A href={href} className="inline-flex min-h-9 items-center underline-offset-2 hover:underline">
+                  <A href={href} className="inline-flex min-h-9 items-center text-small underline-offset-2 hover:text-white hover:underline">
                     {label}
                   </A>
                 </li>
@@ -121,10 +156,9 @@ export function SiteFooter({ standingLine, rulesCheckedOn }: { standingLine?: Re
           </nav>
         ))}
       </div>
-      <div className="mx-auto max-w-page space-y-2 border-t border-line px-4 py-6 text-small text-muted">
+      <div className="mx-auto max-w-page space-y-2 border-t border-white/15 px-4 py-6 text-small text-white/60">
         {standingLine && <p data-slot="standing-line">{standingLine}</p>}
         {rulesCheckedOn && <p data-slot="rules-checked-on">Rules last checked on {rulesCheckedOn}</p>}
-        <p>No genuine employer asks you to pay for a job offer. <A href="/report" className="underline underline-offset-2">Report it.</A></p>
         <p>
           Place names from <A href="https://www.geonames.org/" {...EXT}>GeoNames</A>, licensed <A href="https://creativecommons.org/licenses/by/4.0/" {...EXT}>CC BY 4.0</A>
         </p>

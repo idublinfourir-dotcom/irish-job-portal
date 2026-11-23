@@ -49,6 +49,39 @@ const PATHS = {
   pen: P("M4 20l1-4L16 5l3 3L8 19zM14 7l3 3"),
   menu: P("M4 7h16M4 12h16M4 17h16"),
   close: P("M6 6l12 12M18 6L6 18"),
+  "up-right": P("M7 17L17 7M8 7h9v9"),
+  plus: P("M12 5v14M5 12h14"),
+  minus: P("M5 12h14"),
+  lock: (
+    <>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V8a4 4 0 018 0v3" />
+    </>
+  ),
+  warning: P("M12 4l9 16H3zM12 10v4M12 17.5v.01"),
+  help: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.5 9.5a2.5 2.5 0 015 .5c0 1.5-2.5 2-2.5 3.5M12 17v.01" />
+    </>
+  ),
+  euro: P("M17 6.5A7 7 0 107 17.5M5 10h9M5 14h9"),
+  trend: P("M3 17l6-6 4 4 8-8M15 7h6v6"),
+  clipboard: (
+    <>
+      <rect x="6" y="4" width="12" height="17" rx="2" />
+      <path d="M9 4h6v3H9zM9 12h6M9 16h4" />
+    </>
+  ),
+  chat: P("M4 5h12v9H8l-4 3zM16 9h4v9l-3-2h-6v-2"),
+  copy: (
+    <>
+      <rect x="8" y="8" width="12" height="12" rx="2" />
+      <path d="M16 8V5a1 1 0 00-1-1H5a1 1 0 00-1 1v10a1 1 0 001 1h3" />
+    </>
+  ),
+  receipt: P("M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3"),
+  pulse: P("M3 12h4l3-7 4 14 3-7h4"),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;

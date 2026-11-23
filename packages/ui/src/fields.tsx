@@ -14,7 +14,7 @@ function Field({ id, label, help, note, status, error, render }: Common & { id?:
   const fid = id ?? auto;
   const described = [help && `${fid}-help`, note && `${fid}-note`, error && `${fid}-error`].filter(Boolean).join(" ");
   const bad = !!error || status === "blocked";
-  const border = bad ? "border-error" : status === "passed" ? "border-deep-green" : "border-line";
+  const border = bad ? "border-error" : status === "passed" ? "border-deep-green" : "border-line focus:border-ink";
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={fid} className="font-semibold">
@@ -24,7 +24,7 @@ function Field({ id, label, help, note, status, error, render }: Common & { id?:
         id: fid,
         "aria-describedby": described || undefined,
         ...(error ? { "aria-invalid": true as const } : {}),
-        className: cx("w-full min-h-11 rounded-control border-2 bg-white px-3 py-2 text-ink placeholder:text-muted disabled:bg-disabled disabled:text-disabled-ink", border),
+        className: cx("w-full min-h-12 rounded-control border-[1.5px] bg-white px-4 py-2 text-ink placeholder:text-muted disabled:bg-disabled disabled:text-disabled-ink", border),
       })}
       {help && (
         <p id={`${fid}-help`} className="text-small text-muted">

@@ -167,13 +167,13 @@ describe("candidate shell", () => {
   const nav = (h: string) => h.replace(/<[^>]*>/g, "|");
   it("shows the public nav signed out", () => {
     const h = html(<CandidateShell>x</CandidateShell>);
-    for (const t of ["Find jobs", "Companies", "Guides", "Eligibility checker", "Permit services", "For employers", "Log in", "Create account"]) expect(h).toContain(t);
+    for (const t of ["Find a job", "Companies", "Guides", "Eligibility checker", "Permit services", "For employers", "Sign in", "Create free account"]) expect(h).toContain(t);
     expect(h).not.toContain("Sign out");
   });
   it("shows the signed-in nav when signed in", () => {
     const h = html(<CandidateShell signedIn>x</CandidateShell>);
     for (const t of ["Account", "Tracker", "Saved", "Alerts", "Sign out"]) expect(h).toContain(t);
-    expect(h).not.toContain("Create account");
+    expect(h).not.toContain("Create free account");
   });
   it("has a mobile menu with no script (native details)", () => expect(html(<CandidateShell>x</CandidateShell>)).toContain("<details"));
   it("footer: GeoNames credit, report line, and the two slots only when given", () => {
