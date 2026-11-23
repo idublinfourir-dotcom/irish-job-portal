@@ -2,7 +2,8 @@
 // logins: each membership role, a login with no company, a removed member, a blocked login, a visitor and a candidate's cookie. Role refusals of the
 // pages the hidden links lead to are proven by the route tests named in the report (jobs-route.test.ts NOT_A_POSTER, services-requests-portal.test.ts
 // ROLE_REFUSED); here the sidebar read gives the role the layout hides links by. Only Next's request context is stood in; no network. Fake people only.
-// Budget (measured 23 November 2026, see the printed line): the shell read is 7 statements for a member (two requirePortal of 3 each, the company read), 0 for a visitor.
+// Budget (measured 23 November 2026, see the printed line): the shell read is 8 statements for a member (two requirePortal of 3 each, the company read and,
+// since P2 (B54), its DETE permit count), 0 for a visitor. Follow-up: a sidebar read of the name alone would save the permit query on every portal page.
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { answers, makeAuth, portalAnswers, seedSignupTerms } from "./better-auth-helper";
@@ -14,7 +15,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({ headers: async () => state.headers }));
 vi.mock("next/navigation", () => ({ redirect: (to: string) => { throw new Error(`REDIRECT:${to}`); } }));
 
-const BUDGET = { memberStatements: 7, visitorStatements: 0, medianMs: 20 };
+const BUDGET = { memberStatements: 8, visitorStatements: 0, medianMs: 20 }; // re-measured 23 Nov 2026 on the combined branch: 8, median 2.8 ms
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const BASE = "http://localhost:3001";
 type Handler = (r: Request) => Promise<Response>;
