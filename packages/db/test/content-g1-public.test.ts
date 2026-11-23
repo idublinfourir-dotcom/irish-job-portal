@@ -39,7 +39,10 @@ beforeAll(async () => {
   ({ GET: NOTICE } = await import("../../../apps/candidate/app/api/permit-notice/route"));
   ({ GET: LEGAL } = await import("../../../apps/candidate/app/api/legal/route"));
   ({ GET: INDEX } = await import("../../../apps/candidate/app/sitemap-index.xml/route"));
-  ({ default: SITEMAP } = await import("../../../apps/candidate/app/sitemap"));
+  // A path held in a variable: the type checker does not follow it, so the "next" root types (which make NODE_ENV required on every
+  // ProcessEnv) stay out of this package's program. The test still runs the real app file.
+  const sitemapFile: string = "../../../apps/candidate/app/sitemap";
+  ({ default: SITEMAP } = (await import(sitemapFile)) as { default: typeof SITEMAP });
   D = await import("../../../apps/candidate/lib/data");
   const page = (kind: string, slug: string, title: string, status: string, o: { category?: string; effective?: string; at?: string } = {}) =>
     su.query(
