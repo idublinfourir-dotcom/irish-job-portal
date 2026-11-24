@@ -227,7 +227,7 @@ describe("portal shell", () => {
     for (const t of ["Applicants", "Candidate search", "Contact requests"]) expect(h).not.toContain(t);
   });
   it("without a role key shows every Launch A link; with one hides what the role cannot use", () => {
-    const l = (roleKey: "viewer" | "poster" | "recruiter" | "account_owner") => [...html(<PortalShell companyName="A B" role="x" roleKey={roleKey}>x</PortalShell>).matchAll(/<a [^>]*>([^<]*)/g)].map((m) => m[1]!);
+    const l = (roleKey: "viewer" | "poster" | "recruiter" | "account_owner") => [...html(<PortalShell companyName="A B" role="x" roleKey={roleKey}>x</PortalShell>).matchAll(/<a [^>]*>([\s\S]*?)<\/a>/g)].map((m) => m[1]!.replace(/<span data-count[\s\S]*?<\/span>/g, "").replace(/<[^>]*>/g, "").trim());
     expect(l("viewer")).not.toContain("Post a job");
     expect(l("viewer")).not.toContain("Permit services");
     expect(l("poster")).toContain("Post a job");
@@ -241,7 +241,7 @@ describe("portal shell", () => {
 });
 
 describe("admin shell", () => {
-  const links = (roles: readonly (typeof ADMIN_ROLES)[number][]) => [...html(<AdminShell roles={roles} name="Dara">x</AdminShell>).matchAll(/<a [^>]*>([^<]*)/g)].map((m) => m[1]!);
+  const links = (roles: readonly (typeof ADMIN_ROLES)[number][]) => [...html(<AdminShell roles={roles} name="Dara">x</AdminShell>).matchAll(/<a [^>]*>([\s\S]*?)<\/a>/g)].map((m) => m[1]!.replace(/<span data-count[\s\S]*?<\/span>/g, "").replace(/<[^>]*>/g, "").trim());
   it("says internal, staff only", () => expect(html(<AdminShell roles={[]} name="D">x</AdminShell>)).toContain("Internal, staff only"));
   it("hides every link that needs a role for a member with none", () => expect(links([])).toEqual(["Skip to content", "Overview", "Rules data", "Audit log"]));
   it("shows a link only to the role that may open it", () => {

@@ -52,7 +52,22 @@ describe("portal shell: bell, post button, footer", () => {
     expect(h).not.toContain("<script>");
     expect(h).not.toContain('role="search"');
   });
-  it("is the dark sidebar", () => expect(portal()).toContain("bg-ink"));
+  it("is the dark floating sidebar with the logo, the ring and an icon on every link (frame NE2)", () => {
+    const h = portal();
+    expect(h).toContain("bg-ink text-white");
+    expect(h).toContain("data-ring");
+    expect(h).toContain("for employers");
+    const nav = h.match(/<nav aria-label="Sections"[\s\S]*?<\/nav>/)![0];
+    const links = [...nav.matchAll(/<a [^>]*>([\s\S]*?)<\/a>/g)];
+    expect(links.length).toBeGreaterThan(5);
+    for (const m of links) expect(m[1]).toContain("<svg");
+  });
+  it("company chip: initials, role, and the status in words when known; a name of one letter or a missing status is fine", () => {
+    expect(portal({ status: "verified", companyName: "Harbourline Hotels" })).toMatch(/data-company-chip[\s\S]*HH[\s\S]*Harbourline Hotels[\s\S]*Poster · Verified/);
+    expect(portal({ status: "verified_restricted" })).toContain("Poster · Restricted");
+    expect(portal({ status: "some_new_status" })).not.toContain("Poster ·");
+    expect(portal({ companyName: "A" })).toContain(">A</span>");
+  });
 });
 
 describe("admin shell: search box", () => {
@@ -65,10 +80,23 @@ describe("admin shell: search box", () => {
     expect(h).toMatch(/maxlength="200"/i);
     expect(h).not.toContain("<script");
   });
-  it("has a label for the field and sits in the sidebar before the nav", () => {
+  it("has a label for the field and sits in the bar above the page, before the page body (frame ND1)", () => {
     expect(h).toContain('for="staff-search"');
     expect(h).toContain('id="staff-search"');
-    expect(h.indexOf('role="search"')).toBeLessThan(h.indexOf('aria-label="Sections"'));
+    expect(h.indexOf('role="search"')).toBeGreaterThan(h.indexOf('aria-label="Sections"'));
+    expect(h.indexOf('role="search"')).toBeLessThan(h.indexOf('id="main"'));
+  });
+  it("shows the badge, the person and their roles in plain words (frame ND1)", () => {
+    expect(h).toContain("Internal, staff only");
+    expect(h).toContain(">Dara</span>");
+    expect(html(<AdminShell roles={["services_case_handler"]} name="Dara">x</AdminShell>)).toContain(">services case handler</span>");
+    expect(html(<AdminShell roles={["administrator", "content_editor", "trust_and_safety"]} name="Dara">x</AdminShell>)).toContain(">administrator and 2 more</span>");
+    expect(html(<AdminShell roles={[]} name="Dara">x</AdminShell>)).toContain(">no role</span>");
+  });
+  it("has an icon on every link and the count beside it", () => {
+    const x = html(<AdminShell roles={["administrator"]} name="D" counts={{ "Account reviews": 9 }}>x</AdminShell>);
+    for (const m of x.matchAll(/<a [^>]*href="\/(?:account-reviews|rules|audit|staff|fetched-jobs)"[^>]*>([\s\S]*?)<\/a>/g)) expect(m[1]).toContain("<svg");
+    expect(html(<AdminShell roles={["account_reviewer"]} name="D" counts={{ "Account reviews": 9 }}>x</AdminShell>)).toMatch(/data-count="?[^>]*>9</);
   });
   it("is in every role's sidebar and has no banner, bell or footer", () => {
     for (const roles of [[], ["account_reviewer"], ["administrator"]] as const) {

@@ -1,50 +1,44 @@
 import { A } from "./link";
 import { Button } from "./button";
-import { cx, SITE_NAME } from "./cx";
+import { cx, SITE_WORDMARK } from "./cx";
 import { Icon } from "./icons";
 import { Notice } from "./display";
 import type { ReactNode } from "react";
-import { adminLinks, portalLinks, type AdminRole, type PortalRole } from "./nav-links";
+import { adminLinks, portalLinks, type AdminRole, type NavIcon, type PortalRole } from "./nav-links";
 import { NavItem } from "./nav-item";
 
-type Link = { label: string; href: string };
+type Link = { label: string; href: string; icon: NavIcon };
 type Group = { title?: string; links: Link[] };
 
-const ITEM = { base: "flex min-h-11 shrink-0 items-center justify-between gap-3 rounded-control px-3 font-semibold", on: "bg-green-tint text-ink", off: "text-ink hover:bg-hover-light" };
-// The portal sidebar is the dark one of frames NE2 and E20: the current link is the green pill.
-const DARK_ITEM = { base: ITEM.base + " rounded-pill", on: "bg-deep-green text-white", off: "text-white hover:bg-ink-hover" };
+// The staff sidebar is frame ND1's (light, the current link a lilac pill), the portal's is NE2's and E20's (dark, the current link a green pill).
+const ITEM = { base: "flex min-h-11 shrink-0 items-center gap-3 rounded-pill px-4 text-[14px] font-medium", on: "bg-lilac text-ink", off: "text-ink hover:bg-hover-light" };
+const DARK_ITEM = { base: "flex min-h-12 shrink-0 items-center gap-3 rounded-pill px-4 text-ui font-medium", on: "bg-deep-green text-white", off: "text-white hover:bg-ink-hover" };
 
 /**
- * One sidebar frame for the portal and the admin. Small screens: the nav is a row you scroll sideways, so it needs no script.
- * `dark` is the portal look; `search` adds the staff search box (a plain GET form to /search, no script); `top` is the bar above the page; `footer` sits under it.
+ * One frame for the portal and the admin: a floating rounded sidebar, a bar above the page (`top`), the page, `footer`. Small screens: the sidebar is a block
+ * on top and its links a row you scroll sideways, so it needs no script. `dark` is the portal look.
  */
-function Sidebar({ brand, tag, who, groups, counts = {}, current, dark, search, top, footer, children }: { brand: ReactNode; tag?: string; who: ReactNode; groups: Group[]; counts?: Record<string, number | undefined>; current?: string; dark?: boolean; search?: boolean; top?: ReactNode; footer?: ReactNode; children: ReactNode }) {
+function Sidebar({ brand, chip, groups, counts = {}, current, dark, top, footer, children }: { brand: ReactNode; chip?: ReactNode; groups: Group[]; counts?: Record<string, number | undefined>; current?: string; dark?: boolean; top?: ReactNode; footer?: ReactNode; children: ReactNode }) {
   const item = dark ? DARK_ITEM : ITEM;
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
       <A href="#main" className="sr-only focus:not-sr-only focus:p-3">Skip to content</A>
-      <aside className={cx("md:w-64 md:shrink-0", dark ? "bg-ink text-white" : "border-b border-line bg-sand md:border-b-0 md:border-r")}>
-        <div className="space-y-1 p-4">
-          <p className={cx("font-heading text-lg font-semibold", dark ? "text-white" : "text-deep-green")}>{brand}</p>
-          {tag && <p className="inline-block rounded-pill bg-ink px-2 py-0.5 text-small font-semibold text-cream">{tag}</p>}
-          <div className={cx("pt-2 text-small", dark && "[&_.text-muted]:text-white/70")}>{who}</div>
-          {search && (
-            <form action="/search" method="get" role="search" className="pt-2">
-              <label className="sr-only" htmlFor="staff-search">Search employers, jobs, cases and CRO numbers</label>
-              <input id="staff-search" type="search" name="q" required maxLength={200} placeholder="Search..." className="min-h-11 w-full rounded-pill border border-line bg-white px-4 text-small text-ink placeholder:text-faint" />
-              <button type="submit" className="sr-only">Search</button>
-            </form>
-          )}
+      <aside className={cx("relative m-3 overflow-hidden rounded-bento md:sticky md:top-3 md:h-[calc(100vh-1.5rem)] md:shrink-0 md:self-start md:overflow-y-auto", dark ? "bg-ink text-white md:w-[17.2rem]" : "bg-sand md:w-[14.8rem]")}>
+        {dark && <span aria-hidden="true" data-ring className="pointer-events-none absolute -right-14 bottom-32 hidden size-44 rounded-pill border-[1.1rem] border-deep-green md:block" />}
+        <div className="px-4 pb-2 pt-5">
+          {brand}
+          {chip}
         </div>
-        <nav aria-label="Sections" className="flex gap-x-1 gap-y-3 overflow-x-auto px-2 pb-3 md:flex-col md:overflow-visible">
+        <nav aria-label="Sections" className="relative flex gap-x-1 gap-y-4 overflow-x-auto px-3 pb-4 pt-1 md:flex-col md:overflow-visible">
           {groups.map((g, i) => (
             <div key={g.title ?? i} className="flex gap-1 md:flex-col" role={g.title ? "group" : undefined} aria-label={g.title}>
-              {g.title && <p className="hidden px-3 pt-2 text-small font-semibold uppercase tracking-wide text-muted md:block">{g.title}</p>}
+              {g.title && <p className="hidden px-4 pb-1 pt-2 text-small text-muted md:block">{g.title}</p>}
               {g.links.map((l) => (
                 <NavItem key={l.href} href={l.href} current={current} {...item}>
-                  {l.label}
+                  <Icon name={l.icon} size={18} className="shrink-0" />
+                  <span className="flex-1 whitespace-nowrap">{l.label}</span>
                   {counts[l.label] !== undefined && (
-                    <span data-count className={cx("rounded-pill px-2 text-small", dark ? "bg-ink-hover text-white" : "bg-white")}>
+                    <span data-count className={cx("rounded-pill px-2 text-caption font-semibold leading-6", dark ? "bg-ink-hover text-white" : "bg-lilac text-ink")}>
                       {counts[l.label]}
                     </span>
                   )}
@@ -56,7 +50,7 @@ function Sidebar({ brand, tag, who, groups, counts = {}, current, dark, search, 
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         {top}
-        <main id="main" className="min-w-0 flex-1 p-4 md:p-8">
+        <main id="main" className="min-w-0 flex-1 p-4 md:p-6 lg:p-8">
           {children}
         </main>
         {footer}
@@ -64,6 +58,20 @@ function Sidebar({ brand, tag, who, groups, counts = {}, current, dark, search, 
     </div>
   );
 }
+
+/** The logo (as the candidate header draws it) with the name of the app beside or under it. */
+function Brand({ note, dark }: { note: string; dark?: boolean }) {
+  const [name, tld] = SITE_WORDMARK.split(/(?=\.)/);
+  return (
+    <p className={cx("font-heading text-xl font-semibold tracking-tight", dark ? "text-white" : "text-deep-green")}>
+      {dark ? <>{name}<span className="text-mint-on-dark">{tld}</span></> : SITE_WORDMARK}
+      <span className={cx("font-sans text-small font-normal tracking-normal", dark ? "block text-peach" : "ml-1 text-muted")}>{note}</span>
+    </p>
+  );
+}
+
+/** The company status beside the role in the portal's company chip. A status not listed shows only the role. */
+const STATUS_LABEL: Record<string, string> = { verified: "Verified", verified_restricted: "Restricted", pending_review: "In review", needs_info: "Needs more info", suspended: "Suspended", closed: "Closed" };
 
 /** What each company status says in the portal banner (#105, #106; rows E20, DD34). Any other status shows no banner. */
 const BANNER: Record<string, { kind: "error" | "warning"; title: string; text: string }> = {
@@ -101,22 +109,22 @@ export function PortalShell({ companyName, role, roleKey, status, unread = 0, st
   const banner = status ? BANNER[status] : undefined;
   return (
     <Sidebar
-      brand={<>{SITE_NAME} <span className="block font-sans text-small font-normal text-mint-on-dark">for employers</span></>}
-      who={
-        <p className="flex items-center gap-2">
-          <span aria-hidden="true" className="grid size-9 place-items-center rounded-pill bg-deep-green text-small font-semibold text-white">{initials(companyName)}</span>
-          <span>
-            <span className="block font-semibold">{companyName}</span>
-            <span className="text-muted">{role}</span>
+      brand={<Brand dark note="for employers" />}
+      chip={
+        <div data-company-chip className="mt-4 flex items-center gap-3 rounded-pill bg-ink-hover p-1.5 pr-4">
+          <span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-pill bg-white text-small font-semibold text-ink">{initials(companyName)}</span>
+          <span className="min-w-0 text-small leading-snug">
+            <span className="block truncate font-semibold">{companyName}</span>
+            <span className="block truncate text-caption text-white/70">{role}{status && STATUS_LABEL[status] ? ` · ${STATUS_LABEL[status]}` : ""}</span>
           </span>
-        </p>
+        </div>
       }
       groups={groups}
       counts={counts}
       current={current}
       dark
       top={
-        <div className="flex items-center justify-end gap-2 border-b border-line px-4 py-3 md:px-8">
+        <div className="flex items-center justify-end gap-2 px-4 pt-4 md:px-6 lg:px-8">
           <Bell unread={unread} />
           {groups[0]!.links.some((l) => l.href === "/jobs/new") && (
             <Button href="/jobs/new">
@@ -147,23 +155,37 @@ export function PortalShell({ companyName, role, roleKey, status, unread = 0, st
   );
 }
 
-/** The staff sidebar (frame ND1). A link with `roles` shows only to staff holding one of them. */
+/** The roles beside the person's name: the first, and how many more (the full list is the tooltip and on the staff page). */
+const rolesInShort = (roles: readonly AdminRole[]) => (roles[0] ? roles[0].replaceAll("_", " ") : "no role") + (roles.length > 1 ? ` and ${roles.length - 1} more` : "");
+
+/** The staff frame (frame ND1): the light sidebar, and above the page the staff search (a plain GET form to /search, no script), the badge and the person. */
 export function AdminShell({ roles, name, counts, current, children }: { roles: readonly AdminRole[]; name: string; counts?: Record<string, number | undefined>; current?: string; children: ReactNode }) {
-  const groups = adminLinks(roles);
   return (
     <Sidebar
-      brand={<>{SITE_NAME} admin</>}
-      tag="Internal, staff only"
-      who={
-        <p>
-          <span className="block font-semibold">{name}</span>
-          <span className="text-muted">{roles.join(", ").replaceAll("_", " ")}</span>
-        </p>
-      }
-      groups={groups}
+      brand={<Brand note="admin" />}
+      groups={adminLinks(roles)}
       counts={counts}
       current={current}
-      search
+      top={
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4 md:px-6 lg:px-8">
+          <form action="/search" method="get" role="search" className="flex min-w-60 flex-1 items-center gap-2 text-muted sm:max-w-md">
+            <Icon name="search" size={18} />
+            <label className="sr-only" htmlFor="staff-search">Search employers, jobs, cases and CRO numbers</label>
+            <input id="staff-search" type="search" name="q" required maxLength={200} placeholder="Search employers, jobs, cases, CRO numbers" className="min-h-11 w-full rounded-pill bg-transparent px-1 text-small text-ink placeholder:text-faint" />
+            <button type="submit" className="sr-only">Search</button>
+          </form>
+          <div className="flex items-center gap-3">
+            <p className="shrink-0 whitespace-nowrap rounded-pill bg-ink px-3 py-1.5 text-small font-semibold text-white">Internal, staff only</p>
+            <p className="flex items-center gap-2">
+              <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-pill bg-deep-green text-small font-semibold text-white">{initials(name)}</span>
+              <span className="text-small leading-snug">
+                <span className="block font-semibold">{name}</span>
+                <span className="block text-caption text-muted" title={roles.join(", ").replaceAll("_", " ")}>{rolesInShort(roles)}</span>
+              </span>
+            </p>
+          </div>
+        </div>
+      }
     >
       {children}
     </Sidebar>
