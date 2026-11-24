@@ -7,6 +7,9 @@ import { VerificationView, type Verification } from "./view";
 
 export const metadata: Metadata = meta("Verification", "See how far the verification of your company has got, what we have checked so far and, when we ask for more, what to send us.");
 
+/** The "Draft a job" link opens /jobs/new, which P19 builds: set true there. */
+const JOB_FORM_LIVE = false as boolean;
+
 /** Frame E06. Signed out goes to sign-in; no company goes to the claim step; any member sees the state, only the owner sees the question and the answer box. */
 export default async function Page() {
   const [login, read] = await Promise.all([readLogin().catch(() => null), readVerification().catch(() => null)]);
@@ -15,5 +18,5 @@ export default async function Page() {
   const v = read?.status === 200 ? (read.body.verification as Verification | undefined) : undefined;
   if (!v) return <div className="py-8"><Notice kind="error" title="We cannot show this page now">{read?.status === 403 ? "This login cannot open it. Contact support." : "Try again in a few minutes."}</Notice></div>;
   const role = login.membership.role;
-  return <VerificationView email={login.email} v={v} isOwner={role === "account_owner"} canDraft={role !== "viewer"} help={candidateHref("/help")} />;
+  return <VerificationView email={login.email} v={v} isOwner={role === "account_owner"} canDraft={JOB_FORM_LIVE && role !== "viewer"} help={candidateHref("/help")} />;
 }

@@ -48,7 +48,7 @@ beforeAll(async () => {
   Object.assign(process.env, { DATABASE_URL: urlFor(db.name, "app_candidate"), DATABASE_SSL: "disable", CANDIDATE_AUTH_URL: BASE, CANDIDATE_AUTH_SECRET: secret, PORTAL_AUTH_URL: "http://localhost:3001" });
   ({ GET: AUTH_GET, POST: AUTH } = await import("../../../apps/candidate/app/api/auth/candidate/[...all]/route"));
   ({ POST: CASES } = await import("../../../apps/candidate/app/api/candidate/cases/route"));
-  ({ POST: DOCS } = await import("../../../apps/candidate/app/api/candidate/cases/[id]/documents/route"));
+  ({ POST: DOCS } = (await import("../../../apps/candidate/app/api/candidate/cases/[id]/documents/route")) as unknown as { POST: Handler });
   ({ candidateMail: mail } = await import("../../../apps/candidate/lib/candidate"));
   D = await import("../../../apps/candidate/lib/data");
   const page = async (p: string) => (await import(p)).default;
@@ -341,7 +341,9 @@ describe("the sign-up, sign-in, verify and reset pages (server code): render, re
     for (const cookie of [sus.cookie, "candidate.session_token=forged.value", undefined]) expect(await as(cookie, () => redirectsTo(() => P.login(searchOf()))), String(cookie)).toBeNull();
   });
   it("every page's metadata is noindex with a title of 60 characters or fewer and a description of 120 to 160", async () => {
-    const metas = [(await import("../../../apps/candidate/app/signup/page")).generateMetadata, (await import("../../../apps/candidate/app/login/page")).generateMetadata, (await import("../../../apps/candidate/app/verify/page")).generateMetadata, (await import("../../../apps/candidate/app/reset/page")).generateMetadata];
+    // Through a path in a variable: this package has no JSX setting, so a page must not be in its type check.
+    const metaOf = async (f: string) => (await import(`../../../apps/candidate/app/${f}/page`)).generateMetadata as () => { title: unknown; description: unknown; robots: unknown; referrer?: unknown };
+    const metas = [await metaOf("signup"), await metaOf("login"), await metaOf("verify"), await metaOf("reset")];
     for (const [i, generateMetadata] of metas.entries()) {
       const f = ["signup", "login", "verify", "reset"][i]!;
       const m = generateMetadata();
@@ -350,13 +352,13 @@ describe("the sign-up, sign-in, verify and reset pages (server code): render, re
       expect(String(m.description).length, f).toBeGreaterThanOrEqual(120);
       expect(String(m.description).length, f).toBeLessThanOrEqual(160);
     }
-    expect((await import("../../../apps/candidate/app/reset/page")).generateMetadata().referrer).toBe("no-referrer");
+    expect(metas[3]!().referrer).toBe("no-referrer");
   });
   it("hostile parameters never break a page or reach its markup: huge, repeated, wrong-typed and script values", async () => {
     const evil = "<script>alert(1)</script>";
     for (const q of [{ error: evil }, { token: evil }, { next: evil }, { verified: evil, error: evil }, { error: ["a", "b"] }, { token: ["a", "b"] }, { next: "x".repeat(100_000) }, { token: "x".repeat(5000) }, { error: "\u0000" }]) {
       for (const p of [P.signup, P.login, P.verify, P.reset]) {
-        const el = await as(undefined, () => p(searchOf(q as Record<string, string | string[]>)));
+        const el = await as(undefined, () => p(searchOf(q as unknown as Record<string, string | string[]>)));
         const markup = html(el as never);
         expect(markup, JSON.stringify(q).slice(0, 50)).not.toContain(evil);
         expect(markup).not.toMatch(/dangerouslySetInnerHTML|undefined/);
@@ -437,8 +439,8 @@ describe("the permit services pages (server code)", () => {
     }
   });
   it("title, description and noindex of the two pages", async () => {
-    const l = (await import("../../../apps/candidate/app/permit-services/page")).generateMetadata();
-    const r = (await import("../../../apps/candidate/app/permit-services/request/page")).generateMetadata();
+    const l = (await import(`../../../apps/candidate/app/${"permit-services/page"}`)).generateMetadata();
+    const r = (await import(`../../../apps/candidate/app/${"permit-services/request/page"}`)).generateMetadata();
     for (const m of [l, r]) {
       expect(String(m.title).replace(" | Irish Work Permit", "").length).toBeLessThanOrEqual(60);
       expect(String(m.description).length).toBeGreaterThanOrEqual(120);
