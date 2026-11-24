@@ -43,3 +43,16 @@ it("the watch's two statements stay within the page budget on a year of runs", a
     c.release();
   }
 });
+
+it("a slot started past midnight reads yesterday's rows too, within the same budget", async () => {
+  const c = await db.pool("app_fetcher").connect();
+  try {
+    const day = utcDayStart(new Date(NOW.getTime() - 24 * 3_600_000));
+    const costs = await measurePages(c, [{ text: GOOD_RUN_TODAY, values: [day, ["workday"]] }, { text: FAILED_BOARDS_TODAY, values: [day, ["workday"]] }]);
+    for (const k of costs) console.log("watch, late slot", k.pages, k.scans, k.ms);
+    assertPageBudget("fetch watch, late slot", costs, WATCH_PAGES);
+    for (const k of costs) expect(k.scans).toContain("fetch_run_started_idx");
+  } finally {
+    c.release();
+  }
+});

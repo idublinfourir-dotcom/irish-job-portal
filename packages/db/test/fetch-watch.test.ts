@@ -12,14 +12,14 @@ let wd: number;
 const NOW = new Date("2026-11-13T18:41:00Z");
 // Rows go in the order given (ids rise with it); `two` puts the row on the second board.
 // `wd` puts the row on a Workday board; `skip` is FETCHER_SKIP_KINDS.
-const go = async (rows: { at: string; done?: boolean; error?: string; two?: boolean; wd?: boolean }[], statuses: string[] = [], role = "app_fetcher", skip?: string) => {
+const go = async (rows: { at: string; done?: boolean; error?: string; two?: boolean; wd?: boolean }[], statuses: string[] = [], role = "app_fetcher", skip?: string, now = NOW) => {
   await db.query("postgres", "delete from fetch_run");
   for (const r of rows)
     await db.query("postgres", "insert into fetch_run(job_source_id, started_at, finished_at, error) values ($1, $2, $3, $4)", [r.wd ? wd : r.two ? src2 : src, r.at, r.done === false ? null : r.at, r.error ?? null]);
   const calls: string[][] = [];
   const gh = async (a: string[]) => (calls.push(a), a[0] === "run" ? JSON.stringify(statuses.map((status) => ({ status }))) : "");
   const lines: string[] = [];
-  const code = await main({ FETCHER_DATABASE_URL: urlFor(db.name, role), DATABASE_SSL: "disable", ...(skip === undefined ? {} : { FETCHER_SKIP_KINDS: skip }) }, (l) => lines.push(l), NOW, gh);
+  const code = await main({ FETCHER_DATABASE_URL: urlFor(db.name, role), DATABASE_SSL: "disable", ...(skip === undefined ? {} : { FETCHER_SKIP_KINDS: skip }) }, (l) => lines.push(l), now, gh);
   return { code, line: lines.join(), calls };
 };
 
@@ -41,6 +41,13 @@ describe("fetch watch against the real fetch_run table", () => {
   it("only yesterday's, an errored and an unfinished run today: red", async () => {
     for (const rows of [[{ at: "2026-11-12T23:59:59Z" }], [{ at: "2026-11-13T05:20:00Z", error: "boom" }], [{ at: "2026-11-13T05:20:00Z", done: false }]])
       expect((await go(rows)).code).toBe(1);
+  });
+  it("a slot started past midnight judges yesterday: its good run is green, its failed board is retried, no run at all is red", async () => {
+    const late = new Date("2026-11-14T03:28:00Z");
+    const at = (rows: Parameters<typeof go>[0]) => go(rows, [], "app_fetcher", undefined, late);
+    expect(await at([{ at: "2026-11-13T05:20:00Z" }])).toMatchObject({ code: 0, line: "a fetch worked yesterday (UTC)", calls: [] });
+    expect((await at([{ at: "2026-11-13T05:20:00Z" }, { at: "2026-11-13T05:21:00Z", error: "boom", two: true }])).line).toBe("a fetch worked yesterday (UTC) but 1 board failed; started a retry");
+    expect(await at([{ at: "2026-11-12T23:59:59Z" }])).toMatchObject({ code: 1, line: "no fetch worked yesterday by 03:28 UTC; started one" });
   });
   it("no good run and one already running: red, nothing started", async () => {
     const r = await go([], ["in_progress"]);

@@ -40,6 +40,20 @@ describe("fetch watch decision", () => {
     expect(r.lines).toEqual(["no fetch worked today by 12:11 UTC; started one"]);
     expect(r.calls.at(-1)).toEqual(["workflow", "run", "daily-fetch.yml", "-f", "guarded=true"]);
   });
+  // 24 Nov 2026: the 17:41 slot of 23 Nov started at 03:28 UTC, judged the new day and went red although 23 Nov's fetch had worked.
+  it.each([
+    ["2026-11-24T03:28:00Z", "2026-11-23T00:00:00Z", "yesterday"],
+    ["2026-11-24T11:59:59Z", "2026-11-23T00:00:00Z", "yesterday"],
+    ["2026-11-24T12:00:00Z", "2026-11-24T00:00:00Z", "today"],
+    ["2026-11-24T23:59:59Z", "2026-11-24T00:00:00Z", "today"],
+    ["2026-12-01T02:00:00Z", "2026-11-30T00:00:00Z", "yesterday"],
+  ])("a slot started at %s judges the day from %s", async (now, day, word) => {
+    const days: Date[] = [], lines: string[] = [];
+    const db = { query: async (sql: string, args: [Date]) => (days.push(args[0]), sql === FAILED_BOARDS_TODAY ? { rows: [{ n: 0 }] } : { rowCount: 1 }) } as never;
+    expect(await watch(db, (l) => lines.push(l), new Date(now), fakeGh([]).gh)).toBe(0);
+    expect(days).toEqual([new Date(day), new Date(day)]);
+    expect(lines).toEqual([`a fetch worked ${word} (UTC)`]);
+  });
   it.each(["queued", "in_progress", "waiting", "pending", "requested"])("none worked and one is %s: starts nothing, goes red", async (st) => {
     const r = await go(0, ["completed", st]);
     expect(r.code).toBe(1);
