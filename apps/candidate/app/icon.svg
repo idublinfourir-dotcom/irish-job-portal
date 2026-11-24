@@ -1,2 +1,8 @@
-<!-- The stand-in mark until the designer's logo (DESIGNER-HANDOFF 4): NS2 mint, white, sun. favicon.ico and apple-icon.png are made from it. -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#0e8655"/><circle cx="32" cy="17" r="7" fill="#ffc48a"/><rect x="26" y="28" width="12" height="24" rx="6" fill="#fff"/></svg>
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="brand/favicon">
+<rect width="32" height="32" rx="7" fill="#0F8A57"/>
+<path id="iw" d="M7.044 22V13.306H9.42V22H7.044ZM8.232 11.902C7.848 11.902 7.53 11.776 7.278 11.524C7.026 11.26 6.9 10.936 6.9 10.552C6.9 10.18 7.026 9.862 7.278 9.598C7.53 9.334 7.848 9.202 8.232 9.202C8.628 9.202 8.946 9.334 9.186 9.598C9.438 9.862 9.564 10.18 9.564 10.552C9.564 10.936 9.438 11.26 9.186 11.524C8.946 11.776 8.628 11.902 8.232 11.902ZM12.9702 22L9.71222 13.306H12.0882L14.2122 19.624L13.4922 19.642L15.6702 13.306H17.3802L19.5582 19.642L18.8382 19.624L20.9622 13.306H23.3382L20.0982 22H18.3882L16.1922 15.988H16.8582L14.6622 22H12.9702Z" fill="white"/>
+<circle id="Ellipse" cx="24.6404" cy="23.24" r="2.24" fill="#FFC48A"/>
+</g>
+
+</svg>

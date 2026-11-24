@@ -36,20 +36,22 @@ function SignOut({ className = link }: { className?: string }) {
   );
 }
 
-export function Wordmark({ className }: { className?: string }) {
+/** The logo (frame NS7): the domain in Outfit semibold, mint; on a dark surface white with a light mint ".ie". Text, not the pack's SVG: same letters, no file. */
+export function Wordmark({ className, dark }: { className?: string; dark?: boolean }) {
+  const [name, tld] = SITE_WORDMARK.split(/(?=\.)/);
   return (
-    <A href="/" aria-label={`${SITE_NAME}, home`} className={cx("font-heading text-xl font-semibold tracking-tight text-deep-green no-underline", className)}>
-      {SITE_WORDMARK}
+    <A href="/" aria-label={`${SITE_NAME}, home`} className={cx("font-heading text-[22px] font-semibold tracking-tight no-underline", dark ? "text-white" : "text-deep-green", className)}>
+      {dark ? <>{name}<span className="text-mint-on-dark">{tld}</span></> : SITE_WORDMARK}
     </A>
   );
 }
 
-/** The public header, or the signed-in one when `signedIn`: a floating white pill (frame N01). The mobile menu is a native <details>, so it needs no script. */
+/** The public header, or the signed-in one when `signedIn`: a floating bar (frame N01). The mobile menu is a native <details>, so it needs no script. */
 export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
   const items = signedIn ? SIGNED_IN_NAV : PUBLIC_NAV;
   return (
-    <header className="relative z-10 px-4 pt-4">
-      <div className="mx-auto flex max-w-[66rem] items-center justify-between gap-3 rounded-pill bg-white py-2 pl-4 pr-2 shadow-pop sm:pl-5 xl:pl-6">
+    <header className="relative z-10 px-5 pt-4 sm:px-8 sm:pt-5">
+      <div className="mx-auto flex max-w-[75rem] items-center justify-between gap-3 rounded-card bg-linear-to-b from-white to-hover-light py-2 pl-5 pr-2 shadow-pop sm:pl-6">
         <Wordmark />
         <nav aria-label="Main" className="hidden flex-1 items-center lg:flex">
           <div className="flex flex-1 items-center justify-center gap-1">
@@ -69,7 +71,7 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
               <A href="/login" className={link}>
                 Sign in
               </A>
-              <Button href="/signup" className="ml-1 xl:ml-2">
+              <Button href="/signup" size="lg" className="ml-1 xl:ml-2">
                 Create free account <Icon name="arrow" size={16} />
               </Button>
             </div>
@@ -134,9 +136,9 @@ const EXT = { target: "_blank", rel: "noopener noreferrer", className: "underlin
 export function SiteFooter({ standingLine, rulesCheckedOn }: { standingLine?: ReactNode; rulesCheckedOn?: string }) {
   return (
     <footer className="mt-16 rounded-t-[2.5rem] bg-ink text-white/75 [main:has(>[data-join]:last-child)+&]:mt-0 [main:has(>[data-join]:last-child)+&]:rounded-none">
-      <div className="mx-auto grid max-w-page gap-10 px-4 pb-10 pt-14 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
+      <div className="mx-auto grid max-w-page gap-10 px-5 pb-10 pt-14 sm:px-8 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
         <div className="flex flex-col gap-3">
-          <Wordmark />
+          <Wordmark dark />
           <p className="max-w-xs text-small">Jobs in Ireland where an employment permit is realistic. Free for candidates.</p>
           <p className="max-w-xs text-small text-peach">
             No genuine employer asks you to pay for a job offer. <A href="/report" className="underline underline-offset-2">Report it.</A>
@@ -157,7 +159,7 @@ export function SiteFooter({ standingLine, rulesCheckedOn }: { standingLine?: Re
           </nav>
         ))}
       </div>
-      <div className="mx-auto max-w-page space-y-2 border-t border-white/15 px-4 py-6 text-small text-white/60">
+      <div className="mx-auto max-w-page space-y-2 border-t border-white/15 px-5 py-6 sm:px-8 text-small text-white/60">
         {standingLine && <p data-slot="standing-line">{standingLine}</p>}
         {rulesCheckedOn && <p data-slot="rules-checked-on">Rules last checked on {rulesCheckedOn}</p>}
         <p>

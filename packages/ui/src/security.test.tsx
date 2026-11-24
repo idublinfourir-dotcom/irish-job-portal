@@ -45,7 +45,7 @@ describe("security", () => {
     expect(h).not.toContain("<script>");
   });
   it("the css gives every control a visible focus style", () => {
-    expect(readFileSync(join(dir, "tokens.css"), "utf8")).toMatch(/:where\(a, button, input, select, textarea, summary, \[tabindex\]\):focus-visible\s*{\s*outline: 3px/);
+    expect(readFileSync(join(dir, "tokens.css"), "utf8")).toMatch(/:where\(a, button, input, select, textarea, summary, \[tabindex\]\):focus-visible\s*{\s*outline: 2px solid/);
     for (const [f, s] of sources) expect(s, f).not.toMatch(/outline-none|focus:outline-0/);
   });
 });

@@ -27,6 +27,10 @@ const PAIRS: [string, string][] = [
   ["error", "cream"], ["error", "white"], ["error", "error-tint"],
   ["cream", "ink"], ["white", "deep-green"], ["white", "hover-dark"], ["white", "error"], ["cream", "deep-green"],
   ["ink", "hover-light"], ["ink", "white"], ["disabled-ink", "disabled"],
+  // hover and pressed looks of the buttons, field helper texts, placeholders (frame NS4)
+  ["white", "pressed-dark"], ["white", "ink-hover"], ["white", "ink-pressed"], ["ink", "peach-hover"], ["ink", "peach-pressed"],
+  ["ink", "lilac-hover"], ["ink", "lilac-pressed"], ["ink", "lilac-soft"], ["error", "error-hover"], ["error", "error-pressed"],
+  ["pressed-dark", "white"], ["pressed-dark", "sand"], ["faint", "white"], ["faint", "sand"], ["mint-on-dark", "ink"], ["muted", "hover-light"], ["peach", "ink"],
 ];
 
 describe("contrast", () => {
@@ -35,7 +39,13 @@ describe("contrast", () => {
     expect(ratio(c(fg), c(bg))).toBeGreaterThanOrEqual(4.5);
   });
   it("focus ring is at least 3 against the page and white (non-text)", () => {
-    for (const bg of [colour("cream"), WHITE, colour("sand")]) expect(ratio(colour("focus"), bg)).toBeGreaterThanOrEqual(3);
+    for (const bg of [colour("cream"), WHITE, colour("sand"), colour("peach"), colour("lilac"), colour("green-tint"), colour("deep-green")]) expect(ratio(colour("focus"), bg)).toBeGreaterThanOrEqual(3);
+  });
+  it("focus ring turns to peach on the dark surfaces, where ink cannot be seen, and back to ink on a light card", () => {
+    for (const bg of ["ink", "teal"]) expect(ratio(colour("peach"), colour(bg))).toBeGreaterThanOrEqual(3);
+    expect(css).toMatch(/:where\(\.bg-ink, \.bg-teal\) > \* \{ --focus: var\(--color-peach\); \}/);
+    expect(css).toMatch(/:where\(\.bg-white, [^)]*\) > \* \{ --focus: var\(--color-focus\); \}/);
+    expect(css).toContain("outline: 2px solid var(--focus, var(--color-focus))");
   });
   it("keeps the frame's eight colours (NS2; Mint one step darker for AA)", () => {
     const expected = { ink: "#14142b", peach: "#ffc48a", lilac: "#dcd6ff", "deep-green": "#0e8655", sand: "#f6f6fa", line: "#d8d5ee", sponsor: "#e9e5ff", "critical-skills": "#d9f5e7" };

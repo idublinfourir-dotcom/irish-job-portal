@@ -8,13 +8,13 @@ export type PillTone = keyof typeof TONES;
 
 /** A pill holds the key word only (frame NS2 rule). */
 export function Pill({ tone = "neutral", children, className }: { tone?: PillTone; children: ReactNode; className?: string }) {
-  return <span className={cx("inline-flex items-center rounded-pill px-3 py-0.5 text-small font-semibold", TONES[tone], className)}>{children}</span>;
+  return <span className={cx("inline-flex min-h-[34px] items-center rounded-pill px-3.5 text-small font-medium", TONES[tone], className)}>{children}</span>;
 }
 
 // The two permit badges keep their own colours and icons and never reuse the theme mint (NS2).
 export function CriticalSkillsBadge() {
   return (
-    <span data-badge="critical-skills" className="inline-flex items-center gap-1.5 rounded-pill border border-critical-skills-ink/25 bg-critical-skills px-3 py-1 text-[13px] font-semibold text-critical-skills-ink">
+    <span data-badge="critical-skills" className="inline-flex items-center gap-1.5 rounded-pill border-[1.5px] border-line-strong bg-critical-skills px-3 py-[5px] text-[13px] font-semibold text-critical-skills-ink">
       <Icon name="shield" size={15} />
       Critical Skills eligible
     </span>
@@ -22,7 +22,7 @@ export function CriticalSkillsBadge() {
 }
 export function SponsorBadge() {
   return (
-    <span data-badge="sponsor" className="inline-flex items-center gap-1.5 rounded-pill bg-sponsor px-3 py-1 text-[13px] font-semibold text-sponsor-ink">
+    <span data-badge="sponsor" className="inline-flex items-center gap-1.5 rounded-pill bg-sponsor px-3 py-1.5 text-[13px] font-semibold text-sponsor-ink">
       <Icon name="pen" size={15} />
       Sponsor confirmed
     </span>

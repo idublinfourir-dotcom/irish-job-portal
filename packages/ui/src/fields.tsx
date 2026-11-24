@@ -2,7 +2,7 @@ import { useId, type ComponentProps, type ReactNode } from "react";
 import { cx } from "./cx";
 import { Icon } from "./icons";
 
-// Input states from frame NS2: Default, Focus (css), Passed check, Blocked, Error.
+// Input states from frame NS4: Default, Focus (css), Passed check, Blocked, Error, Disabled. 54 px high (48 on a phone), a pill; a textarea has the 24 px corner.
 type Status = "passed" | "blocked";
 type Common = { label: string; help?: string; note?: string; status?: Status; error?: string };
 
@@ -17,14 +17,14 @@ function Field({ id, label, help, note, status, error, render }: Common & { id?:
   const border = bad ? "border-error" : status === "passed" ? "border-deep-green" : "border-line focus:border-ink";
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={fid} className="font-semibold">
+      <label htmlFor={fid} className="mb-0.5 text-small font-semibold">
         {label}
       </label>
       {render({
         id: fid,
         "aria-describedby": described || undefined,
         ...(error ? { "aria-invalid": true as const } : {}),
-        className: cx("w-full min-h-12 rounded-control border-[1.5px] bg-white px-4 py-2 text-ink placeholder:text-muted disabled:bg-disabled disabled:text-disabled-ink", border),
+        className: cx("w-full min-h-12 rounded-pill border-[1.5px] bg-white px-5 py-2 text-ink placeholder:text-faint disabled:border-disabled disabled:bg-disabled disabled:text-disabled-ink sm:min-h-[54px]", border),
       })}
       {help && (
         <p id={`${fid}-help`} className="text-small text-muted">
@@ -32,14 +32,14 @@ function Field({ id, label, help, note, status, error, render }: Common & { id?:
         </p>
       )}
       {note && (
-        <p id={`${fid}-note`} className={cx("flex items-center gap-1.5 text-small font-semibold", status === "blocked" ? "text-error" : "text-deep-green")}>
-          {status && <Icon name={status === "passed" ? "check" : "flag"} size={16} />}
+        <p id={`${fid}-note`} className={cx("flex items-center gap-1.5 text-[13px] font-medium", status === "blocked" ? "text-error" : "text-pressed-dark")}>
+          {status && <Icon name={status === "passed" ? "check" : "warning"} size={14} />}
           {note}
         </p>
       )}
       {error && (
-        <p id={`${fid}-error`} role="alert" className="flex items-center gap-1.5 text-small font-semibold text-error">
-          <Icon name="flag" size={16} />
+        <p id={`${fid}-error`} role="alert" className="flex items-center gap-1.5 text-[13px] font-medium text-error">
+          <Icon name="warning" size={14} />
           {error}
         </p>
       )}
@@ -54,7 +54,7 @@ export function Input({ label, help, note, status, error, ...rest }: Common & Re
 }
 
 export function Textarea({ label, help, note, status, error, ...rest }: Common & Rest<"textarea">) {
-  return <Field id={rest.id} {...{ label, help, note, status, error }} render={(p) => <textarea rows={4} {...rest} {...p} className={cx(p.className, rest.className)} />} />;
+  return <Field id={rest.id} {...{ label, help, note, status, error }} render={(p) => <textarea rows={4} {...rest} {...p} className={cx(p.className.replace("rounded-pill", "rounded-control").replace("py-2", "py-4"), rest.className)} />} />;
 }
 
 export function Select({ label, help, note, status, error, children, ...rest }: Common & Rest<"select"> & { children: ReactNode }) {
@@ -63,9 +63,12 @@ export function Select({ label, help, note, status, error, children, ...rest }: 
       id={rest.id}
       {...{ label, help, note, status, error }}
       render={(p) => (
-        <select {...rest} {...p} className={cx(p.className, rest.className)}>
-          {children}
-        </select>
+        <span className="relative block">
+          <select {...rest} {...p} className={cx(p.className, "appearance-none pr-12", rest.className)}>
+            {children}
+          </select>
+          <Icon name="down" className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted" />
+        </span>
       )}
     />
   );

@@ -17,7 +17,7 @@ const Section = ({ title, children }: { title: string; children: ReactNode }) =>
 /** Every component and state on one page, for looking at in a browser. Each app shows it at /kit, and not in production. */
 export function Kit() {
   return (
-    <div className="mx-auto max-w-page space-y-10 px-4 py-8">
+    <div className="mx-auto max-w-page space-y-10 px-5 py-8 sm:px-8">
       <h1 className="text-3xl">Component kit</h1>
       <Section title="Buttons">
         <div className="flex flex-wrap gap-2">

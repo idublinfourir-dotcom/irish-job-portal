@@ -14,7 +14,7 @@ export function Dialog({ open, onClose, title, children }: { open: boolean; onCl
     if (!open && d.open) d.close();
   }, [open]);
   return (
-    <dialog ref={ref} aria-labelledby={titleId} onClose={onClose} className="m-auto w-full max-w-lg rounded-card bg-white p-0 text-ink shadow-pop backdrop:bg-ink/50">
+    <dialog ref={ref} aria-labelledby={titleId} onClose={onClose} className="m-auto w-full max-w-lg rounded-bento bg-white p-0 text-ink shadow-modal backdrop:bg-ink/50">
       <div className="flex items-start justify-between gap-3 border-b border-line p-5">
         <h2 id={titleId} className="text-xl">
           {title}
