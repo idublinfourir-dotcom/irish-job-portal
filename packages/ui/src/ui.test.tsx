@@ -177,10 +177,18 @@ describe("candidate shell", () => {
     for (const t of ["Find a job", "Companies", "Guides", "Eligibility checker", "Permit services", "For employers", "Sign in", "Create free account"]) expect(h).toContain(t);
     expect(h).not.toContain("Sign out");
   });
-  it("shows the signed-in nav when signed in", () => {
+  it("shows public links, a bell and an account menu when signed in (frames NA1, M08)", () => {
     const h = html(<CandidateShell signedIn>x</CandidateShell>);
-    for (const t of ["Account", "Tracker", "Saved", "Alerts", "Sign out"]) expect(h).toContain(t);
+    for (const t of ["Find a job", "Companies", "Guides", "Permit services", "Account", "Tracker", "Saved", "Alerts", "Sign out"]) expect(h).toContain(t);
+    expect(h).toContain('aria-label="Notices"');
+    expect(h).toContain("data-account-menu");
     expect(h).not.toContain("Create free account");
+    expect(h).not.toContain("<script");
+  });
+  it("has no bell or account menu signed out", () => {
+    const h = html(<CandidateShell>x</CandidateShell>);
+    expect(h).not.toContain("data-account-menu");
+    expect(h).not.toContain('aria-label="Notices"');
   });
   it("has a mobile menu with no script (native details)", () => expect(html(<CandidateShell>x</CandidateShell>)).toContain("<details"));
   it("fits the header between 1024 and 1280 px: compact links, Home only from xl, no display class fighting hidden (bug at 1100 px, 23 Nov)", () => {

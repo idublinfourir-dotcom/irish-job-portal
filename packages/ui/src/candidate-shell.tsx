@@ -13,8 +13,8 @@ const PUBLIC_NAV = [
   { label: "Guides", href: "/guides" },
   { label: "Permit services", href: "/permit-services" },
 ];
-const SIGNED_IN_NAV = [
-  { label: "Find a job", href: "/jobs" },
+// The account menu (frame M08 and the signed-in header of NA1): the public links stay in the bar.
+const ACCOUNT_NAV = [
   { label: "Account", href: "/account" },
   { label: "Tracker", href: "/account/tracker" },
   { label: "Saved", href: "/account/saved" },
@@ -48,7 +48,7 @@ export function Wordmark({ className, dark }: { className?: string; dark?: boole
 
 /** The public header, or the signed-in one when `signedIn`: a floating bar (frame N01). The mobile menu is a native <details>, so it needs no script. */
 export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
-  const items = signedIn ? SIGNED_IN_NAV : PUBLIC_NAV;
+  const items = PUBLIC_NAV;
   return (
     <header className="relative z-10 px-5 pt-4 sm:px-8 sm:pt-5">
       <div className="mx-auto flex max-w-[75rem] items-center justify-between gap-3 rounded-card bg-linear-to-b from-white to-hover-light py-2 pl-5 pr-2 shadow-pop sm:pl-6">
@@ -62,7 +62,24 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
             ))}
           </div>
           {signedIn ? (
-            <SignOut />
+            <div className="flex items-center gap-2">
+              <A href="/account" aria-label="Notices" className="grid size-11 place-items-center rounded-pill bg-white text-ink hover:bg-hover-light">
+                <Icon name="bell" />
+              </A>
+              <details className="group relative" data-account-menu>
+                <summary className="grid size-11 cursor-pointer list-none place-items-center rounded-pill bg-deep-green text-white" aria-label="Account menu">
+                  <Icon name="user" />
+                </summary>
+                <div className="absolute right-0 z-10 mt-2 flex w-56 flex-col rounded-card border border-line bg-white p-2 shadow-pop">
+                  {ACCOUNT_NAV.map((i) => (
+                    <A key={i.href} href={i.href} className={menuLink}>
+                      {i.label}
+                    </A>
+                  ))}
+                  <SignOut className={menuLink} />
+                </div>
+              </details>
+            </div>
           ) : (
             <div className="flex items-center gap-1">
               <A href="/employers" className={link}>
@@ -101,7 +118,14 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
                 Help
               </A>
               {signedIn ? (
-                <SignOut className={menuLink} />
+                <>
+                  {ACCOUNT_NAV.map((i) => (
+                    <A key={i.href} href={i.href} className={menuLink}>
+                      {i.label}
+                    </A>
+                  ))}
+                  <SignOut className={menuLink} />
+                </>
               ) : (
                 <>
                   <A href="/employers" className={menuLink}>
