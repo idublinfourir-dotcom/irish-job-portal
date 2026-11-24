@@ -34,7 +34,7 @@ export function Breadcrumb({ items }: { items: { label: string; href?: string }[
           return (
             <li key={c.label} className="flex items-center gap-1">
               {c.href && !last ? (
-                <A href={c.href} className="underline underline-offset-2">
+                <A href={c.href} className="no-underline underline-offset-2 hover:underline">
                   {c.label}
                 </A>
               ) : (
