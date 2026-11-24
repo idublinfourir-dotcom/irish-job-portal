@@ -1,4 +1,5 @@
 // Unit tests (no browser, no network): each component is rendered to HTML and the markup is checked.
+import { SiteHeader } from "./candidate-shell";
 import { renderToStaticMarkup as html } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SITE_NAME as AUTH_SITE_NAME } from "../../auth/src/email-layout";
@@ -23,6 +24,18 @@ describe("Button", () => {
     for (const v of ["chip", "active", "filter-on"] as const) expect(html(<Button variant={v}>x</Button>)).toContain("min-h-[34px]");
     for (const v of BUTTON_VARIANTS) expect(html(<Button variant={v}>x</Button>)).toMatch(/ hover:\S+.* active:/);
     for (const v of ["outline", "danger"] as const) expect(html(<Button variant={v} disabled>x</Button>)).toMatch(/border-line bg-transparent/);
+  });
+  it("phone menu (frame M08): a dark panel under the bar with the six public links, then account rows or the sign-up buttons", () => {
+    const open = (signedIn: boolean) => html(<SiteHeader signedIn={signedIn} />).match(/<nav aria-label="Mobile"[\s\S]*?<\/nav>/)![0];
+    const visitor = open(false), me = open(true);
+    for (const h of ["/jobs", "/companies", "/guides", "/eligibility-checker", "/permit-services", "/help"]) for (const m of [visitor, me]) expect(m).toContain(`href="${h}"`);
+    expect(visitor).toMatch(/class="[^"]*bg-ink[^"]*fixed|class="[^"]*fixed[^"]*bg-ink/);
+    expect(visitor).toContain('href="/signup"');
+    expect(visitor).toContain('href="/login"');
+    expect(visitor).not.toContain('action="/api/auth/sign-out"');
+    for (const h of ["/account", "/account/tracker", "/account/saved", "/account/alerts"]) expect(me).toContain(`href="${h}"`);
+    expect(me).toContain('action="/api/auth/sign-out"');
+    expect(me).not.toContain('href="/signup"');
   });
   it("never uses the two permit badge colours", () => {
     for (const v of BUTTON_VARIANTS) expect(html(<Button variant={v}>x</Button>)).not.toMatch(/critical-skills|sponsor/);
@@ -177,10 +190,18 @@ describe("candidate shell", () => {
     for (const t of ["Find a job", "Companies", "Guides", "Eligibility checker", "Permit services", "For employers", "Sign in", "Create free account"]) expect(h).toContain(t);
     expect(h).not.toContain("Sign out");
   });
-  it("shows the signed-in nav when signed in", () => {
+  it("shows public links, a bell and an account menu when signed in (frames NA1, M08)", () => {
     const h = html(<CandidateShell signedIn>x</CandidateShell>);
-    for (const t of ["Account", "Tracker", "Saved", "Alerts", "Sign out"]) expect(h).toContain(t);
+    for (const t of ["Find a job", "Companies", "Guides", "Permit services", "Account", "Tracker", "Saved", "Alerts", "Sign out"]) expect(h).toContain(t);
+    expect(h).toContain('aria-label="Notices"');
+    expect(h).toContain("data-account-menu");
     expect(h).not.toContain("Create free account");
+    expect(h).not.toContain("<script");
+  });
+  it("has no bell or account menu signed out", () => {
+    const h = html(<CandidateShell>x</CandidateShell>);
+    expect(h).not.toContain("data-account-menu");
+    expect(h).not.toContain('aria-label="Notices"');
   });
   it("has a mobile menu with no script (native details)", () => expect(html(<CandidateShell>x</CandidateShell>)).toContain("<details"));
   it("fits the header between 1024 and 1280 px: compact links, Home only from xl, no display class fighting hidden (bug at 1100 px, 23 Nov)", () => {
@@ -227,7 +248,7 @@ describe("portal shell", () => {
     for (const t of ["Applicants", "Candidate search", "Contact requests"]) expect(h).not.toContain(t);
   });
   it("without a role key shows every Launch A link; with one hides what the role cannot use", () => {
-    const l = (roleKey: "viewer" | "poster" | "recruiter" | "account_owner") => [...html(<PortalShell companyName="A B" role="x" roleKey={roleKey}>x</PortalShell>).matchAll(/<a [^>]*>([^<]*)/g)].map((m) => m[1]!);
+    const l = (roleKey: "viewer" | "poster" | "recruiter" | "account_owner") => [...html(<PortalShell companyName="A B" role="x" roleKey={roleKey}>x</PortalShell>).matchAll(/<a [^>]*>([\s\S]*?)<\/a>/g)].map((m) => m[1]!.replace(/<span data-count[\s\S]*?<\/span>/g, "").replace(/<[^>]*>/g, "").trim());
     expect(l("viewer")).not.toContain("Post a job");
     expect(l("viewer")).not.toContain("Permit services");
     expect(l("poster")).toContain("Post a job");
@@ -241,7 +262,7 @@ describe("portal shell", () => {
 });
 
 describe("admin shell", () => {
-  const links = (roles: readonly (typeof ADMIN_ROLES)[number][]) => [...html(<AdminShell roles={roles} name="Dara">x</AdminShell>).matchAll(/<a [^>]*>([^<]*)/g)].map((m) => m[1]!);
+  const links = (roles: readonly (typeof ADMIN_ROLES)[number][]) => [...html(<AdminShell roles={roles} name="Dara">x</AdminShell>).matchAll(/<a [^>]*>([\s\S]*?)<\/a>/g)].map((m) => m[1]!.replace(/<span data-count[\s\S]*?<\/span>/g, "").replace(/<[^>]*>/g, "").trim());
   it("says internal, staff only", () => expect(html(<AdminShell roles={[]} name="D">x</AdminShell>)).toContain("Internal, staff only"));
   it("hides every link that needs a role for a member with none", () => expect(links([])).toEqual(["Skip to content", "Overview", "Rules data", "Audit log"]));
   it("shows a link only to the role that may open it", () => {

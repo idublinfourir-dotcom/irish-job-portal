@@ -81,7 +81,7 @@ describe("a changed snapshot changes the result", () => {
     expect(checkEligibility(input, today)).toMatchObject({ qualifies: true, minimum: 40904, rulesCheckedOn: "2026-11-12" });
     const later = withMin({ criticalSkills: 46_000, checkedOn: "2027-03-01" });
     expect(checkEligibility(input, later)).toMatchObject({ qualifies: false, minimum: 46000, rulesCheckedOn: "2027-03-01" });
-    expect(checkEligibility(input, later).standingLine).toContain("Rules last checked on 2027-03-01.");
+    expect(checkEligibility(input, later).standingLine).toContain("Rules last checked on 1 Mar 2027.");
     expect(checkEligibility({ ...input, contractMonths: 30 }, withMin({ minContractMonths: 36 })).reason).toBe("contract_too_short");
     const unlisted = { ...input, occupationCode: "3545", annualPay: 70_000 };
     expect(checkEligibility(unlisted, today).reason).toBe("non_list_route");

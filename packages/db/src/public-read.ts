@@ -3,7 +3,7 @@
 // most VISITOR_JOBS jobs of any list, no cursor, and a flag that more wait behind sign-in; the rows past them are never fetched. A signed-in candidate
 // keeps the full paging. Every read is counted in candidate_rate_limit through countRate: per client address for a visitor, per login for a candidate.
 import type pg from "pg";
-import { similarLiveJobs } from "./candidate";
+import { closedJob, similarLiveJobs } from "./candidate";
 import { clientAddress, countRate, Refuse } from "./candidate-route";
 import { BadEligibilityInput, registrationFor, type EligibilityInput } from "@portal/rules";
 import { BadContentInput, getHelp, listUpdates } from "./content";
@@ -79,6 +79,7 @@ export const jobsRead: Work = async (db, q, visitor) => {
 };
 export const jobRead: Work = (db, q) => getJob(db, q.get("id") ?? "");
 export const similarRead: Work = (db, q) => similarLiveJobs(db, q.get("id") ?? "");
+export const closedJobRead: Work = (db, q) => closedJob(db, q.get("id") ?? "");
 export const companyRead: Work = async (db, q, visitor) => {
   const { limit, after } = readPaging(q, visitor);
   const c = await getCompanyPage(db, q.get("slug") ?? "", { after, limit });

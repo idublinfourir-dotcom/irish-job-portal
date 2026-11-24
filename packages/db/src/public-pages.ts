@@ -2,10 +2,10 @@
 // jobs in the job list's own columns and cards; a further page is the `next` cursor of the one before. The scope (the company, the code) is a
 // parameter and the column it filters is fixed in code, never taken from input.
 import type pg from "pg";
-import { checkEligibility, registrationFor, standingLine, type Registration, type RulesSnapshot } from "@portal/rules";
+import { checkEligibility, publicPayCandidatesOf, publicPayTier, registrationFor, standingLine, type Registration, type RulesSnapshot } from "@portal/rules";
 import { getRules } from "./rules-data";
 import { getContent, validSlug, type ContentPage } from "./content";
-import { PERMITS, summarisePermits, type Permits } from "./dete";
+import { FIRST_PERMIT_YEAR, PERMITS, summarisePermits, type Permits } from "./dete";
 import { BadSearchInput, COUNT_CAP, cursorOf, decodeCursor, employerLabels, KEYS, CAST, LIST, listCards, LIVE, PAGE_SIZE, pageSize, SOURCE, type ScopedRow, type CompanyLabel, type JobCard, type ListRow, type Sort } from "./search";
 
 type Db = Pick<pg.Pool, "query">;
@@ -64,7 +64,9 @@ const ORG =
   "o.claims_removed_at, (select m.slug from organisation m where m.id = o.merged_into_id) as merged_slug, o.merged_into_id is not null as merged " +
   "from organisation o where o.slug = $1";
 const NAMES = "select name, kind from organisation_name where organisation_id = $1::bigint order by (kind = 'legal') desc, name limit 200";
-export const COMPANY_QUERIES = { org: ORG, names: NAMES, permits: PERMITS };
+const CUT_OFF = "select d.year::int, d.month::int from dete_permit_count d where d.month is not null order by d.year desc, d.month desc limit 1"; // qualified: a bare name in order by is the output column (the cast), which the index cannot serve
+export const COMPANY_QUERIES = { org: ORG, names: NAMES, permits: PERMITS, cutOff: CUT_OFF };
+export const PUBLIC_PAY_LABEL = "Public sector pay scale employer";
 const HIDDEN_STATUSES = new Set(["rejected", "closed"]);
 
 type OrgRow = {
@@ -75,10 +77,11 @@ export type CompanyPage = {
   id: string; slug: string; name: string; kind: string; website: string | null; logoUrl: string | null; shortDescription: string | null; county: string | null;
   /** A verified account (the employer has claimed the page). */
   claimed: boolean;
-  labels: CompanyLabel[];
+  /** The job page's labels, plus (B23, #67) "Public sector pay scale employer" when a name of the company is on the public pay-deal list. */
+  labels: (CompanyLabel | typeof PUBLIC_PAY_LABEL)[];
   names: { name: string; kind: string }[];
-  /** null: no DETE name is linked (not zero). */
-  permits: Permits | null;
+  /** null: no DETE name is linked (not zero). byMonth (B23): every month with permits, oldest first; dataThrough: the newest month any DETE row covers (the cut-off). */
+  permits: (Permits & { byMonth: { year: number; month: number; permits: number }[]; dataThrough: { year: number; month: number } | null }) | null;
   jobs: ScopedJobs;
 };
 export type CompanyResult = { merged: string } | CompanyPage;
@@ -89,15 +92,22 @@ export async function getCompanyPage(db: Db, slug: string, opts: { after?: strin
   const o = (await db.query<OrgRow>(ORG, [slug])).rows[0];
   if (!o || HIDDEN_STATUSES.has(o.status)) return null;
   if (o.merged) return o.merged_slug ? { merged: o.merged_slug } : null;
-  const [names, permits, jobs] = await Promise.all([
+  const [names, permits, jobs, cut, rules] = await Promise.all([
     db.query<{ name: string; kind: string }>(NAMES, [o.id]),
     db.query<{ year: number; month: number | null; permits: number }>(PERMITS, [o.id]),
     scopedJobs(db, "company", o.id, opts.after, opts.limit, { slug: o.slug, logoUrl: o.logo_url }),
+    db.query<{ year: number; month: number }>(CUT_OFF),
+    getRules(db),
   ]);
+  const summary = summarisePermits(permits.rows, opts.now);
+  const byMonth = permits.rows.filter((r): r is { year: number; month: number; permits: number } => r.month !== null && r.year >= FIRST_PERMIT_YEAR && r.permits > 0).sort((a, b) => a.year - b.year || a.month - b.month);
+  const pay = publicPayCandidatesOf(rules);
+  const publicPay = [o.display_name, ...names.rows.map((n) => n.name)].some((n) => publicPayTier(n, pay) > 0);
   return {
     id: o.id, slug: o.slug, name: o.display_name, kind: o.kind, website: o.website, logoUrl: o.logo_url, shortDescription: o.short_description, county: o.county,
     claimed: o.claimed_at !== null && (o.status === "verified" || o.status === "verified_restricted"),
-    labels: employerLabels(o.permit_history, o.claims_removed_at), names: names.rows, permits: summarisePermits(permits.rows, opts.now), jobs,
+    labels: [...employerLabels(o.permit_history, o.claims_removed_at), ...(publicPay ? [PUBLIC_PAY_LABEL as typeof PUBLIC_PAY_LABEL] : [])],
+    names: names.rows, permits: summary && { ...summary, byMonth, dataThrough: cut.rows[0] ?? null }, jobs,
   };
 }
 

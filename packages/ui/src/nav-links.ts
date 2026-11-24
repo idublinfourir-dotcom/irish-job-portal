@@ -1,5 +1,8 @@
 // The sidebar links of the portal and the admin and who sees each: plain data in a .ts file (no JSX), so the shells render it and the database tests can read it.
-type Link = { label: string; href: string };
+// The icon names used here (a subset of icons.tsx; named in this file so the database tests, which have no JSX, can read it. The shells fail to compile on a wrong one).
+export type NavIcon = "home" | "briefcase" | "plus" | "file" | "building" | "users" | "shield" | "help" | "layers" | "flag" | "clipboard" | "copy" | "close" | "pen" | "clock" | "lock";
+
+type Link = { label: string; href: string; icon: NavIcon };
 
 export const PORTAL_ROLES = ["viewer", "poster", "recruiter", "account_owner"] as const;
 export type PortalRole = (typeof PORTAL_ROLES)[number];
@@ -10,14 +13,14 @@ type PortalLink = Link & { roles?: PortalRole[] };
 export const PORTAL_NAV: { links: PortalLink[] }[] = [
   {
     links: [
-      { label: "Dashboard", href: "/dashboard" },
-      { label: "Jobs", href: "/jobs" },
-      { label: "Post a job", href: "/jobs/new", roles: ["poster", "recruiter", "account_owner"] },
-      { label: "Permit services", href: "/services", roles: ["recruiter", "account_owner"] },
-      { label: "Company profile", href: "/company" },
-      { label: "Team", href: "/team" },
-      { label: "Account status", href: "/account-status" },
-      { label: "Help", href: "/help" },
+      { label: "Dashboard", href: "/dashboard", icon: "home" },
+      { label: "Jobs", href: "/jobs", icon: "briefcase" },
+      { label: "Post a job", href: "/jobs/new", icon: "plus", roles: ["poster", "recruiter", "account_owner"] },
+      { label: "Permit services", href: "/services", icon: "file", roles: ["recruiter", "account_owner"] },
+      { label: "Company profile", href: "/company", icon: "building" },
+      { label: "Team", href: "/team", icon: "users" },
+      { label: "Account status", href: "/account-status", icon: "shield" },
+      { label: "Help", href: "/help", icon: "help" },
     ],
   },
 ];
@@ -33,29 +36,29 @@ export const ADMIN_NAV: { title: string; links: AdminLink[] }[] = [
   {
     title: "Queues",
     links: [
-      { label: "Overview", href: "/" },
-      { label: "Account reviews", href: "/account-reviews", roles: ["account_reviewer"] },
-      { label: "Fetched jobs", href: "/fetched-jobs", roles: ["fetched_job_reviewer"] },
-      { label: "Reports and strikes", href: "/reports", roles: ["trust_and_safety"] },
-      { label: "Services cases", href: "/services", roles: ["services_case_handler", "administrator"] },
+      { label: "Overview", href: "/", icon: "home" },
+      { label: "Account reviews", href: "/account-reviews", icon: "users", roles: ["account_reviewer"] },
+      { label: "Fetched jobs", href: "/fetched-jobs", icon: "layers", roles: ["fetched_job_reviewer"] },
+      { label: "Reports and strikes", href: "/reports", icon: "flag", roles: ["trust_and_safety"] },
+      { label: "Services cases", href: "/services", icon: "file", roles: ["services_case_handler", "administrator"] },
     ],
   },
   {
     title: "Data",
     links: [
-      { label: "Rules data", href: "/rules" },
-      { label: "Big-company list", href: "/rules/big-companies", roles: ["rules_data_editor", "administrator"] },
-      { label: "Name merges", href: "/name-merges", roles: ["account_reviewer", "fetched_job_reviewer", "rules_data_editor", "trust_and_safety", "administrator"] },
-      { label: "Ban list", href: "/ban-list", roles: ["trust_and_safety"] },
+      { label: "Rules data", href: "/rules", icon: "clipboard" },
+      { label: "Big-company list", href: "/rules/big-companies", icon: "building", roles: ["rules_data_editor", "administrator"] },
+      { label: "Name merges", href: "/name-merges", icon: "copy", roles: ["account_reviewer", "fetched_job_reviewer", "rules_data_editor", "trust_and_safety", "administrator"] },
+      { label: "Ban list", href: "/ban-list", icon: "close", roles: ["trust_and_safety"] },
     ],
   },
   {
     title: "Tools",
     links: [
-      { label: "Manual posting", href: "/manual-posting", roles: ["account_reviewer", "trust_and_safety", "administrator"] },
-      { label: "Content editor", href: "/content", roles: ["content_editor", "rules_data_editor", "administrator"] },
-      { label: "Audit log", href: "/audit" },
-      { label: "Staff and roles", href: "/staff", roles: ["administrator"] },
+      { label: "Manual posting", href: "/manual-posting", icon: "plus", roles: ["account_reviewer", "trust_and_safety", "administrator"] },
+      { label: "Content editor", href: "/content", icon: "pen", roles: ["content_editor", "rules_data_editor", "administrator"] },
+      { label: "Audit log", href: "/audit", icon: "clock" },
+      { label: "Staff and roles", href: "/staff", icon: "lock", roles: ["administrator"] },
     ],
   },
 ];

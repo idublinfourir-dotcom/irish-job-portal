@@ -28,7 +28,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     <html lang="en" className={`${outfit.variable} ${dmSans.variable}`}>
       <body>
         {shell && isRole(shell.role) ? (
-          <PortalShell companyName={shell.companyName} role={ROLE_LABEL[shell.role]} roleKey={shell.role}>
+          <PortalShell companyName={shell.companyName} role={ROLE_LABEL[shell.role]} roleKey={shell.role} status={shell.status ?? undefined} unread={shell.unread}>
             {children}
           </PortalShell>
         ) : (

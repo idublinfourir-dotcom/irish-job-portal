@@ -1,6 +1,6 @@
 // The three root layouts, rendered with the data layer stood in (the real reads are tried on the test database in packages/db/test/shells.test.ts). The font loader
 // is replaced because next/font only works inside the Next build. Every state of each shell: signed out, signed in, each role, counts.
-import { SITE_NAME } from "@portal/ui";
+import { SITE_NAME, SITE_WORDMARK } from "@portal/ui";
 import { renderToStaticMarkup as html } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminLayout from "./admin/app/layout";
@@ -16,7 +16,7 @@ vi.mock("next/font/google", () => ({
 }));
 
 const { frame, shell, sidebar } = vi.hoisted(() => ({
-  frame: { value: { signedIn: false, standingLine: "Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 2026-11-16.", origin: "https://example.test" as string | null } },
+  frame: { value: { signedIn: false, standingLine: "Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 16 Nov 2026.", origin: "https://example.test" as string | null } },
   shell: { value: null as { companyName: string; role: string } | null },
   sidebar: { value: null as { name: string; roles: string[]; counts: Record<string, number | undefined> } | null },
 }));
@@ -29,7 +29,8 @@ const CandidatePage = () => <p>Nothing here yet.</p>;
 const candidate = async () => html(await CandidateLayout({ children: CandidatePage() }));
 const portal = async () => html(await PortalLayout({ children: PortalPage() }));
 const admin = async () => html(await AdminLayout({ children: AdminPage() }));
-const links = (h: string) => [...h.matchAll(/<a [^>]*>([^<]*)/g)].map((m) => m[1]!);
+// a link's own text: its icon and its count are dropped
+const links = (h: string) => [...h.matchAll(/<a [^>]*>([\s\S]*?)<\/a>/g)].map((m) => m[1]!.replace(/<span data-count[\s\S]*?<\/span>/g, "").replace(/<[^>]*>/g, "").trim());
 beforeEach(() => {
   frame.value = { ...frame.value, signedIn: false, origin: "https://example.test" };
   shell.value = null;
@@ -52,7 +53,7 @@ describe("candidate layout (P1)", () => {
   });
   it("footer: the standing line with the date it was given, the GeoNames credit, the report line, the Cookies link", async () => {
     const h = await candidate();
-    expect(h).toContain("Rules last checked on 2026-11-16.");
+    expect(h).toContain("Rules last checked on 16 Nov 2026.");
     expect(h.match(/Rules last checked on/g)).toHaveLength(1);
     expect(h).toContain('href="https://www.geonames.org/"');
     expect(h).toContain("CC BY 4.0");
@@ -140,24 +141,30 @@ describe("admin layout (P4)", () => {
     for (const t of ["Fetched jobs", "Reports and strikes", "Ban list", "Staff and roles", "Content editor", "Big-company list"]) expect(l).not.toContain(t);
     expect(h).toMatch(/data-count[^>]*>7</);
     expect(h).toMatch(/data-count[^>]*>3</);
-    expect(h).toContain("account reviewer, services case handler");
+    expect(h).toContain('title="account reviewer, services case handler"');
+    expect(h).toContain(">account reviewer and 1 more</span>");
   });
   it("a role the shell does not know is dropped, not shown", async () => {
     sidebar.value = { name: "Fake Staff", roles: ["superuser"], counts: {} };
     expect(links(await admin())).toEqual(["Skip to content", "Overview", "Rules data", "Audit log"]);
   });
-  it("no global search box until B58 exists", async () => {
+  it("the staff search box (B58) is a plain GET form to /search, for a visitor never", async () => {
     sidebar.value = { name: "Fake Staff", roles: ["administrator"], counts: {} };
-    expect(await admin()).not.toMatch(/type="search"|role="search"/);
+    const form = (await admin()).match(/<form[^>]*role="search"[^>]*>|<form[^>]*>/g)!.find((f) => f.includes('role="search"'))!;
+    expect(form).toContain('action="/search"');
+    expect(form).toContain('method="get"');
+    sidebar.value = null;
+    expect(await admin()).not.toMatch(/role="search"/);
   });
 });
 
 describe.each([["candidate", candidate], ["portal", portal], ["admin", admin]] as const)("%s", (_n, render) => {
   it("has no Sample text and no mock logo", async () => expect(await render()).not.toMatch(/Sample|Permitly|<img/i));
-  it("keeps the brand name from the one constant", async () => {
+  it("keeps the brand from the one constant: the name on the candidate site, the wordmark (the logo) in the portal and admin", async () => {
     sidebar.value = { name: "Fake Staff", roles: [], counts: {} };
     shell.value = { companyName: "Fake Company Ltd", role: "viewer" };
-    expect(await render()).toContain(SITE_NAME);
+    const h = (await render()).replace(/<[^>]*>/g, "");
+    expect(_n === "candidate" ? (await render()).includes(SITE_NAME) : h.replace(/<wbr>/g, "").includes(SITE_WORDMARK)).toBe(true);
   });
 });
 

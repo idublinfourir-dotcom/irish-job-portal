@@ -48,6 +48,7 @@ async function check(app: string): Promise<string[]> {
     if (icon.status !== 200 || !icon.type.startsWith("image/")) out.push(`/favicon.ico: ${icon.status} ${icon.type}`);
     const page = await get("/no-such-page");
     if (/immutable|max-age=[1-9]/.test(page.cache)) out.push(`a page is cached: ${page.cache}`);
+    if (app === "candidate" && (page.status !== 404 || !page.body.includes("that page") || !/<meta name="robots" content="noindex/.test(page.body))) out.push(`/no-such-page answers ${page.status}: not our 404 page, or not noindex`);
     // The built home page itself: no database here, so its sections show their failed state, but the page answers (24 Nov 2026: every photo was missing
     // in the production build only, and the live home page answered 500 while the tests and the dev server were fine).
     const home = await get("/");

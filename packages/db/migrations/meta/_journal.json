@@ -484,6 +484,13 @@
       "when": 1794300074000,
       "tag": "0074_portal_extras",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1794300075000,
+      "tag": "0075_closed_job_read",
+      "breakpoints": true
     }
   ]
 }

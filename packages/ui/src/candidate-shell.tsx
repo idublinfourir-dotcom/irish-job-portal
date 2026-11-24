@@ -13,8 +13,8 @@ const PUBLIC_NAV = [
   { label: "Guides", href: "/guides" },
   { label: "Permit services", href: "/permit-services" },
 ];
-const SIGNED_IN_NAV = [
-  { label: "Find a job", href: "/jobs" },
+// The account menu (frame M08 and the signed-in header of NA1): the public links stay in the bar.
+const ACCOUNT_NAV = [
   { label: "Account", href: "/account" },
   { label: "Tracker", href: "/account/tracker" },
   { label: "Saved", href: "/account/saved" },
@@ -24,6 +24,16 @@ const SIGN_OUT = "/api/auth/sign-out";
 
 // Compact between 1024 and 1280 (a laptop at 125 percent scaling is about 1093 px wide), the frame's spacing from 1280.
 const link = "inline-flex min-h-11 items-center whitespace-nowrap px-1.5 text-[14px] font-medium text-ink/80 hover:text-ink xl:px-2 xl:text-[15px]";
+const menuRow = "flex min-h-14 items-center justify-between border-b border-white/15 font-heading text-[22px] font-semibold";
+// The phone menu's public links (frame M08), in its order.
+const MOBILE_NAV = [
+  { label: "Find a job", href: "/jobs" },
+  { label: "Companies", href: "/companies" },
+  { label: "Guides", href: "/guides" },
+  { label: "Eligibility checker", href: "/eligibility-checker" },
+  { label: "Permit services", href: "/permit-services" },
+  { label: "Help", href: "/help" },
+];
 const menuLink = "inline-flex min-h-11 items-center px-2 font-semibold hover:underline underline-offset-4";
 
 function SignOut({ className = link }: { className?: string }) {
@@ -48,9 +58,9 @@ export function Wordmark({ className, dark }: { className?: string; dark?: boole
 
 /** The public header, or the signed-in one when `signedIn`: a floating bar (frame N01). The mobile menu is a native <details>, so it needs no script. */
 export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
-  const items = signedIn ? SIGNED_IN_NAV : PUBLIC_NAV;
+  const items = PUBLIC_NAV;
   return (
-    <header className="relative z-10 px-5 pt-4 sm:px-8 sm:pt-5">
+    <header className="relative z-30 px-5 pt-4 sm:px-8 sm:pt-5">
       <div className="mx-auto flex max-w-[75rem] items-center justify-between gap-3 rounded-card bg-linear-to-b from-white to-hover-light py-2 pl-5 pr-2 shadow-pop sm:pl-6">
         <Wordmark />
         <nav aria-label="Main" className="hidden flex-1 items-center lg:flex">
@@ -62,7 +72,24 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
             ))}
           </div>
           {signedIn ? (
-            <SignOut />
+            <div className="flex items-center gap-2">
+              <A href="/account" aria-label="Notices" className="grid size-11 place-items-center rounded-pill bg-white text-ink hover:bg-hover-light">
+                <Icon name="bell" />
+              </A>
+              <details className="group relative" data-account-menu>
+                <summary className="grid size-11 cursor-pointer list-none place-items-center rounded-pill bg-deep-green text-white" aria-label="Account menu">
+                  <Icon name="user" />
+                </summary>
+                <div className="absolute right-0 z-10 mt-2 flex w-56 flex-col rounded-card border border-line bg-white p-2 shadow-pop">
+                  {ACCOUNT_NAV.map((i) => (
+                    <A key={i.href} href={i.href} className={menuLink}>
+                      {i.label}
+                    </A>
+                  ))}
+                  <SignOut className={menuLink} />
+                </div>
+              </details>
+            </div>
           ) : (
             <div className="flex items-center gap-1">
               <A href="/employers" className={link}>
@@ -84,34 +111,32 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
             </A>
           )}
           <details className="group relative" data-menu>
-            <summary className="grid size-11 cursor-pointer list-none place-items-center rounded-pill bg-ink text-white" aria-label="Menu">
+            <summary className="grid size-11 cursor-pointer list-none place-items-center rounded-pill bg-ink text-white group-open:bg-hover-light group-open:text-ink" aria-label="Menu">
               <Icon name="menu" className="group-open:hidden" />
               <Icon name="close" className="hidden group-open:block" />
             </summary>
-            <nav aria-label="Mobile" className="absolute right-0 z-10 mt-2 flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-1 rounded-card border border-line bg-white p-3 shadow-pop">
-              {items.map((i) => (
-                <A key={i.href} href={i.href} className={menuLink}>
-                  {i.label}
+            {/* Frame M08: the rest of the screen under the bar, dark, one big row per link. */}
+            <nav aria-label="Mobile" className="fixed inset-x-0 bottom-0 top-[5.25rem] z-10 flex flex-col overflow-y-auto bg-ink px-5 pb-8 pt-4 text-white sm:px-8">
+              {MOBILE_NAV.map((i) => (
+                <A key={i.href} href={i.href} className={menuRow}>
+                  {i.label} <Icon name="arrow" />
                 </A>
               ))}
-              <A href="/eligibility-checker" className={menuLink}>
-                Eligibility checker
-              </A>
-              <A href="/help" className={menuLink}>
-                Help
-              </A>
               {signedIn ? (
-                <SignOut className={menuLink} />
-              ) : (
                 <>
-                  <A href="/employers" className={menuLink}>
-                    For employers
-                  </A>
-                  <Button href="/signup">Create free account</Button>
-                  <Button href="/login" variant="outline">
-                    Sign in
-                  </Button>
+                  {ACCOUNT_NAV.map((i) => (
+                    <A key={i.href} href={i.href} className={menuRow}>
+                      {i.label} <Icon name="arrow" />
+                    </A>
+                  ))}
+                  <SignOut className="mt-6 inline-flex min-h-11 w-full items-center justify-center font-semibold" />
                 </>
+              ) : (
+                <div className="mt-7 flex flex-col items-center gap-4">
+                  <Button href="/signup" variant="sun" size="lg" className="w-full">Create free account</Button>
+                  <A href="/login" className="inline-flex min-h-11 items-center font-semibold">Sign in</A>
+                  <A href="/employers" className="inline-flex min-h-11 items-center gap-2 text-small text-white/70">For employers and agencies <Icon name="external" size={16} /></A>
+                </div>
               )}
             </nav>
           </details>

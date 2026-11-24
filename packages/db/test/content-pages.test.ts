@@ -171,7 +171,7 @@ describe("occupation page", () => {
     const own = (await su("select slug, logo_url from organisation where id = $1", [org])).rows[0];
     for (const j of p.jobs.jobs) expect(j).toMatchObject({ employerSlug: own.slug, employerLogoUrl: own.logo_url });
     expect(p.text).toMatchObject({ title: "About 9201", body: "Registration body: fake" });
-    expect(p.standingLine).toMatch(/^Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 2026-11-12\.$/);
+    expect(p.standingLine).toMatch(/^Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 12 Nov 2026\.$/);
     const both = (await getOccupationPage(candidate(), "9203", { lists: LISTS }))!;
     expect(both.listStatus).toBe("critical-skills");
     expect(both.entries).toHaveLength(2);
@@ -231,7 +231,7 @@ describe("company page", () => {
     {
       const p = asCompany(await getCompanyPage(candidate(), c.slug, { now: NOW }));
       expect(p.names.map((n) => n.name)).toEqual([`${c.tag} Limited`, `${c.tag} Ireland`, `${c.tag} Services`]);
-      expect(p.permits).toEqual({ byYear: [{ year: 2019, permits: 3 }, { year: 2023, permits: 40 }, { year: 2024, permits: 10 }, { year: 2025, permits: 20 }], peakYear: 2023, trend: "up", latestMonth: null });
+      expect(p.permits).toEqual({ byYear: [{ year: 2019, permits: 3 }, { year: 2023, permits: 40 }, { year: 2024, permits: 10 }, { year: 2025, permits: 20 }], peakYear: 2023, trend: "up", latestMonth: null, byMonth: [], dataThrough: expect.toSatisfy((v: unknown) => v === null || (typeof v === "object" && "year" in (v as object))) });
       expect(p.claimed).toBe(true);
       expect(p.jobs.jobs.map((j) => j.id).sort()).toEqual([...mine].sort());
       expect(p.jobs.count).toEqual({ n: 2, more: false });

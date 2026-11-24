@@ -45,6 +45,18 @@ describe("mapping (pure)", () => {
     for (const bad of [1e12, -5, 0, Number.NaN, "40000", null, {}, [40000]]) expect(s({ actualWages: bad, offeredRemunerationPackages: [{ minimumAmount: bad }] }), String(bad)).toBe("");
     expect(s({ offeredRemunerationPackages: "€1,000,000" })).toBe("");
   });
+  it("a negotiable wage of 200,000 or more is a placeholder, not pay (three Glanua jobs, 24 Nov 2026); a fixed one and a lower one are pay", () => {
+    expect(jiSalary({ actualWages: 300000, negotiableSalary: true, offeredRemunerationPackages: [] })).toBe("");
+    expect(jiSalary({ actualWages: 200000, negotiableSalary: true })).toBe("");
+    expect(jiSalary({ actualWages: 199999, negotiableSalary: true })).toBe("€199,999 a year");
+    expect(jiSalary({ actualWages: 286151, negotiableSalary: false })).toBe("€286,151 a year");
+    expect(jiSalary({ actualWages: 286151 })).toBe("€286,151 a year");
+    expect(jiSalary({ actualWages: 300000, negotiableSalary: "true" })).toBe("€300,000 a year"); // only the real flag counts
+    // bands the employer shows still count when the wage is a placeholder
+    expect(jiSalary({ actualWages: 300000, negotiableSalary: true, displaySalary: true, offeredRemunerationPackages: [{ minimumAmount: 60000, maximumAmount: 70000 }] })).toBe("€60,000 to €70,000 a year");
+    // the whole advert then states no pay
+    expect(jiAdvert("b", hex(1), { ...DETAIL, actualWages: 300000, negotiableSalary: true, offeredRemunerationPackages: [] }, TODAY)!.salaryBox).toBe("");
+  });
   it("closing date: past is not kept, today and later are; an unreadable or absurd date is no date; not active is not kept", () => {
     expect(jiAdvert("b", hex(1), { ...DETAIL, expiration: "2026-11-19" }, TODAY)).toBeNull();
     expect(jiAdvert("b", hex(1), { ...DETAIL, expiration: null, dateClosed: "2025-01-01" }, TODAY)).toBeNull();

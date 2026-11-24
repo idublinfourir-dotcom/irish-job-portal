@@ -2,8 +2,8 @@
 // logins: each membership role, a login with no company, a removed member, a blocked login, a visitor and a candidate's cookie. Role refusals of the
 // pages the hidden links lead to are proven by the route tests named in the report (jobs-route.test.ts NOT_A_POSTER, services-requests-portal.test.ts
 // ROLE_REFUSED); here the sidebar read gives the role the layout hides links by. Only Next's request context is stood in; no network. Fake people only.
-// Budget (measured 23 November 2026, see the printed line): the shell read is 8 statements for a member (two requirePortal of 3 each, the company read and,
-// since P2 (B54), its DETE permit count), 0 for a visitor. Follow-up: a sidebar read of the name alone would save the permit query on every portal page.
+// Budget (measured 23 November 2026, see the printed line): the shell read was 8 statements for a member (two requirePortal of 3 each, the company read and,
+// since P2 (B54), its DETE permit count), 0 for a visitor. Follow-up: a sidebar read of the name alone would save the permit query on every portal page. Since 24 Nov (bell count) it is 13: a third requirePortal and the notices read.
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { answers, makeAuth, portalAnswers, seedSignupTerms } from "./better-auth-helper";
@@ -15,7 +15,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({ headers: async () => state.headers }));
 vi.mock("next/navigation", () => ({ redirect: (to: string) => { throw new Error(`REDIRECT:${to}`); } }));
 
-const BUDGET = { memberStatements: 8, visitorStatements: 0, medianMs: 20 }; // re-measured 23 Nov 2026 on the combined branch: 8, median 2.8 ms
+const BUDGET = { memberStatements: 13, visitorStatements: 0, medianMs: 20 }; // re-measured 24 Nov 2026 with the bell count: 13 (the notices read adds its own session check of 3 and 2 queries), median 4.3 ms
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const BASE = "http://localhost:3001";
 type Handler = (r: Request) => Promise<Response>;
@@ -75,7 +75,7 @@ describe("P3: the portal sidebar read", () => {
     for (const role of ["viewer", "poster", "recruiter", "account_owner"]) {
       const u = await login();
       await F.member(org, u.id, { role });
-      expect(await as(u.cookie, () => D.readShell()), role).toEqual({ companyName: "Fake Shell Company Ltd", role });
+      expect(await as(u.cookie, () => D.readShell()), role).toEqual({ companyName: "Fake Shell Company Ltd", role, status: expect.any(String), unread: 0 });
     }
   });
   it("gives a visitor, a login with no company, a removed member, a blocked login and a candidate's cookie nothing (the bare page)", async () => {
@@ -99,6 +99,26 @@ describe("P3: the portal sidebar read", () => {
     for (const cookie of [undefined, blocked.cookie, candidateCookie, "portal.session_token=abc"]) expect(await as(cookie, () => redirected(D.requireLogin())), String(cookie)).toBe(`REDIRECT:${D.PORTAL_SIGN_IN}`);
     expect((await as(member.cookie, () => D.requireLogin())).membership?.role).toBe("viewer");
     expect((await as(noCompany.cookie, () => D.requireLogin())).membership).toBeNull();
+  });
+  it("gives the company's status (the banner's input) and the login's own unread count, for every role", async () => {
+    for (const status of ["verified", "verified_restricted", "suspended", "closed"]) {
+      const org = await F.org({ status });
+      for (const role of ["viewer", "poster", "recruiter", "account_owner"]) {
+        const u = await login();
+        await F.member(org, u.id, { role });
+        await su.query(`insert into notification(portal_user_id, category, template_key, params, read_at) select $1, 'rules', 'fake_notice', '{}', case when g = 1 then now() end from generate_series(1, 3) g`, [u.id]);
+        expect(await as(u.cookie, () => D.readShell()), `${status} ${role}`).toMatchObject({ status, role, unread: 2 });
+      }
+    }
+  });
+  it("counts only the login's own notices (another member of the company sees none of them)", async () => {
+    const org = await F.org();
+    const a = await login(), b = await login();
+    await F.member(org, a.id, { role: "poster" });
+    await F.member(org, b.id, { role: "poster" });
+    await su.query(`insert into notification(portal_user_id, category, template_key, params) values ($1, 'rules', 'fake_notice', '{}')`, [a.id]);
+    expect((await as(b.cookie, () => D.readShell()))?.unread).toBe(0);
+    expect((await as(a.cookie, () => D.readShell()))?.unread).toBe(1);
   });
   it("a company name with markup is returned as stored (the layout escapes it)", async () => {
     const org = await F.org({ name: "<b>Fake</b> & Co" });

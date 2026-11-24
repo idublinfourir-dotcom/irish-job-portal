@@ -18,7 +18,7 @@ const isRole = (r: string): r is AdminRole => (ADMIN_ROLES as readonly string[])
 
 /**
  * P4: a signed-in staff member gets the sidebar with their name, their roles, their queue counts and only the links their roles may open. A visitor gets the
- * bare page (the staff sign-in and reset pages share this layout). The global search box stays out until B58 exists.
+ * bare page (the staff sign-in and reset pages share this layout). The sidebar's search box is a plain GET form to /search (the page and its read come with B58).
  */
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const me = await readSidebar();

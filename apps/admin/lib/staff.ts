@@ -25,11 +25,11 @@ export const staffAuth = () => {
   return (auth = createAuth("staff", { database: getPool(), ...settings, sendEmail }));
 };
 
-/** Sends the set-password email (the staff reset) to a staff login's address. True only when the sender accepted it. The staff auth has no background
+/** Sends the set-password email (the staff reset) to a staff login's address, its link ending at our /reset-password page. True only when the sender accepted it. The staff auth has no background
  *  sender, so the send has finished when the reset call returns. */
 export async function sendSetPassword(email: string): Promise<boolean> {
   const box: { sent?: boolean } = {};
-  await sendResult.run(box, () => staffAuth().api.requestPasswordReset({ body: { email } }));
+  await sendResult.run(box, () => staffAuth().api.requestPasswordReset({ body: { email, redirectTo: "/reset-password" } }));
   return box.sent === true;
 }
 

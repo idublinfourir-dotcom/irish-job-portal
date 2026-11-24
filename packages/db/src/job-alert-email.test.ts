@@ -92,8 +92,8 @@ describe("buildAlertEmail", () => {
   it("shows the badge (a pill in the HTML, words in the text) and the public pay scale label", () => {
     const m = buildAlertEmail("c1", [{ alertId: "1", jobIds: ["10", "11", "12"] }], new Map([["1", alert()]]),
       live(job("10", { badge: "critical_skills_eligible" }), job("11", { badge: "sponsor_confirmed", salary_low: null, salary_high: null, pay_grade: "Grade III" }), job("12", { badge: "<script>" })), SITE)!;
-    expect(m.html).toMatch(/Cook 10<\/a> <span[^>]*background:#DDEEE3[^>]*>Critical<\/span>/);
-    expect(m.html).toMatch(/Cook 11<\/a> <span[^>]*background:#E7E8F5[^>]*>Sponsor<\/span>/);
+    expect(m.html).toMatch(/Cook 10<\/a> <span[^>]*background:#D9F5E7[^>]*color:#0A6B43[^>]*>Critical<\/span>/);
+    expect(m.html).toMatch(/Cook 11<\/a> <span[^>]*background:#E9E5FF[^>]*color:#4A32C4[^>]*>Sponsor<\/span>/);
     expect(m.html).toContain("Public pay scale (Grade III)");
     expect(m.text).toContain("- Cook 10, Acme, Cork, €40,000 to €50,000, Critical Skills eligible\n");
     expect(m.text).toContain("Public pay scale (Grade III), Sponsor confirmed\n");

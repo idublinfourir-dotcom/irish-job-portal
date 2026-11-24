@@ -31,8 +31,14 @@ export const GENERAL_LOWER_CODES: readonly string[] = ["6145"];
 
 /** The date these figures were last read on DETE's pages: "Rules last checked on [date]" (#94). */
 export const RULES_CHECKED_ON = "2026-11-12";
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "2026-11-12" as "12 Nov 2026" (a date on a page is never ISO); anything that is not a plain date comes back as it is. */
+export const writtenDate = (iso: string) => {
+  const m = /^(\d{4})-(0[1-9]|1[0-2])-(\d{2})$/.exec(iso);
+  return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : iso;
+};
 export const standingLine = (date: string = RULES_CHECKED_ON) =>
-  `Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on ${date}.`;
+  `Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on ${writtenDate(date)}.`;
 
 /**
  * DETE: "40,904 is based on a 39-hour week, €20.17"; a 40-hour week needs 41,953.60. Over 39 hours the minimum is the hourly rate

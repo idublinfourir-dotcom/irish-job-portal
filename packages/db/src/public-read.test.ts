@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Refuse } from "./candidate-route";
 import { BadEligibilityInput } from "@portal/rules";
-import { CANDIDATE_READ_RATES, checkerInput, jobsRead, readLimits, readPaging, retryAfter, tooMany, VISITOR_JOBS, VISITOR_READ_RATES } from "./public-read";
+import { CANDIDATE_READ_RATES, checkerInput, closedJobRead, jobsRead, readLimits, readPaging, retryAfter, tooMany, VISITOR_JOBS, VISITOR_READ_RATES } from "./public-read";
 import { BadSearchInput, listJobs, listQuery, PAGE_SIZE } from "./search";
 import { scopedQuery } from "./public-pages";
 
@@ -74,4 +74,19 @@ describe("the checker input (GET /api/checker)", () => {
     `${ok}&contractMonths=-3`, `${ok}&contractMonths=1.5`, `${ok}&weeklyHours=100`, `${ok}&title=`, `${ok}&title=${"a".repeat(201)}`, `${ok}&title=a%00b`,
     `${ok}&title=a%E2%80%AEb`, "occupationCode=2231%27%3B--&annualPay=1&relevantDegree=true",
   ])("refuses %j", (s) => expect(() => checkerInput(q(s))).toThrow(BadEligibilityInput));
+});
+
+describe("B27: the closed-job read", () => {
+  it("runs no statement for a missing, empty or bad id, and says not found", async () => {
+    const d = fakeDb();
+    for (const s of ["", "id=", "id=0", "id=-1", "id=1;drop", "id=1e3", `id=${"9".repeat(40)}`, "id=%00"]) expect(await closedJobRead(d as never, q(s), true), s).toBeNull();
+    expect(d.texts).toEqual([]);
+  });
+  it("a well-formed id asks one statement, and an empty answer is null (not found)", async () => {
+    const d = fakeDb();
+    expect(await closedJobRead(d as never, q("id=42"), true)).toBeNull();
+    expect(d.texts).toHaveLength(1);
+    expect(d.texts[0]).toContain("from private.candidate_closed_job($1::bigint)"); // the function answers only closed and expired (0075)
+    expect(d.texts[0]).not.toMatch(/close_reason|from job\b/); // never the column or the table itself
+  });
 });
