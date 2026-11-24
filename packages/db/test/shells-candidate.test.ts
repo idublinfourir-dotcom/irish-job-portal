@@ -4,6 +4,7 @@
 // Budget (measured 23 November 2026, see the printed line): the frame read is 0 statements for a visitor with the rules kept and 2 for a signed-in candidate
 // (the session by token, the user by id); median under 15 ms.
 import pg from "pg";
+import { writtenDate } from "@portal/rules";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { answers, seedSignupTerms } from "./better-auth-helper";
 import { createTestDb, urlFor, type TestDb } from "./db";
@@ -64,7 +65,7 @@ describe("P1: the candidate site frame read", () => {
     const m = await MINIMUMS(new Request(`${BASE}/api/minimums`, { headers: { "x-vercel-forwarded-for": "203.0.113.8" } }));
     const { rulesCheckedOn } = (await m.json()) as { rulesCheckedOn: string };
     const f = await frame();
-    expect(f).toEqual({ signedIn: false, standingLine: `Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on ${rulesCheckedOn}.`, origin: BASE });
+    expect(f).toEqual({ signedIn: false, standingLine: `Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on ${writtenDate(rulesCheckedOn)}.`, origin: BASE });
     const stored = (await su.query("select data->>'checkedOn' d from rules_version where kind = 'minimums' and effective_from <= current_date order by effective_from desc, id desc limit 1")).rows[0].d;
     expect(rulesCheckedOn).toBe(stored);
   });

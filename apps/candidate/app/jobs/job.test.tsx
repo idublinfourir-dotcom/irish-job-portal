@@ -12,7 +12,7 @@ describe("Critical Skills job", () => {
   it("shows the badge, the degree box with the read minimums, the permit notes and the standing line", () => {
     const h = view();
     for (const t of ["Critical Skills eligible", "Our rule check, not an employer promise", "Your degree", "I have a relevant degree", "I got my degree in the last 12 months", "I don&#x27;t have a relevant degree",
-      "€40,904", "This job clears it.", "Critical Skills permit needs a job offer of at least 2 years.", "or a salary of €68,911 or more", "Rules last checked on 16 November 2026"]) expect(h).toContain(t);
+      "€40,904", "This job clears it.", "Critical Skills permit needs a job offer of at least 2 years.", "or a salary of €68,911 or more", "Rules last checked on 16 Nov 2026"]) expect(h).toContain(t);
     expect(h).toMatch(/value="relevant"[^>]*checked=""|checked=""[^>]*value="relevant"/);
   });
   it("preselects the profile's degree answer", () => {
@@ -100,6 +100,11 @@ describe("notices, labels and blocks", () => {
     const h = view({ job: job({ employerLabels: ["First-time sponsor", "Sponsorship claims removed"] }) });
     for (const t of ["Employer permit snapshot", "2025: 12 permits", "Peak 2025", "Trend: rising", "Latest month: 2 permits in September 2026", "Sponsored 12 permits since 2022", "First-time sponsor", "Sponsorship claims removed", 'href="/companies/example-care"']) expect(h).toContain(t);
     expect(view({ job: job({ permits: null, sponsored: null, employerLabels: ["Permit history not linked yet"] }) })).toContain("Permit history not linked yet");
+    // never both statements: a job that shows the employer's permits does not also say its permit history is not linked
+    const both = view({ job: job({ employerLabels: ["Permit history not linked yet", "Sponsorship claims removed"] }) });
+    expect(both).toContain("Sponsored 12 permits since 2022");
+    expect(both).not.toContain("Permit history not linked yet");
+    expect(both).toContain("Sponsorship claims removed");
   });
   it("registration and conditions", () => {
     const h = view({ job: job({ condition: "A made-up condition.", registration: { status: "required", body: { id: "nmbi", name: "Nursing and Midwifery Board of Ireland (NMBI)", url: "https://www.nmbi.ie/x", readOn: "2026-11-19" }, line: "You must be registered.", steps: ["Apply to NMBI."], degreeNote: "A degree or diploma accepted by NMBI." } }) });
@@ -119,6 +124,30 @@ describe("notices, labels and blocks", () => {
     const h = view({ similar: [card({ id: "2", title: "Care Assistant" })] });
     for (const t of ["More jobs <span", "like this</span>", "Care Assistant", "Got an offer? We can handle your permit", "No genuine employer asks you to pay for a job offer.", "Log in to report this job"]) expect(h).toContain(t);
     expect(h).not.toContain("Critical Skills fee can be paid by you"); // CF1: waits for the solicitor (Q130)
+  });
+});
+
+describe("small fixes", () => {
+  it("the company link does not carry the name (it cannot wrap)", () => {
+    const h = view({ job: job({ employer: { id: "7", slug: "example-care", name: "A Very Long Employer Name That Would Wrap Over Two Lines Ltd", website: null, logoUrl: null, shortDescription: null, kind: "employer" } }) });
+    expect(h).toContain("See company page");
+    expect(h).not.toMatch(/See A Very Long/);
+  });
+  it("shows similar jobs as tiles: the first light, the others dark, a round arrow and no View job text", () => {
+    const h = view({ similar: [card({ id: "2", title: "One" }), card({ id: "3", title: "Two" }), card({ id: "4", title: "Three" })] });
+    expect(h.match(/data-tile="light"/g)).toHaveLength(1);
+    expect(h.match(/data-tile="dark"/g)).toHaveLength(2);
+    expect(h).not.toContain("View job");
+    expect(h.match(/data-icon="up-right"/g)!.length).toBeGreaterThanOrEqual(3);
+  });
+  it("gives Mark applied and Save the same width", () => {
+    const h = view({ signedIn: true });
+    expect(h).toMatch(/<span class="inline-flex flex-col flex-1 items-stretch[^"]*"><button[^>]*aria-label="Save Staff Nurse"/);
+    expect(h).toMatch(/<button[^>]*class="[^"]*flex-1[^"]*"[^>]*><svg[^>]*data-icon="check"[^>]*>.*<\/svg>Mark applied/);
+  });
+  it("writes the date of the standing line out", () => {
+    expect(view()).toContain("Rules last checked on 16 Nov 2026.");
+    expect(view()).not.toMatch(/\d{4}-\d{2}-\d{2}/);
   });
 });
 
@@ -177,7 +206,7 @@ describe("nothing from a frame ships", () => {
 describe("closed job", () => {
   const similar = [card({ id: "2", title: "Care Assistant" })];
   it.each(Object.keys(CLOSED_WORDS))("words %s and lists similar jobs", (reason) => {
-    const h = html(<ClosedJob reason={reason} title="Staff Nurse" employerName="Example Care Ltd" similar={similar} now={NOW} signedIn />);
+    const h = html(<ClosedJob reason={reason} title="Staff Nurse" employerName="Example Care Ltd" similar={similar} signedIn />);
     expect(h).toContain(CLOSED_WORDS[reason]!.label);
     expect(h).toContain("Care Assistant");
     expect(h).toContain("Staff Nurse");
@@ -185,7 +214,7 @@ describe("closed job", () => {
     expect(h.match(/<h1\b/g)).toHaveLength(1);
   });
   it("falls back to the closed wording for a reason it does not know, and works with no similar jobs", () => {
-    const h = html(<ClosedJob reason="something_new" similar={[]} now={NOW} signedIn={false} />);
+    const h = html(<ClosedJob reason="something_new" similar={[]} signedIn={false} />);
     expect(h).toContain("This job has closed");
     expect(h).not.toContain("like this");
     expect(h).not.toContain("under review"); // never a report or staff note

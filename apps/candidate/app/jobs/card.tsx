@@ -1,9 +1,10 @@
 // One job in a list (frames C04 list card, C05 popular cards, N03 more jobs like this). Server rendered; only the save and report buttons are client islands.
 // Every word and figure is read from the card. The logo is the employer's own file, or its initials.
-import { A, CriticalSkillsBadge, Icon, Pill, SponsorBadge } from "@portal/ui";
+import type { ReactNode } from "react";
+import { A, CriticalSkillsBadge, Icon, Pill, SponsorBadge, cx } from "@portal/ui";
 import { companyPath, jobPath } from "../../lib/paths";
 import { ReportJob, SaveButton } from "./client";
-import { ago, contractText, euroText } from "./format";
+import { ago, contractText, euroText, loginHref } from "./format";
 import { Logo } from "./parts";
 
 /** The fields of a card the list read gives (JobCard) and the small card of similar jobs shares (SmallJobCard's `jobId` is mapped to `id` by `fromSmall`). */
@@ -38,8 +39,8 @@ export const whenLine = (j: Pick<CardJob, "postedAt" | "lastCheckedAt">, now: Da
   return checked ? `Checked ${checked}` : posted ? `Posted ${posted}` : null;
 };
 
-function Badges({ job }: { job: CardJob }) {
-  const any = job.badge || job.permitHistory === "first_time" || job.quotaFull;
+function Badges({ job, children }: { job: CardJob; children?: ReactNode }) {
+  const any = job.badge || job.permitHistory === "first_time" || job.quotaFull || children;
   if (!any) return null;
   return (
     <p className="flex flex-wrap items-center gap-2">
@@ -47,6 +48,7 @@ function Badges({ job }: { job: CardJob }) {
       {job.badge === "sponsor_confirmed" && <SponsorBadge />}
       {job.permitHistory === "first_time" && <Pill tone="peach" className="min-h-0 px-3 py-[5px] text-[13px] font-semibold">First-time sponsor</Pill>}
       {job.quotaFull && <Pill tone="peach" className="min-h-0 px-3 py-[5px] text-[13px] font-semibold">Permit quota full</Pill>}
+      {children}
     </p>
   );
 }
@@ -95,36 +97,69 @@ export function ResultCard({ job, now, signedIn, saved, path }: { job: CardJob; 
   );
 }
 
-/** The tall card of "More jobs like this" (frame N03) and "Popular right now" (frame C05). */
-export function TileCard({ job, now, signedIn, saved }: { job: CardJob; now: Date; signedIn: boolean; saved: boolean }) {
+/** The place pill of a card: the county, and the contract length when the job states one. */
+const placeOf = (job: CardJob) => [job.county, contractText(job.contractMonths) && `Fixed term, ${contractText(job.contractMonths)}`].filter(Boolean).join(" · ");
+/** The pay as a headline and the small line under it ("a year" for a stated salary). */
+const payOf = (job: CardJob) => {
+  const stated = job.salaryLow !== null || job.salaryHigh !== null;
   const pay = salaryText(job);
-  const contract = contractText(job.contractMonths);
-  const where = [job.county, contract && `Fixed term, ${contract}`].filter(Boolean).join(" · ");
+  return stated ? { line: job.salaryLine ?? pay.line, note: "a year" } : pay;
+};
+const ARROW = "grid shrink-0 place-items-center rounded-pill bg-deep-green text-white no-underline hover:bg-hover-dark";
+
+/** The list card of the visitor's search (frame N02): badge row first, then title, employer and when, pay on the right, a save that asks for a login, the round arrow. */
+export function VisitorCard({ job, now, path }: { job: CardJob; now: Date; path: string }) {
+  const pay = payOf(job);
+  const place = placeOf(job);
   const when = whenLine(job, now);
   return (
-    <article data-job-card={job.id} className="flex min-w-0 flex-col gap-3 rounded-bento bg-sand p-5">
-      <div className="flex items-start gap-3">
-        <Logo name={job.employerName} url={job.employerLogoUrl} className="size-12" />
-        <div className="min-w-0 flex-1">
-          <p className="break-words text-[15px] font-medium leading-snug">{job.employerName}</p>
-          {where && <p className="break-words text-small text-muted">{where}</p>}
+    <article data-job-card={job.id} className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-bento bg-sand p-4 sm:p-5 xl:flex-nowrap xl:gap-x-5">
+      <Logo name={job.employerName} url={job.employerLogoUrl} className="size-12 xl:size-14" />
+      <div className="flex min-w-0 flex-1 basis-56 flex-col gap-1.5">
+        <Badges job={job}>{place && <Pill tone="outline" className="min-h-0 px-3 py-[5px] text-[13px]">{place}</Pill>}</Badges>
+        <h3 className="break-words text-[19px] leading-snug xl:text-[22px]">
+          <A href={jobPath(job)} className="underline-offset-2 hover:underline">{job.title}</A>
+        </h3>
+        <p className="flex flex-wrap items-center gap-x-1.5 break-words text-small text-muted">
+          {job.employerSlug ? <A href={companyPath(job.employerSlug)} className="underline-offset-2 hover:underline">{job.employerName}</A> : job.employerName}
+          {when && (<><span aria-hidden="true">·</span><span className="inline-flex items-center gap-1.5"><Icon name="clock" size={14} />{when}</span></>)}
+        </p>
+      </div>
+      <div className="flex w-full items-center justify-between gap-3 xl:w-auto xl:justify-end">
+        <div className="min-w-0 xl:w-44 xl:text-right">
+          <p className="break-words font-heading text-[17px] font-semibold leading-snug xl:text-[19px]">{pay.line}</p>
+          {pay.note && <p className="text-small text-muted">{pay.note}</p>}
         </div>
-        {signedIn && <SaveButton jobId={job.id} title={job.title} saved={saved} />}
+        <div className="flex shrink-0 items-center gap-2.5">
+          <A href={loginHref(path)} aria-label={`Log in to save ${job.title}`} className="grid size-[42px] place-items-center rounded-pill border border-line bg-white text-ink hover:bg-hover-light"><Icon name="bookmark" size={18} /></A>
+          <A href={jobPath(job)} aria-label={`View ${job.title}`} className={cx(ARROW, "size-12")}><Icon name="up-right" size={20} /></A>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+/** The tile of "More jobs like this" (frame N03: the first light, the others dark) and of the newest sponsor jobs of an empty search (frame C05). The title link covers the tile. */
+export function TileCard({ job, dark }: { job: CardJob; dark?: boolean }) {
+  const pay = payOf(job);
+  const place = placeOf(job);
+  return (
+    <article data-job-card={job.id} data-tile={dark ? "dark" : "light"} className={cx("relative flex min-w-0 flex-col gap-3 rounded-bento p-5", dark ? "bg-ink text-white" : "bg-sand")}>
+      <div className="flex items-start justify-between gap-3">
+        {place ? <Pill tone={dark ? "lilac" : "outline"} className="min-h-0 px-3 py-[5px] text-[13px]">{place}</Pill> : <span />}
+        <Logo name={job.employerName} url={job.employerLogoUrl} className="size-12" />
       </div>
       <Badges job={job} />
-      <h3 className="break-words text-[18px] leading-snug">
-        <A href={jobPath(job)} className="underline-offset-2 hover:underline">{job.title}</A>
+      <h3 className="break-words text-[20px] leading-snug">
+        <A href={jobPath(job)} className={cx("no-underline after:absolute after:inset-0 after:rounded-bento hover:underline", dark && "text-white")}>{job.title}</A>
       </h3>
-      <div>
-        <p className="break-words font-heading text-[17px] font-semibold leading-snug">{pay.line}</p>
-        {pay.note && <p className="text-small text-muted">{pay.note}</p>}
-      </div>
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-2 pt-2 text-small text-muted">
-        <p className="flex items-center gap-1.5">
-          <Icon name="clock" size={14} />
-          {when}
-        </p>
-        <A href={jobPath(job)} className={VIEW}>View job</A>
+      <p className={cx("break-words text-small", dark ? "text-white/75" : "text-muted")}>{job.employerName}</p>
+      <div className="mt-auto flex items-end justify-between gap-3 pt-2">
+        <div className="min-w-0">
+          <p className="break-words font-heading text-[17px] font-semibold leading-snug">{pay.line}</p>
+          {pay.note && pay.note.length < 20 && <p className={cx("text-small", dark ? "text-white/75" : "text-muted")}>{pay.note}</p>}
+        </div>
+        <span aria-hidden="true" className={cx(ARROW, "size-12")}><Icon name="up-right" size={20} /></span>
       </div>
     </article>
   );

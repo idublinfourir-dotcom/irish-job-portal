@@ -28,6 +28,77 @@ describe("visitor", () => {
   });
 });
 
+describe("visitor, frame N02", () => {
+  const n02 = (o: Partial<SearchProps> = {}) => view({ state: parseSearch({ q: "nurse", county: "Cork", sector: "health", badge: "sponsor_confirmed" }), minimums: { criticalSkills: 41000, minContractMonths: 24, rulesCheckedOn: "2026-11-12" }, sectorCounts: [{ sector: "health", jobs: 7 }], ...o });
+  it("has the big heading with the searched words on peach, the county on green, and the permit words on lilac with the shield", () => {
+    const h = n02();
+    expect(h).toMatch(/<h1[^>]*>.*bg-peach[^>]*>Nurse jobs<\/span> in <span[^>]*bg-deep-green[^>]*>Cork<\/span>.*where a <span[^>]*bg-lilac[^>]*>permit is realistic<\/span>.*data-icon="shield"/);
+    expect(h).not.toContain("<img"); // no photo in the heading
+    expect(h).not.toContain("with permit sponsorship");
+  });
+  it("starts the heading with a capital for a sector and for no filter", () => {
+    expect(view({ state: parseSearch({ sector: "health" }) })).toContain(">Health jobs</span>");
+    expect(view({})).toMatch(/<h1[^>]*>.*>Jobs<\/span>/);
+  });
+  it("shows the count from the read, large, and rechecked daily; no count without one", () => {
+    const h = view({ list: ok({ count: { n: 3, more: false } }) });
+    expect(h).toMatch(/data-count-big[^>]*><span[^>]*>3<\/span><span[^>]*>jobs, rechecked daily</);
+    expect(view({ list: ok({ count: { n: 200, more: true } }) })).toMatch(/data-count-big[^>]*><span[^>]*>200\+<\/span>/);
+    expect(view({ list: ok({ count: null }) })).not.toContain("data-count-big");
+  });
+  it("has the white bar with title, county and a sector select with counts, and a Find jobs button", () => {
+    const h = n02();
+    for (const t of ['name="q"', 'name="county"', 'id="sector"', "Health (7)", "Find jobs"]) expect(h).toContain(t);
+    expect(h).not.toMatch(/type="radio"[^>]*name="sector"/); // the panel does not repeat the sector (one value in the address)
+  });
+  it("has the pill row: lilac when set, outline when not, each a details of links, and Sort by", () => {
+    const h = n02({ state: parseSearch({ county: "Cork", sector: "health" }) });
+    expect(h).toContain("All filters (2)");
+    expect(h).toMatch(/<summary[^>]*bg-lilac[^>]*>Sector: Health/);
+    expect(h).toMatch(/<summary[^>]*bg-lilac[^>]*>County: Cork/);
+    expect(h).toMatch(/<summary[^>]*border-line[^>]*>Badge: any/);
+    expect(h).toMatch(/<summary[^>]*border-line[^>]*>Salary: any/);
+    expect(h).toContain('href="/jobs?sector=health"'); // County: any link keeps the other filter
+    expect(h).toContain("Sort by");
+    expect(h).not.toContain("Contract: "); // no contract pill (L46, #247)
+    expect(h).not.toMatch(/aria-label="(Grid|List)/); // no grid or list toggle
+  });
+  it("has the dark alert card with the chips of the filters an alert can hold and the sign in", () => {
+    const h = n02();
+    expect(h).toMatch(/data-alert-rail.*Get new jobs like these by email/);
+    expect(h).toContain("Health");
+    expect(h).toContain("Sponsor confirmed");
+    expect(h).toContain("Your keyword filter is not saved in it.");
+    expect(h).toContain('href="/login?next=');
+  });
+  it("has the Permit rules card with the minimum and the offer length from the read, and the checker link; none without the read", () => {
+    const h = n02();
+    for (const t of ["Permit rules", "€41,000 is the minimum salary for a Critical Skills permit", "at least 2 years", "Checked 12 Nov 2026", 'href="/eligibility-checker"', "Open the eligibility checker"]) expect(h).toContain(t);
+    expect(h).not.toContain("Rules for nurses");
+    expect(h).not.toContain("40,904"); // no figure of its own
+    const none = n02({ minimums: null });
+    expect(none).not.toContain("Permit rules");
+    expect(none).toContain("Got an offer? We can handle your permit");
+  });
+  it("has the N02 list card: badge row first, title, employer and when, pay and a round arrow, and no View job text", () => {
+    const h = view({ list: ok({ jobs: [card({ county: "Cork", contractMonths: 24 })] }) });
+    expect(h).toMatch(/data-job-card="1042".*Critical Skills eligible.*Cork · Fixed term, 2 years.*Staff Nurse.*Example Care Ltd.*Checked today/);
+    expect(h).toContain('aria-label="View Staff Nurse"');
+    expect(h).toContain('aria-label="Log in to save Staff Nurse"');
+    expect(h).not.toContain("View job");
+  });
+  it("keeps the blurred rows and the dark sign-in box over them", () => {
+    const h = view({ list: ok({ jobs: [card()], signInForMore: true }) });
+    expect(h.match(/data-placeholder/g)).toHaveLength(2);
+    expect(h).toContain("data-sign-in-for-more");
+  });
+  it("says nothing of N02 to a signed-in candidate", () => {
+    const h = view({ signedIn: true, minimums: { criticalSkills: 41000, minContractMonths: 24, rulesCheckedOn: "2026-11-12" } });
+    for (const t of ["data-alert-rail", "data-rules-rail", "<summary", "data-count-big", "Permit rules"]) expect(h).not.toContain(t);
+    expect(h).toContain("View job"); // C04 as W1 built it
+  });
+});
+
 describe("signed in", () => {
   it("shows save (marked when saved), report, the alert builder and Previous and Next only", () => {
     const h = view({ signedIn: true, savedIds: ["1042"], list: ok({ next: "n1", previous: "p1" }), state: parseSearch({ county: "Cork" }) });
@@ -54,6 +125,7 @@ describe("empty and errors", () => {
     expect(h).toContain("Clear filters");
     expect(h).toContain("Newest jobs with a confirmed sponsor");
     expect(h).toContain("Chef");
+    expect(h).toContain('data-tile="light"');
     expect(h).not.toContain("Popular");
   });
   it.each([
@@ -114,7 +186,7 @@ describe("alert filters", () => {
 describe("card words", () => {
   it("shows the salary states of frame C08 from the read, with no figure of its own", () => {
     const states: [Parameters<typeof card>[0], string][] = [
-      [{ salaryLine: "€38,000 to €45,000" }, "€38,000 to €45,000 a year"],
+      [{ salaryLine: "€38,000 to €45,000" }, ">a year<"],
       [{ passRoute: "public_pay", salaryLow: null, salaryHigh: null, salaryLine: "Grade 5", payGrade: "Grade 5", payScaleLine: "Pay scale for this grade: EUR 38,166 to 56,592" }, "€38,166 to €56,592"],
       [{ passRoute: "big_company", salaryLow: null, salaryHigh: null, salaryLine: null }, "A large employer on our list"],
       [{ passRoute: "pay_floor", salaryLow: null, salaryHigh: null, salaryLine: null }, "signed a pay floor"],
@@ -139,6 +211,7 @@ describe("nothing from a frame ships", () => {
   it("has no sample tag, mock text, old brand, Launch B chip, Trusted Partner chip or hybrid tags", () => {
     const h = view({ signedIn: true, list: ok({ next: "n" }) });
     for (const t of ["Sample", "sample jobs", "Permitly", "Launch B", "Trusted Partner", "Hybrid", "Full time"]) expect(h).not.toContain(t);
+    for (const t of ["Sample", "sample jobs", "Permitly", "Launch B", "Trusted Partner", "Hybrid", "Full time", "Rules for nurses"]) expect(view()).not.toContain(t);
   });
   it("escapes hostile text and has no raw html", () => {
     const evil = "<script>alert(1)</script>";

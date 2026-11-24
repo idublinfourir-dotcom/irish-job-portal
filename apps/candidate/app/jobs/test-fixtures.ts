@@ -20,7 +20,7 @@ export const job = (o: Partial<JobPage> = {}): JobPage => ({
   salaryLow: 52000, salaryHigh: 52000, salaryLine: "€52,000", healthInsuranceEur: null, payGrade: null, passRoute: "stated_pay", postedAt: new Date("2026-11-20T08:00:00.000Z"), closesAt: null,
   advertText: "Made-up advert text.\nSecond line.", employer: { id: "7", slug: "example-care", name: "Example Care Ltd", website: null, logoUrl: null, shortDescription: null, kind: "employer" },
   badge: "critical_skills_eligible", sponsored: { permits: 12, since: 2022 }, permitHistory: "has_history", lastCheckedAt: new Date("2026-11-23T06:00:00.000Z"), rulesCheckedOn: "2026-11-16",
-  registration: null, payScale: null, quotaFull: false, standingLine: "Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 16 November 2026.",
+  registration: null, payScale: null, quotaFull: false, standingLine: "Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 16 Nov 2026.",
   minimums: MINIMUMS, permits: { byYear: [{ year: 2024, permits: 8 }, { year: 2025, permits: 12 }], peakYear: 2025, trend: "up", latestMonth: { year: 2026, month: 9, permits: 2 } },
   employerLabels: [], condition: null, salaryRangeCrosses: false, ...o,
 });

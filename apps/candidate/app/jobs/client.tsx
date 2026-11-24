@@ -23,7 +23,7 @@ export function SaveButton({ jobId, title, saved: initial, label, className }: {
     else setError(r.message);
   }
   return (
-    <span className={cx("inline-flex flex-col items-start", className)}>
+    <span className={cx("inline-flex flex-col", label ? "flex-1 items-stretch" : "items-start", className)}>
       <button
         type="button"
         disabled={busy}
@@ -32,7 +32,7 @@ export function SaveButton({ jobId, title, saved: initial, label, className }: {
         onClick={toggle}
         className={cx(
           "inline-flex shrink-0 items-center justify-center gap-2 rounded-pill font-semibold",
-          label ? "min-h-[42px] flex-1 border-[1.5px] border-white px-5 text-small text-white hover:bg-white/10" : "size-11",
+          label ? "min-h-[42px] border-[1.5px] border-white px-5 text-small text-white hover:bg-white/10" : "size-11",
           !label && (saved ? "bg-deep-green text-white" : "bg-white text-ink hover:bg-hover-light"),
         )}
       >

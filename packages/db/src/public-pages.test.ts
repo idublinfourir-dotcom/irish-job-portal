@@ -101,7 +101,7 @@ describe("getOccupationPage", () => {
     const rules = { ...today, minimums: { ...today.minimums, criticalSkills: 45000, nonListRoute: false, checkedOn: "2027-03-01" } };
     const p = await getOccupationPage(db, "2134", { rules });
     expect(p).toMatchObject({ listStatus: "critical-skills", rulesCheckedOn: "2027-03-01", minimums: { withDegree: 45000, withoutDegreeOrNotListed: null, basedOnWeekHours: 39 } });
-    expect(p!.standingLine).toContain("Rules last checked on 2027-03-01.");
+    expect(p!.standingLine).toContain("Rules last checked on 1 Mar 2027.");
     expect((await getOccupationPage(db, "2134", { rules: today }))!.minimums).toMatchObject({ withDegree: 40904, withoutDegreeOrNotListed: 68911 });
   });
   it("quota is full only for a code in the quota-full list of the rules in force (B14, #85)", async () => {

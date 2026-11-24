@@ -763,7 +763,7 @@ paths:
                       lastEur: { type: integer }
                       line: { type: string }
                   quotaFull: { type: boolean, description: 'The job''s General permit quota is full (#85); the page shows a notice.', example: false }
-                  standingLine: { type: string, description: 'The standing line of #94 with the date in force, shown under every job and checker result.', example: 'Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 1 November 2026.' }
+                  standingLine: { type: string, description: 'The standing line of #94 with the date in force, shown under every job and checker result.', example: 'Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 1 Nov 2026.' }
                   minimums:
                     type: object
                     description: The pay minimums in force, so the page can say what a degree changes without a checker call per click. Whole euros a year, for a 39-hour week.
@@ -832,7 +832,7 @@ paths:
                   degreeNote: For nurses and midwives, a relevant degree means a degree or diploma accepted by NMBI.
                 payScale: null
                 quotaFull: false
-                standingLine: Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 1 November 2026.
+                standingLine: Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 1 Nov 2026.
                 minimums: { criticalSkills: 40904, graduate: 36848, graduateMonths: 12, nonList: 68911, minContractMonths: 24, standardWeekHours: 39, general: null, generalLower: null, generalLowerCodes: null }
                 permits: { byYear: [{ year: 2024, permits: 8 }, { year: 2025, permits: 12 }], peakYear: 2025, trend: up, latestMonth: null }
                 employerLabels: []
@@ -1049,7 +1049,7 @@ paths:
                 jobs: { jobs: [], next: null, count: { n: 0, more: false }, signInForMore: true }
                 quota: none
                 text: null
-                standingLine: Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 1 November 2026.
+                standingLine: Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 1 Nov 2026.
                 rulesCheckedOn: '2026-11-01'
                 registration: null
         '400': { $ref: '#/components/responses/PublicBadRequest' }
@@ -1323,7 +1323,7 @@ paths:
                 reason: listed_degree
                 minimum: 38000
                 why: 'On the Critical Skills list with a relevant degree: the minimum is €38,000.'
-                standingLine: Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 1 November 2026.
+                standingLine: Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 1 Nov 2026.
                 rulesCheckedOn: '2026-11-01'
                 registration: null
         '400': { $ref: '#/components/responses/PublicBadRequest' }

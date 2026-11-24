@@ -97,13 +97,17 @@ export function PayCard({ job, result }: { job: JobPage; result: DegreeResult | 
   );
 }
 
+/** The employer's labels, without "Permit history not linked yet" when the page itself shows permits (the label is copied onto the job when the DETE files are loaded, so rows added another way can leave it behind). */
+const labelsOf = (job: JobPage) => job.employerLabels.filter((l) => l !== "Permit history not linked yet" || !(job.sponsored || (job.permits?.byYear.length ?? 0) > 0));
+
 function Snapshot({ job }: { job: JobPage }) {
   const p = job.permits;
+  const labels = labelsOf(job);
   const max = Math.max(1, ...(p?.byYear.map((y) => y.permits) ?? []));
   return (
     <Card aria-labelledby="snapshot">
       <h2 id="snapshot" className="text-[22px] sm:text-[24px]">Employer permit snapshot</h2>
-      {job.employerLabels.length > 0 && <div className="flex flex-wrap gap-2">{job.employerLabels.map((l) => <Pill key={l} tone={l === "Sponsorship claims removed" ? "peach" : "lilac"}>{l}</Pill>)}</div>}
+      {labels.length > 0 && <div className="flex flex-wrap gap-2">{labels.map((l) => <Pill key={l} tone={l === "Sponsorship claims removed" ? "peach" : "lilac"}>{l}</Pill>)}</div>}
       {job.sponsored && <p>Sponsored {job.sponsored.permits} {job.sponsored.permits === 1 ? "permit" : "permits"} since {job.sponsored.since}.</p>}
       {p && p.byYear.length > 0 && (
         <>
@@ -124,7 +128,7 @@ function Snapshot({ job }: { job: JobPage }) {
         </>
       )}
       <A href={companyPath(job.employer.slug)} className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-pill border-[1.5px] border-ink px-5 font-semibold no-underline hover:bg-hover-light">
-        See {job.employer.name} company page <Icon name="arrow" size={16} />
+        See company page <Icon name="arrow" size={16} />
       </A>
     </Card>
   );
@@ -271,7 +275,7 @@ export function JobView({ job, now, path, signedIn, saved, stage, degree, prompt
                   <h2 id="similar" className="text-[26px] sm:text-[32px]">More jobs <Hl c="green">like this</Hl></h2>
                   <A href="/jobs" className="inline-flex min-h-[34px] items-center gap-1.5 rounded-pill bg-lilac-soft px-3.5 text-small font-semibold text-deep-green no-underline hover:bg-lilac">See all <Icon name="arrow" size={14} /></A>
                 </div>
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{similar.slice(0, 3).map((j) => <TileCard key={j.id} job={j} now={now} signedIn={signedIn} saved={false} />)}</div>
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{similar.slice(0, 3).map((j, i) => <TileCard key={j.id} job={j} dark={i > 0} />)}</div>
               </section>
             )}
           </div>

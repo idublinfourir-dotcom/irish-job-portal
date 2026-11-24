@@ -16,7 +16,7 @@ vi.mock("next/font/google", () => ({
 }));
 
 const { frame, shell, sidebar } = vi.hoisted(() => ({
-  frame: { value: { signedIn: false, standingLine: "Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 2026-11-16.", origin: "https://example.test" as string | null } },
+  frame: { value: { signedIn: false, standingLine: "Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 16 Nov 2026.", origin: "https://example.test" as string | null } },
   shell: { value: null as { companyName: string; role: string } | null },
   sidebar: { value: null as { name: string; roles: string[]; counts: Record<string, number | undefined> } | null },
 }));
@@ -52,7 +52,7 @@ describe("candidate layout (P1)", () => {
   });
   it("footer: the standing line with the date it was given, the GeoNames credit, the report line, the Cookies link", async () => {
     const h = await candidate();
-    expect(h).toContain("Rules last checked on 2026-11-16.");
+    expect(h).toContain("Rules last checked on 16 Nov 2026.");
     expect(h.match(/Rules last checked on/g)).toHaveLength(1);
     expect(h).toContain('href="https://www.geonames.org/"');
     expect(h).toContain("CC BY 4.0");

@@ -2,7 +2,7 @@
 // them (`await Page({ searchParams })` gives the element, rendered to HTML here), through the real data layer (apps/candidate/lib/data.ts), the real
 // routes for every write and the real candidate login. Only Next's request context is stood in (next/headers gives the headers a test sets; server-only
 // is empty); no network. Fake data only.
-// Budget (measured 23 November 2026, see the printed line): statements and median time of each page render, warm.
+// Budget (measured 23 and 24 November 2026, see the printed line): statements and median time of each page render, warm. The visitor search runs one more gated read (the minimums for the Permit rules card: its session lookup, two rate counts and the rules): 6 became 9.
 import pg from "pg";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -26,7 +26,7 @@ let Search: SearchPage, SearchMeta: (p: { searchParams: Promise<Record<string, s
 let JobP: JobPageFn, JobMeta: (p: { params: Promise<{ job: string }> }) => Promise<{ title: string; description?: string }>;
 let paths: { jobPath: (j: { id: string; title: string; county: string | null }) => string };
 const ids: Record<string, string> = {};
-const BUDGET = { searchVisitor: 6, searchSignedIn: 11, jobVisitor: 9, jobSignedIn: 20, medianMs: 120 };
+const BUDGET = { searchVisitor: 9, searchSignedIn: 11, jobVisitor: 9, jobSignedIn: 20, medianMs: 120 };
 
 beforeAll(async () => {
   db = await createTestDb();
@@ -127,6 +127,12 @@ describe("P7: /jobs", () => {
     expect(h).not.toContain('aria-label="Pagination"');
     expect(h).not.toMatch(/Report Page Cook|Save Page Cook/);
     expect(h).toContain("Sign in to create an alert");
+    // frame N02: the big count, the pills, the rail with the rules read from the database (never typed), no signed-in-only part
+    expect(h).toMatch(/data-count-big[^>]*><span[^>]*>25<\/span>/);
+    expect(h).toContain("<summary");
+    expect(h).toMatch(/Permit rules.*Checked \d{1,2} [A-Z][a-z]{2} \d{4}.*€[\d,]+ is the minimum salary for a Critical Skills permit.*at least \d+ years?/);
+    expect(h).not.toMatch(/\d{4}-\d{2}-\d{2}/); // a date on the page is written out
+    expect((await search({}, (await login()).cookie))).not.toContain("data-rules-rail");
   });
   it("refuses a visitor a later page in words (the read answers 401 SIGN_IN_FOR_MORE)", async () => {
     expect(await search({ after: "abc" })).toContain("Log in to see more jobs");
@@ -150,7 +156,7 @@ describe("P7: /jobs", () => {
     const h = await search({ county: "Dublin" });
     expect(cards(h)).toBe(3);
     expect(h).toContain("3 jobs");
-    expect(h).toContain("Jobs in Dublin");
+    expect(h).toMatch(/>Jobs<\/span> in <span[^>]*>Dublin<\/span>/); // the heading words sit in highlights (frame N02)
     const none = await search({ q: "zzznomatch" });
     expect(none).toContain("No jobs match");
     expect(none).toContain("that search");
@@ -216,8 +222,27 @@ describe("P8: /jobs/[job]", () => {
     expect(await digestOf(jobPage(good))).toBeNull();
     expect(await digestOf(jobPage("-" + ids.c1))).toBe(`NEXT_REDIRECT;replace;/jobs/${good};308;`); // anything that ends in the id is that job
     const notFound = "NEXT_HTTP_ERROR_FALLBACK;404";
-    for (const seg of ["abc", "page-cook-draft", "9".repeat(40), "1; drop table job", "a".repeat(5000), ids.draft!, ids.closed!, "99999999", "..%2F" + ids.c1])
+    for (const seg of ["abc", "page-cook-draft", "9".repeat(40), "1; drop table job", "a".repeat(5000), ids.draft!, "99999999", "..%2F" + ids.c1])
       expect(await digestOf(jobPage(seg)), seg.slice(0, 40)).toBe(notFound);
+  });
+  it("shows a closed or expired job to anyone with the link (closed-job read B27), and a 404 for a removed one", async () => {
+    const seg = addressOf("closed", "Closed Role", "Cork");
+    for (const cookie of [undefined, (await login()).cookie]) {
+      const h = await jobPage(seg, cookie);
+      for (const t of ["This job has closed", "Closed Role", "Pages Org", "like this</span>"]) expect(h, String(cookie)).toContain(t);
+      expect(h.match(/<h1\b/g)).toHaveLength(1);
+      expect(h).not.toMatch(/close_reason|search_vector|hidden_reason|staff note/);
+    }
+    expect(await jobPage(seg)).toContain("Create a"); // the visitor's join band; a signed-in candidate has none
+    expect(await jobPage(seg, (await login()).cookie)).not.toContain("Create a");
+    expect((await as(undefined, () => JobMeta({ params: Promise.resolve({ job: seg }) }))).title).toBe("This job has closed");
+    await su.query("update job set close_reason = 'expired' where id = $1", [ids.closed]);
+    expect(await jobPage(seg)).toContain("This job has closed");
+    for (const reason of ["removed", "under_review_expired", "abandoned"]) {
+      await su.query("update job set close_reason = $2 where id = $1", [ids.closed, reason]);
+      expect(await digestOf(jobPage(seg)), reason).toBe("NEXT_HTTP_ERROR_FALLBACK;404"); // staff took it down, or it closed under review: never shown
+    }
+    await su.query("update job set close_reason = 'closed' where id = $1", [ids.closed]);
   });
   it("gives a signed-in candidate Mark applied and Save, the Applied state after the route wrote it, and the profile's degree answer", async () => {
     const { cookie } = await login();
@@ -267,8 +292,10 @@ describe("P8: /jobs/[job]", () => {
       expect(h, status).toContain(words);
       expect(h).toContain("like this</span>");
       expect(h).not.toMatch(/staff note|reporter|hidden_reason|under_review_reason/);
-      expect(await digestOf(jobPage(seg, b.cookie))).toBe("NEXT_HTTP_ERROR_FALLBACK;404");
-      expect(await digestOf(jobPage(seg))).toBe("NEXT_HTTP_ERROR_FALLBACK;404");
+      // a job its employer closed is shown to anyone; a hidden or under-review one only to the candidate who saved it
+      const stays = status === "closed" ? null : "NEXT_HTTP_ERROR_FALLBACK;404";
+      expect(await digestOf(jobPage(seg, b.cookie))).toBe(stays);
+      expect(await digestOf(jobPage(seg))).toBe(stays);
     }
   });
   it("words the rate limit (429)", async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  BadEligibilityInput, checkEligibility, MINIMUMS_V1, minimumForHours, monthsSince, RULES_CHECKED_ON, standingLine, type EligibilityInput, type EligibilityReason,
+  BadEligibilityInput, checkEligibility, MINIMUMS_V1, minimumForHours, monthsSince, RULES_CHECKED_ON, standingLine, writtenDate, type EligibilityInput, type EligibilityReason,
 } from "./index";
 
 const lists = [
@@ -64,7 +64,7 @@ describe("checkEligibility outcomes", () => {
     expect(r.minimum).toBe(minimum);
     expect(r.why.length).toBeGreaterThan(10);
     expect(r.standingLine).toBe(standingLine(RULES_CHECKED_ON));
-    expect(r.standingLine).toBe(`Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on ${RULES_CHECKED_ON}.`);
+    expect(r.standingLine).toBe(`Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on ${writtenDate(RULES_CHECKED_ON)}.`);
     expect(r.rulesCheckedOn).toBe(RULES_CHECKED_ON);
   });
   it("the 68,911 route says DETE asks for experience when there is no degree", () => {

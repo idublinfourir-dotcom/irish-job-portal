@@ -1,10 +1,10 @@
 // /jobs: the search results (P7). Reads only through lib/data.ts. A visitor gets the first jobs of a search (the read enforces the cap, the page shows
 // the state); a signed-in candidate gets pages, save and alerts. A signed-in candidate is told by readSaved (401 for a visitor), which also marks saved jobs.
 import type { Metadata } from "next";
-import { readJobs, readOccupations, readSaved, readSectors } from "../../lib/data";
+import { readJobs, readMinimums, readOccupations, readSaved, readSectors } from "../../lib/data";
 import type { CardJob } from "./card";
 import { parseSearch, queryOf, readQuery, searchDescription, searchTitle } from "./format";
-import { SearchView, type ListRead } from "./search";
+import { SearchView, type ListRead, type RuleMinimums } from "./search";
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
@@ -23,10 +23,11 @@ export default async function Page({ searchParams }: Props) {
   const signedIn = mine.ok;
   const savedIds = mine.ok ? ((mine.data as { saved: { jobId: string }[] }).saved ?? []).map((s) => s.jobId) : [];
   const empty = list.ok && list.jobs.length === 0;
-  const [counts, titles, newest] = await Promise.all([
+  const [counts, titles, newest, rules] = await Promise.all([
     readSectors(queryOf(state)), // B11: the counts of the other filters (the read leaves the sector filter out of its own counts)
     state.filters.occupationCode ? readOccupations() : null,
     empty ? readJobs(new URLSearchParams({ badge: "sponsor_confirmed", sort: "newest" })) : null,
+    signedIn ? null : readMinimums(), // the visitor's "Permit rules" card
   ]);
   return (
     <SearchView
@@ -37,6 +38,7 @@ export default async function Page({ searchParams }: Props) {
       savedIds={savedIds}
       sectorCounts={counts?.ok ? (counts.data as { sectors: { sector: string; jobs: number }[] }).sectors : undefined}
       occupationTitle={titles?.ok ? (titles.data as { occupations: { code: string; title: string }[] }).occupations.find((o) => o.code === state.filters.occupationCode)?.title ?? null : null}
+      minimums={rules?.ok ? (rules.data as RuleMinimums) : null}
       newest={newest?.ok ? (newest.data as Answer).jobs.slice(0, 2) : undefined}
     />
   );
