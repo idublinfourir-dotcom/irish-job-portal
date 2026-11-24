@@ -43,14 +43,19 @@ const commas = (n: number) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d)
 /** A pay amount as a year's pay: under 200 is an hourly wage, counted at 39 hours a week as the salary reader counts it (rules readSalary). */
 const yearly = (n: unknown) => (typeof n !== "number" || !Number.isFinite(n) || n <= 0 || n > 1_000_000 ? null : n < 200 ? n * 39 * 52 : n);
 
+// With "negotiable" ticked an employer can type any figure: three live jobs said 300,000 with no pay in the text (24 Nov 2026). Real pay that high
+// on this site is a public scale, never negotiable. So a negotiable wage from this figure up states no pay.
+const PLACEHOLDER_WAGE = 200_000;
+
 /**
  * The pay, as salary-box text the salary reader reads ("€30,000 to €39,999 a year"), the way the site's own page shows it: `actualWages` when given
  * (the dry run of 20 Nov saw it with `displaySalary` null), else the lowest and highest of the pay bands (`offeredRemunerationPackages`, minimumAmount
- * and maximumAmount), and those only when the employer chose to show them (`displaySalary` true). An amount that is not a sane number is left out. Pure.
+ * and maximumAmount), and those only when the employer chose to show them (`displaySalary` true). An amount that is not a sane number, or a negotiable wage of 200,000 or
+ * more (a placeholder), is left out. Pure.
  */
 export function jiSalary(j: Obj): string {
   const wage = yearly(get(j, "actualWages"));
-  if (wage !== null) return `€${commas(wage)} a year`;
+  if (wage !== null && !(wage >= PLACEHOLDER_WAGE && get(j, "negotiableSalary") === true)) return `€${commas(wage)} a year`;
   if (get(j, "displaySalary") !== true) return "";
   const bands = get(j, "offeredRemunerationPackages");
   const list = Array.isArray(bands) ? bands.slice(0, 50).filter(isObj) : [];

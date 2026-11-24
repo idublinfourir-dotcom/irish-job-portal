@@ -24,9 +24,9 @@ describe("the jobsireland kind on the real database", () => {
   // a paid job the rules give a badge: pay shown over the minimum, a permanent full-time post
   const paid = (d: string) => reply({ ...DETAIL, id: d, positionTitle: `Platform Engineer ${d.slice(-1)}`, employmentType: { id: "ETY1", name: "Full-time" }, displaySalary: true, actualWages: 45000, jobDescription: "Permanent full-time role building fake platforms." });
   const cards = [card(1), card(2), card(3), card(4, { vacancyType: "VTY4" })];
-  async function run(list = cards, over?: (url: string) => Response | undefined) {
+  async function run(list = cards, over?: (url: string) => Response | undefined, rereadDays?: number) {
     const { fetch, calls } = fake((c) => over?.(c.url) ?? api(list, { detail: paid })(c));
-    const tasks = atsTasks({ jobsireland: [["jobsireland", 2]] }, fetch as Fetch, () => {}, async () => {}).map((t) => ({ ...t, rereadDays: undefined }));
+    const tasks = atsTasks({ jobsireland: [["jobsireland", 2]] }, fetch as Fetch, () => {}, async () => {}).map((t) => ({ ...t, rereadDays }));
     const [r] = await runBoards(deps(db.pool("app_fetcher"), tasks, { checkBatch: fakeModel().checkBatch, now: at }));
     return { r: r!, calls };
   }
@@ -62,6 +62,15 @@ describe("the jobsireland kind on the real database", () => {
     const failed = await run(cards.slice(1), (url) => (url.includes("/api/jobs?") ? reply({}, 503) : undefined));
     expect(failed.r).toMatchObject({ ok: false, closed: 0 });
     expect((await saved()).map((x) => x.status)).toEqual(["closed", "live", "live"]);
+  });
+  it("a live job whose wage turns out to be a placeholder (negotiable, 300,000) closes at its weekly re-read; a new one is never live (JI1)", async () => {
+    const placeholder = (d: string) => reply({ ...DETAIL, id: d, positionTitle: `Platform Engineer ${d.slice(-1)}`, employmentType: { id: "ETY1", name: "Full-time" }, displaySalary: undefined, actualWages: 300000, negotiableSalary: true, offeredRemunerationPackages: [], jobDescription: "Permanent full-time post with a pension." });
+    // re-read every day here (weekly on the real board), so both are read under the cap of two
+    const { r } = await run([card(2), card(5)], (url) => (/\/api\/jobs\/[0-9a-f]{32}$/.test(url) ? placeholder(url.slice(-32)) : undefined), 1);
+    expect(r.ok).toBe(true);
+    const row = async (n: number) => (await su("select f.result, f.stage, j.status, j.close_reason from fetched_advert f left join job j on j.fetched_advert_id = f.id where f.external_id = $1", [`jobsireland:jobsireland:${hex(n)}`]))[0];
+    expect(await row(2)).toEqual({ result: "rejected", stage: "8 no salary, not a big company", status: "closed", close_reason: "recheck_failed" });
+    expect(await row(5)).toEqual({ result: "rejected", stage: "8 no salary, not a big company", status: null, close_reason: null });
   });
 });
 
