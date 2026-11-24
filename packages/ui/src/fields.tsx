@@ -63,9 +63,12 @@ export function Select({ label, help, note, status, error, children, ...rest }: 
       id={rest.id}
       {...{ label, help, note, status, error }}
       render={(p) => (
-        <select {...rest} {...p} className={cx(p.className, rest.className)}>
-          {children}
-        </select>
+        <span className="relative block">
+          <select {...rest} {...p} className={cx(p.className, "appearance-none pr-12", rest.className)}>
+            {children}
+          </select>
+          <Icon name="down" className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted" />
+        </span>
       )}
     />
   );

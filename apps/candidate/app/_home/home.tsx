@@ -128,10 +128,10 @@ function Hero({ d }: { d: HomeData }) {
             <Go tone="green" className="size-9 sm:size-[3.8rem]" />
             <span className="hidden sm:inline-flex"><Faces eager="sm" names={["face-1", "face-2", "face-3"]} className="size-[3.8rem]" /></span>
           </span>
-          <span className="flex flex-wrap items-center gap-4">
+          <span className="flex flex-wrap items-center gap-4 xl:gap-3">
             <span className="rounded-2xl bg-deep-green px-4 pb-2 pt-1 text-white sm:px-6">a permit covers</span>
             <span aria-hidden="true" className="hidden gap-2 sm:flex lg:hidden xl:flex">
-              {byEmployer(jobs).slice(0, 2).map((j) => <Logo key={j.employerSlug} job={j} className="size-[3.8rem] text-lg shadow-float" />)}
+              {byEmployer(jobs).slice(0, 2).map((j) => <Logo key={j.employerSlug} job={j} className="size-12 text-lg shadow-float" />)}
             </span>
           </span>
         </h1>
@@ -211,7 +211,7 @@ function Bento({ m }: { m: Sec<Minimums> }) {
       {m.ok && (
         <div className="flex flex-col rounded-bento bg-lilac p-4 sm:min-h-56 sm:p-7">
           <div className="hidden items-start justify-between gap-3 sm:flex">
-            <p className="rounded-pill bg-white px-3 py-0.5 text-small font-medium">From the rules table</p>
+            <Pill tone="white">From the rules table</Pill>
             <A href={checkerPath} aria-label="Open the eligibility checker"><Go tone="green" className="size-9" /></A>
           </div>
           <p className="mt-auto font-heading text-[2rem] font-semibold leading-none sm:text-[3.75rem]">{eur(m.data.criticalSkills)}</p>
@@ -303,7 +303,7 @@ function Sectors({ s }: { s: Sec<SectorCount[]> }) {
 
 function Latest({ d }: { d: HomeData }) {
   const tabs = d.sectors.ok ? d.sectors.data.filter((x) => x.jobs > 0).sort((a, b) => b.jobs - a.jobs || a.sector.localeCompare(b.sector)) : [];
-  const chip = (on: boolean) => `inline-flex min-h-9 shrink-0 items-center rounded-pill px-4 text-small font-semibold no-underline ${on ? "bg-ink text-white" : "border border-line bg-white text-ink hover:bg-hover-light"}`;
+  const chip = (on: boolean) => `inline-flex min-h-[34px] shrink-0 items-center rounded-pill px-3.5 text-small font-medium no-underline ${on ? "bg-ink text-white hover:bg-ink-hover" : "border border-line bg-hover-light text-ink hover:border-line-strong"}`;
   const shown = d.jobs.ok ? d.jobs.data.jobs.length : 0;
   return (
     <>
@@ -380,8 +380,8 @@ function JobsGrid({ j }: { j: Jobs }) {
         </div>
       </div>
       <div className="flex shrink-0 flex-wrap gap-2">
-        <Button href="/login" variant="outline" className="border-white text-white hover:bg-white/10">Sign in</Button>
-        <Button href="/signup">Create free account</Button>
+        <Button href="/login" variant="outline" size="lg" className="border-white text-white hover:bg-white/10 active:bg-white/20">Sign in</Button>
+        <Button href="/signup" size="lg">Create free account</Button>
       </div>
     </div>
   );
@@ -641,8 +641,8 @@ function Employers() {
           <p className="max-w-md text-white/75">A separate portal. Free to post. Live rule checks warn you while you type.</p>
           {href && (
             <div className="flex flex-wrap gap-2">
-              <Button href={href}>Post a job</Button>
-              <Button href={href} variant="outline" className="border-white text-white hover:bg-white/10">I&apos;m a recruitment agency</Button>
+              <Button href={href} size="lg">Post a job</Button>
+              <Button href={href} variant="outline" size="lg" className="border-white text-white hover:bg-white/10 active:bg-white/20">I&apos;m a recruitment agency</Button>
             </div>
           )}
         </div>
@@ -686,7 +686,7 @@ function Guides({ d }: { d: HomeData }) {
     <Section
       id="guides"
       title={<><Hl c="lilac">Guides</Hl> and government<br /><Hl c="green">updates</Hl> <Photo name="employer" className="inline-block h-[0.7em] w-[1.35em] rounded-pill align-middle" /></>}
-      action={<Button href={staticPath("guides")!} variant="outline">All guides <Icon name="arrow" size={16} /></Button>}
+      action={<Button href={staticPath("guides")!} variant="outline" size="lg">All guides <Icon name="arrow" size={16} /></Button>}
     >
       {body}
     </Section>
@@ -699,7 +699,7 @@ function Scam() {
       <div className="flex flex-col items-start gap-4 rounded-[2rem] bg-peach p-6 sm:flex-row sm:items-center sm:rounded-pill sm:px-7 sm:py-5">
         <Go tone="ink" icon="warning" />
         <p className="flex-1 font-semibold sm:text-lg">No genuine employer asks you to pay for a job offer. Report it.</p>
-        <Button href="/report" variant="dark"><Icon name="flag" size={16} />Report a listing</Button>
+        <Button href="/report" variant="dark" size="lg"><Icon name="flag" size={16} />Report a listing</Button>
       </div>
     </div>
   );
@@ -764,7 +764,7 @@ export function HomeView({ data: d }: { data: HomeData }) {
       <Section
         id="latest-jobs"
         title={<><Hl c="peach">Latest jobs</Hl> at <span className="hidden gap-1 align-middle sm:inline-flex">{byEmployer(firstJobs(d)).slice(0, 4).map((j) => <Logo key={j.employerSlug} job={j} className="size-10 border border-line text-[13px]" />)}</span><br /><Hl c="green">checked</Hl> today <Dot icon="check" tone="ink" /></>}
-        action={<Button href={jobsPath} variant="outline">View all jobs <Icon name="arrow" size={16} /></Button>}
+        action={<Button href={jobsPath} variant="outline" size="lg">View all jobs <Icon name="arrow" size={16} /></Button>}
       >
         <Latest d={d} />
       </Section>
