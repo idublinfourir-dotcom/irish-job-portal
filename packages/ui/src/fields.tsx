@@ -1,15 +1,16 @@
 import { useId, type ComponentProps, type ReactNode } from "react";
 import { cx } from "./cx";
-import { Icon } from "./icons";
+import { Icon, type IconName } from "./icons";
 
 // Input states from frame NS4: Default, Focus (css), Passed check, Blocked, Error, Disabled. 54 px high (48 on a phone), a pill; a textarea has the 24 px corner.
 type Status = "passed" | "blocked";
-type Common = { label: string; help?: string; note?: string; status?: Status; error?: string };
+/** `icon` is a small picture inside the left end of the field (frame NS3: an envelope in the email field, a padlock in the password field). */
+type Common = { label: string; help?: string; note?: string; status?: Status; error?: string; icon?: IconName };
 
 type Wired = { id: string; "aria-describedby"?: string; "aria-invalid"?: true; className: string };
 
 /** Label, control, then help, note and error text, each linked to the control by aria-describedby. */
-function Field({ id, label, help, note, status, error, render }: Common & { id?: string; render: (p: Wired) => ReactNode }) {
+function Field({ id, label, help, note, status, error, icon, render }: Common & { id?: string; render: (p: Wired) => ReactNode }) {
   const auto = useId();
   const fid = id ?? auto;
   const described = [help && `${fid}-help`, note && `${fid}-note`, error && `${fid}-error`].filter(Boolean).join(" ");
@@ -20,12 +21,15 @@ function Field({ id, label, help, note, status, error, render }: Common & { id?:
       <label htmlFor={fid} className="mb-0.5 text-small font-semibold">
         {label}
       </label>
-      {render({
-        id: fid,
-        "aria-describedby": described || undefined,
-        ...(error ? { "aria-invalid": true as const } : {}),
-        className: cx("w-full min-h-12 rounded-pill border-[1.5px] bg-white px-5 py-2 text-ink placeholder:text-faint disabled:border-disabled disabled:bg-disabled disabled:text-disabled-ink sm:min-h-[54px]", border),
-      })}
+      <span className="relative block">
+        {icon && <Icon name={icon} size={18} className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-muted" />}
+        {render({
+          id: fid,
+          "aria-describedby": described || undefined,
+          ...(error ? { "aria-invalid": true as const } : {}),
+          className: cx("w-full min-h-12 rounded-pill border-[1.5px] bg-white px-5 py-2 text-ink placeholder:text-faint disabled:border-disabled disabled:bg-disabled disabled:text-disabled-ink sm:min-h-[54px]", border, icon && "pl-12"),
+        })}
+      </span>
       {help && (
         <p id={`${fid}-help`} className="text-small text-muted">
           {help}
@@ -49,19 +53,19 @@ function Field({ id, label, help, note, status, error, render }: Common & { id?:
 
 type Rest<T extends "input" | "select" | "textarea"> = Omit<ComponentProps<T>, keyof Common | "children">;
 
-export function Input({ label, help, note, status, error, ...rest }: Common & Rest<"input">) {
-  return <Field id={rest.id} {...{ label, help, note, status, error }} render={(p) => <input {...rest} {...p} className={cx(p.className, rest.className)} />} />;
+export function Input({ label, help, note, status, error, icon, ...rest }: Common & Rest<"input">) {
+  return <Field id={rest.id} {...{ label, help, note, status, error, icon }} render={(p) => <input {...rest} {...p} className={cx(p.className, rest.className)} />} />;
 }
 
 export function Textarea({ label, help, note, status, error, ...rest }: Common & Rest<"textarea">) {
   return <Field id={rest.id} {...{ label, help, note, status, error }} render={(p) => <textarea rows={4} {...rest} {...p} className={cx(p.className.replace("rounded-pill", "rounded-control").replace("py-2", "py-4"), rest.className)} />} />;
 }
 
-export function Select({ label, help, note, status, error, children, ...rest }: Common & Rest<"select"> & { children: ReactNode }) {
+export function Select({ label, help, note, status, error, icon, children, ...rest }: Common & Rest<"select"> & { children: ReactNode }) {
   return (
     <Field
       id={rest.id}
-      {...{ label, help, note, status, error }}
+      {...{ label, help, note, status, error, icon }}
       render={(p) => (
         <span className="relative block">
           <select {...rest} {...p} className={cx(p.className, "appearance-none pr-12", rest.className)}>
