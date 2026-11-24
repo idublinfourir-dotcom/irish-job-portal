@@ -58,16 +58,17 @@ export async function requireLogin(): Promise<PortalLogin> {
 
 /**
  * P3: what the sidebar shows: the signed-in member's company name (the company read) and role (the login), or null for a visitor, a login with no company
- * yet, or any failure (the frame must not be why a page fails; sign-up and sign-in pages share this layout and show the bare page). Two session checks, run together.
+ * yet, or any failure (the frame must not be why a page fails; sign-up and sign-in pages share this layout and show the bare page). Three reads (login, company, notices), run together.
  * ponytail: a one-statement read of name and role in lib/profile.ts would halve the cost; add it if the sidebar's statements matter.
  */
-export async function readShell(): Promise<{ companyName: string; role: string } | null> {
+export async function readShell(): Promise<{ companyName: string; role: string; status: string | null; unread: number } | null> {
   await headers(); // outside the try: while Next prerenders, this throws its own "dynamic page" signal, which must not be swallowed (a swallowed one bakes the signed-out frame into a static page)
   try {
-    const [login, company] = await Promise.all([readLogin(), readCompany()]);
-    const name = (company.body.company as { name?: unknown } | undefined)?.name;
+    const [login, company, notices] = await Promise.all([readLogin(), readCompany(), readNotices()]);
+    const c = company.body.company as { name?: unknown; status?: unknown } | undefined;
     const role = login?.membership?.role;
-    return company.status === 200 && typeof name === "string" && role ? { companyName: name, role } : null;
+    const unread = notices.status === 200 && typeof notices.body.unread === "number" ? notices.body.unread : 0; // a failed bell read shows no count, never a failed page
+    return company.status === 200 && typeof c?.name === "string" && role ? { companyName: c.name, role, status: typeof c.status === "string" ? c.status : null, unread } : null;
   } catch {
     return null;
   }
