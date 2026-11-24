@@ -13,7 +13,7 @@ import { employersHref } from "./meta";
 import { FEATURED, type Failed, type HomeData, type Jobs, type Minimums, type Occupation, type Sec, type SectorCount } from "./load";
 
 const JOBS_LIMIT = 6; // #46: what a visitor sees of any list
-const wrap = "mx-auto max-w-page px-4";
+const wrap = "mx-auto max-w-page px-5 sm:px-8";
 const jobsPath = staticPath("jobs")!;
 const checkerPath = staticPath("eligibility-checker")!;
 const EXT = { target: "_blank", rel: "noopener noreferrer" } as const;
@@ -128,25 +128,25 @@ function Hero({ d }: { d: HomeData }) {
   const jobs = firstJobs(d);
   const first = jobs[0];
   return (
-    <section aria-labelledby="hero-h" className={`${wrap} grid gap-8 pt-8 lg:grid-cols-[1fr_27.4rem] lg:gap-4 lg:pt-12`}>
+    <section aria-labelledby="hero-h" className={`${wrap} grid gap-8 pt-8 lg:grid-cols-[1fr_27.4rem] lg:gap-4 xl:grid-cols-[1fr_31.25rem] lg:pt-12`}>
       <div className="flex flex-col gap-7">
-        <h1 id="hero-h" className="flex flex-col items-start gap-3 text-[2.6rem] leading-none sm:text-[4.25rem] lg:text-[3.75rem] xl:text-[4.25rem]">
+        <h1 id="hero-h" className="flex flex-col items-start gap-3 text-[2.5rem] leading-[1.1] sm:text-[4rem] lg:text-[3.5rem] xl:text-[4.875rem] xl:leading-[1.16]">
           <span className="flex flex-wrap items-center gap-3 sm:gap-5">
-            <span className="rounded-[1.25rem] bg-peach px-4 pb-3 pt-2 sm:px-5">Find a job</span>
-            <Go tone="green" className="size-9 sm:size-14" />
-            <span className="hidden sm:inline-flex"><Faces eager="sm" names={["face-1", "face-2", "face-3"]} className="size-12" /></span>
+            <span className="rounded-2xl bg-peach px-4 pb-2 pt-1 sm:px-6">Find a job</span>
+            <Go tone="green" className="size-9 sm:size-[3.8rem]" />
+            <span className="hidden sm:inline-flex"><Faces eager="sm" names={["face-1", "face-2", "face-3"]} className="size-[3.8rem]" /></span>
           </span>
           <span className="flex flex-wrap items-center gap-4">
-            <span className="rounded-[1.25rem] bg-deep-green px-4 pb-3 pt-2 text-white sm:px-5">a permit covers</span>
+            <span className="rounded-2xl bg-deep-green px-4 pb-2 pt-1 text-white sm:px-6">a permit covers</span>
             <span aria-hidden="true" className="hidden gap-2 sm:flex lg:hidden xl:flex">
-              {byEmployer(jobs).slice(0, 2).map((j) => <Logo key={j.employerSlug} job={j} className="size-12 text-lg shadow-card" />)}
+              {byEmployer(jobs).slice(0, 2).map((j) => <Logo key={j.employerSlug} job={j} className="size-[3.8rem] text-lg shadow-float" />)}
             </span>
           </span>
         </h1>
-        <p className="max-w-[36rem] text-muted">
+        <p className="max-w-[40rem] text-body text-muted lg:text-lead">
           Jobs in Ireland for people who need an employment permit. Every listing has passed Ireland&apos;s permit rules, or the employer has confirmed sponsorship.
         </p>
-        <form action={jobsPath} method="get" role="search" className="flex max-w-[37.5rem] flex-col gap-2 rounded-[1.75rem] bg-sand p-2 sm:flex-row sm:items-center sm:rounded-pill sm:bg-white sm:pl-6 sm:shadow-pop">
+        <form action={jobsPath} method="get" role="search" className="flex max-w-[42.5rem] flex-col gap-2 rounded-bento bg-sand p-2 sm:flex-row sm:items-center sm:rounded-pill sm:bg-white sm:pl-6 sm:shadow-pop">
           <label className="flex flex-1 items-center gap-3 rounded-pill bg-white px-4 sm:px-0">
             <Icon name="search" className="shrink-0 text-muted" />
             <span className="sr-only">Job title</span>
@@ -164,7 +164,7 @@ function Hero({ d }: { d: HomeData }) {
         </form>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-3">
           <div className="flex items-center gap-3">
-            <Faces eager names={["face-4", "face-5", "face-6"]} className="size-9" />
+            <Faces eager names={["face-4", "face-5", "face-6"]} className="size-12" />
             <p className="max-w-[9rem] text-small leading-snug text-muted"><strong className="block whitespace-nowrap text-[15px] text-ink">Free for candidates</strong>The job board is always free.</p>
           </div>
           <SponsorBadge />
@@ -172,8 +172,8 @@ function Hero({ d }: { d: HomeData }) {
         </div>
       </div>
       <div className="relative self-start">
-        <Photo name="hero" eager className="h-64 w-full rounded-bento sm:h-[25.6rem]" />
-        <div className="absolute right-0 top-0 hidden rounded-bl-[1.75rem] bg-white pb-3 pl-3 sm:block">
+        <Photo name="hero" eager className="h-64 w-full rounded-bento sm:h-[29.25rem]" />
+        <div className="absolute right-0 top-0 hidden rounded-bl-bento bg-white pb-3 pl-3 sm:block">
           <div className="rounded-3xl bg-white px-5 py-4 shadow-pop">
             <p className="text-small text-muted">Permits issued, {DETE.short}</p>
             <p className="font-heading text-2xl font-semibold">{NUM.format(DETE.total)}</p>
@@ -181,7 +181,7 @@ function Hero({ d }: { d: HomeData }) {
           </div>
         </div>
         {first && (
-          <div className="absolute bottom-0 left-0 rounded-tr-[1.75rem] bg-white pr-3 pt-3">
+          <div className="absolute bottom-0 left-0 rounded-tr-bento bg-white pr-3 pt-3">
             <A href={jobPath(first)} className="flex items-center gap-3 rounded-3xl bg-white p-4 no-underline shadow-pop">
               <Logo job={first} className="size-11 border border-line" />
               <span className="flex flex-col items-start gap-1">
@@ -201,9 +201,9 @@ function Bento({ m }: { m: Sec<Minimums> }) {
   return (
     <div className={`${wrap} grid grid-cols-2 gap-3 py-4 sm:gap-4 lg:grid-cols-[1.31fr_1fr_1.05fr]`}>
       <div className="col-span-2 hidden gap-4 rounded-bento bg-deep-green p-6 text-white sm:flex lg:col-span-1">
-        <Photo name="rules-card" eager="sm" className="hidden h-[12.6rem] w-[9.3rem] shrink-0 rounded-t-pill rounded-b-[2rem] bg-white sm:block" />
+        <Photo name="rules-card" eager="sm" className="hidden h-[14.4rem] w-[10.6rem] shrink-0 rounded-t-pill rounded-b-bento bg-white sm:block" />
         <div className="flex flex-col items-start gap-3 py-2">
-          <h2 className="text-[1.25rem] leading-tight text-white">Every listing passes the permit rules first.</h2>
+          <h2 className="text-[1.25rem] leading-tight text-white xl:text-2xl">Every listing passes the permit rules first.</h2>
           <p className="text-white/85">Two badges say who makes each claim: the employer, or our rule check.</p>
           <A href="#badges" aria-label="How the two badges work" className="mt-auto"><Go tone="ink" icon="arrow" /></A>
         </div>
@@ -213,7 +213,7 @@ function Bento({ m }: { m: Sec<Minimums> }) {
           <Pill tone="white" className="font-medium">DETE, {DETE.short}</Pill>
           <A href="#permits" aria-label="Where permits go"><Go tone="ink" className="size-9" /></A>
         </div>
-        <p className="mt-auto font-heading text-[2rem] font-semibold leading-none sm:text-[3.5rem]">{pct(health.share)}</p>
+        <p className="mt-auto font-heading text-[2rem] font-semibold leading-none sm:text-[3.75rem]">{pct(health.share)}</p>
         <p className="mt-2 text-small sm:mt-3 sm:text-base">of permits go to health and social work, the first sector we cover.</p>
       </div>
       {m.ok && (
@@ -222,7 +222,7 @@ function Bento({ m }: { m: Sec<Minimums> }) {
             <p className="rounded-pill bg-white px-3 py-0.5 text-small font-medium">From the rules table</p>
             <A href={checkerPath} aria-label="Open the eligibility checker"><Go tone="green" className="size-9" /></A>
           </div>
-          <p className="mt-auto font-heading text-[2rem] font-semibold leading-none sm:text-[3.5rem]">{eur(m.data.criticalSkills)}</p>
+          <p className="mt-auto font-heading text-[2rem] font-semibold leading-none sm:text-[3.75rem]">{eur(m.data.criticalSkills)}</p>
           <p className="mt-2 text-small text-muted sm:mt-3 sm:text-base">Critical Skills minimum with a relevant degree. We check every job against it.</p>
         </div>
       )}
@@ -253,11 +253,11 @@ function PermitHistory({ d }: { d: HomeData }) {
 
 const TILE: Record<string, { fill: string; photo: string; shape: string }> = {
   health: { fill: "bg-green-tint", photo: "sector-health", shape: "lg:bottom-auto lg:h-[62%] lg:rounded-br-[5rem]" },
-  hospitality: { fill: "bg-peach", photo: "sector-hospitality", shape: "lg:inset-auto lg:right-5 lg:top-5 lg:size-24 lg:rounded-pill" },
-  IT: { fill: "bg-lilac", photo: "sector-it", shape: "lg:inset-auto lg:right-4 lg:top-4 lg:h-[6.6rem] lg:w-[8.3rem] lg:rounded-[1.75rem] lg:rounded-bl-[3.5rem]" },
+  hospitality: { fill: "bg-peach", photo: "sector-hospitality", shape: "lg:inset-auto lg:right-5 lg:top-5 lg:size-28 lg:rounded-pill" },
+  IT: { fill: "bg-lilac", photo: "sector-it", shape: "lg:inset-auto lg:right-4 lg:top-4 lg:h-[7.5rem] lg:w-[9.5rem] lg:rounded-bento lg:rounded-bl-[4rem]" },
   "construction and engineering": { fill: "bg-ink lg:text-white", photo: "sector-construction", shape: "lg:opacity-55" },
-  finance: { fill: "bg-sand", photo: "sector-finance", shape: "lg:inset-auto lg:right-4 lg:top-4 lg:h-[6.6rem] lg:w-[8.3rem] lg:rounded-[1.75rem] lg:rounded-bl-[3.5rem]" },
-  "pharma and science": { fill: "bg-pink", photo: "sector-pharma", shape: "lg:inset-auto lg:right-10 lg:top-4 lg:h-[6.6rem] lg:w-[5.5rem] lg:rounded-2xl" },
+  finance: { fill: "bg-sand", photo: "sector-finance", shape: "lg:inset-auto lg:right-4 lg:top-4 lg:h-[7.5rem] lg:w-[9.5rem] lg:rounded-bento lg:rounded-bl-[4rem]" },
+  "pharma and science": { fill: "bg-pink", photo: "sector-pharma", shape: "lg:inset-auto lg:right-10 lg:top-4 lg:h-[7.5rem] lg:w-[6.3rem] lg:rounded-2xl" },
 };
 
 function Sectors({ s }: { s: Sec<SectorCount[]> }) {
@@ -266,12 +266,12 @@ function Sectors({ s }: { s: Sec<SectorCount[]> }) {
   const tiled = new Set(DETE.sectors.map((x) => x.sector as string));
   const more = s.data.filter((x) => !tiled.has(x.sector) && x.jobs > 0);
   return (
-    <ul className="grid grid-cols-2 gap-4 lg:grid-cols-[1.15fr_1fr_1fr_1fr] lg:grid-rows-[13.6rem_13.6rem]">
+    <ul className="grid grid-cols-2 gap-4 lg:grid-cols-[1.15fr_1fr_1fr_1fr] lg:grid-rows-[15.6rem_15.6rem]">
       {DETE.sectors.map((x, i) => {
         const t = TILE[x.sector]!;
         const n = jobs.get(x.sector) ?? 0;
         return (
-          <li key={x.sector} className={i === 0 ? "min-h-[10.5rem] lg:row-span-2" : "min-h-[10.5rem] lg:min-h-[13.6rem]"}>
+          <li key={x.sector} className={i === 0 ? "min-h-[10.5rem] lg:row-span-2" : "min-h-[10.5rem] lg:min-h-[15.6rem]"}>
             <A href={`${jobsPath}?sector=${encodeURIComponent(x.sector)}`} className={`relative flex h-full flex-col justify-end overflow-hidden rounded-bento p-3 no-underline lg:p-6 ${t.fill}`}>
               <Photo name={t.photo} className={`absolute inset-0 size-full ${t.shape}`} />
               <span className="relative flex items-end justify-between gap-3">
@@ -286,7 +286,7 @@ function Sectors({ s }: { s: Sec<SectorCount[]> }) {
           </li>
         );
       })}
-      <li className="col-span-2 min-h-[8rem] lg:col-span-1 lg:min-h-[13.6rem]">
+      <li className="col-span-2 min-h-[8rem] lg:col-span-1 lg:min-h-[15.6rem]">
         <div className="flex h-full flex-col justify-between rounded-bento bg-deep-green p-6 text-white">
           <ul className="flex flex-wrap gap-2">
             {more.map((x) => (
@@ -345,7 +345,7 @@ const JOB_ORDER = [0, 1, 2, 3, 0, 1]; // the frame's order: green, sun, lavender
 function JobTile({ c, i }: { c: JobCard; i: number }) {
   const dark = JOB_ORDER[i % JOB_ORDER.length] === 0;
   return (
-    <article data-job-card className={`relative flex h-full min-h-[16.8rem] flex-col gap-3 rounded-bento p-6 ${JOB_FILL[JOB_ORDER[i % JOB_ORDER.length]!]}`}>
+    <article data-job-card className={`relative flex h-full min-h-[19.2rem] flex-col gap-3 rounded-bento p-6 ${JOB_FILL[JOB_ORDER[i % JOB_ORDER.length]!]}`}>
       <div className="flex items-start justify-between gap-3">
         <Pill tone="white" className="font-medium">{c.county ?? "Ireland"}</Pill>
         <Logo job={c} />
@@ -377,7 +377,7 @@ function JobsGrid({ j }: { j: Jobs }) {
   if (!j.jobs.length) return <EmptyState title="No jobs here yet">Try another sector, or look at every job.</EmptyState>;
   const hidden = j.signInForMore ? Math.min(3, Math.max(0, (j.count?.n ?? JOBS_LIMIT + 3) - j.jobs.length)) : 0;
   const box = j.signInForMore && (
-    <div data-sign-in-for-more className={`flex flex-col gap-4 rounded-[2rem] bg-ink p-5 text-white sm:flex-row sm:items-center sm:justify-between ${hidden ? "absolute inset-x-0 top-6 z-[1] mx-auto max-w-[49rem]" : "mx-auto mt-6 max-w-[49rem]"}`}>
+    <div data-sign-in-for-more className={`flex flex-col gap-4 rounded-[2rem] bg-ink p-5 text-white sm:flex-row sm:items-center sm:justify-between ${hidden ? "absolute inset-x-0 top-6 z-[1] mx-auto max-w-[56rem]" : "mx-auto mt-6 max-w-[56rem]"}`}>
       <div className="flex items-center gap-4">
         <Go tone="peach" icon="lock" className="hidden sm:grid" />
         <div>
@@ -459,7 +459,7 @@ function Steps() {
     <Section id="steps" title={<>From <Hl c="peach">search</Hl> <Dot /> to <Hl c="green">permit</Hl><br />in four steps</>} intro="Our permit services are paid by the employer or agency, never by you.">
       <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {STEPS.map(([t, text, fill], i) => (
-          <li key={t} className={`flex min-h-[16.4rem] flex-col justify-between gap-8 rounded-bento p-7 ${fill}`}>
+          <li key={t} className={`flex min-h-[18.7rem] flex-col justify-between gap-8 rounded-bento p-7 ${fill}`}>
             <p className={`font-heading text-[3.4rem] font-semibold leading-none ${i === 3 ? "text-peach" : ""}`}>{String(i + 1).padStart(2, "0")}</p>
             <div>
               <h3 className="text-[1.2rem] leading-tight">{t}</h3>
@@ -519,7 +519,7 @@ function Permits() {
   const rows: [string, number, string][] = [...top.map((x, i) => [x.short, x.share, BAR[i]!] as [string, number, string]), ["All other sectors", rest, "bg-line"]];
   return (
     <Section id="permits" title={<>Where <Hl c="lilac">{NUM.format(DETE.total)}</Hl> permits <Dot icon="trend" tone="peach" /> <Hl c="peach">actually go</Hl></>}>
-      <div className="grid gap-4 lg:grid-cols-[19.7rem_1fr]">
+      <div className="grid gap-4 lg:grid-cols-[19.7rem_1fr] xl:grid-cols-[22.5rem_1fr]">
         <div className="flex flex-col rounded-bento bg-ink p-7 text-white">
           <div className="flex items-start justify-between gap-3">
             <p className="rounded-pill bg-white/10 px-3 py-1 text-small">DETE, {DETE.short}</p>
@@ -546,7 +546,7 @@ function Permits() {
           </div>
           <ul className="flex flex-col gap-3">
             {rows.map(([label, share, fill]) => (
-              <li key={label} className="grid grid-cols-[1fr_3rem] items-center gap-x-3 gap-y-1 sm:grid-cols-[12.5rem_1fr_3rem]">
+              <li key={label} className="grid grid-cols-[1fr_3rem] items-center gap-x-3 gap-y-1 sm:grid-cols-[14.25rem_1fr_3rem]">
                 <span>{label}</span>
                 <span className="col-span-2 row-start-2 h-5 sm:col-span-1 sm:row-start-auto sm:h-7"><span style={{ width: `${(share / max) * 100}%` }} className={`block h-full rounded-pill ${fill}`} /></span>
                 <span className="text-right font-semibold">{pct(share)}</span>
@@ -573,16 +573,16 @@ function Occupations({ o }: { o: Sec<Occupation[]> }) {
       intro="Browse by occupation. Each page shows the permit rules and the live jobs."
     >
       {!o.ok ? <Unavailable r={o} /> : (
-        <ul className="-mx-4 flex snap-x gap-4 overflow-x-auto px-4 pb-4 [scrollbar-width:thin]">
+        <ul className="-mx-5 flex snap-x gap-4 overflow-x-auto px-5 pb-4 sm:-mx-8 sm:px-8 [scrollbar-width:thin]">
           {o.data.map((x, i) => {
             const f = FEATURED.find((y) => y.code === x.code)!;
             return (
-              <li key={x.code} className="w-[15.75rem] shrink-0 snap-start">
+              <li key={x.code} className="w-64 shrink-0 snap-start">
                 <A href={occupationPath(x.slug)} className={`relative flex h-full flex-col items-center rounded-bento p-3 pt-6 text-center text-white no-underline ${OCC_FILL[i % OCC_FILL.length]}`}>
                   <span className="rounded-pill bg-white/15 px-3 py-0.5 text-small">{f.sector}</span>
                   <span className="mt-3 line-clamp-2 min-h-[2.6em] px-2 font-heading text-lg font-semibold leading-tight">{x.title}</span>
                   <span className="mt-1 text-small text-white/80">{LIST_LINE[x.listStatus] ?? "See the permit rules"}</span>
-                  <Photo name={f.photo} className="mt-5 h-[17rem] w-full rounded-t-[8rem] rounded-b-[1.5rem]" />
+                  <Photo name={f.photo} className="mt-5 h-80 w-full rounded-t-[8rem] rounded-b-card" />
                   <Go tone="white" icon="arrow" className="absolute bottom-6 right-6" />
                 </A>
               </li>
@@ -604,7 +604,7 @@ const SERVICES: [IconName, string, string, string][] = [
 ];
 function PermitServices() {
   return (
-    <section id="permit-services" aria-labelledby="permit-services-h" className={`${wrap} grid gap-4 py-12 lg:grid-cols-[32.4rem_1fr] lg:py-16 [&>*]:min-w-0`}>
+    <section id="permit-services" aria-labelledby="permit-services-h" className={`${wrap} grid gap-4 py-12 lg:grid-cols-[32.4rem_1fr] xl:grid-cols-[37rem_1fr] lg:py-16 [&>*]:min-w-0`}>
       <div className="flex flex-col gap-6 rounded-bento bg-deep-green p-8 text-white lg:p-10">
         <h2 id="permit-services-h" className="text-[1.85rem] leading-[1.3] text-white sm:text-[2.6rem]">
           Got an offer?<br /><Hl c="white">We can handle</Hl><br />your permit <Dot tone="ink" />
@@ -641,7 +641,7 @@ function Employers() {
   const href = employersHref();
   return (
     <section id="employers" aria-labelledby="employers-h" className={`${wrap} py-12 lg:py-16`}>
-      <div className="grid items-center gap-8 rounded-bento bg-ink p-8 text-white lg:grid-cols-[1fr_28rem] lg:p-5 lg:pl-12">
+      <div className="grid items-center gap-8 rounded-bento bg-ink p-8 text-white lg:grid-cols-[1fr_28rem] xl:grid-cols-[1fr_32rem] lg:p-5 lg:pl-12">
         <div className="flex flex-col items-start gap-5">
           <h2 id="employers-h" className="text-[2.15rem] leading-[1.3] text-white sm:text-[2.6rem]">
             Employers: <Hl c="green">post a job</Hl> <Dot icon="plus" tone="peach" /><br />and confirm <Hl c="peach">sponsorship</Hl>
@@ -654,7 +654,7 @@ function Employers() {
             </div>
           )}
         </div>
-        <Photo name="employer" className="hidden h-[20.6rem] w-full rounded-[1.75rem] rounded-tl-[6rem] rounded-bl-[5rem] lg:block" />
+        <Photo name="employer" className="hidden h-[23.5rem] w-full rounded-bento rounded-tl-[6rem] rounded-bl-[5rem] lg:block" />
       </div>
     </section>
   );
@@ -675,7 +675,7 @@ function Guides({ d }: { d: HomeData }) {
           <li key={it.key}>
             <article className="relative flex h-full flex-col rounded-bento bg-sand p-3 pb-6">
               <div className="relative">
-                <Photo name={`guide-${(i % 3) + 1}`} className="h-[11.4rem] w-full rounded-[1.25rem]" />
+                <Photo name={`guide-${(i % 3) + 1}`} className="h-[13rem] w-full rounded-card" />
                 <Pill tone="white" className="absolute left-3 top-3 font-medium">{it.kind}</Pill>
               </div>
               <h3 className="mt-4 px-3 text-lg leading-snug">
@@ -724,7 +724,7 @@ function Faq({ d }: { d: HomeData }) {
   ];
   return (
     <Section id="faq" title={<>Questions <Hl c="green">answered</Hl> <Dot icon="help" tone="peach" /></>}>
-      <div className="mx-auto flex max-w-[50.4rem] flex-col gap-3">
+      <div className="mx-auto flex max-w-[57.5rem] flex-col gap-3">
         {qa.map(([q, a], i) => (
           <details key={q} open={i === 0} className="group rounded-[1.9rem] bg-sand px-7 py-5">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-semibold [&::-webkit-details-marker]:hidden">
@@ -734,7 +734,7 @@ function Faq({ d }: { d: HomeData }) {
                 <Icon name="minus" size={16} className="hidden group-open:block" />
               </span>
             </summary>
-            <p className="mt-2 max-w-[37rem] text-muted">{a}</p>
+            <p className="mt-2 max-w-[42rem] text-muted">{a}</p>
           </details>
         ))}
       </div>

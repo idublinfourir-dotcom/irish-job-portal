@@ -17,6 +17,13 @@ describe("Button", () => {
     const classes = BUTTON_VARIANTS.map((v) => html(<Button variant={v}>x</Button>).match(/class="([^"]*)"/)![1]);
     expect(new Set(classes).size).toBe(8);
   });
+  it("has the kit's heights (52, 42, chips 34) and a hover and a pressed look for every variant (frame NS4)", () => {
+    expect(html(<Button size="lg">x</Button>)).toContain("min-h-[52px]");
+    expect(html(<Button>x</Button>)).toContain("min-h-[42px]");
+    for (const v of ["chip", "active", "filter-on"] as const) expect(html(<Button variant={v}>x</Button>)).toContain("min-h-[34px]");
+    for (const v of BUTTON_VARIANTS) expect(html(<Button variant={v}>x</Button>)).toMatch(/ hover:\S+.* active:/);
+    for (const v of ["outline", "danger"] as const) expect(html(<Button variant={v} disabled>x</Button>)).toMatch(/border-line bg-transparent/);
+  });
   it("never uses the two permit badge colours", () => {
     for (const v of BUTTON_VARIANTS) expect(html(<Button variant={v}>x</Button>)).not.toMatch(/critical-skills|sponsor/);
   });

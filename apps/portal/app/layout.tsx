@@ -7,7 +7,7 @@ import "./globals.css";
 
 // The two fonts, as the CSS variables packages/ui/src/tokens.css uses.
 const outfit = Outfit({ subsets: ["latin"], weight: "600", variable: "--font-outfit", display: "swap" });
-const dmSans = DM_Sans({ subsets: ["latin"], weight: ["400", "600"], variable: "--font-dm-sans", display: "swap" });
+const dmSans = DM_Sans({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-dm-sans", display: "swap" });
 
 export const metadata: Metadata = {
   title: `${SITE_NAME} for employers`,

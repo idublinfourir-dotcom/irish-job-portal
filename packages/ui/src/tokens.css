@@ -1,50 +1,67 @@
 /*
- * The one place for the look of all three apps (step 16 F1, decision #287).
- * The colours and the two fonts are the designer's (frame NS2, Mint Pill with the Irish palette). Everything marked NEUTRAL DEFAULT is a stand-in:
- * spacing, radii, shadows, focus ring, and the hover, disabled and error colours. The designer's values replace them HERE and nowhere else
- * (step16/DESIGNER-HANDOFF.md item 1). No dark mode (Later L60).
+ * The one place for the look of all three apps (step 16 F1, decision #287). The values are the designer's kit of 23 Nov 2026 (frames NS2 and NS4,
+ * step16/design/designer-pack-2026-11-22/irishworkpermit.ie/assets/kit/kit.css; a value here is named after the kit's where they differ).
+ * Two kept darker than the kit because the kit's fail WCAG AA: Mint (white on it 4.38 to 1) and the disabled text (2.68 to 1). No dark mode (Later L60).
  */
 
 @theme {
-  /* The Mint Pill colours, by their names on frame NS2 (re-read from the frame image 23 Nov 2026, step16/design/images/ns2-system-308-4931). */
-  --color-ink: #14142b; /* Ink: text, dark cards, footer */
-  --color-peach: #ffc48a; /* Sun */
-  --color-lilac: #dcd6ff; /* Lavender */
-  --color-deep-green: #0e8655; /* Mint #0F8A57, one step darker so white text on it passes AA (4.6 to 1) */
-  --color-sand: #f6f6fa; /* Surface: soft cards, chips, FAQ rows */
-  --color-line: #d8d5ee; /* Line */
+  --color-ink: #14142b; /* text, dark cards, footer */
+  --color-ink-hover: #24244a; /* dark-2 */
+  --color-ink-pressed: #0b0b1a;
+  --color-peach: #ffc48a; /* sun */
+  --color-peach-hover: #ffb46b;
+  --color-peach-pressed: #f5a65a;
+  --color-lilac: #dcd6ff; /* lavender */
+  --color-lilac-hover: #cfc7ff;
+  --color-lilac-pressed: #c2b8ff;
+  --color-lilac-soft: #e9e5ff; /* pressed look of the outline button and the chip */
+  --color-deep-green: #0e8655; /* mint (#0f8a57), one step darker so white text on it passes AA (4.6 to 1) */
+  --color-hover-dark: #0c774b; /* mint-hover */
+  --color-pressed-dark: #0a6b43; /* mint-pressed, mint-ink (a passed field's helper text) */
+  --color-mint-on-dark: #9fe3c5; /* the ".ie" of the logo on dark */
+  --color-sand: #f6f6fa; /* surface: soft cards, FAQ rows */
+  --color-hover-light: #f1f0f7; /* chip: the chip's fill, the outline button's hover */
+  --color-line: #d8d5ee;
+  --color-line-strong: #b9b9d6; /* chip hover, the Critical Skills badge's border */
   --color-sponsor: #e9e5ff; /* ONLY the Sponsor badge */
   --color-sponsor-ink: #4a32c4;
   --color-critical-skills: #d9f5e7; /* ONLY the Critical Skills badge */
   --color-critical-skills-ink: #0a6b43;
-  --color-cream: #ffffff; /* page background (white on the landing frame) */
-  /* Fills the landing frame uses beside the eight. */
+  --color-cream: #ffffff; /* page */
+  /* Fills the landing frame uses beside the kit. */
   --color-green-tint: #d3ede0; /* the Health tile */
   --color-pink: #ffd9e8; /* the Pharma tile */
   --color-teal: #10444f; /* occupation cards */
 
-  /* NEUTRAL DEFAULTS: colours the frames do not name. */
-  --color-muted: #55566b; /* small and help text */
-  --color-focus: #1d4ed8; /* focus ring */
-  --color-error: #b42318; /* error and Danger */
-  --color-error-tint: #fbe4e1; /* error notice background */
-  --color-hover-dark: #0b6c45; /* Primary hover */
-  --color-hover-light: #ecebf5; /* light button hover (Chip, Outline) */
-  --color-disabled: #ecebf3; /* disabled background */
-  --color-disabled-ink: #5d5e70; /* disabled text */
+  --color-muted: #4a4a68; /* ink-2: secondary text */
+  --color-faint: #6e6e8a; /* ink-3: placeholders; AA on white and sand only */
+  --color-focus: #14142b; /* focus ring; peach on dark surfaces */
+  --color-error: #b42318; /* danger */
+  --color-error-tint: #ffd9e8; /* danger-bg */
+  --color-error-hover: #fff1ef; /* danger-hover-bg */
+  --color-error-pressed: #ffe0db; /* danger-pressed-bg */
+  --color-disabled: #ececf7;
+  --color-disabled-ink: #5d5e70; /* the kit's #8e8eb5 is 2.68 to 1 on the fill */
 
-  /* Radii and shadows read off the landing frame (pills everywhere, 24 to 28 px cards). */
-  --radius-control: 1.5rem; /* buttons and inputs are pills */
-  --radius-card: 1.5rem;
-  --radius-bento: 1.75rem; /* the home page's big cards */
-  --radius-pill: 999px;
-  --shadow-card: 0 1px 2px rgb(20 20 43 / 0.06), 0 6px 20px rgb(20 20 43 / 0.06);
-  --shadow-pop: 0 12px 40px rgb(20 20 43 / 0.14);
-  --text-small: 13.5px; /* "small 13.5/1.45" on NS2 */
+  --radius-control: 1.5rem; /* textareas, side-menu items (kit xl, 24) */
+  --radius-card: 1.5rem; /* kit xl, 24: cards, images, the header bar */
+  --radius-bento: 2rem; /* kit 2xl, 32: the landing's big cards, sections, modals */
+  --radius-pill: 999px; /* buttons, inputs, chips, badges, avatars */
+  --shadow-card: 0 1px 3px rgb(20 20 43 / 0.08); /* kit sm: cards at rest */
+  --shadow-float: 0 2px 8px rgb(20 20 43 / 0.1); /* kit md: floating chips, logos */
+  --shadow-pop: 0 10px 28px -6px rgb(20 20 43 / 0.12); /* kit lg: menus, popovers, sticky bars */
+  --shadow-modal: 0 10px 30px -12px rgb(20 20 43 / 0.3); /* kit xl: modals, sheets */
+  --text-caption: 12px;
+  --text-caption--line-height: 1.4;
+  --text-small: 13.5px;
   --text-small--line-height: 1.45;
-  --text-body: 16px; /* "body 16/1.55" */
+  --text-ui: 15px;
+  --text-ui--line-height: 1.45;
+  --text-body: 16px;
   --text-body--line-height: 1.55;
-  --container-page: 69.5rem; /* the frame's 1080 px content width, plus the 16 px page padding each side */
+  --text-lead: 18px;
+  --text-lead--line-height: 1.55;
+  --container-page: 79rem; /* 1200 px content, plus the 32 px gutter each side (20 px under 640) */
 }
 
 /* The two fonts. The apps load them with next/font and set these variables on <html>. */
@@ -69,9 +86,25 @@
     font-weight: 600;
     letter-spacing: -0.02em;
   }
-  /* Focus is visible on every control. */
+  h1 { font-size: 30px; line-height: 1.15; letter-spacing: -0.025em; }
+  h2 { font-size: 24px; line-height: 1.2; }
+  h3 { font-size: 20px; line-height: 1.25; }
+  h4 { font-size: 18px; line-height: 1.3; letter-spacing: -0.01em; }
+  @media (min-width: 64rem) {
+    h1 { font-size: 46px; line-height: 1.1; }
+    h2 { font-size: 32px; }
+    h3 { font-size: 24px; line-height: 1.2; }
+    h4 { font-size: 20px; }
+  }
+  /* Focus is visible on every control: ink, or peach for what sits on a dark surface (a light card on it goes back to ink). */
+  :where(.bg-ink, .bg-teal) > * { --focus: var(--color-peach); }
+  :where(.bg-white, .bg-cream, .bg-sand, .bg-peach, .bg-lilac, .bg-green-tint) > * { --focus: var(--color-focus); }
   :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
-    outline: 3px solid var(--color-focus);
+    outline: 2px solid var(--focus, var(--color-focus));
     outline-offset: 2px;
+  }
+  /* A pressed button is a little smaller (kit --press-scale), never with reduced motion. */
+  @media (prefers-reduced-motion: no-preference) {
+    [data-press]:active { transform: scale(0.97); }
   }
 }
