@@ -11,7 +11,7 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
   }, [error]);
   return (
     <div className="px-5 pt-6 sm:px-8 sm:pt-10">
-      <section className="mx-auto flex max-w-[75rem] flex-col items-center rounded-[2.5rem] bg-ink px-6 py-20 text-center text-white sm:py-32">
+      <section className="mx-auto flex max-w-[75rem] flex-col items-center rounded-[2.5rem] bg-ink px-6 py-16 text-center text-white sm:py-24">
         <h1 className="text-4xl text-white sm:text-5xl">
           Something <span className="text-deep-green">went wrong</span>
         </h1>

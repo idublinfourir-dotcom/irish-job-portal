@@ -7,8 +7,8 @@ export const metadata: Metadata = { title: "Page not found", robots: { index: fa
 export default function NotFound() {
   return (
     <div className="px-5 pt-6 sm:px-8 sm:pt-10">
-      <section className="mx-auto flex max-w-[75rem] flex-col items-center rounded-[2.5rem] bg-ink px-6 py-20 text-center text-white sm:py-32">
-        <p aria-hidden className="font-heading text-[7rem] font-semibold leading-none text-deep-green sm:text-[10rem]">404</p>
+      <section className="mx-auto flex max-w-[75rem] flex-col items-center rounded-[2.5rem] bg-ink px-6 py-16 text-center text-white sm:py-24">
+        <p aria-hidden className="font-heading text-[6rem] font-semibold leading-none text-deep-green sm:text-[7.8rem]">404</p>
         <h1 className="mt-4 text-4xl text-white sm:text-5xl">
           We can&apos;t find <span className="text-deep-green">that page</span>
         </h1>

@@ -1,4 +1,5 @@
 // Unit tests (no browser, no network): each component is rendered to HTML and the markup is checked.
+import { SiteHeader } from "./candidate-shell";
 import { renderToStaticMarkup as html } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SITE_NAME as AUTH_SITE_NAME } from "../../auth/src/email-layout";
@@ -23,6 +24,18 @@ describe("Button", () => {
     for (const v of ["chip", "active", "filter-on"] as const) expect(html(<Button variant={v}>x</Button>)).toContain("min-h-[34px]");
     for (const v of BUTTON_VARIANTS) expect(html(<Button variant={v}>x</Button>)).toMatch(/ hover:\S+.* active:/);
     for (const v of ["outline", "danger"] as const) expect(html(<Button variant={v} disabled>x</Button>)).toMatch(/border-line bg-transparent/);
+  });
+  it("phone menu (frame M08): a dark panel under the bar with the six public links, then account rows or the sign-up buttons", () => {
+    const open = (signedIn: boolean) => html(<SiteHeader signedIn={signedIn} />).match(/<nav aria-label="Mobile"[\s\S]*?<\/nav>/)![0];
+    const visitor = open(false), me = open(true);
+    for (const h of ["/jobs", "/companies", "/guides", "/eligibility-checker", "/permit-services", "/help"]) for (const m of [visitor, me]) expect(m).toContain(`href="${h}"`);
+    expect(visitor).toMatch(/class="[^"]*bg-ink[^"]*fixed|class="[^"]*fixed[^"]*bg-ink/);
+    expect(visitor).toContain('href="/signup"');
+    expect(visitor).toContain('href="/login"');
+    expect(visitor).not.toContain('action="/api/auth/sign-out"');
+    for (const h of ["/account", "/account/tracker", "/account/saved", "/account/alerts"]) expect(me).toContain(`href="${h}"`);
+    expect(me).toContain('action="/api/auth/sign-out"');
+    expect(me).not.toContain('href="/signup"');
   });
   it("never uses the two permit badge colours", () => {
     for (const v of BUTTON_VARIANTS) expect(html(<Button variant={v}>x</Button>)).not.toMatch(/critical-skills|sponsor/);
