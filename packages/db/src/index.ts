@@ -89,6 +89,7 @@ export * from "./member-limit";
 export * from "./dete-links";
 
 export * from "./staff-admin";
+export * from "./staff-search";
 export * from "./audit-read";
 export * from "./content-admin";
 
