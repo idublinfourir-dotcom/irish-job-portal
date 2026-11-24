@@ -27,7 +27,8 @@ export const SITEMAP_QUERIES = {
 /** The pages with no data behind them (`page` entries); paths.ts says where each lives. */
 /** The legal texts that have a public page on the candidate site (privacy, terms, cookies, employer acceptable use, data retention; frame C22). */
 export const LEGAL_PAGES = ["privacy_notice", "signup_terms", "cookie_policy", "employer_acceptable_use", "data_retention"];
-export const STATIC_PAGES = ["home", "jobs", "companies", "guides", "updates", "help", "eligibility-checker", "permit-services"] as const;
+// "companies" (the directory, C13) joins this list when its page is built (B25, B26); until then its address answers 404.
+export const STATIC_PAGES = ["home", "jobs", "guides", "updates", "help", "eligibility-checker", "permit-services"] as const;
 // The part ids of the content kinds. ponytail: one part each (a few hundred pages at most); cut like jobs when one kind nears SITEMAP_URLS.
 const CONTENT_PARTS = { guides: "guide", updates: "update", help: "help" } as const;
 /** `title` and `county` only on a job: its address is made from them and the id (#288). `legal` keys are consent purposes, `page` keys are in STATIC_PAGES. */

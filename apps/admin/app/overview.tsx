@@ -141,7 +141,7 @@ export function Overview({ now, tiles, work, audit, auditFull, upcoming, roleCou
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
-        <h1 className="mb-1 text-[32px] leading-tight md:text-[34px]">Queues <span className="rounded-pill bg-deep-green px-3 text-white">overview</span></h1>
+        <h1 className="mb-1 text-[32px] leading-tight md:text-[34px]">Queues <span className="inline-block rounded-[0.28em] bg-deep-green px-[0.22em] text-white">overview</span></h1>
         <p className="text-small text-muted">{today(now)} · target: every queue cleared within 1 working day</p>
       </header>
       {tiles.length > 0 ? <Tiles tiles={tiles} /> : (

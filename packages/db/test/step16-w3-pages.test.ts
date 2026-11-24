@@ -116,7 +116,7 @@ async function seed() {
   await job(other, "Wthree Other Care", "W3 Other Nurse", { code: "2231" });
   await job(other, "Wthree Other Care", "W3 Sponsor Chef", { code: "5434", badge: "sponsor_confirmed" });
   // content
-  for (const [s, t] of [["w3-guide-a", "W3 Guide Alpha"], ["w3-guide-b", "W3 Guide Beta"]]) await page("guide", s, t, `Body of ${t}.\n\nSecond paragraph <b>bold</b>.`);
+  for (const [s, t] of [["w3-guide-a", "W3 Guide Alpha"], ["w3-guide-b", "W3 Guide Beta"]] as const) await page("guide", s, t, `Body of ${t}.\n\nSecond paragraph <b>bold</b>.`);
   await page("guide", "w3-guide-draft", "W3 Secret Draft Guide", "draft body", { status: "draft" });
   await page("guide", "w3-guide-gone", "W3 Withdrawn Guide", "gone body", { status: "withdrawn" });
   const cats = ["salary_minimums", "quotas", "occupation_lists", "processing"];

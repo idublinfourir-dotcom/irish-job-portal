@@ -1,6 +1,6 @@
 // The account review queue (frame D02) as parts that take their data as props, so a test renders every state. The page (page.tsx) reads and hands them over.
 import type { ReviewCounts, ReviewItem } from "@portal/db";
-import { A, Card, EmptyState, Notice, Pager, Pill, cx } from "@portal/ui";
+import { A, EmptyState, Notice, Pager, Pill, cx } from "@portal/ui";
 import { ageText, when } from "../_queue/age";
 import { CheckRow, CountTabs } from "../_queue/tabs";
 import { Actions } from "./actions";
@@ -57,7 +57,7 @@ export function Detail({ item, mine, listHref }: { item: ReviewItem; mine: boole
   const decided = outcomeText(item);
   const domainOk = item.emailDomain !== null && !item.freeEmail;
   return (
-    <Card as="section" className="flex flex-col gap-4 border-0 bg-sand p-5 shadow-none sm:p-6 lg:rounded-bento" aria-label={`Review of ${item.displayName}`}>
+    <section className="flex flex-col gap-4 rounded-card bg-sand p-5 sm:p-6 lg:rounded-bento" aria-label={`Review of ${item.displayName}`}>
       <header className="flex flex-wrap items-start justify-between gap-2">
         <h2 className="text-[22px] [overflow-wrap:anywhere]">{item.displayName}</h2>
         <Pill tone="peach" className="min-h-[30px]">{typeLabel(item)}</Pill>
@@ -74,7 +74,7 @@ export function Detail({ item, mine, listHref }: { item: ReviewItem; mine: boole
       </ul>
       {decided && item.status === "done" && <Notice kind={item.outcome === "approved" ? "success" : "info"} title={`${decided}${item.decidedAt ? ` on ${when(item.decidedAt)}` : ""}`} />}
       <Actions itemId={item.id} status={item.status} mine={mine} emailDomain={item.emailDomain} canAddDomain={domainOk} companyName={item.displayName} listHref={listHref} />
-    </Card>
+    </section>
   );
 }
 

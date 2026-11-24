@@ -126,7 +126,7 @@ export function FetchedJobs({ items, counts, stage, selected, missingId, meId, d
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="mb-1 text-[32px] leading-tight md:text-[34px]">Fetched <span className="rounded-pill bg-lilac px-3">job queue</span></h1>
+        <h1 className="mb-1 text-[32px] leading-tight md:text-[34px]">Fetched <span className="inline-block rounded-[0.28em] bg-lilac px-[0.22em]">job queue</span></h1>
         <p className="text-muted">Jobs the rules could not decide alone. Read the evidence, check the code, then publish or reject.</p>
       </header>
       <Categories counts={counts} stage={stage} />
