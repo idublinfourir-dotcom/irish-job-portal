@@ -11,7 +11,9 @@ import { gzipSync } from "node:zlib";
 // Re-measured 24 Nov 2026 with wave 1 finished, the search and job pages (P7, P8) and the designer's kit: the candidate sheet is one file for every page,
 // 60.3 KB raw, 11.7 KB gzip (portal and admin 33 to 34 KB). CSS budget about 10 percent over; measure again when the wave 2 pages are merged. The JS budget
 // is unchanged: first-load JS 248 KB for the home page, about 259 KB for /jobs and /jobs/[job] (measured on their own branch).
-export const BUDGET = { jsGzipBytes: 275_000, cssGzipBytes: 13_000, cssRawBytes: 66_500 };
+// Re-measured 24 Nov 2026 with wave 2 (P9 to P16, 14 more candidate pages in the one sheet): 67.8 KB raw, 12.8 KB gzip (portal 38.8 KB raw, admin 39.5 KB).
+// CSS budget about 10 percent over, as before; measure again when the wave 3 pages are merged. The JS budget is unchanged (248 to 251 KB).
+export const BUDGET = { jsGzipBytes: 275_000, cssGzipBytes: 14_100, cssRawBytes: 74_500 };
 
 const gz = (b: Buffer) => gzipSync(b).length;
 

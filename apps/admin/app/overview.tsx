@@ -1,12 +1,12 @@
 // The staff overview (frame ND1) as parts that take their data as props, so a test renders every role. Nothing here reads: a part shows only what the page was given,
 // and the page asks only for what the member's roles may read. No pipelines card (#287, Q76).
 import type { AuditRow } from "@portal/db";
-import type { myCounts } from "@portal/db/staff-tools";
+import type { readCounts } from "../lib/data";
 import { A, Button, EmptyState, Icon, cx, type IconName } from "@portal/ui";
 import { ageSeconds, ageText, clock, today } from "./_queue/age";
 import { auditInitials, auditSentence } from "./_queue/audit-text";
 
-type StaffCounts = Awaited<ReturnType<typeof myCounts>>;
+type StaffCounts = Awaited<ReturnType<typeof readCounts>>;
 export type Tile = { key: string; icon: IconName; value: number; label: string; note?: string; href?: string; tone: "sand" | "lilac" | "peach" | "ink" };
 export type Work = { key: string; title: string; queue: string; why: string; since: string; href: string };
 export type Upcoming = { kinds: string[]; from: string };
