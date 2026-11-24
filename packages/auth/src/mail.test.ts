@@ -1,6 +1,6 @@
 // The account emails (verify, reset, invite) and the shared layout: pure, no network, no database.
 import { describe, expect, it } from "vitest";
-import { C, esc, href, pillHtml, render, SITE_NAME } from "./email-layout";
+import { C, esc, href, pillHtml, render, SITE_WORDMARK } from "./email-layout";
 import { accountEmail } from "./mail";
 
 const BASE = "https://www.example.ie";
@@ -61,16 +61,28 @@ describe("render (the layout)", () => {
     expect(m.html).not.toMatch(/<img|<script|src=/);
     expect(m.html).not.toContain("<a "); // no button: no link
   });
-  it("uses the Mint Pill tokens: cream page, ink text, deep green pill button, Outfit headings and DM Sans body with system fallbacks (B75)", () => {
+  it("uses the designer's kit: white page, surface card, dark footer band, mint button, the wordmark, Outfit and DM Sans with system fallbacks (B75, P5)", () => {
     const m = render("s", { heading: "h", paragraphs: ["p"], footer: "f", button: { label: "Go", url: "https://a.example/x" } });
-    for (const hex of [C.cream, C.ink, C.green, C.sand]) expect(m.html).toContain(hex);
+    for (const hex of [C.white, C.surface, C.ink, C.green]) expect(m.html).toContain(hex);
     expect(m.html).toMatch(/<h1 [^>]*font-family:Outfit,[^>]*sans-serif/);
     expect(m.html).toMatch(/<p [^>]*font-family:'DM Sans',[^>]*sans-serif/);
-    expect(m.html).toMatch(/class="btn" style="border-radius:999px;background:#0C4A35"/);
+    expect(m.html).toMatch(/class="btn" style="border-radius:999px;background:#0E8655"/);
     expect(m.html).not.toMatch(/@font-face|fonts\.googleapis|<link/); // no remote font request
-    expect(m.html.match(new RegExp(SITE_NAME, "g"))).toHaveLength(1); // the site name comes from the one constant
-    expect(pillHtml("Sponsor", C.sponsor)).toContain("background:#E7E8F5");
+    expect(m.html).toContain(`>${SITE_WORDMARK}</p>`);
+    expect(m.html).not.toMatch(/#12201A|#0C4A35|#D3E8DB|#F3F1EB|#EAE6DA|#DDEEE3|#E7E8F5/i); // the old palette
+    expect(m.html.slice(m.html.indexOf(">f</p>") - 400)).toContain(`background:${C.ink}`); // the footer sits in the dark band
+    expect(pillHtml("Sponsor", C.sponsor, C.sponsorInk)).toMatch(/background:#E9E5FF;[^"]*color:#4A32C4/);
     expect(pillHtml("<b>", C.sponsor)).toContain("&lt;b&gt;");
+  });
+  it("has the same wordmark as the site and text that passes AA (4.5) on its background", async () => {
+    expect(SITE_WORDMARK).toBe((await import("../../ui/src/cx")).SITE_WORDMARK);
+    const lum = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+    };
+    const ratio = (a: string, b: string) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x! + 0.05) / (y! + 0.05); };
+    for (const [fg, bg] of [[C.ink, C.surface], [C.link, C.surface], [C.white, C.green], [C.onDark, C.ink], [C.lilac, C.ink], [C.surface, C.darkCard], [C.lilac, C.darkCard], [C.ink, C.lilac], [C.criticalInk, C.critical], [C.sponsorInk, C.sponsor]] as const)
+      expect(ratio(fg, bg), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
   });
   it("a footer link (settings) shows in the HTML and the text, escaped, and only an http(s) address is allowed", () => {
     const m = render("s", { heading: "h", paragraphs: ["p"], footer: "f", footerLink: { label: "Notification <settings>", url: "https://a.example/account/settings?a=1&b=2" } });
