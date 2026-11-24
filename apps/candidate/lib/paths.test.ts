@@ -1,7 +1,7 @@
 // The public addresses of decision #288, made in one place (paths.ts). No database.
 import { describe, expect, it } from "vitest";
 import { occupationCodeOfSlug, occupationSlug } from "./occupations";
-import { companyPath, guidePath, helpPath, jobIdOf, jobPath, legalPath, occupationPath, staticPath, updatePath } from "./paths";
+import { accountPath, afterSignInPath, casePath, companyPath, guidePath, helpPath, jobIdOf, jobPath, legalPath, loginPath, occupationPath, permitRequestPath, resetPath, signupPath, staticPath, updatePath, verifiedPath, verifyPath } from "./paths";
 
 describe("the job address", () => {
   it("is title, county and id, in lower-case words", () => {
@@ -55,5 +55,26 @@ describe("the help, legal and static addresses (B21)", () => {
   it("give every static page of the sitemap its address and an unknown key none", () => {
     expect(["home", "jobs", "companies", "guides", "updates", "help", "eligibility-checker", "permit-services"].map(staticPath)).toEqual(["/", "/jobs", "/companies", "/guides", "/updates", "/help", "/eligibility-checker", "/permit-services"]);
     for (const k of ["", "nope", "__proto__", "constructor"]) expect(staticPath(k), k).toBeNull();
+  });
+});
+
+describe("the sign-up, sign-in and permit service addresses (W2)", () => {
+  it("are the ones the header, footer and job pages already link to", () => {
+    expect([signupPath(), loginPath(), verifyPath(), resetPath(), accountPath()]).toEqual(["/signup", "/login", "/verify", "/reset", "/account"]);
+    expect(staticPath("permit-services")).toBe("/permit-services");
+    expect(afterSignInPath()).toBe("/jobs"); // P17 changes this to /account
+  });
+  it("keep the return address as one encoded value, and the verified landing keeps it too", () => {
+    expect(loginPath("/jobs/staff-nurse-cork-4821?x=1&y=2")).toBe("/login?next=%2Fjobs%2Fstaff-nurse-cork-4821%3Fx%3D1%26y%3D2");
+    expect(signupPath("/jobs/a-1")).toBe("/signup?next=%2Fjobs%2Fa-1");
+    expect(verifiedPath("/jobs/a-1")).toBe("/verify?verified=1&next=%2Fjobs%2Fa-1");
+    expect(verifiedPath()).toBe("/verify?verified=1");
+    expect(loginPath(null)).toBe("/login");
+  });
+  it("name a job on the request form only by digits", () => {
+    expect(permitRequestPath("1042")).toBe("/permit-services/request?job=1042");
+    for (const bad of ["", null, undefined, "12a", "../1", "1".repeat(19), "1&x=2"]) expect(permitRequestPath(bad as string | null | undefined), String(bad)).toBe("/permit-services/request");
+    expect(casePath("31")).toBe("/account/cases/31");
+    expect(casePath("../x")).toBe("/account/cases/..%2Fx");
   });
 });

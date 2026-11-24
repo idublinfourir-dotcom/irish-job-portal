@@ -305,3 +305,19 @@ describe("kit preview", () => {
     for (const t of ["Passed check", "Blocked", "Error", "Disabled", "Toggle on", "Radio one"]) expect(h).toContain(t);
   });
 });
+
+describe("a field icon (frames NS3, C26, C20: an envelope, a padlock, a building, a calendar)", () => {
+  it("sits inside the left end of an Input or Select, moves the text clear of it, and is decoration only", () => {
+    const withIcon = html(<Input label="Email" name="email" icon="mail" />);
+    expect(withIcon).toMatch(/<svg[^>]*data-icon="mail"/);
+    expect(withIcon).toMatch(/aria-hidden="true"/);
+    expect(withIcon).toMatch(/class="[^"]*\bpl-12\b[^"]*"/);
+    expect(html(<Select label="Employer" name="e" icon="building"><option>x</option></Select>)).toMatch(/data-icon="building"[\s\S]*<select[^>]*class="[^"]*\bpl-12\b/);
+  });
+  it("is absent, and the field unchanged, without the prop", () => {
+    const plain = html(<Input label="Email" name="email" />);
+    expect(plain).not.toMatch(/pl-12/);
+    expect(plain).not.toMatch(/data-icon="mail"/);
+    expect(plain).toMatch(/<label for="[^"]+"[^>]*>Email<\/label>/);
+  });
+});

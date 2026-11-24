@@ -13,7 +13,7 @@ export { createFakeEmail, type FakeEmail } from "./fake-email";
 export { accountEmail, createMail } from "./mail";
 export { createBrevoMail, type SendMail } from "./brevo";
 export { EMAIL_LIMIT, emailLimitKey } from "./email-limit";
-export { isFresh, REAUTH_CODE, REAUTH_SECONDS } from "./reauth";
+export { isFresh, ownPath, REAUTH_CODE, REAUTH_SECONDS } from "./reauth";
 
 // The pool is called portal, not employer: its tables are portal_user and so on (23-database-design.md).
 export type LoginPool = "candidate" | "portal" | "staff";
