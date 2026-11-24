@@ -5,7 +5,7 @@
 import "server-only";
 import { headers } from "next/headers";
 import {
-  checkerRead, companyRead, countJobView, gatedRead, getPool, getRules, guideRead, guidesRead, helpListRead, helpRead, jobRead, jobsRead, legalRead, minimumsRead, occupationRead, occupationsRead,
+  checkerRead, closedJobRead, companyRead, countJobView, gatedRead, getPool, getRules, guideRead, guidesRead, helpListRead, helpRead, jobRead, jobsRead, legalRead, minimumsRead, occupationRead, occupationsRead,
   permitNoticeRead, registrationBodiesRead, sectorsRead, similarRead, sitemapIds, sitemapIndexXml, sitemapPart, updatesRead, type ReadResult, type SitemapEntry, type Work,
 } from "@portal/db";
 import { candidateSettings, googleSettings } from "@portal/auth";
@@ -21,6 +21,7 @@ const read = (work: Work) => async (query?: Query): Promise<ReadResult> => gated
 
 export const readJobs = read(jobsRead);
 export const readJob = read(jobRead);
+export const readClosedJob = read(closedJobRead); // B27: ?id; { closed: true, reason, job, similar } for a closed or expired job, else 404. Call it when readJob answered 404
 export const readSimilar = read(similarRead);
 export const readCompany = read(companyRead);
 export const readOccupation = read(occupationRead);

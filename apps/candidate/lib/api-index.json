@@ -8,6 +8,7 @@
     "listJobs": "GET /api/jobs",
     "getJob": "GET /api/job",
     "getSimilarJobs": "GET /api/job/similar",
+    "getClosedJob": "GET /api/job/closed",
     "getCompanyPage": "GET /api/company",
     "getOccupationPage": "GET /api/occupation",
     "getHelpPage": "GET /api/help",

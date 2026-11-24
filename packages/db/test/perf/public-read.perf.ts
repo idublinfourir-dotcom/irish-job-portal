@@ -6,7 +6,7 @@ import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "../db";
 import { rateSql } from "../../src/candidate-route";
-import { LIVE_SIMILAR, similarLiveJobs, similarSql } from "../../src/candidate";
+import { CLOSED_JOB_SQL, closedJob, LIVE_SIMILAR, similarLiveJobs, similarSql } from "../../src/candidate";
 import { VISITOR_JOBS, VISITOR_READ_RATES } from "../../src/public-read";
 import { listJobs, listQuery, SORTS, type SearchFilters } from "../../src/search";
 import { fill } from "./fill";
@@ -109,5 +109,37 @@ it("more jobs like this (S9): at most 3 statements, inside its page and median t
     console.log(`similar: ${counted.n} statements, ${pages} pages (${costs.map((x) => `${x.pages} ${x.scans}`).join(" | ")}), median ${ms.toFixed(2)} ms`);
     expect(pages).toBeLessThanOrEqual(SIMILAR_PAGES);
     expect(ms).toBeLessThan(SIMILAR_MEDIAN_MS);
+  } finally { await c.end(); }
+});
+
+// B27 the closed-job read: the lookup by primary key and the same similar queries (up to 5 live jobs), at most 3 statements, pages summed and median time budgeted.
+const CLOSED_PAGES = 100;
+const CLOSED_MEDIAN_MS = 15;
+it("closed job (B27): at most 3 statements, inside its page and median time budget; a job that is not closed costs one lookup", async () => {
+  const c = new pg.Client({ connectionString: urlFor(db.name, "app_candidate") });
+  await c.connect();
+  const counted = { n: 0, query: (t: string, v?: unknown[]) => (counted.n++, c.query(t, v)) };
+  try {
+    // the fill has no closed job: the owner closes one live job of the biggest sector (the last test, so no other read sees it closed)
+    const su = db.pool("postgres");
+    const id = (await su.query(
+      `update job set status = 'closed', closed_at = now(), close_reason = 'expired' where id = (select id from job where status = 'live' and sector = (select sector from job where status = 'live' group by sector order by count(*) desc limit 1) order by id limit 1) returning id::text`)).rows[0].id;
+    const j = (await c.query("select j.id::text as id, j.sector, j.occupation_code as occ from job j where j.id = $1::bigint", [id])).rows[0];
+    const r = await closedJob(counted as never, j.id);
+    expect(r!.similar.length).toBeGreaterThan(0);
+    expect(counted.n).toBeLessThanOrEqual(3);
+    const costs = await measurePages(c, [
+      { text: CLOSED_JOB_SQL, values: [j.id] },
+      { text: similarSql(true, 5), values: [j.sector, j.id, j.occ ?? "0000"] }, { text: similarSql(false, 5), values: [j.sector, j.id] },
+    ]);
+    const pages = costs.reduce((a, x) => a + x.pages, 0);
+    const ms = await median(() => closedJob(c as never, j.id));
+    console.log(`closed job: ${counted.n} statements, ${pages} pages (${costs.map((x) => `${x.pages} ${x.scans}`).join(" | ")}), median ${ms.toFixed(2)} ms`);
+    expect(pages).toBeLessThanOrEqual(CLOSED_PAGES);
+    expect(ms).toBeLessThan(CLOSED_MEDIAN_MS);
+    const live = (await c.query("select j.id::text as id from job j where j.status = 'live' limit 1")).rows[0].id;
+    const miss = { n: 0, query: (t: string, v?: unknown[]) => (miss.n++, c.query(t, v)) };
+    expect(await closedJob(miss as never, live)).toBeNull();
+    expect(miss.n).toBe(1);
   } finally { await c.end(); }
 });

@@ -40,7 +40,8 @@ beforeAll(async () => {
     await k.query(
       `insert into organisation_name(organisation_id, name, normalised_name, kind, source) select g, 'Perf Co ' || g || ' Limited', 'perf co ' || g || ' limited', 'legal', 'admin' from generate_series(1, ${ORGS}) g;
        insert into organisation_name(organisation_id, name, normalised_name, kind, source) select 1 + (g % ${ORGS}), 'Perf Co ' || g || ' Branch ' || n, 'perf co ' || g || ' branch ' || n, 'alias', 'admin' from generate_series(1, ${ORGS}) g, generate_series(1, 4) n;
-       insert into dete_permit_count(dete_name, organisation_name_id, year, permits) select n.name, n.id, y, 1 + (n.id % 90)::int from organisation_name n cross join generate_series(2019, 2026) y where n.kind = 'legal';`);
+       insert into dete_permit_count(dete_name, organisation_name_id, year, permits) select n.name, n.id, y, 1 + (n.id % 90)::int from organisation_name n cross join generate_series(2019, 2026) y where n.kind = 'legal';
+       insert into dete_permit_count(dete_name, year, month, permits) select 'Perf Month Name ' || g, 2026, m, 1 + g % 7 from generate_series(1, 15000) g cross join generate_series(1, 8) m;`); // B23: 120,000 monthly rows of other names, for the data cut-off
     await k.query(
       `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, occupation_code, permit_type, badge, status, closes_at, own_page_url, search_vector, quota_full, posted_at, sponsor_sort)
        select 1 + (g % ${ORGS}), 'admin_manual', (select id from job_source limit 1), 'Perf job ' || g, 'Perf Co', 'it',
@@ -103,8 +104,10 @@ it("every page of the content, company and occupation reads stays under its page
     const org = (await c.query("select id::text i, slug from organisation where slug = 'perf-co-7'")).rows[0];
     await page("company page", [
       { text: COMPANY_QUERIES.org, values: [org.slug] }, { text: COMPANY_QUERIES.names, values: [org.i] }, { text: COMPANY_QUERIES.permits, values: [org.i] },
-      scopedQuery("company", org.i), { text: scopedCount("company"), values: [org.i] },
+      { text: COMPANY_QUERIES.cutOff, values: [] }, scopedQuery("company", org.i), { text: scopedCount("company"), values: [org.i] },
     ], COMPANY_PAGES, /job_company_page_idx/);
+    // B23: the data cut-off is one index entry on 120,000 monthly rows (it was 1,155 pages as a sequence scan)
+    await page("company data cut-off", [{ text: COMPANY_QUERIES.cutOff, values: [] }], 10, /dete_permit_count_month_idx/);
   } finally {
     c.release();
   }
