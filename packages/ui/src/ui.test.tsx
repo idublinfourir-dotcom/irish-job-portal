@@ -1,5 +1,5 @@
 // Unit tests (no browser, no network): each component is rendered to HTML and the markup is checked.
-import { SiteHeader } from "./candidate-shell";
+import { COMPANIES_DIRECTORY_LIVE, SiteHeader } from "./candidate-shell";
 import { renderToStaticMarkup as html } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SITE_NAME as AUTH_SITE_NAME } from "../../auth/src/email-layout";
@@ -28,7 +28,7 @@ describe("Button", () => {
   it("phone menu (frame M08): a dark panel under the bar with the six public links, then account rows or the sign-up buttons", () => {
     const open = (signedIn: boolean) => html(<SiteHeader signedIn={signedIn} />).match(/<nav aria-label="Mobile"[\s\S]*?<\/nav>/)![0];
     const visitor = open(false), me = open(true);
-    for (const h of ["/jobs", "/companies", "/guides", "/eligibility-checker", "/permit-services", "/help"]) for (const m of [visitor, me]) expect(m).toContain(`href="${h}"`);
+    for (const h of ["/jobs", "/guides", "/eligibility-checker", "/permit-services", "/help"]) for (const m of [visitor, me]) expect(m).toContain(`href="${h}"`);
     expect(visitor).toMatch(/class="[^"]*bg-ink[^"]*fixed|class="[^"]*fixed[^"]*bg-ink/);
     expect(visitor).toContain('href="/signup"');
     expect(visitor).toContain('href="/login"');
@@ -184,15 +184,23 @@ describe("Icon", () => {
 });
 
 describe("candidate shell", () => {
+  it("hides the companies directory link in the header, the phone menu and the footer until its page exists (C13 waits for B25 and B26; one switch, COMPANIES_DIRECTORY_LIVE)", () => {
+    expect(COMPANIES_DIRECTORY_LIVE).toBe(false);
+    for (const signedIn of [false, true]) {
+      const h = html(<CandidateShell signedIn={signedIn}>x</CandidateShell>);
+      expect(h).not.toContain('href="/companies"');
+      expect(h).not.toContain(">Companies<");
+    }
+  });
   const nav = (h: string) => h.replace(/<[^>]*>/g, "|");
   it("shows the public nav signed out", () => {
     const h = html(<CandidateShell>x</CandidateShell>);
-    for (const t of ["Find a job", "Companies", "Guides", "Eligibility checker", "Permit services", "For employers", "Sign in", "Create free account"]) expect(h).toContain(t);
+    for (const t of ["Find a job", "Guides", "Eligibility checker", "Permit services", "For employers", "Sign in", "Create free account"]) expect(h).toContain(t);
     expect(h).not.toContain("Sign out");
   });
   it("shows public links, a bell and an account menu when signed in (frames NA1, M08)", () => {
     const h = html(<CandidateShell signedIn>x</CandidateShell>);
-    for (const t of ["Find a job", "Companies", "Guides", "Permit services", "Account", "Tracker", "Saved", "Alerts", "Sign out"]) expect(h).toContain(t);
+    for (const t of ["Find a job", "Guides", "Permit services", "Account", "Tracker", "Saved", "Alerts", "Sign out"]) expect(h).toContain(t);
     expect(h).toContain('aria-label="Notices"');
     expect(h).toContain("data-account-menu");
     expect(h).not.toContain("Create free account");
