@@ -2,6 +2,7 @@ import { A } from "./link";
 import { Button } from "./button";
 import { cx, SITE_WORDMARK } from "./cx";
 import { Icon } from "./icons";
+import { SignOut } from "./sign-out";
 import { Notice } from "./display";
 import type { ReactNode } from "react";
 import { adminLinks, portalLinks, type AdminRole, type NavIcon, type PortalRole } from "./nav-links";
@@ -141,6 +142,7 @@ export function PortalShell({ companyName, role, roleKey, status, unread = 0, st
             {FOOTER_LINKS.map(([label, href]) => (
               <A key={href} href={href} className="inline-flex min-h-9 items-center underline underline-offset-2">{label}</A>
             ))}
+            <SignOut action="/api/auth/portal/sign-out" to="/sign-in" className="inline-flex min-h-9 items-center underline underline-offset-2 cursor-pointer" />
           </nav>
         </footer>
       }
@@ -183,6 +185,7 @@ export function AdminShell({ roles, name, counts, current, children }: { roles: 
                 <span className="block text-caption text-muted" title={roles.join(", ").replaceAll("_", " ")}>{rolesInShort(roles)}</span>
               </span>
             </p>
+            <SignOut action="/api/auth/staff/sign-out" to="/sign-in" className="inline-flex min-h-11 items-center text-small underline underline-offset-2 cursor-pointer" />
           </div>
         </div>
       }

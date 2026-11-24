@@ -1,5 +1,6 @@
 // Unit tests (no browser, no network): each component is rendered to HTML and the markup is checked.
-import { SiteHeader } from "./candidate-shell";
+import { COMPANIES_DIRECTORY_LIVE, SiteHeader } from "./candidate-shell";
+import { existsSync } from "node:fs";
 import { renderToStaticMarkup as html } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SITE_NAME as AUTH_SITE_NAME } from "../../auth/src/email-layout";
@@ -28,13 +29,13 @@ describe("Button", () => {
   it("phone menu (frame M08): a dark panel under the bar with the six public links, then account rows or the sign-up buttons", () => {
     const open = (signedIn: boolean) => html(<SiteHeader signedIn={signedIn} />).match(/<nav aria-label="Mobile"[\s\S]*?<\/nav>/)![0];
     const visitor = open(false), me = open(true);
-    for (const h of ["/jobs", "/companies", "/guides", "/eligibility-checker", "/permit-services", "/help"]) for (const m of [visitor, me]) expect(m).toContain(`href="${h}"`);
+    for (const h of ["/jobs", "/guides", "/eligibility-checker", "/permit-services", "/help"]) for (const m of [visitor, me]) expect(m).toContain(`href="${h}"`);
     expect(visitor).toMatch(/class="[^"]*bg-ink[^"]*fixed|class="[^"]*fixed[^"]*bg-ink/);
     expect(visitor).toContain('href="/signup"');
     expect(visitor).toContain('href="/login"');
-    expect(visitor).not.toContain('action="/api/auth/sign-out"');
+    expect(visitor).not.toContain("data-sign-out");
     for (const h of ["/account", "/account/tracker", "/account/saved", "/account/alerts"]) expect(me).toContain(`href="${h}"`);
-    expect(me).toContain('action="/api/auth/sign-out"');
+    expect(me).toContain('data-sign-out="/api/auth/candidate/sign-out"');
     expect(me).not.toContain('href="/signup"');
   });
   it("never uses the two permit badge colours", () => {
@@ -184,15 +185,23 @@ describe("Icon", () => {
 });
 
 describe("candidate shell", () => {
+  it("hides the companies directory link in the header, the phone menu and the footer until its page exists (C13 waits for B25 and B26; one switch, COMPANIES_DIRECTORY_LIVE)", () => {
+    expect(COMPANIES_DIRECTORY_LIVE).toBe(false);
+    for (const signedIn of [false, true]) {
+      const h = html(<CandidateShell signedIn={signedIn}>x</CandidateShell>);
+      expect(h).not.toContain('href="/companies"');
+      expect(h).not.toContain(">Companies<");
+    }
+  });
   const nav = (h: string) => h.replace(/<[^>]*>/g, "|");
   it("shows the public nav signed out", () => {
     const h = html(<CandidateShell>x</CandidateShell>);
-    for (const t of ["Find a job", "Companies", "Guides", "Eligibility checker", "Permit services", "For employers", "Sign in", "Create free account"]) expect(h).toContain(t);
+    for (const t of ["Find a job", "Guides", "Eligibility checker", "Permit services", "For employers", "Sign in", "Create free account"]) expect(h).toContain(t);
     expect(h).not.toContain("Sign out");
   });
   it("shows public links, a bell and an account menu when signed in (frames NA1, M08)", () => {
     const h = html(<CandidateShell signedIn>x</CandidateShell>);
-    for (const t of ["Find a job", "Companies", "Guides", "Permit services", "Account", "Tracker", "Saved", "Alerts", "Sign out"]) expect(h).toContain(t);
+    for (const t of ["Find a job", "Guides", "Permit services", "Account", "Tracker", "Saved", "Alerts", "Sign out"]) expect(h).toContain(t);
     expect(h).toContain('aria-label="Notices"');
     expect(h).toContain("data-account-menu");
     expect(h).not.toContain("Create free account");
@@ -295,5 +304,36 @@ describe("kit preview", () => {
     for (const v of BUTTON_VARIANTS) expect(h).toContain(`>${v}</button>`);
     for (const n of ICON_NAMES) expect(h).toContain(`data-icon="${n}"`);
     for (const t of ["Passed check", "Blocked", "Error", "Disabled", "Toggle on", "Radio one"]) expect(h).toContain(t);
+  });
+});
+
+describe("a field icon (frames NS3, C26, C20: an envelope, a padlock, a building, a calendar)", () => {
+  it("sits inside the left end of an Input or Select, moves the text clear of it, and is decoration only", () => {
+    const withIcon = html(<Input label="Email" name="email" icon="mail" />);
+    expect(withIcon).toMatch(/<svg[^>]*data-icon="mail"/);
+    expect(withIcon).toMatch(/aria-hidden="true"/);
+    expect(withIcon).toMatch(/class="[^"]*\bpl-12\b[^"]*"/);
+    expect(html(<Select label="Employer" name="e" icon="building"><option>x</option></Select>)).toMatch(/data-icon="building"[\s\S]*<select[^>]*class="[^"]*\bpl-12\b/);
+  });
+  it("is absent, and the field unchanged, without the prop", () => {
+    const plain = html(<Input label="Email" name="email" />);
+    expect(plain).not.toMatch(/pl-12/);
+    expect(plain).not.toMatch(/data-icon="mail"/);
+    expect(plain).toMatch(/<label for="[^"]+"[^>]*>Email<\/label>/);
+  });
+});
+
+describe("Sign out", () => {
+  it("each signed-in shell calls its own app's auth route, and that route file exists (the header once posted to an address with no route)", () => {
+    const shells = [
+      ["candidate", "candidate", html(<CandidateShell signedIn>x</CandidateShell>)],
+      ["portal", "portal", html(<PortalShell companyName="Fake Co" role="Owner">x</PortalShell>)],
+      ["admin", "staff", html(<AdminShell roles={[]} name="Fake Person">x</AdminShell>)],
+    ] as const;
+    for (const [app, pool, h] of shells) {
+      expect(new Set([...h.matchAll(/data-sign-out="([^"]*)"/g)].map((m) => m[1])), app).toEqual(new Set([`/api/auth/${pool}/sign-out`]));
+      expect(existsSync(new URL(`../../../apps/${app}/app/api/auth/${pool}/[...all]/route.ts`, import.meta.url)), app).toBe(true);
+    }
+    expect(html(<CandidateShell>x</CandidateShell>)).not.toContain("data-sign-out");
   });
 });

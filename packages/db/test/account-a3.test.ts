@@ -373,6 +373,24 @@ describe("B40: password date, sign-in methods, the Better Auth routes and the pr
       expect(await emailOf(id)).toEqual({ email: to, email_verified: true });
       expect(await signIn(to, password)).toContain("session_token");
     });
+    it("the new link ends on the page the form names, and only on our own site", async () => {
+      const landing = async (who: string, callbackURL: unknown) => {
+        const { email, password } = await signUp(who);
+        const before = mail().length;
+        const { status } = await change({ email, password, newEmail: `fake.a3.cb.${who}.${n}@example.test`, callbackURL });
+        const sent = mail().slice(before);
+        if (status !== 200) return { status, sent: sent.length };
+        const u = new URL(sent[0]!.link);
+        const res = await AUTH_GET(new Request(`${BASE}${u.pathname}${u.search}`, { redirect: "manual", headers: { "x-vercel-forwarded-for": freshIp() } } as RequestInit));
+        return new URL(res.headers.get("location") ?? "/", BASE).href;
+      };
+      expect(await landing("cbgood", "/verify?verified=1")).toBe(`${BASE}/verify?verified=1`);
+      let i = 0;
+      // Better Auth's origin check refuses an off-site address before the route runs; what it lets through and ownPath does not is dropped.
+      for (const bad of ["https://evil.example/x", "//evil.example", "/\\evil.example", "/%2f%2fevil.example", "javascript:alert(1)"]) expect(await landing(`cbbad${i++}`, bad), bad).toEqual({ status: 403, sent: 0 });
+      expect(await landing(`cbbad${i++}`, 7)).toEqual({ status: 400, sent: 0 });
+      for (const none of ["/a b", null, undefined]) expect(await landing(`cbbad${i++}`, none), String(none)).toBe(`${BASE}/`);
+    });
     it("a wrong password, an unknown address and an account with no password are the same 401, and nothing changes", async () => {
       const { email } = await signUp("wrongpw");
       const id = (await idOf(email))!;

@@ -6,12 +6,14 @@
 import "server-only";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import type { PortalLogin } from "@portal/auth";
+import { ownPath, type PortalLogin } from "@portal/auth";
 import { agencyJobs } from "./agency-jobs";
 import { caseList } from "./cases";
 import { statsGet } from "./job-stats";
-import { portalLogin } from "./company";
+import { companySearch, portalLogin } from "./company";
+import { freeEmail } from "./free-email";
 import { jobGet, jobList } from "./jobs";
+import { portalLegalRead } from "./legal";
 import { noticesGet } from "./notices";
 import { portalOrigin } from "./portal";
 import { profileGet } from "./profile";
@@ -32,6 +34,7 @@ const read = (handler: (request: Request) => Promise<Response>, path: string) =>
 
 export const readCompany = read(profileGet, "/api/portal/company"); // the company profile; any active member
 export const readVerification = read(verificationGet, "/api/portal/verification");
+export const readClaimSearch = read(companySearch, "/api/portal/claim/search"); // ?q= a name or CRO number; any signed-in login (the claim and first-time steps)
 export const readJobs = read(jobList, "/api/portal/jobs");
 export const readJob = (id: string) => read((r) => jobGet(r, id), "/api/portal/jobs/one")();
 export const readJobStats = read(statsGet, "/api/portal/job-stats"); // ?days=&jobId=
@@ -47,7 +50,7 @@ export async function readLogin(): Promise<PortalLogin | null> {
   return login instanceof Response ? null : login;
 }
 
-/** Where a signed-out visitor goes. The sign-in page itself is built in step 16 wave 3 (P13); change the path here only. */
+/** Where a signed-out visitor goes (the sign-in page, P13); change the path here only. */
 export const PORTAL_SIGN_IN = "/sign-in";
 /** A page's guard: the signed-in login, or a redirect to the sign-in page (no session, or a blocked login). The roles of each page's own routes still apply. */
 export async function requireLogin(): Promise<PortalLogin> {
@@ -72,4 +75,28 @@ export async function readShell(): Promise<{ companyName: string; role: string; 
   } catch {
     return null;
   }
+}
+
+export const readLegal = (purpose: "portal_signup_terms" | "privacy_notice") => read(portalLegalRead, "/api/legal")({ purpose }); // the text in force; no login needed
+
+/**
+ * P13: a return address (?next=) kept only when it is a path on our own site (never an open redirect: `//host`, `/\\host`, `https:` and an encoded slash are all refused).
+ * The check runs here, in the server component; the form gets the checked path.
+ */
+export const checkedNext = (value: unknown): string | null => (ownPath(value, portalOrigin()) ? value : null);
+
+/** P13: where a signed-in login goes after sign-in: no company yet to the claim step, a company in review or asked for more to the verification page, any other to the dashboard (P18). */
+export function homeFor(login: PortalLogin): string {
+  const m = login.membership;
+  if (!m) return "/sign-up/claim";
+  return m.organisationStatus === "pending_review" || m.organisationStatus === "needs_info" ? "/verification" : "/dashboard";
+}
+
+/** P13: true when the email's domain is a free provider (E04's note: such accounts always go to review). */
+export const isFreeEmail = freeEmail;
+
+/** P13: a link to a page of the candidate site (For candidates, Help, the rules), or null when its address is not set (CANDIDATE_AUTH_URL; unset in development it is the dev server). */
+export function candidateHref(path: string, env: Record<string, string | undefined> = process.env): string | null {
+  const base = env.CANDIDATE_AUTH_URL ? env.CANDIDATE_AUTH_URL : env.NODE_ENV === "production" ? null : "http://localhost:3000";
+  return base ? new URL(path, base).href : null;
 }

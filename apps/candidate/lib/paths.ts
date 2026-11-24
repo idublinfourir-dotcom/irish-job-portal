@@ -19,3 +19,20 @@ export const legalPath = (purpose: string) => LEGAL.get(purpose) ?? null;
 /** The pages with no data behind them (`STATIC_PAGES` in packages/db/src/sitemap.ts). */
 const STATIC = new Map([["home", "/"], ["jobs", "/jobs"], ["companies", "/companies"], ["guides", "/guides"], ["updates", "/updates"], ["help", "/help"], ["eligibility-checker", "/eligibility-checker"], ["permit-services", "/permit-services"]]);
 export const staticPath = (key: string) => STATIC.get(key) ?? null;
+// Sign-up, sign-in and permit services (step 16 W2). The header, footer and job pages link to these addresses. `next` is a path on this site to return to
+// (the pages check it again with `ownPath` before they use it).
+const withNext = (base: string, next?: string | null) => (next ? `${base}?next=${encodeURIComponent(next)}` : base);
+export const signupPath = (next?: string | null) => withNext("/signup", next);
+export const loginPath = (next?: string | null) => withNext("/login", next);
+/** The page the verification link lands on: `/verify?verified=1`, or with `error=<code>` when the link did not work; `next` survives the round trip. */
+export const verifyPath = () => "/verify";
+export const verifiedPath = (next?: string | null) => `/verify?verified=1${next ? `&next=${encodeURIComponent(next)}` : ""}`;
+/** Without a token it asks for the email address; the emailed reset link lands on it with `?token=`. */
+export const resetPath = () => "/reset";
+export const permitServicesPath = () => "/permit-services";
+/** The request form; `jobId` (digits only) is the job the request is about. */
+export const permitRequestPath = (jobId?: string | null) => (jobId && /^[0-9]{1,18}$/.test(jobId) ? `/permit-services/request?job=${jobId}` : "/permit-services/request");
+export const accountPath = () => "/account";
+/** Where a sign-in, a verified email or a reset goes when no return address was given. P17 changes this to /account (the account page does not exist yet). */
+export const afterSignInPath = () => "/jobs";
+export const casePath = (caseId: string) => `/account/cases/${encodeURIComponent(caseId)}`;

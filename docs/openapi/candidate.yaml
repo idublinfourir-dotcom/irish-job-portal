@@ -596,11 +596,12 @@ paths:
           /api/candidate/security` gives. With `revokeOtherSessions` true every other session ends.
         - `list-accounts` (GET) and `unlink-account` `{ accountId }` (B40; the `id` of a row from `list-accounts`, not the provider name; 400 `VALIDATION_ERROR` without): needs a session, and unlinking needs Better Auth's own fresh
           session (a sign-in in the last day, not the 10-minute rule); the only sign-in method cannot be unlinked (400 `FAILED_TO_UNLINK_LAST_ACCOUNT`).
-        - `change-unverified-email` `{ email, password, newEmail }` (B40, C27 "Wrong address? Change it"): for an account whose email is not yet
+        - `change-unverified-email` `{ email, password, newEmail, callbackURL? }` (B40, C27 "Wrong address? Change it"): for an account whose email is not yet
           confirmed, which cannot sign in. The old address and its password are the proof; the account moves to the new address and the confirmation link is
           sent there (the old link stops working). A wrong password or unknown address is 401 `INVALID_EMAIL_OR_PASSWORD`; an account already
           confirmed is 400 `ALREADY_VERIFIED`; a bad or over-long address is 400 `INVALID_EMAIL`; a new address that already has an account answers 200
-          and changes and sends nothing. Bot checked; 5 in 5 minutes per client address and 3 an hour per old address.
+          and changes and sends nothing. `callbackURL` is where the link ends, only a plain path on this site (as for `verify-email` below); anything else is
+          ignored and the link ends on the home page. Bot checked; 5 in 5 minutes per client address and 3 an hour per old address.
         - `change-email` `{ newEmail, callbackURL? }` (C4, #270): needs a session from a sign-in in the last 10 minutes, else 403 `REAUTH_REQUIRED`.
           It emails the OLD address a confirm link (kind `change-email`, from the security sender); that link sends the NEW address its own link
           (kind `new-email`), and only that second link changes the address. An address that already has an account answers 200 and sends nothing.

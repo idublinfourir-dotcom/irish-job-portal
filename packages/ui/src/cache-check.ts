@@ -51,11 +51,14 @@ async function check(app: string): Promise<string[]> {
     if (app === "candidate" && (page.status !== 404 || !page.body.includes("that page") || !/<meta name="robots" content="noindex/.test(page.body))) out.push(`/no-such-page answers ${page.status}: not our 404 page, or not noindex`);
     // The built home page itself: no database here, so its sections show their failed state, but the page answers (24 Nov 2026: every photo was missing
     // in the production build only, and the live home page answered 500 while the tests and the dev server were fine).
-    const home = await get("/");
+    // The admin "/" (P14) checks the session in the database before anything, so with no database it can only fail: its sign-in page is loaded instead.
+    const path0 = app === "admin" ? "/sign-in" : "/";
+    const home = await get(path0);
     const shown = new Set([...home.body.matchAll(/\/_next\/static\/media\/([a-z0-9-]+)\.[^"/]+\.webp/g)].map((m) => m[1])).size;
-    if (home.status >= 500) out.push(`/ answers ${home.status}`);
+    if (home.status >= 500) out.push(`${path0} answers ${home.status}`);
+    if (app === "admin" && home.status !== 200) out.push(`${path0} answers ${home.status}`);
     if (app === "candidate" && (home.status !== 200 || shown < 10)) out.push(`/ answers ${home.status} with ${shown} photos`);
-    console.log(`${app}: / ${home.status}, ${shown} photos on it; ${media.length} hashed files cached for a year, ${photos} of them photos`);
+    console.log(`${app}: ${path0} ${home.status}, ${shown} photos on it; ${media.length} hashed files cached for a year, ${photos} of them photos`);
     return out;
   } finally {
     server.kill();
