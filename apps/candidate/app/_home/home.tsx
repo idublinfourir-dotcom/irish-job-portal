@@ -10,6 +10,7 @@ import { COUNTIES } from "./counties";
 import { DETE_FIGURES as DETE, NUM, pct, topFiveShare } from "./dete";
 import { eur, jobsIn, sectorLabel, shortDate } from "./format";
 import { employersHref } from "./meta";
+import { photoSrc } from "./photos";
 import { FEATURED, type Failed, type HomeData, type Jobs, type Minimums, type Occupation, type Sec, type SectorCount } from "./load";
 
 const JOBS_LIMIT = 6; // #46: what a visitor sees of any list
@@ -19,15 +20,6 @@ const checkerPath = staticPath("eligibility-checker")!;
 const EXT = { target: "_blank", rel: "noopener noreferrer" } as const;
 
 // ---------- small parts the frame repeats ----------
-
-// Imported, not in public/: the build puts a content hash in each file name and serves it cached for a year (public/ files are sent max-age=0).
-// Next gives an image's { src }, Vitest its path.
-const PHOTOS = import.meta.glob<string | { src: string }>("./photos/*.webp", { eager: true, import: "default" });
-export function photoSrc(name: string) {
-  const photo = PHOTOS[`./photos/${name}.webp`];
-  if (!photo) throw new Error(`no photo ${name} in _home/photos`);
-  return typeof photo === "string" ? photo : photo.src;
-}
 
 /** `true`: in view when the page opens, on every screen. "sm": only from 640 px (below that it is hidden, so a phone must not fetch it). */
 type Eager = boolean | "sm";

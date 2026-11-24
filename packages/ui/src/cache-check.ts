@@ -24,9 +24,8 @@ async function check(app: string): Promise<string[]> {
   const server = spawn(process.execPath, [path.join(ROOT, "node_modules/next/dist/bin/next"), "start", "-H", "127.0.0.1", "-p", String(port)], { cwd, stdio: "ignore" });
   try {
     const get = async (url: string) => {
-      const r = await fetch(`http://127.0.0.1:${port}${url}`, { signal: AbortSignal.timeout(10_000) });
-      await r.arrayBuffer();
-      return { status: r.status, cache: r.headers.get("cache-control") ?? "", type: r.headers.get("content-type") ?? "" };
+      const r = await fetch(`http://127.0.0.1:${port}${url}`, { signal: AbortSignal.timeout(30_000), redirect: "manual" });
+      return { status: r.status, cache: r.headers.get("cache-control") ?? "", type: r.headers.get("content-type") ?? "", body: await r.text() };
     };
     for (let i = 0; ; i++) {
       try {
@@ -49,7 +48,13 @@ async function check(app: string): Promise<string[]> {
     if (icon.status !== 200 || !icon.type.startsWith("image/")) out.push(`/favicon.ico: ${icon.status} ${icon.type}`);
     const page = await get("/no-such-page");
     if (/immutable|max-age=[1-9]/.test(page.cache)) out.push(`a page is cached: ${page.cache}`);
-    console.log(`${app}: ${media.length} hashed files cached for a year, ${photos} of them photos`);
+    // The built home page itself: no database here, so its sections show their failed state, but the page answers (24 Nov 2026: every photo was missing
+    // in the production build only, and the live home page answered 500 while the tests and the dev server were fine).
+    const home = await get("/");
+    const shown = new Set([...home.body.matchAll(/\/_next\/static\/media\/([a-z0-9-]+)\.[^"/]+\.webp/g)].map((m) => m[1])).size;
+    if (home.status >= 500) out.push(`/ answers ${home.status}`);
+    if (app === "candidate" && (home.status !== 200 || shown < 10)) out.push(`/ answers ${home.status} with ${shown} photos`);
+    console.log(`${app}: / ${home.status}, ${shown} photos on it; ${media.length} hashed files cached for a year, ${photos} of them photos`);
     return out;
   } finally {
     server.kill();
