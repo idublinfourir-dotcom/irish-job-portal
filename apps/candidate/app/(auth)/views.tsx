@@ -44,7 +44,7 @@ export function SignupView({ answer, google, error, pending, employersHref, next
     <div className="mx-auto grid max-w-page gap-5 px-5 py-6 sm:px-8 lg:grid-cols-2 lg:py-8">
       <form onSubmit={onSubmit} aria-busy={pending || undefined} className="flex flex-col gap-5 lg:rounded-bento lg:bg-sand lg:p-12">
         <div className="flex flex-col gap-3">
-          <h1 className="text-[1.875rem] leading-[1.15] lg:text-[3rem] lg:leading-[1.2]">Create your <Hl c="green">free account</Hl> <Dot /></h1>
+          <h1 className="text-[1.875rem] leading-[1.15] lg:text-[3rem] lg:leading-[1.2]">Create your <span className="text-deep-green lg:inline-block lg:rounded-[0.28em] lg:bg-deep-green lg:px-[0.22em] lg:pb-[0.08em] lg:text-white">free account</span> <span className="hidden lg:inline"><Dot /></span></h1>
           <p className="text-muted">See every job, save jobs, set alerts and track applications.</p>
         </div>
         <fieldset className="flex flex-col gap-3 rounded-bento bg-sand p-5 lg:bg-lilac lg:p-6">

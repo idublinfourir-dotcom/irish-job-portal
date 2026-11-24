@@ -1,6 +1,6 @@
 // P11 and P12, performance: the first-load JavaScript of each page, from the build's own manifests (the root files, the layout's files and the page's files,
 // each counted once, gzip), against the shared budget of packages/ui/src/size-budget.ts. Runs when the app has been built (`npm run build -w @portal/candidate`;
-// check.yml builds before it tests), skipped otherwise. Measured 24 November 2026 on the production build: see the line it prints.
+// `npm run check` runs it again after the build, test:size), skipped otherwise. Measured 24 November 2026 on the production build: see the line it prints.
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
@@ -21,8 +21,8 @@ function firstLoadJs(route: string): number {
 }
 
 describe.skipIf(!built)("first-load JS of the sign-up, sign-in and permit service pages", () => {
-  const sizes = Object.fromEntries(ROUTES.map((r) => [r, firstLoadJs(r)]));
   it("each page is within the shared first-load budget", () => {
+    const sizes = Object.fromEntries(ROUTES.map((r) => [r, firstLoadJs(r)])); // in the test, not the describe: a skipped describe still runs its body
     process.stdout.write(`W2 first-load JS (gzip bytes): ${JSON.stringify(sizes)}\n`);
     for (const [route, size] of Object.entries(sizes)) {
       expect(size, route).toBeGreaterThan(100_000); // the measure found the files

@@ -1,5 +1,5 @@
 // Performance (check 5): the first-load JavaScript and the stylesheet of every page of slice P13 stay inside F1's size budget (packages/ui/src/size-budget.ts). Reads the build
-// (`next build` in apps/portal), so it is skipped when there is none; check.yml builds first. A page's load is the polyfills, the root files, and the chunks of the layout and of the page.
+// (`next build` in apps/portal), so it is skipped when there is none; `npm run check` runs it again after the build (test:size). A page's load is the polyfills, the root files, and the chunks of the layout and of the page.
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
