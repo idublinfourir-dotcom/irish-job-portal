@@ -86,6 +86,7 @@ describe("B27: the closed-job read", () => {
     const d = fakeDb();
     expect(await closedJobRead(d as never, q("id=42"), true)).toBeNull();
     expect(d.texts).toHaveLength(1);
-    expect(d.texts[0]).toContain("j.status = 'closed' and j.close_reason in ('closed','expired')");
+    expect(d.texts[0]).toContain("from private.candidate_closed_job($1::bigint)"); // the function answers only closed and expired (0075)
+    expect(d.texts[0]).not.toMatch(/close_reason|from job\b/); // never the column or the table itself
   });
 });
