@@ -161,7 +161,7 @@ export function FirstTimeForm({ email, free, initialCro, initialName, initialFou
 export function AgencyView({ error, pending, onSubmit }: { error?: string; pending?: boolean; onSubmit?: Submit }) {
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-5" aria-busy={pending || undefined}>
-      <Input label="Employment Agency licence number" name="wrcLicenceNumber" required maxLength={30} autoComplete="off" help="We will check it against the WRC register." />
+      <Input label="Employment Agency licence number" name="wrcLicenceNumber" required maxLength={30} autoComplete="off" help="We will check it." />
       <Input label="Agency name" name="displayName" autoComplete="organization" required minLength={2} maxLength={160} />
       <Input label="Company registration number (CRO), if you have one" name="croNumber" inputMode="numeric" autoComplete="off" maxLength={20} />
       <Notice kind="info" title="On each job you will tell us who the permit employer is">The agency itself, or the client. We check that employer against the DETE records.</Notice>

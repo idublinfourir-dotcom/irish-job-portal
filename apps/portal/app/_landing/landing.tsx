@@ -9,7 +9,7 @@ const kinds = (kind: "employer" | "agency") => `/sign-up/account?kind=${kind}`;
 const PATHS: { title: string; text: string; pill: string; icon: IconName; href: string; tone: string; pillTone: string }[] = [
   { title: "Already sponsored a permit", text: "Claim your company from the DETE records and confirm your work email.", pill: "Can go live at once with a company email", icon: "building", href: kinds("employer"), tone: "bg-ink text-white", pillTone: "bg-lilac text-ink" },
   { title: "First-time sponsor", text: "Enter your CRO number and your work email. Your jobs carry the \"First-time sponsor\" label.", pill: "We aim to review within 1 working day", icon: "plus", href: kinds("employer"), tone: "bg-peach text-ink", pillTone: "bg-white/60 text-ink" },
-  { title: "Recruitment agency", text: "Enter your Employment Agency licence. We check it against the WRC register.", pill: "We aim to review within 1 working day", icon: "users", href: kinds("agency"), tone: "bg-lilac text-ink", pillTone: "bg-white text-ink" },
+  { title: "Recruitment agency", text: "Enter your Employment Agency licence number. We will check it.", pill: "We aim to review within 1 working day", icon: "users", href: kinds("agency"), tone: "bg-lilac text-ink", pillTone: "bg-white text-ink" },
 ];
 
 const STEPS: [string, string][] = [

@@ -176,8 +176,8 @@ describe("the company step", () => {
     const p = html(<AgencyView />);
     expect(p).toMatch(/name="wrcLicenceNumber"/);
     expect(p).toMatch(/name="noFee"[^>]*required|required[^>]*name="noFee"/);
-    expect(p).toMatch(/We will check it against the WRC register/);
-    expect(p).not.toMatch(/On the WRC register|list of/);
+    expect(p).toMatch(/We will check it\./);
+    expect(p).not.toMatch(/WRC|list of/);
     expect(p).not.toMatch(/pauses your jobs/);
     expect(p).toMatch(/stops new postings/);
     expect(html(<AgencyView error="Check the details." />)).toMatch(/Check the details/);
