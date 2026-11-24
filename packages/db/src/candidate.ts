@@ -243,8 +243,7 @@ export async function similarLiveJobs(db: pg.Pool, id: string) {
 /** B27 (#57, #227 D4, S20): the closed-job page for anyone with the link. Only a job closed by its employer or by the day-30 run (close_reason closed or expired);
  *  a hidden, under review, removed, draft or live job, an unknown id or a bad id is null (404). Title, employer and county only, plus up to 5 live jobs like it. */
 export const CLOSED_JOB_SQL =
-  `select j.id::text as "jobId", j.title, j.employer_name as "employerName", j.county, j.close_reason as reason, j.closed_at as "closedAt", j.sector, j.occupation_code as "occupationCode"
-   from job j where j.id = $1::bigint and j.status = 'closed' and j.close_reason in ('closed','expired')`;
+  `select job_id as "jobId", title, employer_name as "employerName", county, reason, closed_at as "closedAt", sector, occupation_code as "occupationCode" from private.candidate_closed_job($1::bigint)`;
 export async function closedJob(db: pg.Pool, id: string) {
   if (!validId(id)) return null;
   const j = (await db.query(CLOSED_JOB_SQL, [id])).rows[0];

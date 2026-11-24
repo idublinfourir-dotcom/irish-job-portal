@@ -107,6 +107,17 @@ describe("B27: the closed-job read", () => {
       expect([status, reason, hidden, g.status, g.body], `${status}/${reason}/${hidden}`).toEqual([status, reason, hidden, 404, { code: "NOT_FOUND" }]);
     }
   });
+  it("the function behind it: app_candidate runs it and nobody else, it is security definer with a fixed search path, and the column itself stays unreadable", async () => {
+    const f = (await su.query("select prosecdef, proconfig from pg_proc where proname = 'candidate_closed_job'")).rows;
+    expect(f).toEqual([{ prosecdef: true, proconfig: ["search_path=public, pg_temp"] }]);
+    const id = await addJob("Fake Fn", "closed", "1122");
+    await setStatus(id, "closed", "removed");
+    expect((await db.pool("app_candidate").query("select * from private.candidate_closed_job($1::bigint)", [id])).rows).toEqual([]);
+    await setStatus(id, "closed", "expired");
+    expect((await db.pool("app_candidate").query("select reason from private.candidate_closed_job($1::bigint)", [id])).rows).toEqual([{ reason: "expired" }]);
+    for (const role of ["app_portal", "app_admin", "app_fetcher"] as const) await expect(db.pool(role).query("select * from private.candidate_closed_job(1)"), role).rejects.toMatchObject({ code: "42501" });
+    await expect(db.pool("app_candidate").query("select close_reason from job limit 1")).rejects.toMatchObject({ code: "42501" });
+  });
   it("hostile ids are 404, never 500, and nothing is run for them", async () => {
     for (const bad of ["999999999", "", "0", "-1", "1;drop table job", "1 or 1=1", "1e3", "a".repeat(5000), "%00", "99999999999999999999999"]) {
       expect((await get(CLOSED, `/api/job/closed?id=${encodeURIComponent(bad)}`)).status, bad.slice(0, 20)).toBe(404);
