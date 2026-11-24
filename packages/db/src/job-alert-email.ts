@@ -56,9 +56,9 @@ export function filtersInWords(a: AlertRow): string {
   return `${parts.length ? parts.join(", ") : "all new jobs"} (${a.frequency === "weekly" ? "weekly" : "daily"})`;
 }
 
-const BADGES: Record<string, { label: string; word: string; bg: string }> = {
-  critical_skills_eligible: { label: "Critical Skills eligible", word: "Critical", bg: C.critical },
-  sponsor_confirmed: { label: "Sponsor confirmed", word: "Sponsor", bg: C.sponsor },
+const BADGES: Record<string, { label: string; word: string; bg: string; ink: string }> = {
+  critical_skills_eligible: { label: "Critical Skills eligible", word: "Critical", bg: C.critical, ink: C.criticalInk },
+  sponsor_confirmed: { label: "Sponsor confirmed", word: "Sponsor", bg: C.sponsor, ink: C.sponsorInk },
 };
 /** A job's pay for the alert row: the number line, or the public pay scale label (with its grade) when the job has only a grade. */
 export const payText = (j: JobRow): string | null =>
@@ -108,8 +108,8 @@ export function buildAlertEmail(candidate: string, alerts: RowAlert[], found: Ma
     blocks.push(`Your alert: ${filtersInWords(a)}\n${lines.join("\n")}\nSee these jobs: ${results}\nEdit this alert: ${edit}\nStop this alert: ${stop}`);
     html.push(
       `<p style="margin:12px 0 8px;font-size:14px;line-height:20px;font-weight:600;color:${C.ink};${FONT}">Your alert: ${esc(filtersInWords(a))}</p>` +
-      jobs.map((j) => `<p style="margin:0 0 12px;font-size:16px;line-height:22px;color:${C.ink}"><a href="${href(`${site}/jobs/${j.id}`)}" style="color:${C.green}">${esc(line(j.title) || "A job")}</a>` +
-        `${badge(j) ? ` ${pillHtml(badge(j)!.word, badge(j)!.bg)}` : ""}<br><span style="font-size:14px">${esc(facts(j))}</span></p>`).join("") +
+      jobs.map((j) => `<p style="margin:0 0 12px;font-size:16px;line-height:22px;color:${C.ink}"><a href="${href(`${site}/jobs/${j.id}`)}" style="color:${C.link}">${esc(line(j.title) || "A job")}</a>` +
+        `${badge(j) ? ` ${pillHtml(badge(j)!.word, badge(j)!.bg, badge(j)!.ink)}` : ""}<br><span style="font-size:14px">${esc(facts(j))}</span></p>`).join("") +
       `<p style="${SMALL}">${linkHtml(results, "See these jobs")} &middot; ${linkHtml(edit, "Edit this alert")} &middot; ${linkHtml(stop, "Stop this alert")}</p>`,
     );
   }

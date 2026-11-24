@@ -5,6 +5,7 @@
 // (Gmail drops it and the request would tell a remote server the email was opened), so most inboxes show the fallback.
 // Every value is HTML-escaped here; callers pass only https links on our own origins (each caller checks its origin).
 // Stands alone (no imports) so the outbox command can load it with plain node.
+export const SITE_WORDMARK = "IrishWorkPermit.ie"; // as packages/ui cx.ts draws it (brand.test.ts)
 export const SITE_NAME = "Irish Work Permit"; // the brand (#289, on irishworkpermit.ie); brevo.ts SENDER_NAME is the same (a test holds them equal)
 
 export type Email = { subject: string; text: string; html: string };
@@ -18,18 +19,20 @@ export const href = (url: string) => {
   return esc(url);
 };
 
-/** The NS2 tokens an email uses (hex only: inline CSS has no variables). */
-export const C = { ink: "#12201A", green: "#0C4A35", tint: "#D3E8DB", cream: "#F3F1EB", sand: "#EAE6DA", critical: "#DDEEE3", sponsor: "#E7E8F5", white: "#ffffff" };
+/** The designer's kit colours an email uses (packages/ui/src/tokens.css; hex only: inline CSS has no variables). `link` is the kit's mint-ink: mint text is
+ * under AA on the card. `green` is mint one step darker, as in tokens.css, so the button's white text passes. */
+export const C = { ink: "#14142B", green: "#0E8655", link: "#0A6B43", lilac: "#DCD6FF", line: "#D8D5EE", surface: "#F6F6FA", onDark: "#E8F3EC", darkCard: "#24244A", critical: "#D9F5E7", criticalInk: "#0A6B43", sponsor: "#E9E5FF", sponsorInk: "#4A32C4", white: "#ffffff" };
 const SYS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 export const FONT = `font-family:'DM Sans',${SYS}`;
 export const HFONT = `font-family:Outfit,'Avenir Next',Avenir,${SYS}`;
 const P = `margin:0 0 16px;font-size:16px;line-height:25px;color:${C.ink};${FONT}`;
 export const pHtml = (s: string, style = P) => `<p style="${style}">${esc(s)}</p>`;
 export const SMALL = `margin:0 0 12px;font-size:13.5px;line-height:20px;color:${C.ink};${FONT}`;
-export const linkHtml = (url: string, label = url) => `<a href="${href(url)}" style="color:${C.green};text-decoration:underline;word-break:break-all">${esc(label)}</a>`;
-/** A pill holding one key word (NS2: "Pills hold the key word only"). `bg` is one of the tokens. */
-export const pillHtml = (label: string, bg: string) =>
-  `<span style="display:inline-block;padding:2px 10px;border-radius:999px;background:${bg};font-size:12px;font-weight:600;color:${C.ink}">${esc(label)}</span>`;
+const SMALL_ON_DARK = `margin:0 0 8px;font-size:13px;line-height:19px;color:${C.onDark};${FONT}`;
+export const linkHtml = (url: string, label = url) => `<a href="${href(url)}" style="color:${C.link};text-decoration:underline;word-break:break-all">${esc(label)}</a>`;
+/** A pill holding one key word (NS2: "Pills hold the key word only"). `bg` and `ink` are tokens. */
+export const pillHtml = (label: string, bg: string, ink: string = C.ink) =>
+  `<span style="display:inline-block;padding:2px 10px;border-radius:999px;background:${bg};font-size:12px;font-weight:600;color:${ink}">${esc(label)}</span>`;
 
 export function render(subject: string, { heading, paragraphs, button, footer, footerLink, extra }: Part): Email {
   const btn = button
@@ -40,14 +43,15 @@ export function render(subject: string, { heading, paragraphs, button, footer, f
   const html =
     `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
     `<meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark"><title>${esc(subject)}</title>` +
-    `<style>@media (prefers-color-scheme: dark){.bg{background:${C.ink} !important}.card{background:${C.green} !important}.card p,.card h1,.card td{color:${C.cream} !important}.card a{color:${C.tint} !important}.card .btn,.card .btn a{background:${C.tint} !important;color:${C.ink} !important}}</style></head>` +
-    `<body style="margin:0;padding:0;background:${C.cream}"><table role="presentation" class="bg" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.cream}"><tr><td align="center" style="padding:24px 12px">` +
-    `<table role="presentation" class="card" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:${C.white};border-radius:16px"><tr><td style="padding:28px 28px 24px;${FONT}">` +
-    `<p style="margin:0 0 20px;font-size:17px;font-weight:600;color:${C.green};${HFONT}">${esc(SITE_NAME)}</p>` +
+    `<style>@media (prefers-color-scheme: dark){.bg{background:${C.ink} !important}.card{background:${C.darkCard} !important}.card p,.card h1,.card td{color:${C.surface} !important}.card a{color:${C.lilac} !important}.card .btn,.card .btn a{background:${C.lilac} !important;color:${C.ink} !important}}</style></head>` +
+    `<body style="margin:0;padding:0;background:${C.white}"><table role="presentation" class="bg" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.white}"><tr><td align="center" style="padding:24px 12px">` +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;border-radius:16px;overflow:hidden">` +
+    `<tr><td class="card" style="padding:28px 28px 24px;background:${C.surface};border-radius:16px 16px 0 0;${FONT}">` +
+    `<p style="margin:0 0 20px;font-size:19px;font-weight:600;color:${C.green};${HFONT}">${esc(SITE_WORDMARK)}</p>` +
     `<h1 style="margin:0 0 16px;font-size:24px;line-height:31px;font-weight:600;color:${C.ink};${HFONT}">${esc(heading)}</h1>` +
-    paragraphs.map((s) => pHtml(s)).join("") + (extra?.html ?? "") + btn +
-    `<hr style="border:0;border-top:1px solid ${C.sand};margin:24px 0 16px">${pHtml(footer, SMALL)}` +
-    (footerLink ? `<p style="${SMALL}">${linkHtml(footerLink.url, footerLink.label)}</p>` : "") +
+    paragraphs.map((s) => pHtml(s)).join("") + (extra?.html ?? "") + btn + `</td></tr>` +
+    `<tr><td style="padding:20px 28px;background:${C.ink};border-radius:0 0 16px 16px;${FONT}">${pHtml(footer, SMALL_ON_DARK)}` +
+    (footerLink ? `<p style="${SMALL_ON_DARK}"><a href="${href(footerLink.url)}" style="color:${C.lilac};text-decoration:underline">${esc(footerLink.label)}</a></p>` : "") +
     `</td></tr></table></td></tr></table></body></html>`;
   const text = [`${SITE_NAME}\n`, heading, "", ...paragraphs.flatMap((s) => [s, ""]), ...(extra ? [extra.text, ""] : []),
     ...(button ? [`${button.label}: ${button.url}`, ""] : []), "--", footer, ...(footerLink ? [`${footerLink.label}: ${footerLink.url}`] : []), ""].join("\n");
