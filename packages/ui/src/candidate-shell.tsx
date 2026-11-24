@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Button } from "./button";
 import { cx, SITE_NAME, SITE_WORDMARK } from "./cx";
 import { Icon } from "./icons";
+import { SignOut } from "./sign-out";
 
 /**
  * The companies directory (frame C13) waits for B25 and B26 (the directory read), so its link is hidden in all three places it appears (the header, the phone menu, the footer) from this
@@ -27,7 +28,6 @@ const ACCOUNT_NAV = [
   { label: "Saved", href: "/account/saved" },
   { label: "Alerts", href: "/account/alerts" },
 ];
-const SIGN_OUT = "/api/auth/sign-out";
 
 // Compact between 1024 and 1280 (a laptop at 125 percent scaling is about 1093 px wide), the frame's spacing from 1280.
 const link = "inline-flex min-h-11 items-center whitespace-nowrap px-1.5 text-[14px] font-medium text-ink/80 hover:text-ink xl:px-2 xl:text-[15px]";
@@ -43,15 +43,7 @@ const MOBILE_NAV_ALL = [
 ];
 const menuLink = "inline-flex min-h-11 items-center px-2 font-semibold hover:underline underline-offset-4";
 
-function SignOut({ className = link }: { className?: string }) {
-  return (
-    <form method="post" action={SIGN_OUT}>
-      <button type="submit" className={cx(className, "cursor-pointer")}>
-        Sign out
-      </button>
-    </form>
-  );
-}
+const SignOutHere = ({ className = link }: { className?: string }) => <SignOut action="/api/auth/candidate/sign-out" to="/" className={cx(className, "cursor-pointer")} />;
 
 /** The logo (frame NS7): the domain in Outfit semibold, mint; on a dark surface white with a light mint ".ie". Text, not the pack's SVG: same letters, no file. */
 export function Wordmark({ className, dark }: { className?: string; dark?: boolean }) {
@@ -93,7 +85,7 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
                       {i.label}
                     </A>
                   ))}
-                  <SignOut className={menuLink} />
+                  <SignOutHere className={menuLink} />
                 </div>
               </details>
             </div>
@@ -136,7 +128,7 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
                       {i.label} <Icon name="arrow" />
                     </A>
                   ))}
-                  <SignOut className="mt-6 inline-flex min-h-11 w-full items-center justify-center font-semibold" />
+                  <SignOutHere className="mt-6 inline-flex min-h-11 w-full items-center justify-center font-semibold" />
                 </>
               ) : (
                 <div className="mt-7 flex flex-col items-center gap-4">

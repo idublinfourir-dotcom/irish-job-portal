@@ -1,5 +1,6 @@
 // Unit tests (no browser, no network): each component is rendered to HTML and the markup is checked.
 import { COMPANIES_DIRECTORY_LIVE, SiteHeader } from "./candidate-shell";
+import { existsSync } from "node:fs";
 import { renderToStaticMarkup as html } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SITE_NAME as AUTH_SITE_NAME } from "../../auth/src/email-layout";
@@ -32,9 +33,9 @@ describe("Button", () => {
     expect(visitor).toMatch(/class="[^"]*bg-ink[^"]*fixed|class="[^"]*fixed[^"]*bg-ink/);
     expect(visitor).toContain('href="/signup"');
     expect(visitor).toContain('href="/login"');
-    expect(visitor).not.toContain('action="/api/auth/sign-out"');
+    expect(visitor).not.toContain("data-sign-out");
     for (const h of ["/account", "/account/tracker", "/account/saved", "/account/alerts"]) expect(me).toContain(`href="${h}"`);
-    expect(me).toContain('action="/api/auth/sign-out"');
+    expect(me).toContain('data-sign-out="/api/auth/candidate/sign-out"');
     expect(me).not.toContain('href="/signup"');
   });
   it("never uses the two permit badge colours", () => {
@@ -319,5 +320,20 @@ describe("a field icon (frames NS3, C26, C20: an envelope, a padlock, a building
     expect(plain).not.toMatch(/pl-12/);
     expect(plain).not.toMatch(/data-icon="mail"/);
     expect(plain).toMatch(/<label for="[^"]+"[^>]*>Email<\/label>/);
+  });
+});
+
+describe("Sign out", () => {
+  it("each signed-in shell calls its own app's auth route, and that route file exists (the header once posted to an address with no route)", () => {
+    const shells = [
+      ["candidate", "candidate", html(<CandidateShell signedIn>x</CandidateShell>)],
+      ["portal", "portal", html(<PortalShell companyName="Fake Co" role="Owner">x</PortalShell>)],
+      ["admin", "staff", html(<AdminShell roles={[]} name="Fake Person">x</AdminShell>)],
+    ] as const;
+    for (const [app, pool, h] of shells) {
+      expect(new Set([...h.matchAll(/data-sign-out="([^"]*)"/g)].map((m) => m[1])), app).toEqual(new Set([`/api/auth/${pool}/sign-out`]));
+      expect(existsSync(new URL(`../../../apps/${app}/app/api/auth/${pool}/[...all]/route.ts`, import.meta.url)), app).toBe(true);
+    }
+    expect(html(<CandidateShell>x</CandidateShell>)).not.toContain("data-sign-out");
   });
 });
