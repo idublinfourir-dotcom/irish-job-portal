@@ -1,8 +1,10 @@
 // Render tests of the home page (P6): every section and state as HTML, fixture props only (no database, no network).
+import { readdirSync, statSync } from "node:fs";
+import path from "node:path";
 import { renderToStaticMarkup as html } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { HomeView } from "./home";
-import { featured, type HomeData, type Occupation } from "./load";
+import { HomeView, photoSrc } from "./home";
+import { FEATURED, featured, type HomeData, type Occupation } from "./load";
 import { DETE_FIGURES, pct, topFiveShare } from "./dete";
 import { eur, jobsIn, sectorLabel, shortDate } from "./format";
 import { employersHref, HOME_DESCRIPTION, HOME_TITLE } from "./meta";
@@ -96,9 +98,39 @@ describe("home page, normal state", () => {
     expect(h).toContain("Visitors see the latest 6 jobs");
     expect(h).toContain('href="/signup"');
     expect(h).not.toMatch(/dangerouslySetInnerHTML|<script/);
-    // every photo is a self-hosted decorative file: empty alt, under /home/
-    for (const img of h.match(/<img[^>]*>/g)!) expect(img).toMatch(/alt=""/);
+    // every photo is a self-hosted decorative file: empty alt, imported from ./photos
+    for (const img of h.match(/<img[^>]*>/g)!) expect(img).toMatch(/src="[^"]*\/_home\/photos\/[a-z0-9-]+\.webp" alt=""/);
     expect(h).not.toMatch(/src="https?:\/\//); // no third-party image host
+  });
+});
+
+describe("home page photos", () => {
+  const dir = path.join(import.meta.dirname, "photos");
+  const bytes = (names: string[]) => names.reduce((n, f) => n + statSync(path.join(dir, `${f}.webp`)).size, 0);
+  const files = readdirSync(dir).map((f) => f.replace(/\.webp$/, ""));
+  const h = html(<HomeView data={full()} />);
+  const names = (re: RegExp) => [...new Set([...h.matchAll(re)].map((m) => m[1]!))].sort();
+  const eager = names(/<img src="[^"]*photos\/([a-z0-9-]+)\.webp" alt="" loading="eager"/g);
+  const wide = names(/<link rel="preload" as="image" href="[^"]*photos\/([a-z0-9-]+)\.webp" media="\(min-width: 40rem\)"/g);
+
+  it("loads what is in view at once; what a phone hides is fetched early on wide screens only", () => {
+    expect(eager).toEqual(["face-4", "face-5", "face-6", "hero"]);
+    expect(wide).toEqual(["face-1", "face-2", "face-3", "rules-card"]);
+    for (const n of wide) expect(h).not.toMatch(new RegExp(`${n}\\.webp" alt="" loading="eager"`));
+  });
+  it("has a file for every featured occupation, and no file nothing uses", () => {
+    for (const f of FEATURED) expect(files).toContain(f.photo);
+    const all = html(<HomeView data={full({ occupations: { ok: true, data: FEATURED.map((f) => occ(f.code, `Fake ${f.code}`, "ineligible")) }, sectors: { ok: true, data: ["health", "hospitality", "IT", "construction and engineering", "finance", "pharma and science"].map((sector) => ({ sector, jobs: 1 })) as never }, guides: { ok: true, data: [1, 2, 3].map((n) => ({ slug: `g-${n}`, title: `Fake ${n}`, checkedOn: "2026-11-01" })) } })} />);
+    const used = new Set([...all.matchAll(/photos\/([a-z0-9-]+)\.webp/g)].map((m) => m[1]));
+    expect(files.filter((f) => !used.has(f))).toEqual([]);
+  });
+  it("stays within the photo budget (23 Nov 2026: 135 KB at once on a phone, 42 KB more on a wide screen, 1.16 MB in all)", () => {
+    expect(bytes(eager)).toBeLessThan(160_000);
+    expect(bytes(wide)).toBeLessThan(60_000);
+    expect(bytes(files)).toBeLessThan(1_300_000);
+  });
+  it.each(["nope", "../home", "../../../../package", "hero.webp", "__proto__", "constructor", ""])("refuses a name that is not a photo: %j", (name) => {
+    expect(() => photoSrc(name)).toThrow("no photo");
   });
 });
 

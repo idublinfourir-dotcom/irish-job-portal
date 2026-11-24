@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import admin from "./admin/next.config";
 import candidate from "./candidate/next.config";
@@ -23,5 +25,9 @@ describe.each([["admin", admin], ["candidate", candidate], ["portal", portal]])(
     for (const [k, v] of Object.entries(must)) expect(sent[k]).toBe(v);
     expect(sent["Strict-Transport-Security"]).not.toMatch(/includeSubDomains|preload/);
     expect(sent["X-Robots-Tag"]).toBe(name === "admin" ? "noindex, nofollow" : undefined);
+    expect(Object.keys(sent).map((k) => k.toLowerCase())).not.toContain("cache-control"); // a rule on every path would cache signed-in pages
+  });
+  it("has no public/ folder: its files are sent max-age=0, so every visit asks for them again; import them instead", () => {
+    expect(existsSync(path.join(import.meta.dirname, name, "public"))).toBe(false);
   });
 });

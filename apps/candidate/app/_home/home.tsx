@@ -1,6 +1,6 @@
 // The home page (P6): frames N01 (node 472:2) and NM1 (308:5315), images in step16/design/images/. Server components only, no client script:
 // every value comes from `data` (read in load.ts) or the dated DETE figures (dete.ts). Photos are the designer's Unsplash photos, self-hosted in
-// public/home (the engineer, 23 Nov 2026). Left out by decision: the Trusted Partner chip (L15), mock logos (L16), work-pattern tags (L45) and the
+// ./photos (the engineer, 23 Nov 2026). Left out by decision: the Trusted Partner chip (L15), mock logos (L16), work-pattern tags (L45) and the
 // Critical Skills fee sentence (Q130, CF1).
 import type { ReactNode } from "react";
 import type { JobCard } from "@portal/db";
@@ -20,15 +20,32 @@ const EXT = { target: "_blank", rel: "noopener noreferrer" } as const;
 
 // ---------- small parts the frame repeats ----------
 
-/** A decorative photo from public/home; the text beside it says what it shows, so alt is empty. */
-function Photo({ name, className = "", eager }: { name: string; className?: string; eager?: boolean }) {
-  // eslint-disable-next-line @next/next/no-img-element -- the files are already sized webp; the image optimiser would add cost, not quality
-  return <img src={`/home/${name}.webp`} alt="" loading={eager ? "eager" : "lazy"} decoding="async" className={`object-cover ${className}`} />;
+// Imported, not in public/: the build puts a content hash in each file name and serves it cached for a year (public/ files are sent max-age=0).
+// Next gives an image's { src }, Vitest its path.
+const PHOTOS = import.meta.glob<string | { src: string }>("./photos/*.webp", { eager: true, import: "default" });
+export function photoSrc(name: string) {
+  const photo = PHOTOS[`./photos/${name}.webp`];
+  if (!photo) throw new Error(`no photo ${name} in _home/photos`);
+  return typeof photo === "string" ? photo : photo.src;
 }
-function Faces({ names, className = "size-12" }: { names: string[]; className?: string }) {
+
+/** `true`: in view when the page opens, on every screen. "sm": only from 640 px (below that it is hidden, so a phone must not fetch it). */
+type Eager = boolean | "sm";
+/** A decorative photo from ./photos; the text beside it says what it shows, so alt is empty. */
+function Photo({ name, className = "", eager }: { name: string; className?: string; eager?: Eager }) {
+  const src = photoSrc(name);
+  return (
+    <>
+      {eager === "sm" && <link rel="preload" as="image" href={src} media="(min-width: 40rem)" />}
+      {/* eslint-disable-next-line @next/next/no-img-element -- the files are already sized webp; the image optimiser would add cost, not quality */}
+      <img src={src} alt="" loading={eager === true ? "eager" : "lazy"} decoding="async" className={`object-cover ${className}`} />
+    </>
+  );
+}
+function Faces({ names, className = "size-12", eager }: { names: string[]; className?: string; eager?: Eager }) {
   return (
     <span aria-hidden="true" className="inline-flex -space-x-2 align-middle">
-      {names.map((n) => <Photo key={n} name={n} className={`${className} rounded-pill border-2 border-white`} />)}
+      {names.map((n) => <Photo key={n} name={n} eager={eager} className={`${className} rounded-pill border-2 border-white`} />)}
     </span>
   );
 }
@@ -117,7 +134,7 @@ function Hero({ d }: { d: HomeData }) {
           <span className="flex flex-wrap items-center gap-3 sm:gap-5">
             <span className="rounded-[1.25rem] bg-peach px-4 pb-3 pt-2 sm:px-5">Find a job</span>
             <Go tone="green" className="size-9 sm:size-14" />
-            <span className="hidden sm:inline-flex"><Faces names={["face-1", "face-2", "face-3"]} className="size-12" /></span>
+            <span className="hidden sm:inline-flex"><Faces eager="sm" names={["face-1", "face-2", "face-3"]} className="size-12" /></span>
           </span>
           <span className="flex flex-wrap items-center gap-4">
             <span className="rounded-[1.25rem] bg-deep-green px-4 pb-3 pt-2 text-white sm:px-5">a permit covers</span>
@@ -147,7 +164,7 @@ function Hero({ d }: { d: HomeData }) {
         </form>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-3">
           <div className="flex items-center gap-3">
-            <Faces names={["face-4", "face-5", "face-6"]} className="size-9" />
+            <Faces eager names={["face-4", "face-5", "face-6"]} className="size-9" />
             <p className="max-w-[9rem] text-small leading-snug text-muted"><strong className="block whitespace-nowrap text-[15px] text-ink">Free for candidates</strong>The job board is always free.</p>
           </div>
           <SponsorBadge />
@@ -184,7 +201,7 @@ function Bento({ m }: { m: Sec<Minimums> }) {
   return (
     <div className={`${wrap} grid grid-cols-2 gap-3 py-4 sm:gap-4 lg:grid-cols-[1.31fr_1fr_1.05fr]`}>
       <div className="col-span-2 hidden gap-4 rounded-bento bg-deep-green p-6 text-white sm:flex lg:col-span-1">
-        <Photo name="rules-card" className="hidden h-[12.6rem] w-[9.3rem] shrink-0 rounded-t-pill rounded-b-[2rem] bg-white sm:block" />
+        <Photo name="rules-card" eager="sm" className="hidden h-[12.6rem] w-[9.3rem] shrink-0 rounded-t-pill rounded-b-[2rem] bg-white sm:block" />
         <div className="flex flex-col items-start gap-3 py-2">
           <h2 className="text-[1.25rem] leading-tight text-white">Every listing passes the permit rules first.</h2>
           <p className="text-white/85">Two badges say who makes each claim: the employer, or our rule check.</p>
