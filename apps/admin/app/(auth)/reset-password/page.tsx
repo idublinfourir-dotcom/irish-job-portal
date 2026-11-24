@@ -9,8 +9,8 @@ export const metadata: Metadata = { title: `Choose a new password, ${SITE_NAME} 
 
 /** The emailed link ends here as /reset-password?token=... (or ?error=INVALID_TOKEN when Better Auth found the token ended or used). */
 export default async function Page({ searchParams }: { searchParams: Promise<{ token?: string | string[]; error?: string | string[] }> }) {
-  if (await readSidebar()) redirect("/");
   const { token, error } = await searchParams;
+  if (token === undefined && error === undefined && (await readSidebar())) redirect("/"); // a signed-in person who opens an emailed link still gets the form
   const usable = typeof token === "string" && token.length > 0 && token.length <= 200 && error === undefined;
   return (
     <AuthFrame title={<>Choose a new <span className="text-deep-green">password</span></>}>

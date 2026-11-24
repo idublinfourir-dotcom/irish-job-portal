@@ -272,6 +272,11 @@ describe("Q15: invite a staff login", () => {
     expect(link.origin).toBe(BASE);
     // the invitee sets a password with the link's token and signs in; a role arrives only when a second administrator confirms
     const token = link.pathname.split("/").at(-1)!;
+    // opening the link: our page, with the token (24 Nov 2026: without a redirect address it ended on Better Auth's error page)
+    const opened = await h.AUTH(new Request(link, { headers: { "x-vercel-forwarded-for": "192.0.2.9" } }));
+    expect(opened.status).toBe(302);
+    expect(new URL(opened.headers.get("location")!).pathname).toBe("/reset-password");
+    expect(new URL(opened.headers.get("location")!).searchParams.get("token")).toBe(token);
     const post = (path: string, body: unknown) => h.AUTH(new Request(`${BASE}/api/auth/staff/${path}`, { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", origin: BASE, "x-vercel-forwarded-for": "198.51.100.200" } }));
     expect((await post("reset-password", { token, newPassword: "Fake-new-staff-password-1" })).status).toBe(200);
     expect((await post("sign-in/email", { email: "new.person@example.test", password: "Fake-new-staff-password-1" })).status).toBe(200);
