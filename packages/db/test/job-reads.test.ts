@@ -474,10 +474,13 @@ describe("roles", () => {
   });
 
   // hidden_reason is readable since 0042 (S20: the saved and applied job reads say why a job is gone, a checked code only); the report id stays refused.
+  it("app_candidate reads job.close_reason (0075, B27: the closed-job read answers only closed and expired)", async () => {
+    await expect(candidate().query("select close_reason from job limit 1")).resolves.toBeTruthy();
+  });
   it("app_candidate reads job.hidden_reason (0042, S20)", async () => {
     await expect(candidate().query("select hidden_reason from job limit 1")).resolves.toBeTruthy();
   });
-  it.each(["hire_answer", "close_reason", "hidden_report_id", "fetched_advert_id", "posted_by_membership_id", "posted_by_staff_id", "pay_floor_id", "permit_employer_check", "created_at"])(
+  it.each(["hire_answer", "hidden_report_id", "fetched_advert_id", "posted_by_membership_id", "posted_by_staff_id", "pay_floor_id", "permit_employer_check", "created_at"])(
     "app_candidate cannot read job.%s",
     async (col) => denied(candidate().query(`select ${col} from job limit 1`)),
   );

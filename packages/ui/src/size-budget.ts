@@ -8,9 +8,10 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 
-// Re-measured 24 Nov 2026 with the search and job pages (slices P7 and P8): the candidate sheet is one file for every page, 47.3 KB raw / 9.4 KB gzip before them and
-// 55.6 KB raw / 10.9 KB gzip with them (the pages' card shapes, sheet, bars and states). CSS budget raised to about 10 percent over that. First-load JS of /jobs 258.8 KB and of /jobs/[job] 260.0 KB gzip, under the unchanged JS budget.
-export const BUDGET = { jsGzipBytes: 275_000, cssGzipBytes: 12_000, cssRawBytes: 61_000 };
+// Re-measured 24 Nov 2026 with wave 1 finished, the search and job pages (P7, P8) and the designer's kit: the candidate sheet is one file for every page,
+// 60.3 KB raw, 11.7 KB gzip (portal and admin 33 to 34 KB). CSS budget about 10 percent over; measure again when the wave 2 pages are merged. The JS budget
+// is unchanged: first-load JS 248 KB for the home page, about 259 KB for /jobs and /jobs/[job] (measured on their own branch).
+export const BUDGET = { jsGzipBytes: 275_000, cssGzipBytes: 13_000, cssRawBytes: 66_500 };
 
 const gz = (b: Buffer) => gzipSync(b).length;
 

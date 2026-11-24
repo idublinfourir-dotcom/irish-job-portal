@@ -41,10 +41,12 @@ beforeAll(async () => {
   ANSWER = (await route("../../../apps/candidate/app/api/candidate/did-you-apply/route")).POST!;
   TRACKER = (await route("../../../apps/candidate/app/api/candidate/tracker/route")).POST!;
   PROFILE = (await route("../../../apps/candidate/app/api/candidate/profile/route")).PUT!;
-  const sp = await import("../../../apps/candidate/app/jobs/page");
+  // the paths sit in variables so this package (no JSX) does not type-check the pages themselves; the app does
+  const pages: string[] = ["../../../apps/candidate/app/jobs/page", "../../../apps/candidate/app/jobs/[job]/page"];
+  const sp = await import(pages[0]!);
   Search = sp.default as unknown as SearchPage;
   SearchMeta = sp.generateMetadata as never;
-  const jp = await import("../../../apps/candidate/app/jobs/[job]/page");
+  const jp = await import(pages[1]!);
   JobP = jp.default as unknown as JobPageFn;
   JobMeta = jp.generateMetadata as never;
   paths = await import("../../../apps/candidate/lib/paths");
@@ -168,7 +170,8 @@ describe("P7: /jobs", () => {
     expect(await search({})).toMatch(/aria-current="true"[^>]*>Sponsors first</);
   });
   it("words a bad filter and never throws on hostile input", async () => {
-    for (const q of [{ sector: "Narnia" }, { badge: "junk" }, { q: "x".repeat(5000) }, { salaryMin: "-1" }, { postedWithin: "9" }, { county: "Cork'; drop table job;--" }]) {
+    const bad: Record<string, string>[] = [{ sector: "Narnia" }, { badge: "junk" }, { q: "x".repeat(5000) }, { salaryMin: "-1" }, { postedWithin: "9" }, { county: "Cork'; drop table job;--" }];
+    for (const q of bad) {
       const h = await search(q);
       expect(h, JSON.stringify(q).slice(0, 60)).toContain("We could not use that search");
       expect(h).not.toContain("drop table");

@@ -231,7 +231,7 @@ describe("company page", () => {
     {
       const p = asCompany(await getCompanyPage(candidate(), c.slug, { now: NOW }));
       expect(p.names.map((n) => n.name)).toEqual([`${c.tag} Limited`, `${c.tag} Ireland`, `${c.tag} Services`]);
-      expect(p.permits).toEqual({ byYear: [{ year: 2019, permits: 3 }, { year: 2023, permits: 40 }, { year: 2024, permits: 10 }, { year: 2025, permits: 20 }], peakYear: 2023, trend: "up", latestMonth: null });
+      expect(p.permits).toEqual({ byYear: [{ year: 2019, permits: 3 }, { year: 2023, permits: 40 }, { year: 2024, permits: 10 }, { year: 2025, permits: 20 }], peakYear: 2023, trend: "up", latestMonth: null, byMonth: [], dataThrough: expect.toSatisfy((v: unknown) => v === null || (typeof v === "object" && "year" in (v as object))) });
       expect(p.claimed).toBe(true);
       expect(p.jobs.jobs.map((j) => j.id).sort()).toEqual([...mine].sort());
       expect(p.jobs.count).toEqual({ n: 2, more: false });
