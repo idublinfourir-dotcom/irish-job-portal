@@ -108,7 +108,7 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
   // B55: the portal's team list shows "last active", so a portal sign-in and refresh set portal_user.last_active_at the same way (no dormant rule reads it).
   const touchActive = async (s: { userId: string } | null) => void (s && (await database.query(`update ${name}_user set last_active_at = now() where id = $1`, [s.userId])));
   // The unverified-email plugin sends the confirmation through the finished instance (set just below), so the link is Better Auth's own.
-  const later: { send?: (body: { email: string }) => Promise<unknown> } = {};
+  const later: { send?: (body: { email: string; callbackURL?: string }) => Promise<unknown> } = {};
   const auth = betterAuth({
     appName: `portal-${name}`,
     baseURL,
