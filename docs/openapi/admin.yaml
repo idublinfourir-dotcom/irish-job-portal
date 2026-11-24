@@ -606,6 +606,9 @@ paths:
         the staff pool. `revoke-sessions` (sign out everywhere, C4) ends every session of this login at once and `revoke-other-sessions` all
         but this one; any signed-in session may call them and the next request with an ended session is 401. `change-email` is off for staff
         (400): administrators change staff emails. Shapes are Better Auth's own; only what the repo's tests show is described here.
+        The pages `/sign-in`, `/forgot-password` and `/reset-password` use `sign-in/email` (401 `INVALID_EMAIL_OR_PASSWORD`, 400 `INVALID_EMAIL`), `request-password-reset` (`{ email, redirectTo: "/reset-password" }`; 200 whether or not the address has a login)
+        and `reset-password` (`{ newPassword, token }`; 400 `INVALID_TOKEN` for an ended or used link, `PASSWORD_TOO_SHORT` under 8 characters, `PASSWORD_TOO_LONG` over 128). The emailed link is
+        `/api/auth/staff/reset-password/<token>?callbackURL=/reset-password`, which redirects to `/reset-password?token=<token>` (or `?error=INVALID_TOKEN`).
       security: []
       x-roles: [anyone]
       x-body-cap: none set by this repo (Better Auth's own handling)
@@ -3729,6 +3732,107 @@ paths:
         '403':
           description: "`not_active_staff`: the login is not active. `no_role`: the login holds no role."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: no_role } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/search:
+    get:
+      operationId: searchStaff
+      summary: Search organisations, jobs and services cases
+      description: >-
+        B58: the staff search behind the shell's search box and the `/search` page. One query key, `q` (required, exactly once): 3 to 100 characters after trimming, no control character.
+        A kind is searched only when the member's roles allow it, and a kind the roles do not allow is left out of the answer (never answered with an empty list): `organisations` and `jobs` for
+        account reviewer, fetched-job reviewer, rules data editor, trust and safety officer and administrator (the company viewers of the merge preview); `cases` for services case handler and
+        administrator. A login whose roles allow none of them (a content editor, or no role) gets `{}`. One query per kind, at most 10 rows each, newest or alphabetical as named, no page numbers and no cursor:
+        `more` is true when a kind has more than the 10 shown, and the answer is to type more of the text. Organisations: the name contains the text (any case) or the CRO number starts with it;
+        companies merged into another are left out. Jobs: the title or the employer name contains the text, or the text is the job id; drafts are left out; newest first. Cases: the text is a case id (digits only);
+        the same columns as the services board list, no requester name or contact. `%`, `_` and `\` in the text are plain characters. Nothing is written (no audit row: no requester data is shown).
+      security: [{ staffSession: [] }]
+      x-roles: [any active staff member (organisations and jobs: account_reviewer, fetched_job_reviewer, rules_data_editor, trust_and_safety, administrator; cases: services_case_handler, administrator)]
+      x-rate-limit: none
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: The text to search for, 3 to 100 characters after trimming, no control character.
+          schema: { type: string, minLength: 3, maxLength: 100 }
+          example: Fake Orchard
+      responses:
+        '200':
+          description: The matches, one entry per kind the roles may search.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  organisations:
+                    type: object
+                    additionalProperties: false
+                    required: [items, more]
+                    description: Present for the five company viewer roles. Ordered by display name, then id.
+                    properties:
+                      items:
+                        type: array
+                        maxItems: 10
+                        items:
+                          type: object
+                          additionalProperties: false
+                          required: [id, displayName, croNumber, kind, status]
+                          properties:
+                            id: { $ref: '#/components/schemas/Id' }
+                            displayName: { type: string, description: "The company's display name.", example: Fake Orchard Foods Ltd }
+                            croNumber: { type: [string, 'null'], description: "The Companies Registration Office number, or null when none is stored.", example: '123456' }
+                            kind: { type: string, enum: [employer, agency, public_body], description: "What the organisation is.", example: employer }
+                            status: { type: string, description: "The organisation's status now.", example: verified }
+                      more: { type: boolean, description: "True when more than 10 organisations match.", example: false }
+                  jobs:
+                    type: object
+                    additionalProperties: false
+                    required: [items, more]
+                    description: Present for the five company viewer roles. Newest posted first, then id.
+                    properties:
+                      items:
+                        type: array
+                        maxItems: 10
+                        items:
+                          type: object
+                          additionalProperties: false
+                          required: [id, title, employerName, county, status]
+                          properties:
+                            id: { $ref: '#/components/schemas/Id' }
+                            title: { type: string, description: "The job title.", example: Fake Warehouse Operative }
+                            employerName: { type: string, description: "The employer name on the job.", example: Fake Orchard Foods Ltd }
+                            county: { type: [string, 'null'], description: "The county, or null.", example: Cork }
+                            status: { type: string, enum: [in_review, live, under_review, hidden, closed], description: "The job's status now (drafts are never listed).", example: live }
+                      more: { type: boolean, description: "True when more than 10 jobs match.", example: false }
+                  cases:
+                    type: object
+                    additionalProperties: false
+                    required: [items, more]
+                    description: Present for services case handlers and administrators. At most one row, and only when the text is a case id.
+                    properties:
+                      items:
+                        type: array
+                        maxItems: 10
+                        items:
+                          type: object
+                          additionalProperties: false
+                          required: [id, status, permitType, createdAt]
+                          properties:
+                            id: { $ref: '#/components/schemas/Id' }
+                            status: { type: string, description: "The case status now.", example: received }
+                            permitType: { type: string, description: "The permit type the case asks for.", example: general }
+                            createdAt: { $ref: '#/components/schemas/DbTime' }
+                      more: { type: boolean, description: "Always false: a case id matches at most one case.", example: false }
+              example:
+                organisations: { items: [{ id: '1204', displayName: Fake Orchard Foods Ltd, croNumber: '123456', kind: employer, status: verified }], more: false }
+                jobs: { items: [{ id: '88017', title: Fake Warehouse Operative, employerName: Fake Orchard Foods Ltd, county: Cork, status: live }], more: false }
+        '400':
+          description: "`bad_query`: no `q`, `q` repeated, `q` under 3 or over 100 characters after trimming, a control character in it, or any other query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_active_staff } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/services/cases:
     get:

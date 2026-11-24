@@ -8,7 +8,7 @@ import { headers } from "next/headers";
 import {
   type ApproveInput, dryRunApprove, getAccountReview, getContact, getContentPage, getFloorCheck, getItem, getJobQueueItem, getPool, getReport, getServiceCase, getCase, latestPermitRises, listAccountReviews, listAudit,
   listContact, listContentPages, listCases, listDomains, listFloorChecks, listJobQueue, listManualPosts, listOwnerReassigns, listQueue, listReports, listRules, listServiceCases,
-  listSolicitors, listStaff, listStaleContent, previewCompanies, previewContentPage, signupNoCounts, staffMe, deteLinkSuggestions,
+  listSolicitors, listStaff, listStaleContent, previewCompanies, previewContentPage, signupNoCounts, staffMe, deteLinkSuggestions, searchStaff,
 } from "@portal/db";
 import {
   accuracySample, fetchedDecisions, listCandidateMerges, listCompanySeed, listDataRequests, listOverdue, listScheduledChecks, listSettings, myCounts, targetCounts,
@@ -42,6 +42,8 @@ export async function readSidebar(): Promise<{ name: string; roles: string[]; co
     return null;
   }
 }
+
+export const readSearch = asStaff(searchStaff); // (q) B58: the matches for the kinds the roles may search; bad_query for a text under 3 or over 100 characters
 
 // lists and items of the review queues
 export const readFetchedJobs = asStaff(listQueue);

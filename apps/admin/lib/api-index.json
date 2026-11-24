@@ -59,6 +59,7 @@
     "getAccuracySample": "GET /api/accuracy-sample (fetched_job_reviewer, rules_data_editor, trust_and_safety, administrator)",
     "listFetchedDecisions": "GET /api/fetched-jobs/decisions (fetched_job_reviewer, rules_data_editor, administrator)",
     "getTargetCounts": "GET /api/targets (any staff role)",
+    "searchStaff": "GET /api/search ([object Object], fetched_job_reviewer, rules_data_editor, trust_and_safety, [object Object], administrator))",
     "listServicesCases": "GET /api/services/cases (services_case_handler, administrator)",
     "actOnServicesCase": "POST /api/services/cases (services_case_handler, administrator)",
     "listReferralSolicitors": "GET /api/services/solicitors (services_case_handler, administrator)",
