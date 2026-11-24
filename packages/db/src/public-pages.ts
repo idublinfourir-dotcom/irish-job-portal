@@ -64,7 +64,7 @@ const ORG =
   "o.claims_removed_at, (select m.slug from organisation m where m.id = o.merged_into_id) as merged_slug, o.merged_into_id is not null as merged " +
   "from organisation o where o.slug = $1";
 const NAMES = "select name, kind from organisation_name where organisation_id = $1::bigint order by (kind = 'legal') desc, name limit 200";
-const CUT_OFF = "select d.year::int, d.month::int from dete_permit_count d where d.month is not null order by d.year desc, d.month desc limit 1" // qualified: a bare name in order by is the output column (the cast), which the index cannot serve;
+const CUT_OFF = "select d.year::int, d.month::int from dete_permit_count d where d.month is not null order by d.year desc, d.month desc limit 1"; // qualified: a bare name in order by is the output column (the cast), which the index cannot serve
 export const COMPANY_QUERIES = { org: ORG, names: NAMES, permits: PERMITS, cutOff: CUT_OFF };
 export const PUBLIC_PAY_LABEL = "Public sector pay scale employer";
 const HIDDEN_STATUSES = new Set(["rejected", "closed"]);
