@@ -4,9 +4,16 @@ import { Button } from "./button";
 import { cx, SITE_NAME, SITE_WORDMARK } from "./cx";
 import { Icon } from "./icons";
 
+/**
+ * The companies directory (frame C13) waits for B25 and B26 (the directory read), so its link is hidden in all three places it appears (the header, the phone menu, the footer) from this
+ * ONE switch. Set it to true when the directory page is built; nothing else changes. A company's own page (/companies/<slug>) is not the directory and is linked from jobs.
+ */
+export const COMPANIES_DIRECTORY_LIVE = false;
+const listed = <T extends { href: string }>(items: readonly T[]): T[] => items.filter((i) => COMPANIES_DIRECTORY_LIVE || i.href !== "/companies");
+
 // Paths are placeholders until the page slices fix them (#288); change them here only. The header follows frame N01: five links, then the
 // employer link, Sign in and the main button; the eligibility checker sits in the footer and the mobile menu.
-const PUBLIC_NAV = [
+const PUBLIC_NAV_ALL = [
   { label: "Home", href: "/" },
   { label: "Find a job", href: "/jobs" },
   { label: "Companies", href: "/companies" },
@@ -26,7 +33,7 @@ const SIGN_OUT = "/api/auth/sign-out";
 const link = "inline-flex min-h-11 items-center whitespace-nowrap px-1.5 text-[14px] font-medium text-ink/80 hover:text-ink xl:px-2 xl:text-[15px]";
 const menuRow = "flex min-h-14 items-center justify-between border-b border-white/15 font-heading text-[22px] font-semibold";
 // The phone menu's public links (frame M08), in its order.
-const MOBILE_NAV = [
+const MOBILE_NAV_ALL = [
   { label: "Find a job", href: "/jobs" },
   { label: "Companies", href: "/companies" },
   { label: "Guides", href: "/guides" },
@@ -58,7 +65,7 @@ export function Wordmark({ className, dark }: { className?: string; dark?: boole
 
 /** The public header, or the signed-in one when `signedIn`: a floating bar (frame N01). The mobile menu is a native <details>, so it needs no script. */
 export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
-  const items = PUBLIC_NAV;
+  const items = listed(PUBLIC_NAV_ALL);
   return (
     <header className="relative z-30 px-5 pt-4 sm:px-8 sm:pt-5">
       <div className="mx-auto flex max-w-[75rem] items-center justify-between gap-3 rounded-card bg-linear-to-b from-white to-hover-light py-2 pl-5 pr-2 shadow-pop sm:pl-6">
@@ -117,7 +124,7 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
             </summary>
             {/* Frame M08: the rest of the screen under the bar, dark, one big row per link. */}
             <nav aria-label="Mobile" className="fixed inset-x-0 bottom-0 top-[5.25rem] z-10 flex flex-col overflow-y-auto bg-ink px-5 pb-8 pt-4 text-white sm:px-8">
-              {MOBILE_NAV.map((i) => (
+              {listed(MOBILE_NAV_ALL).map((i) => (
                 <A key={i.href} href={i.href} className={menuRow}>
                   {i.label} <Icon name="arrow" />
                 </A>
@@ -169,7 +176,7 @@ export function SiteFooter({ standingLine, rulesCheckedOn }: { standingLine?: Re
             No genuine employer asks you to pay for a job offer. <A href="/report" className="underline underline-offset-2">Report it.</A>
           </p>
         </div>
-        {FOOTER_GROUPS.map((g) => (
+        {FOOTER_GROUPS.map((g) => ({ ...g, links: g.links.filter(([, href]) => COMPANIES_DIRECTORY_LIVE || href !== "/companies") })).map((g) => (
           <nav key={g.title} aria-label={g.title}>
             <h2 className="mb-2 text-base text-white">{g.title}</h2>
             <ul className="flex flex-col">
