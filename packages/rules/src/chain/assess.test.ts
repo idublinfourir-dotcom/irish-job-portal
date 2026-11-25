@@ -1,6 +1,6 @@
 // Unit tests for the decision chain. Made-up text only; the matcher is a fake the test controls.
 import { describe, expect, it, vi } from "vitest";
-import { assess, monthsText, type AdvertInput, type ChainData, type ChainMatcher } from "./assess";
+import { assess, monthsText, PASS_ROUTE, payRoute, type AdvertInput, type ChainData, type ChainMatcher } from "./assess";
 import { cleanEmployerName, HSE_ENTRY } from "../employers";
 import { CHAIN_RULES_V1 } from "../snapshot";
 
@@ -368,5 +368,27 @@ describe("staff input (admin queue)", () => {
   });
   it("no staff input is the plain chain", async () => {
     expect(await assess(advert({ employmentType: "Contract" }), data(), {})).toEqual(await run({ employmentType: "Contract" }));
+  });
+});
+
+describe("payRoute: the pay step alone (#93)", () => {
+  const PAY = new Map<string, 1 | 2>([[HSE_ENTRY, 1], ["beaumont hospital", 2]]);
+  const min = (criticalSkills: number) => ({ minimums: { ...CHAIN_RULES_V1.minimums, criticalSkills } });
+  it.each<[string, Partial<ChainData>]>([
+    ["the rules of version 1", { publicPayCandidates: PAY }],
+    ["a raised minimum", { publicPayCandidates: PAY, ...min(43_000) }],
+    ["a name off the big-company list", { publicPayCandidates: PAY, bigCompanyNames: CHAIN_RULES_V1.bigCompanyNames.filter((n) => n !== "google") }],
+    ["the HSE switch off", { publicPayCandidates: new Map([["beaumont hospital", 2]]) }],
+  ])("%s: the same route as the whole chain, for every employer and pay, from the figures the job row keeps", async (_n, over) => {
+    const routes = new Set<string | undefined>();
+    for (const employer of ["Acme Widgets", "Google", "Google Recruitment Agency", "HSE Mid West", "Health Service Executive", "Beaumont Hospital", "Acme HSE Contractors"])
+      for (const pay of ["", "The salary is €32,540 a year.", "The salary is €40,903 a year.", "The salary is €40,904 a year.", "The salary is €42,000 to €55,000 a year.", "The salary is €42,999 a year.", "The salary is €43,000 a year.", "Pay is €20.55 per hour.", "The salary is €80,000 a year."]) {
+        const a = await run({ employer, description: `Join our team. ${pay}` }, over);
+        if (!/^(8 |PASS)/.test(a.stage)) continue; // another rule stopped it, the pay step did not decide
+        const round = (n: number | null) => (n === null ? null : Math.round(n)); // as the fetcher's plan stores it
+        expect(payRoute(employer, round(a.salaryLow), round(a.salaryHigh), data(over)), `${employer} | ${pay} | ${a.stage}`).toBe(PASS_ROUTE[a.bucket]);
+        routes.add(PASS_ROUTE[a.bucket]);
+      }
+    expect([...routes].sort()).toEqual(["big_company", "public_pay", "stated_pay", undefined].filter((r) => r !== "public_pay" || over.publicPayCandidates!.has(HSE_ENTRY)).filter((r) => r !== "big_company" || !over.bigCompanyNames).sort());
   });
 });

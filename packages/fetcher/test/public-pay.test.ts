@@ -3,14 +3,13 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { HSE_ENTRY } from "@portal/rules";
-import { createTestDb, type Role, type TestDb } from "../../db/test/db";
+import { createTestDb, type TestDb } from "../../db/test/db";
 import { getJob } from "../../db/src/search";
-import { CLOSE_PUBLIC_PAY, closePublicPay, isDue, runBoards, type BoardTask, type Deps } from "../src";
-import { advert, badgeAd, counting, deps, fakeModel, MODEL, NOW, plan, says, task } from "./helpers";
+import { isDue, runBoards, type BoardTask, type Deps } from "../src";
+import { advert, deps, fakeModel, MODEL, NOW, plan, says, task } from "./helpers";
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 const MIGRATION = readFileSync(new URL("../../db/migrations/0077_no_badge_on_doubt.sql", import.meta.url), "utf8");
-const PERF_MS = 5_000; // closing 2,000 live jobs; live has fewer than 10 of these
 
 let db: TestDb;
 const su = (sql: string, p?: unknown[]) => db.query("postgres", sql, p).then((r) => r.rows);
@@ -88,51 +87,5 @@ describe("the jobs queued before (0077), then the next fetch", () => {
     await run([t]);
     expect([...t.calls[0]!]).toEqual([a.id]);
     expect(await look(a.id)).toMatchObject({ status: "closed", items: ["dropped"] });
-  });
-});
-
-describe("the switch is off: closePublicPay", () => {
-  it("closes every live fetched job on the route, with its text, and nothing else; a second run closes none; the next read refuses the advert", async () => {
-    const b = board(), a = hse(`${b}-1`), pay = badgeAd(`${b}-2`);
-    await run([task("fake", b, [a, pay])]);
-    const org = (await su("select organisation_id from job where id = $1", [(await look(a.id)).job]))[0].organisation_id;
-    const other = async (status: string) => (await su(
-      `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, pass_route, status, hidden_reason, closes_at, own_page_url)
-       values ($1, 'fetched', (select id from job_source where board = $2), 'Nurse', 'HSE Cork', 'health', 'critical_skills', 'public_pay', $3, case when $3 = 'hidden' then 'admin' end, 'infinity', 'https://jobs.example.test/h') returning id::text`,
-      [org, b, status]))[0].id as string;
-    const held = [await other("in_review"), await other("hidden")];
-    const employer = (await su("insert into organisation(slug, display_name, kind, status) values ($1, 'Fake Employer', 'employer', 'verified') returning id", [`o-${b}`]))[0].id;
-    const own = (await su(
-      `insert into job(organisation_id, source, job_source_id, title, employer_name, sector, permit_type, pass_route, pay_grade, badge, status, search_vector, closes_at, own_page_url)
-       values ($1, 'employer', (select id from job_source where board = $2), 'Nurse', 'Fake Employer', 'health', 'critical_skills', 'public_pay', 'G', 'critical_skills_eligible', 'live', to_tsvector('english', 'Nurse'), now() + interval '20 days', 'https://jobs.example.test/o') returning id::text`, [employer, b]))[0].id as string;
-    const { db: counted, sql } = counting(fetcher());
-    expect(await closePublicPay(counted)).toBeGreaterThan(0);
-    expect(sql).toHaveLength(1);
-    expect(await look(a.id)).toMatchObject({ status: "closed", close_reason: "recheck_failed", vector: false, texts: 0, hash: false });
-    expect(await look(pay.id)).toMatchObject({ status: "live", texts: 1, hash: true });
-    expect((await su("select id::text, status from job where id = any($1::bigint[]) order by id", [[...held, own]])).map((x) => x.status)).toEqual(["in_review", "hidden", "live"]);
-    expect(await closePublicPay(fetcher())).toBe(0);
-    await run([{ ...task("fake", b, [a, pay]), rereadDays: 7 }], {}, new Map([["beaumont hospital", 2]]));
-    expect(await look(a.id)).toMatchObject({ result: "rejected", status: "closed", hash: true });
-  });
-  it.each<Role>(["app_candidate", "app_portal", "app_backup"])("security: %s cannot run it", async (role) => {
-    const b = board(), a = hse(`${b}-1`);
-    await run([task("fake", b, [a])]);
-    await expect(db.pool(role).query(CLOSE_PUBLIC_PAY)).rejects.toThrow(/permission denied/);
-    expect((await look(a.id)).status).toBe("live");
-    await closePublicPay(fetcher());
-  });
-  it("performance: 2,000 live jobs in one statement", async () => {
-    const b = board(), a = hse(`${b}-1`);
-    await run([task("fake", b, [a])]);
-    await su(`with f as (insert into fetched_advert(job_source_id, external_id, title, employer_name, result, stage, content_hash) select (select id from job_source where board = $1), 'perf-' || g, 'T', 'HSE Cork', 'passed', '8 x', repeat('b', 64) from generate_series(1, 2000) g returning id),
-      j as (insert into job(organisation_id, source, job_source_id, fetched_advert_id, title, employer_name, sector, permit_type, pass_route, badge, status, search_vector, closes_at, own_page_url)
-        select (select organisation_id from job where id = $2), 'fetched', (select id from job_source where board = $1), f.id, 'T', 'HSE Cork', 'health', 'critical_skills', 'public_pay', 'critical_skills_eligible', 'live', to_tsvector('english', 'Nurse'), 'infinity', 'https://jobs.example.test/p' from f returning id)
-      insert into job_text(job_id, advert_text) select id, repeat('Fake words. ', 400) from j`, [b, (await look(a.id)).job]);
-    const t = performance.now();
-    expect(await closePublicPay(fetcher())).toBe(2001);
-    const ms = performance.now() - t;
-    console.log(`closePublicPay on 2,001 live jobs: ${Math.round(ms)} ms`);
-    expect(ms).toBeLessThan(PERF_MS);
   });
 });
