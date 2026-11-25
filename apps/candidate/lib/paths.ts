@@ -39,4 +39,12 @@ export const permitRequestPath = (jobId?: string | null) => (jobId && /^[0-9]{1,
 export const accountPath = () => "/account";
 /** Where a sign-in, a verified email or a reset goes when no return address was given. P17 changes this to /account (the account page does not exist yet). */
 export const afterSignInPath = () => "/jobs";
+/** The account pages (P17); the header, the bell and the emails link to these. */
+export const applicationsPath = () => "/account/applications";
+export const savedPath = () => "/account/saved";
+export const alertsPath = () => "/account/alerts";
+export const noticesPath = () => "/account/notices";
+export const profilePath = () => "/account/profile";
+export const settingsPath = () => "/account/settings";
+export const casesPath = () => "/account/cases";
 export const casePath = (caseId: string) => `/account/cases/${encodeURIComponent(caseId)}`;

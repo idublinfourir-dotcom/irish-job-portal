@@ -34,7 +34,7 @@ describe("Button", () => {
     expect(visitor).toContain('href="/signup"');
     expect(visitor).toContain('href="/login"');
     expect(visitor).not.toContain("data-sign-out");
-    for (const h of ["/account", "/account/tracker", "/account/saved", "/account/alerts"]) expect(me).toContain(`href="${h}"`);
+    for (const h of ["/account", "/account/applications", "/account/saved", "/account/alerts"]) expect(me).toContain(`href="${h}"`);
     expect(me).toContain('data-sign-out="/api/auth/candidate/sign-out"');
     expect(me).not.toContain('href="/signup"');
   });
