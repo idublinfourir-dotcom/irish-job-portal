@@ -1,5 +1,5 @@
-// The words for every answer of the routes the name merges, content, staff and audit pages call (docs/openapi/admin.yaml: /api/companies/dete-links, /api/companies/merge,
-// /api/content, /api/staff, /api/audit/export). A code of the base list (messages.ts) keeps its words; every other code gets a plain sentence here, never the code itself.
+// The words for every answer of the routes the name merges, content, staff, audit, rules data and manual posting pages call (docs/openapi/admin.yaml: /api/companies/dete-links,
+// /api/companies/merge, /api/content, /api/staff, /api/audit/export, /api/rules*, /api/manual-jobs*). A code of the base list (messages.ts) keeps its words; every other code gets a plain sentence here, never the code itself.
 // Pure: the unit test reads the codes from the yaml, so a code added to a route without words fails there.
 import { errorWords } from "./messages";
 
@@ -72,6 +72,58 @@ const WORDS: Record<string, string> = {
   bad_to: "The last day is not a real date.",
   bad_page: "That page number is not valid. Go back to the first page.",
   bad_cursor: "That page link is not valid. Go back to the first page.",
+  // rules data (/api/rules, /api/rules/evidence, /api/rules/history)
+  not_found: "That item was not found. It may have been decided or removed already. Reload the page.",
+  not_rules_editor: "Only a rules data editor can propose a change.",
+  not_rules_viewer: "Your roles do not let you open the evidence files.",
+  not_proposer: "Only the person who proposed a change can withdraw it.",
+  bad_date: "The start day is not a real day.",
+  bad_data: "Some value does not fit this kind of list. Check the figures, codes, links and dates.",
+  date_in_past: "The start day is already past. Pick today or a later day.",
+  no_change: "Nothing differs from the version in force, so there is nothing to propose.",
+  decision_pending: "A change for this already waits for a decision. Confirm, refuse or withdraw it first.",
+  already_big: "That company already has the big-company flag.",
+  no_name_match: "None of the company's names matches a brand on the big-company list, so it cannot be flagged.",
+  not_pending: "That proposal is no longer waiting. Reload the page.",
+  date_passed: "The start day of this proposal has passed. Refuse it and propose it again with a new start day.",
+  files_unavailable: "File storage is not set up, so nothing was uploaded.",
+  bad_file: "Choose exactly one file.",
+  empty_file: "That file has no content. Choose another.",
+  file_too_large: "That file is over 4 MB. Choose a smaller one.",
+  wrong_file_type: "Only a PDF, JPEG or PNG that opens properly can be uploaded.",
+  file_active_content: "That PDF carries active content, is encrypted or cannot be read safely. Use a plain PDF or a picture.",
+  scan_pending: "The file has not been scanned yet, so it cannot be opened. Try again later.",
+  file_blocked: "The scan did not pass this file, so it cannot be opened.",
+  // manual posting (/api/manual-jobs*)
+  not_manual_viewer: "Your roles do not let you open manual posting.",
+  not_account_reviewer: "Only an account reviewer can do this.",
+  not_poster: "Only the person who posted a job can close it.",
+  not_sponsor_staff: "Only an account reviewer or an administrator can withdraw or refuse this.",
+  company_not_found: "That company was not found. Pick the employer again.",
+  company_not_postable: "A job cannot be posted for that company: it is not an employer or agency, or it was merged, rejected, closed, banned or suspended.",
+  bad_apply_url: "The application link must be an https address of 10 to 500 characters, with no user name or password.",
+  bad_description: "The description must be 20 to 10,000 characters.",
+  bad_county: "Pick one of the 26 counties.",
+  bad_contract_months: "The contract is 1 to 600 months, or empty for a permanent job.",
+  bad_pay_grade: "The pay grade is 1 to 100 characters, or empty.",
+  bad_health_insurance: "Health insurance is whole euro from 0 to 50,000, or empty.",
+  bad_weekly_hours: "The hours a week are a whole number from 1 to 60.",
+  bad_closes_on: "The closing day is not a real day.",
+  bad_closing_date: "The closing day must be after now and at most 90 days ahead.",
+  bad_state: "That post is already closed or hidden.",
+  job_not_live: "Only a live post can have a confirmation. This one is a draft or closed.",
+  already_confirmed: "This post shows Sponsor confirmed already.",
+  company_restricted: "That company is restricted after a strike, so Sponsor confirmed cannot be added.",
+  no_statement_text: "The sponsorship statement wording is not saved yet, so a confirmation cannot be made. Ask an administrator to add it in the legal texts.",
+  // the codes a manual post's checks can end on
+  occupation_ineligible: "The occupation is on the Ineligible list, so a Critical Skills job cannot be posted for it.",
+  occupation_not_on_list: "The occupation is not on the Critical Skills list.",
+  contract_too_short: "The contract is shorter than the minimum.",
+  rules_failed: "The advert text would not pass the rules.",
+  needs_review: "The advert text needs a person to review it, so it would stay a draft.",
+  pay_required: "Give the pay, or a public pay grade for a public pay employer.",
+  pay_below_minimum: "The pay is below the minimum for the hours.",
+  pay_not_on_scale: "The pay is off the scale of the grade given.",
 };
 
 /** The sentence for a route's answer: this page group's words first, then the base list's. */
