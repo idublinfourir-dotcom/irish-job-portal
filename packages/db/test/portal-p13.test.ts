@@ -240,7 +240,9 @@ describe("the sign-up steps (E03, E04, E05)", () => {
       expect(await redirectOf(name, undefined), name).toBe(`/sign-in?next=${encodeURIComponent(path)}`);
       expect(await redirectOf(name, pending.cookie), name).toBe("/verification");
       expect(await redirectOf(name, live.cookie), name).toBe("/dashboard");
-      expect(await open(name, none.cookie), name).toContain(none.email);
+      const page = await open(name, none.cookie);
+      expect(page, name).toContain(none.email);
+      expect(page.match(/data-slot="public-data-credit"/g)?.length ?? 0, name).toBe(name === "agency" ? 0 : 1); // S14: the two steps that show CRO register rows credit the CRO
     }
   });
   it("the first-time step looks up a CRO number the claim step handed over: found in the register, none, already on the site; a free email provider gets the review note", async () => {

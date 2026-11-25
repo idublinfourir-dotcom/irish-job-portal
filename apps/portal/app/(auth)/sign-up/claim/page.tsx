@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PublicDataCredit } from "@portal/ui";
 import { meta } from "../../../_site/meta";
 import { needLogin, outLinks } from "../../../_site/guard";
 import { SignOutButton } from "../../forms";
@@ -16,6 +17,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ q
       panel={["Already a sponsor?", "Fewer steps."]} panelLead="With an email on your company's own domain, an existing sponsor can post without waiting for staff. Otherwise we aim to review within 1 working day." {...outLinks()}>
       <ClaimForm email={login.email} initialQ={typeof q === "string" ? q.slice(0, 160) : ""} />
       <p className="text-small text-muted">Not {login.email}? <SignOutButton /></p>
+      <div className="text-small text-muted"><PublicDataCredit /></div>
     </AuthFrame>
   );
 }

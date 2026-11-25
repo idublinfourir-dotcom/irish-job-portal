@@ -59,6 +59,7 @@ describe("candidate layout (P1)", () => {
     expect(h.match(/Rules last checked on/g)).toHaveLength(1);
     expect(h).toContain('href="https://www.geonames.org/"');
     expect(h).toContain("CC BY 4.0");
+    expect(h.match(/data-slot="public-data-credit"/g)).toHaveLength(1); // S14
     expect(h).toContain("No genuine employer asks you to pay for a job offer.");
     expect(links(h)).toContain("Cookies");
     expect(h).toContain('href="/cookies"');
@@ -88,6 +89,7 @@ describe("portal layout (P3)", () => {
     const h = await portal();
     expect(h).toContain("Nothing here yet.");
     for (const t of ["Dashboard", "Company profile", "Post a job"]) expect(h).not.toContain(t);
+    expect(h).not.toContain("public-data-credit"); // the two sign-up pages that show register data bring it themselves (packages/db/test/portal-p13.test.ts)
     expect(h.match(/<main\b/g)).toHaveLength(1);
   });
   it("a member: the company name, the role label and the Launch A links, never Launch B ones", async () => {
@@ -95,6 +97,7 @@ describe("portal layout (P3)", () => {
     const h = await portal();
     for (const t of ["Fake Company Ltd", "Account owner", "Dashboard", "Jobs", "Post a job", "Permit services", "Company profile", "Team", "Account status", "Help"]) expect(h).toContain(t);
     for (const t of ["Applicants", "Candidate search", "Contact requests"]) expect(h).not.toContain(t);
+    expect(h.match(/data-slot="public-data-credit"/g)).toHaveLength(1);
     expect(h.match(/<main\b/g)).toHaveLength(1);
   });
   it.each([

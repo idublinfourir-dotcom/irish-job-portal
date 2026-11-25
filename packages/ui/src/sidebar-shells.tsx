@@ -1,5 +1,6 @@
 import { A } from "./link";
 import { Button } from "./button";
+import { PublicDataCredit } from "./candidate-shell";
 import { cx, SITE_WORDMARK } from "./cx";
 import { Icon } from "./icons";
 import { SignOut } from "./sign-out";
@@ -145,6 +146,7 @@ export function PortalShell({ companyName, role, roleKey, status, unread = 0, st
             ))}
             <SignOut action="/api/auth/portal/sign-out" to="/sign-in" className="inline-flex min-h-9 items-center underline underline-offset-2 cursor-pointer" />
           </nav>
+          <PublicDataCredit />
         </footer>
       }
     >

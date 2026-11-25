@@ -224,13 +224,25 @@ describe("candidate shell", () => {
     const bare = html(<CandidateShell>x</CandidateShell>);
     expect(bare).toContain('href="https://www.geonames.org/"');
     expect(bare).toContain('href="https://creativecommons.org/licenses/by/4.0/"');
-    expect(nav(bare)).toContain("Place names from |GeoNames|, licensed |CC BY 4.0|");
+    expect(nav(bare)).toContain("Place names adapted from |GeoNames|, licensed |CC BY 4.0|");
     expect(nav(bare)).toContain("No genuine employer asks you to pay for a job offer. |Report it.|");
     expect(bare).not.toContain("Rules last checked");
     expect(bare).not.toContain("standing-line");
     const full = html(<CandidateShell standingLine="Our line." rulesCheckedOn="3 Nov 2026">x</CandidateShell>);
     expect(full).toContain("Our line.");
     expect(full).toContain("Rules last checked on 3 Nov 2026");
+  });
+  it("footer: the public data credit in the licence's own words, with both sources, the licence link and the change note (S14)", () => {
+    const h = html(<CandidateShell>x</CandidateShell>);
+    expect(h.match(/data-slot="public-data-credit"/g)).toHaveLength(1);
+    const credit = h.match(/<p data-slot="public-data-credit">[\s\S]*?<\/p>/)![0];
+    // the exact sentence of opendata.cro.ie/about and data.gov.ie/pages/opendatalicence
+    expect(credit.replace(/<[^>]*>/g, "")).toBe("Contains Irish Public Sector Data licensed under a Creative Commons Attribution 4.0 International (CC BY 4.0) licence. " +
+      "Sources: Department of Enterprise, Tourism and Employment (permits) and Companies Registration Office (company records), adapted by us.");
+    const out = [...credit.matchAll(/<a [^>]*>/g)].map((m) => m[0]);
+    expect(out.map((a) => new URL(a.match(/href="([^"]*)"/)![1]!).host)).toEqual(["creativecommons.org", "enterprise.gov.ie", "opendata.cro.ie"]);
+    for (const a of out) for (const t of ['href="https://', 'target="_blank"', 'rel="noopener noreferrer"']) expect(a).toContain(t);
+    expect(credit.length).toBeLessThan(1000); // it is on every page: under 1 KB of HTML
   });
   it("footer says Cookies and links to /cookies", () => {
     const h = html(<CandidateShell>x</CandidateShell>);

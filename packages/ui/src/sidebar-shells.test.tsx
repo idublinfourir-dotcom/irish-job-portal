@@ -48,6 +48,13 @@ describe("portal shell: bell, post button, footer", () => {
     expect(h).not.toContain("<img");
     expect(portal()).not.toContain("standing-line");
   });
+  it("every role and company status has the public data credit once, in the footer (the company and verification pages show CRO and DETE data, S14)", () => {
+    for (const roleKey of ["viewer", "poster", "recruiter", "account_owner"] as const) for (const status of ["verified", "pending_review", "suspended", undefined]) {
+      const h = portal({ roleKey, status });
+      expect(h.match(/data-slot="public-data-credit"/g)).toHaveLength(1);
+      expect(h.match(/<footer[\s\S]*<\/footer>/)![0]).toContain("Companies Registration Office");
+    }
+  });
   it("escapes a hostile company name and has no search box (the portal has no search page)", () => {
     const h = portal({ companyName: "<script>1</script>" });
     expect(h).not.toContain("<script>");
