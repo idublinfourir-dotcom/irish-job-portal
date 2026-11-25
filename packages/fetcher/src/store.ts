@@ -1,6 +1,7 @@
 // The database writes of the fetcher. Design: step5/L8-DESIGN.md section 3. Every statement is a constant string with
 // parameters; no value is ever put into SQL text (test/store.security.test.ts reads this file to check it).
 // Connected as app_fetcher: no network call while a transaction is open, no `set` without `local`, no advisory locks.
+import { payRoute, type PayRules } from "@portal/rules";
 import type pg from "pg";
 import { changeOf } from "./plan";
 import type { AdvertRow, Change, Db, JobRow, Known, Plan } from "./types";
@@ -36,12 +37,17 @@ export const CLOSE_STALE =
   "t as (delete from job_text where job_id in (select id from c) returning 1), " +
   "g as (update fetched_advert set gone_at = $1 where id in (select fetched_advert_id from c) and gone_at is null returning 1) " +
   "select count(*)::int as n from c";
-// #261: the HSE switch is off, so no live job may rest on the public pay route. They close, their text goes, and their adverts lose the hash, so the next read assesses them
-// as any employer's. ponytail: switched on again, an advert comes back when its text changes, as after any rules change.
-export const CLOSE_PUBLIC_PAY =
-  "with c as (update job set status = 'closed', close_reason = 'recheck_failed', search_vector = null where source = 'fetched' and status = 'live' and pass_route = 'public_pay' " +
-  "returning id, fetched_advert_id), t as (delete from job_text where job_id in (select id from c)), " +
-  "a as (update fetched_advert set content_hash = null where id in (select fetched_advert_id from c)) select count(*)::int as n from c";
+// #93: the live fetched jobs, as the recheck reads them.
+const LIVE_JOBS = "select id::text as id, employer_name, salary_low, salary_high, pass_route from job where source = 'fetched' and status = 'live'";
+// $1 the jobs whose route changed, $2 the route each has now (null: none). With none it closes, its text goes, and its advert loses the hash, so the next read writes why.
+export const RECHECK =
+  "with x as (select * from unnest($1::bigint[], $2::text[]) as x(id, route)), " +
+  "m as (update job j set pass_route = x.route from x where j.id = x.id and x.route is not null and j.source = 'fetched' and j.status = 'live' returning 1), " +
+  "c as (update job j set status = 'closed', close_reason = 'recheck_failed', search_vector = null from x " +
+  "where j.id = x.id and x.route is null and j.source = 'fetched' and j.status = 'live' returning j.id, j.fetched_advert_id), " +
+  "t as (delete from job_text where job_id in (select id from c)), " +
+  "a as (update fetched_advert set content_hash = null where id in (select fetched_advert_id from c)) " +
+  "select (select count(*) from c)::int as closed, (select count(*) from m)::int as moved";
 const FAIL =
   "with run as (update fetch_run set finished_at = $2, error = $3 where id = $1 returning 1) update job_source set last_error = $3 where id = $4";
 const INSERT_ADVERT =
@@ -85,6 +91,7 @@ export const CLOSE_RECHECK =
 const clean = <T extends string | null>(v: T): T => (v === null ? v : (v.replace(/\u0000/g, "") as T));
 const cut = (v: string, n: number) => [...clean(v)].slice(0, n).join("");
 
+type LiveJob = { id: string; employer_name: string; salary_low: number | null; salary_high: number | null; pass_route: string | null };
 export type BoardRun = { sourceId: number; runId: number; rows: Map<string, Known> };
 
 /** 3.1 steps 1 to 3: the source row, a new run row, and every advert row saved for the board (3.8). Three statements. */
@@ -115,9 +122,16 @@ export async function closeStale(db: Db, now: Date, days = STALE_BOARD_DAYS): Pr
   return Number((await db.query<{ n: number }>(CLOSE_STALE, [now, days])).rows[0]?.n ?? 0);
 }
 
-/** Closes every live fetched job on the public pay route (the HSE switch is off). Returns how many closed. */
-export async function closePublicPay(db: Db): Promise<number> {
-  return Number((await db.query<{ n: number }>(CLOSE_PUBLIC_PAY)).rows[0]?.n ?? 0);
+/**
+ * #93: works out every live fetched job's pay route again from its stored employer and pay under the rules in force, so a raised minimum, a name off the big-company
+ * list or the HSE switch off (#261) counts this night though the advert's text is the same. No model is asked: its word is on the occupation, not the pay.
+ * ponytail: pay and employer only. A changed occupation list, non-list minimum or contract length, and any loosened rule, reach a job when its advert changes.
+ */
+export async function recheckLive(db: Db, rules: PayRules): Promise<{ closed: number; moved: number }> {
+  const jobs = (await db.query<LiveJob>(LIVE_JOBS)).rows.map((j) => ({ ...j, now: payRoute(j.employer_name, j.salary_low, j.salary_high, rules) ?? null }));
+  const changed = jobs.filter((j) => j.now === null || j.now !== j.pass_route);
+  if (!changed.length) return { closed: 0, moved: 0 };
+  return (await db.query<{ closed: number; moved: number }>(RECHECK, [changed.map((j) => j.id), changed.map((j) => j.now)])).rows[0]!;
 }
 
 /** A fetch that failed: the run row and the source row say why. `last_ok_at` stays. Message cut to 300 code points. */

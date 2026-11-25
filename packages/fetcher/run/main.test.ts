@@ -1,13 +1,14 @@
 // The fetch stops on bad rules (#229): the rules in force are read from the database and checked before any board or model request, and nothing is saved.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BIG_COMPANY_NAMES_V1, HSE_ENTRY, MINIMUMS_V1, rulesV1 } from "@portal/rules";
-import { CLOSE_PUBLIC_PAY, CLOSE_STALE } from "../src";
+import { CLOSE_STALE, RECHECK } from "../src";
 import { main } from "./main";
 
 const DATA = new URL("../data/", import.meta.url).pathname;
 afterEach(() => vi.unstubAllEnvs());
 
 type Rows = { kind: string; data: unknown }[];
+const LIVE = /from job where source = 'fetched' and status = 'live'/; // the recheck's read
 // The rows the rules query returns for version 1 (what the owner's seed writes).
 const v1 = await rulesV1();
 const today = (): Rows => [
@@ -19,7 +20,7 @@ const today = (): Rows => [
 ];
 
 /** Every input set and a fake database that answers only the rules query, so only the rules can stop the run before the boards. */
-function setUp(rows: Rows) {
+function setUp(rows: Rows, live: unknown[] = []) {
   vi.stubEnv("PORTAL_PRIVATE_DATA", DATA);
   vi.stubEnv("FETCHER_BOARDS_FILE", `${DATA}boards.json`);
   vi.stubEnv("FETCHER_DATABASE_URL", "postgres://fake@127.0.0.1:1/none");
@@ -30,7 +31,9 @@ function setUp(rows: Rows) {
     query: vi.fn(async (text: string) => {
       sql.push(text);
       if (/rules_version/.test(text)) return { rows };
-      if (text === CLOSE_STALE || text === CLOSE_PUBLIC_PAY) return { rows: [{ n: 0 }] };
+      if (text === CLOSE_STALE) return { rows: [{ n: 0 }] };
+      if (LIVE.test(text)) return { rows: live };
+      if (text === RECHECK) return { rows: [{ closed: 1, moved: 0 }] };
       throw new Error("no other query expected");
     }),
     end: vi.fn(async () => {}),
@@ -66,13 +69,22 @@ describe("the fetch refuses to start on bad rules", () => {
     // W1c: after every board, the stale-board close runs once, as the last statement
     expect(sql.filter((q) => q === CLOSE_STALE)).toHaveLength(1);
     expect(sql.at(-1)).toBe(CLOSE_STALE);
-    expect(sql).not.toContain(CLOSE_PUBLIC_PAY); // the HSE switch is on
+    expect(sql).not.toContain(RECHECK); // no live job fails the rules in force
   });
-  it("the HSE switch off (#261): the live jobs on the public pay route close first, once, before any board", async () => {
-    const { deps, sql } = setUp(today().map((r) => (r.kind === "public_pay_employers" ? { ...r, data: Object.fromEntries(Object.entries(r.data as object).filter(([k]) => k !== HSE_ENTRY)) } : r)));
+  it.each([
+    ["the rules of version 1", today(), []],
+    ["a raised minimum (#93)", today().map((r) => (r.kind === "minimums" ? { ...r, data: { ...MINIMUMS_V1, criticalSkills: 43_000 } } : r)), ["1"]],
+    ["the HSE switch off (#261)", today().map((r) => (r.kind === "public_pay_employers" ? { ...r, data: Object.fromEntries(Object.entries(r.data as object).filter(([k]) => k !== HSE_ENTRY)) } : r)), ["2"]],
+    ["a big-company name off the list", today().map((r) => (r.kind === "big_company_names" ? { ...r, data: (r.data as { name: string }[]).filter((x) => x.name !== "google") } : r)), ["3"]],
+  ])("%s: the live jobs that no longer pass close first, before any board", async (_n, rows, closes) => {
+    const job = (id: string, employer_name: string, pay: number | null, pass_route: string) => ({ id, employer_name, salary_low: pay, salary_high: pay, pass_route });
+    const { deps, db, sql } = setUp(rows, [job("1", "Acme Ltd", 41_500, "stated_pay"), job("2", "HSE Mid West", null, "public_pay"), job("3", "Google", null, "big_company"), job("4", "Stripe", null, "big_company")]);
     await main(deps as never);
-    expect(sql.filter((q) => q === CLOSE_PUBLIC_PAY)).toHaveLength(1);
-    expect(sql.filter((q) => !/rules_version/.test(q))[0]).toBe(CLOSE_PUBLIC_PAY);
+    const order = sql.filter((q) => !/rules_version/.test(q));
+    expect(order[0]).toMatch(LIVE);
+    const call = db.query.mock.calls.filter(([q]) => q === RECHECK) as unknown as [string, unknown[]][];
+    expect(call.map(([, p]) => p)).toEqual(closes.length ? [[closes, closes.map(() => null)]] : []);
+    if (closes.length) expect(order[1]).toBe(RECHECK);
   });
 });
 

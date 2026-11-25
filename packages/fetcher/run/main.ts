@@ -7,8 +7,8 @@ import pg from "pg";
 import { loadRules } from "@portal/db/rules-data";
 import { sslOptions } from "@portal/db/ssl";
 import { chatClient, createBatchChecker, spacedClient, rulesMatcher, type ListEntry } from "@portal/matcher";
-import { chainRules, checkSnapshot, cleanEmployerName, HSE_ENTRY, publicPayCandidatesOf } from "@portal/rules";
-import { atsTasks, closePublicPay, closeStale, kindFilter, runBoards, STALE_BOARD_DAYS, type BoardReport, type BoardsFile, type FetcherMatcher } from "../src";
+import { chainRules, checkSnapshot, cleanEmployerName } from "@portal/rules";
+import { atsTasks, closeStale, kindFilter, recheckLive, runBoards, STALE_BOARD_DAYS, type BoardReport, type BoardsFile, type FetcherMatcher } from "../src";
 
 const need = (name: string) => {
   const v = process.env[name];
@@ -61,7 +61,8 @@ export async function main(deps: Deps = real()): Promise<BoardReport[]> {
   try {
     // The rules first (#229): a kind with no version, a list that loads empty or a minimum missing ends the run here, before any board or model request.
     const rules = await rulesInForce(db, started.toISOString().slice(0, 10));
-    if (!publicPayCandidatesOf(rules).has(HSE_ENTRY)) log(`${await closePublicPay(db)} jobs closed: the HSE switch is off (#261)`);
+    const again = await recheckLive(db, chainRules(rules));
+    log(`rules in force (#93): ${again.closed} live jobs closed, ${again.moved} on another pay route`);
     const entries = rules.occupationLists as ListEntry[];
     const reports = await runBoards({
       db,

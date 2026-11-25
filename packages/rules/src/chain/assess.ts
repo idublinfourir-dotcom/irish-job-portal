@@ -128,6 +128,15 @@ function bucketOf(stage: Stage, tier: 0 | 1 | 2): Bucket {
  */
 export const PASS_ROUTE: Partial<Record<Bucket, "stated_pay" | "big_company" | "public_pay">> = { stated_pay: "stated_pay", big_company: "big_company", public_hse: "public_pay" };
 
+/** What the pay step of `assess` reads from the rules in force. */
+export type PayRules = Pick<ChainData, "minimums" | "bigCompanyNames" | "publicPayCandidates">;
+/** The pay step of `assess` alone: the route this employer and pay carry the badge with under `rules`, or undefined. The fetcher asks it again for its live jobs (#93). */
+export function payRoute(employer: string, low: number | null, high: number | null, rules: PayRules) {
+  const min = rules.minimums.criticalSkills;
+  const stage = salaryStage(checkSalary(low, high, min), isBigCompany(employer, rules.bigCompanyNames), isAgencyName(employer), min);
+  return PASS_ROUTE[bucketOf(stage, publicPayTier(employer, rules.publicPayCandidates))];
+}
+
 // An advert no rule ran on: every field empty, as the Python leaves a key out.
 const blank = (): Assessment => ({
   stage: "0 advert too long (admin queue)",
