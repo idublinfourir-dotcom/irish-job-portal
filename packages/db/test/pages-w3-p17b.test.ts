@@ -15,7 +15,7 @@ vi.mock("next/headers", () => ({ headers: async () => state.headers }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace() {}, refresh() {} }), redirect: (to: string) => { throw new Error(`NEXT_REDIRECT ${to}`); } }));
 vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), connection: async () => {} }));
 
-const BUDGET = { statements: { profile: 17, settings: 12, delete: 9, goodbye: 0 }, medianMs: 120 };
+const BUDGET = { statements: { profile: 19, settings: 12, delete: 9, goodbye: 0 }, medianMs: 120 };
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
 const BASE = "http://localhost:3000";

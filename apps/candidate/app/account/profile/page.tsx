@@ -3,7 +3,7 @@
 // and data cards of the frame are on /account/settings.
 import type { Metadata } from "next";
 import { A, Notice } from "@portal/ui";
-import { readCv, readMinimums, readOccupations, readProfile, readRegistrationBodies } from "../../../lib/data";
+import { readAccountEmail, readCv, readMinimums, readOccupations, readProfile, readRegistrationBodies } from "../../../lib/data";
 import { profilePath, settingsDeletePath } from "../../../lib/paths";
 import { pageDescription, pageTitle } from "../../../lib/seo";
 import { Hl } from "../../jobs/parts";
@@ -23,7 +23,7 @@ type Body = { id: string; name: string };
 export default async function Page() {
   const p = need(await readProfile(), profilePath());
   if ("refused" in p) return <Notice kind="error" title="This account cannot use the profile">Use the Help page to contact us if you think this is a mistake.</Notice>;
-  const [occ, bodies, mins, cv] = await Promise.all([readOccupations(), readRegistrationBodies(), readMinimums(), readCv()]);
+  const [occ, bodies, mins, cv, login] = await Promise.all([readOccupations(), readRegistrationBodies(), readMinimums(), readCv(), readAccountEmail()]);
   const occupations = occ.ok ? ((occ.data as { occupations: Occ[] }).occupations ?? []) : [];
   const profile = (p.data as { profile: ProfileData | null }).profile;
   const stamp4 = profile?.currentStamp?.startsWith("4") ?? false;
@@ -36,7 +36,7 @@ export default async function Page() {
           Your job alerts stay paused while your profile says Stamp 4. If that changes, change it here and turn them on in <A href="/account/alerts" className="font-semibold underline">Job alerts</A>. You can also <A href={settingsDeletePath()} className="font-semibold underline">delete your account</A>.
         </Notice>
       )}
-      <ProfileForm
+      <ProfileForm signUpName={login?.name ?? ""}
         profile={profile}
         cv={cv.ok ? ((cv.data as { cv: CvInfo }).cv ?? null) : null}
         mins={mins.ok ? (mins.data as Mins) : null}

@@ -3,6 +3,7 @@
 // `server-only` is Next's own copy (aliased by its compilers): importing this file from a Client Component fails the build. Not in packages/db,
 // which the CLIs and vitest load outside Next.
 import "server-only";
+import { cache } from "react";
 import { headers } from "next/headers";
 import {
   dataRequestGet, checkerRead, closedJobRead, companyRead, countJobView, gatedRead, getPool, getRules, guideRead, guidesRead, helpListRead, helpRead, jobRead, jobsRead, legalRead, minimumsRead, occupationRead, occupationsRead,
@@ -64,11 +65,11 @@ export const readAlerts = () => mine(alertsGet);
 export const readAlert = (id: string) => mine(alertsGet, { id }); // one alert for the edit form (/account/alerts?edit=<id>); 404 ALERT_NOT_FOUND for another candidate's
 export const readTracker = () => mine(trackerGet); // B31
 export const readNotices = (query?: Query) => mine(noticesGet, query); // B38: ?after=
-/** The signed-in candidate's email and whether it is confirmed (P17: the settings page shows it), or null when signed out. */
-export const readAccountEmail = async (): Promise<{ email: string; verified: boolean } | null> => {
+/** The signed-in candidate's email, whether it is confirmed, and the name given at sign-up (the profile has its own, empty until it is saved), or null when signed out. */
+export const readAccountEmail = cache(async (): Promise<{ email: string; verified: boolean; name: string } | null> => {
   const s = await candidateAuth().api.getSession({ headers: await headers() }).catch(() => null);
-  return s ? { email: s.user.email, verified: s.user.emailVerified === true } : null;
-};
+  return s ? { email: s.user.email, verified: s.user.emailVerified === true, name: s.user.name ?? "" } : null;
+});
 export const readSecurity = () => mine(securityGet); // B40: passwordChangedAt and signInMethods
 export const readDataAccess = () => mine(dataAccessGet); // B41: who viewed my data
 export const readDidYouApply = () => mine(promptsGet);

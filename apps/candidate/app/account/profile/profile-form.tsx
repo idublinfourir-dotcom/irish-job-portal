@@ -77,7 +77,7 @@ export function CvCard({ cv, error, busy, onUpload, onRemove, saved }: { cv: CvI
   );
 }
 
-export function ProfileForm({ profile, cv: first, mins, bodies, limits, occupationOptions }: { profile: ProfileData | null; cv: CvInfo | null; mins: Mins | null; bodies: { id: string; name: string }[]; limits: { min: string; max: string }; occupationOptions: ReactNode }) {
+export function ProfileForm({ signUpName = "", profile, cv: first, mins, bodies, limits, occupationOptions }: { signUpName?: string; profile: ProfileData | null; cv: CvInfo | null; mins: Mins | null; bodies: { id: string; name: string }[]; limits: { min: string; max: string }; occupationOptions: ReactNode }) {
   const [box, setBox] = useState<ProfileData["degreeBox"]>(profile?.hasRelevantDegree ? profile.degreeBox : "none");
   const [where, setWhere] = useState(profile?.locationKind ?? "abroad");
   const [occStatus, setOccStatus] = useState<string | undefined>(undefined);
@@ -123,7 +123,7 @@ export function ProfileForm({ profile, cv: first, mins, bodies, limits, occupati
   return (
     <>
       <form onSubmit={save} aria-busy={state.kind === "saving" || undefined} className="flex flex-col gap-6">
-        <Section1 profile={profile} occupationOptions={occupationOptions} status={occStatus} onOcc={setOccStatus} />
+        <Section1 signUpName={signUpName} profile={profile} occupationOptions={occupationOptions} status={occStatus} onOcc={setOccStatus} />
         <Card num={2} title="Degree"><DegreeCard box={box} month={profile?.degreeAwardedMonth?.slice(0, 7) ?? ""} field={profile?.degreeField ?? ""} mins={mins} limits={limits} onBox={setBox} /></Card>
         <Card num={3} title="Registration and location">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -177,12 +177,12 @@ function Card({ num, title, children }: { num: number; title: string; children: 
   );
 }
 
-function Section1({ profile, occupationOptions, status, onOcc }: { profile: ProfileData | null; occupationOptions: ReactNode; status?: string; onOcc: (s: string | undefined) => void }) {
+function Section1({ signUpName, profile, occupationOptions, status, onOcc }: { signUpName: string; profile: ProfileData | null; occupationOptions: ReactNode; status?: string; onOcc: (s: string | undefined) => void }) {
   const listed = status === "critical-skills";
   return (
     <Card num={1} title="About you">
       <div className="grid gap-4 sm:grid-cols-2">
-        <Input label="Your name" name="fullName" autoComplete="name" maxLength={120} defaultValue={profile?.fullName ?? ""} />
+        <Input label="Your name" name="fullName" autoComplete="name" maxLength={120} defaultValue={profile?.fullName ?? signUpName} />
         <Input label="Phone (optional)" name="phone" type="tel" autoComplete="tel" maxLength={30} pattern="\+?[0-9 ()\-]{5,30}" defaultValue={profile?.phone ?? ""} />
       </div>
       <Select label="Occupation" name="occupationCode" defaultValue={profile?.occupationCode ?? ""}

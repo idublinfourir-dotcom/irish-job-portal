@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 type R = { ok: true; data: unknown } | { ok: false; status: number; code: string };
 const reads = vi.hoisted(() => ({ profile: undefined as unknown, saved: undefined as unknown, alerts: undefined as unknown, tracker: undefined as unknown, cases: undefined as unknown }));
 vi.mock("../../lib/data", () => ({
-  readProfile: async () => reads.profile, readSaved: async () => reads.saved, readAlerts: async () => reads.alerts, readTracker: async () => reads.tracker, readCases: async () => reads.cases,
+  readProfile: async () => reads.profile, readAccountEmail: async () => ({ email: "a@example.test", verified: true, name: "Sign Up Name" }), readSaved: async () => reads.saved, readAlerts: async () => reads.alerts, readTracker: async () => reads.tracker, readCases: async () => reads.cases,
   siteOrigin: () => "https://example.test",
 }));
 vi.mock("server-only", () => ({}));
@@ -40,6 +40,10 @@ describe("the account layout", () => {
     expect(h).toContain('aria-current="page"');
     expect(h).toContain("page body");
     for (const gone of ["Visibility", "Contact requests", "Profile hidden", "Launch B"]) expect(h).not.toContain(gone);
+  });
+  it("uses the name given at sign-up until the profile has one", async () => {
+    reads.profile = ok({ profile: null });
+    expect(await render()).toContain("Sign Up Name");
   });
   it("leaves a count out when its read failed, and keeps the page", async () => {
     reads.saved = { ok: false, status: 429, code: "TOO_MANY_REQUESTS" };

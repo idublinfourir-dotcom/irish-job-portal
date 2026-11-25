@@ -15,7 +15,7 @@ vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/ser
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace() {}, refresh() {}, push() {} }), usePathname: () => "/account", redirect: (to: string) => { throw new Error(`NEXT_REDIRECT ${to}`); } }));
 
 // Measured 25 Nov 2026 (see the printed line): the layout's five reads and the session are the `layout` figure (a page render adds its own reads on top, the session included in each).
-const BUDGET = { statements: { layout: 16, home: 23, saved: 4, alerts: 7, alertEdit: 10, applications: 13, notices: 4 }, medianMs: 60 };
+const BUDGET = { statements: { layout: 18, home: 24, saved: 4, alerts: 7, alertEdit: 10, applications: 13, notices: 4 }, medianMs: 60 };
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
 const BASE = "http://localhost:3000";
