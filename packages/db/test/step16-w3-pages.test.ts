@@ -287,6 +287,25 @@ describe("P10: /occupations/<name-slug>", () => {
     expect(h).not.toContain("Salary minimums for this occupation");
     for (const slug of [occupationSlug("1115")!, "no-such-occupation", "", "NURSES", "x'--", "a".repeat(400), "../etc", "%00", "nurses/../x"]) expect(await digestOf(render("occupation", { params: { slug } })), slug.slice(0, 30)).toMatch(NOT_FOUND);
   });
+  it("a code has a page exactly when the picker says it is on a list: what the links go by (OCC1)", async () => {
+    const { getOccupationPage, getRules, occupationPicker } = await import("../src");
+    const rules = await getRules(su);
+    const wrong: string[] = [];
+    for (const o of (await occupationPicker(su)).occupations) {
+      const has = (await getOccupationPage(su, o.code, { rules, limit: 1 })) !== null;
+      if (has === (o.listStatus === "other")) wrong.push(`${o.code} ${o.listStatus}`);
+    }
+    expect(wrong).toEqual([]);
+  });
+  it("every occupation link of the home page opens, and the one on neither list goes to its jobs (OCC1)", async () => {
+    const path: string = "../../../apps/candidate/app/page"; // held in a variable, like PAGES: this package has no JSX setting
+    const home = ((await import(path)) as { default: PageFn }).default;
+    const h = renderToStaticMarkup(await as(undefined, () => home({ searchParams: Promise.resolve({}) })));
+    const slugs = [...h.matchAll(/href="\/occupations\/([^"]+)"/g)].map((x) => x[1]!);
+    expect(slugs.length).toBeGreaterThan(0);
+    for (const slug of slugs) expect((await render("occupation", { params: { slug } })).match(/<h1\b/g), slug).toHaveLength(1);
+    expect(h).toContain('href="/jobs?occupationCode=6145"');
+  });
   it("the visitor sees at most 6 jobs and the sign-in box; metadata is inside the limits", async () => {
     const { occupationSlug } = await import("../../../apps/candidate/lib/occupations");
     const slug = occupationSlug("2231")!;

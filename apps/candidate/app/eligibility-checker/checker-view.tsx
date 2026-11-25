@@ -6,10 +6,8 @@ import { wrap } from "../_content/head";
 import { shortDate } from "../_home/format";
 import { euro } from "../jobs/format";
 import { Join } from "../jobs/parts";
-import { occupationPath, staticPath } from "../../lib/paths";
-import { occupationSlug } from "../../lib/occupations";
+import { occupationJobsPath, occupationPagePath, staticPath } from "../../lib/paths";
 import { optionText, type Occupation, type Parsed } from "./input";
-import { searchHref } from "../occupations/occupation-view";
 
 export type Registration = { status: "required" | "may_need" | "not_open"; body: { id: string; name: string; url: string }; line: string; steps: readonly string[]; degreeNote?: string } | null;
 export type Answer = { qualifies: boolean; reason: string; minimum: number | null; why: string; standingLine: string; rulesCheckedOn: string; registration: Registration };
@@ -65,7 +63,7 @@ function Registration({ r }: { r: NonNullable<Registration> }) {
   );
 }
 
-function Result({ p, a, failed }: { p: Parsed; a: Answer | null; failed: { status: number } | null }) {
+function Result({ p, occupations, a, failed }: { p: Parsed; occupations: Occupation[] | null; a: Answer | null; failed: { status: number } | null }) {
   if (failed)
     return failed.status === 429
       ? <Notice kind="warning" title="Too many checks">Please wait a little and try again.</Notice>
@@ -80,7 +78,8 @@ function Result({ p, a, failed }: { p: Parsed; a: Answer | null; failed: { statu
         <p className="text-white/85">{p.submitted ? "We need every answer before we can check." : "Answer the questions and press Check eligibility. Nothing you enter is saved."}</p>
       </section>
     );
-  const slug = p.code ? occupationSlug(p.code) : null;
+  const occ = occupations?.find((o) => o.code === p.code);
+  const page = occ && occupationPagePath(occ);
   return (
     <div className="flex flex-col gap-4">
       <section aria-labelledby="result-h" data-result={a.qualifies ? "qualifies" : "no"} className="flex flex-col gap-4 rounded-bento bg-ink p-6 text-white sm:p-8">
@@ -97,8 +96,8 @@ function Result({ p, a, failed }: { p: Parsed; a: Answer | null; failed: { statu
       )}
       {a.registration && <Registration r={a.registration} />}
       <div className="flex flex-wrap gap-3">
-        {p.code && <Button href={searchHref(p.code)} variant="outline" size="md">See jobs for this occupation</Button>}
-        {slug && <Button href={occupationPath(slug)} variant="outline" size="md">Read about this occupation</Button>}
+        {p.code && <Button href={occupationJobsPath(p.code)} variant="outline" size="md">See jobs for this occupation</Button>}
+        {page && <Button href={page} variant="outline" size="md">Read about this occupation</Button>}
       </div>
       <p className="text-small text-muted">{a.standingLine}</p>
     </div>
@@ -115,7 +114,7 @@ export function CheckerView({ parsed, occupations, answer, failed, signedIn }: C
         <div className="mt-8 grid items-start gap-5 lg:grid-cols-2">
           <Form parsed={parsed} occupations={occupations} />
           <div className="flex flex-col gap-4">
-            <Result p={parsed} a={answer} failed={failed} />
+            <Result p={parsed} occupations={occupations} a={answer} failed={failed} />
             <p className="text-small text-muted">The employer must also be registered and trading in Ireland, and meet the 50:50 staff rule. That is the employer&rsquo;s responsibility.</p>
           </div>
         </div>

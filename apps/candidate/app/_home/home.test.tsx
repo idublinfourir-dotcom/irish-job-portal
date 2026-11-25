@@ -87,6 +87,12 @@ describe("home page, normal state", () => {
     expect(h).toContain("On the Critical Skills list");
     expect(h).toContain("Only some roles qualify");
   });
+  it("links an occupation on neither list to its jobs: it has no page (OCC1)", () => {
+    const care = html(<HomeView data={full({ occupations: { ok: true, data: [occ("6145", "Carers", "other")] } })} />);
+    expect(care).toContain('href="/jobs?occupationCode=6145"');
+    expect(care).toContain("General Employment permit route");
+    expect(care).not.toContain("/occupations/");
+  });
   it("words the fees by decision: no Critical Skills fee clause, services paid by the employer or agency", () => {
     expect(h).not.toMatch(/may pay the fee|can be paid by you|you can pay/);
     expect(h).toContain("paid by the employer or agency");

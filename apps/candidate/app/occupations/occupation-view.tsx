@@ -6,6 +6,7 @@ import { A, Breadcrumb, Button, Icon, Pill } from "@portal/ui";
 import { Body } from "../_content/body";
 import { SectionTitle, wrap } from "../_content/head";
 import { SignInMore } from "../_content/limit";
+import { occupationJobsPath } from "../../lib/paths";
 import { shortDate } from "../_home/format";
 import type { CardJob } from "../jobs/card";
 import { contractText, euro } from "../jobs/format";
@@ -30,7 +31,6 @@ export type OccupationProps = { occupation: OccupationData; name?: string | null
 export const titleOf = (o: Pick<OccupationData, "entries">, name?: string | null) => name || (o.entries.find((e) => e.list === "critical-skills") ?? o.entries[0])?.title || "";
 /** The title of the page: "<name> visa sponsorship jobs in Ireland" (frame C14). */
 export const headingOf = (title: string) => `${title} visa sponsorship jobs in Ireland`;
-export const searchHref = (code: string) => `/jobs?occupationCode=${encodeURIComponent(code)}`;
 const countText = (n: { n: number; more: boolean } | null, fallback: number) => (n ? (n.more ? `${n.n}+` : String(n.n)) : String(fallback));
 
 function Hero({ o, title, signedIn }: { o: OccupationData; title: string; signedIn: boolean }) {
@@ -49,8 +49,8 @@ function Hero({ o, title, signedIn }: { o: OccupationData; title: string; signed
             {listed ? `This occupation is on the Critical Skills Occupations List. These are the rules, and the jobs that pass them today.` : "This occupation is on the Ineligible Occupations List, so we show no salary minimum for it. Below are the live jobs we list for it."}
           </p>
           <div className="flex flex-wrap items-center gap-3">
-            <Button href={searchHref(o.code)} variant="sun" size="lg">See {n} {n === "1" ? "job" : "jobs"} <Icon name="arrow" size={16} /></Button>
-            <Button href={`${searchHref(o.code)}#alert`} size="lg" className="bg-transparent text-white hover:bg-ink-hover"><Icon name="bell" size={18} />{signedIn ? "Set a job alert" : "Sign in to set a job alert"}</Button>
+            <Button href={occupationJobsPath(o.code)} variant="sun" size="lg">See {n} {n === "1" ? "job" : "jobs"} <Icon name="arrow" size={16} /></Button>
+            <Button href={`${occupationJobsPath(o.code)}#alert`} size="lg" className="bg-transparent text-white hover:bg-ink-hover"><Icon name="bell" size={18} />{signedIn ? "Set a job alert" : "Sign in to set a job alert"}</Button>
           </div>
         </div>
       </section>
@@ -177,7 +177,7 @@ export function OccupationView({ occupation: o, name, now, path, signedIn, saved
         <section aria-labelledby="jobs-h" className="mt-14 sm:mt-16">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <SectionTitle id="jobs-h" className="text-[1.75rem]! sm:text-[2rem]!">Live jobs in this occupation</SectionTitle>
-            <A href={searchHref(o.code)} className="inline-flex min-h-11 items-center gap-2 font-semibold text-deep-green underline-offset-2 hover:underline">All jobs in this occupation <Icon name="arrow" size={16} /></A>
+            <A href={occupationJobsPath(o.code)} className="inline-flex min-h-11 items-center gap-2 font-semibold text-deep-green underline-offset-2 hover:underline">All jobs in this occupation <Icon name="arrow" size={16} /></A>
           </div>
           {shown.length === 0 && <p className="mt-6 rounded-bento border border-dashed border-line bg-sand p-6 text-muted">There are no live jobs for this occupation right now. A job appears here when it passes our checks.</p>}
           {shown.length > 0 && <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">{shown.map((j) => <OccupationTile key={j.id} job={j} now={now} signedIn={signedIn} saved={savedIds.includes(j.id)} path={path} />)}</div>}

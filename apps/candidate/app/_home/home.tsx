@@ -5,7 +5,7 @@
 import type { ReactNode } from "react";
 import type { JobCard } from "@portal/db";
 import { A, Button, CriticalSkillsBadge, EmptyState, Icon, Notice, Pill, SITE_WORDMARK, SponsorBadge, type IconName } from "@portal/ui";
-import { companyPath, guidePath, jobPath, occupationPath, staticPath, updatePath } from "../../lib/paths";
+import { companyPath, guidePath, jobPath, occupationJobsPath, occupationPagePath, staticPath, updatePath } from "../../lib/paths";
 import { COUNTIES } from "./counties";
 import { DETE_FIGURES as DETE, NUM, pct, topFiveShare } from "./dete";
 import { eur, jobsIn, sectorLabel, shortDate } from "./format";
@@ -570,7 +570,7 @@ function Occupations({ o }: { o: Sec<Occupation[]> }) {
             const f = FEATURED.find((y) => y.code === x.code)!;
             return (
               <li key={x.code} className="w-64 shrink-0 snap-start">
-                <A href={occupationPath(x.slug)} className={`relative flex h-full flex-col items-center rounded-bento p-3 pt-6 text-center text-white no-underline ${OCC_FILL[i % OCC_FILL.length]}`}>
+                <A href={occupationPagePath(x) ?? occupationJobsPath(x.code)} className={`relative flex h-full flex-col items-center rounded-bento p-3 pt-6 text-center text-white no-underline ${OCC_FILL[i % OCC_FILL.length]}`}>
                   <span className="rounded-pill bg-white/15 px-3 py-0.5 text-small">{f.sector}</span>
                   <span className="mt-3 line-clamp-2 min-h-[2.6em] px-2 font-heading text-lg font-semibold leading-tight">{x.title}</span>
                   <span className="mt-1 text-small text-white/80">{LIST_LINE[x.listStatus] ?? "See the permit rules"}</span>

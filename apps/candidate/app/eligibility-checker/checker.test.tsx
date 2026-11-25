@@ -7,7 +7,10 @@ import { codeOf, optionText, parseChecker, type Occupation } from "./input";
 
 vi.mock("server-only", () => ({}));
 
-const list: Occupation[] = [{ code: "2231", title: "Nurses" }, { code: "5434", title: "Chefs" }];
+const list: Occupation[] = [
+  { code: "2231", title: "Nurses", slug: "nurses", listStatus: "critical-skills" }, { code: "5434", title: "Chefs", slug: "chefs", listStatus: "ineligible" },
+  { code: "6145", title: "Carers", slug: "carers", listStatus: "other" },
+];
 const ok = { occupation: "Nurses (2231)", pay: "42000", degree: "yes" };
 
 describe("what the page takes from its address", () => {
@@ -90,6 +93,15 @@ describe("the page", () => {
     expect(h).toContain("/jobs?occupationCode=2231");
     expect(h).toContain("/occupations/nurses");
     expect(view({ parsed: p, answer: answer({ minimum: 99999 }) })).toContain("€99,999");
+  });
+  it("offers to read about an occupation only when it has a page (OCC1); its jobs always", () => {
+    const of = (code: string, occupations: Occupation[] | null = list) => view({ parsed: parseChecker({ ...ok, occupation: code }, list), occupations, answer: answer() });
+    expect(of("5434")).toContain('href="/occupations/chefs"');
+    for (const h of [of("6145"), of("2231", null)]) { // on neither list; the picker list could not be read
+      expect(h).not.toContain("Read about this occupation");
+      expect(h).not.toContain("/occupations/");
+      expect(h).toContain("See jobs for this occupation");
+    }
   });
   it("words every reason that is not a pass, with the read's own sentence", () => {
     const p = parseChecker(ok, list);

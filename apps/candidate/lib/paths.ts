@@ -10,6 +10,10 @@ export const jobIdOf = (segment: string) => /^(?:.*-)?([0-9]{1,18})$/.exec(segme
 export const companyPath = (companySlug: string) => `/companies/${encodeURIComponent(companySlug)}`;
 /** By name slug (`occupationSlug` in lib/occupations.ts gives it from a code; `occupationCodeOfSlug` goes back). */
 export const occupationPath = (nameSlug: string) => `/occupations/${encodeURIComponent(nameSlug)}`;
+/** The page of an occupation the picker read gave, or null: a code on neither list ("other") has no page. Link to one only through this. */
+export const occupationPagePath = (o: { slug: string; listStatus: string }) => (o.listStatus === "other" ? null : occupationPath(o.slug));
+/** The job search for one occupation code. */
+export const occupationJobsPath = (code: string) => `/jobs?occupationCode=${encodeURIComponent(code)}`;
 export const guidePath = (guideSlug: string) => `/guides/${encodeURIComponent(guideSlug)}`;
 export const updatePath = (updateSlug: string) => `/updates/${encodeURIComponent(updateSlug)}`;
 export const helpPath = (helpSlug: string) => `/help/${encodeURIComponent(helpSlug)}`;

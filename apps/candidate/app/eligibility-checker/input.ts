@@ -1,7 +1,7 @@
 // The checker's input (frame C18, "as built", decision #287 L25): what the page takes from its address, checked before any read, and the query the checker read takes. Pure.
 // The form is a plain GET form, so a result has an address that can be shared or bookmarked, and nothing is stored. Seven fields at most: occupation, pay, degree, degree month,
 // contract length, weekly hours, job title. A bad answer is worded next to its field and no read is made.
-export type Occupation = { code: string; title: string };
+export type Occupation = { code: string; title: string; slug: string; listStatus: string };
 export type Raw = Record<string, string | string[] | undefined>;
 export const FIELDS = ["occupation", "pay", "degree", "degreeMonth", "months", "hours", "title"] as const;
 export type Field = (typeof FIELDS)[number];
