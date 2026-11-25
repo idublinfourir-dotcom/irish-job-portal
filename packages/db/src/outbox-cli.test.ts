@@ -40,11 +40,11 @@ describe("notice emails", () => {
     expect(queued.size).toBeGreaterThanOrEqual(25);
     expect([...queued].filter((t) => !NOTICE_TEMPLATES.includes(t))).toEqual([]);
   });
-  it("the data request confirm email (0050): one button to the site's /api/data-request with the token, the link in the text, no dash", () => {
+  it("the data request confirm email (0050): one button to the site's /data-request page with the token, the link in the text, no dash", () => {
     const token = "A".repeat(43), m = confirmEmail("https://www.example.test", token);
     expect(m.subject).toBe("Please confirm your data request");
-    expect([...m.html.matchAll(/href="([^"]+)"/g)].map((x) => x[1])).toEqual([`https://www.example.test/api/data-request?token=${token}`]);
-    expect(m.text).toContain(`https://www.example.test/api/data-request?token=${token}`);
+    expect([...m.html.matchAll(/href="([^"]+)"/g)].map((x) => x[1])).toEqual([`https://www.example.test/data-request?token=${token}`]);
+    expect(m.text).toContain(`https://www.example.test/data-request?token=${token}`);
     for (const part of [m.subject, m.text, m.html]) expect(part).not.toMatch(/PLACEHOLDER|[\u2013\u2014]/);
   });
   it("each has its own subject, a sentence, a sign-in button to the given site, and no placeholder, template name or dash", () => {

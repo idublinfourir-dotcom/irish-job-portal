@@ -118,7 +118,7 @@ export function confirmEmail(site: string, token: string): Email {
     heading: subject,
     paragraphs: ["We got a request about the data in your account. Open the link to see it and confirm it. The link works once, for 7 days.",
       "If you did not ask for this, you can ignore this email and nothing will happen."],
-    button: { label: "Open the request", url: `${site}/api/data-request?token=${token}` },
+    button: { label: "Open the request", url: `${site}/data-request?token=${token}` },
     footer: FOOTER,
   });
 }

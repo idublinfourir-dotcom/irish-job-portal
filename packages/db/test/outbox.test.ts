@@ -244,8 +244,8 @@ describe("job alert email", () => {
     expect(m.text).toContain(`occupation ${socTitle("2134")} (2134), county Cork (daily)`);
     expect(m.text).toContain(`- Cook 2, Fake Employer, Cork, €40,000 to €50,000\n  ${SITE}/jobs/${j2}`);
     expect(m.text.indexOf(`/jobs/${j2}`)).toBeLessThan(m.text.indexOf(`/jobs/${j1}`)); // the row's order (newest first) is kept
-    expect(m.text).toContain(`${SITE}/api/alerts/unsubscribe?token=${t}&scope=one`);
-    expect(m.text).toContain(`${SITE}/api/alerts/unsubscribe?token=${t}&scope=all`);
+    expect(m.text).toContain(`${SITE}/unsubscribe?token=${t}&scope=one`);
+    expect(m.text).toContain(`${SITE}/unsubscribe?token=${t}&scope=all`);
     expect(m.headers).toEqual({ "List-Unsubscribe": `<${SITE}/api/alerts/unsubscribe?token=${t}&scope=all>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" });
     expect(await row(id)).toMatchObject({ status: "sent", attempts: 1 });
   });
