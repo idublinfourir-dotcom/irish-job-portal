@@ -24,7 +24,7 @@ export function toWire(v: unknown, key = ""): unknown {
 }
 
 /** The lists that page by id alone; the name goes into the token, so one list's token is refused by another. */
-export type IdList = "cases" | "owner_reassign" | "manual_jobs" | "services_cases";
+export type IdList = "cases" | "owner_reassign" | "manual_jobs" | "services_cases" | "rules_history" | "bans";
 /** The paging token of a list ordered by id alone: `{ l, i }` as base64url, like the `{ t, i }` tokens of the time-ordered lists. */
 export const encodeIdCursor = (list: IdList, id: string) => Buffer.from(JSON.stringify({ l: list, i: id })).toString("base64url");
 

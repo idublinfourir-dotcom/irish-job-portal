@@ -12,6 +12,7 @@ export * from "./job-queues";
 export * from "./account-review";
 export * from "./notices";
 export * from "./trust-safety";
+export * from "./trust-board";
 export * from "./bot-check";
 export * from "./report";
 export * from "./contact";

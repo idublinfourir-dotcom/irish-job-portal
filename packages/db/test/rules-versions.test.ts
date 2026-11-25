@@ -217,8 +217,10 @@ describe("the HSE switch (#261)", () => {
     await ok(decide("ad1", "confirm", p.requestId));
     expect(await verdicts()).toMatchObject({ entry: false, portal: { ok: false, code: "PAY_REQUIRED" }, chain: { bucket: "no_salary", tier: 0 } });
     expect(Object.keys(await pay()).length).toBe(Object.keys(off).length); // the Section 38 names stay
-    const back = await ok(propose("ed1", "public_pay_employers", today, { ...off, [R.HSE_ENTRY]: hse }));
-    expect(back.change).toEqual({ added: { [R.HSE_ENTRY]: hse }, removed: {}, changed: {} });
+    await no(propose("ed1", "public_pay_employers", today, { ...off, [R.HSE_ENTRY]: hse }), 400, "bad_data"); // B66: a new entry needs its body type and evidence
+    const proved = { ...hse, bodyType: "public_body", evidence: { kind: "dete_rule_text", link: "https://example.test/dete", file: null } };
+    const back = await ok(propose("ed1", "public_pay_employers", today, { ...off, [R.HSE_ENTRY]: proved }));
+    expect(back.change).toEqual({ added: { [R.HSE_ENTRY]: { ...proved, addedOn: today, addedBy: staff.ed1 } }, removed: {}, changed: {} });
     await ok(decide("ad2", "confirm", back.requestId));
     expect(await verdicts()).toMatchObject({ entry: true, portal: { ok: true, passRoute: "public_pay" }, chain: { bucket: "public_hse", tier: 1 } });
     // a staff-confirmed version now exists: migration 0049 refuses rather than change data a request confirmed
@@ -275,7 +277,7 @@ describe("propose, confirm, refuse", () => {
     await ok(propose("ed1", "big_company_names", addDays(today, 10), [...names, { name: "fake newco", test: "250_staff", link: "https://example.test/a", readOn: today, reviewOn: addDays(today, 365) }]));
   });
   it("a proposal whose date has passed cannot be confirmed", async () => {
-    const { requestId } = await ok(propose("ed1", "public_pay_employers", today, { ...(await loadRules(su, today)).publicPayEmployers, "fake public body": { tier: 1 } }));
+    const { requestId } = await ok(propose("ed1", "public_pay_employers", today, { ...(await one("select data from rules_version where kind = 'public_pay_employers' order by id desc limit 1")).data, "fake public body": { tier: 2, on: false } }));
     await su.query("update approval_request set change = jsonb_set(change, '{effective_from}', to_jsonb((current_date - 1)::text)) where id = $1", [requestId]);
     await no(decide("ad1", "confirm", requestId), 409, "date_passed");
   });

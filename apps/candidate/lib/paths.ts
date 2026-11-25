@@ -37,6 +37,17 @@ export const permitServicesPath = () => "/permit-services";
 /** The request form; `jobId` (digits only) is the job the request is about. */
 export const permitRequestPath = (jobId?: string | null) => (jobId && /^[0-9]{1,18}$/.test(jobId) ? `/permit-services/request?job=${jobId}` : "/permit-services/request");
 export const accountPath = () => "/account";
-/** Where a sign-in, a verified email or a reset goes when no return address was given. P17 changes this to /account (the account page does not exist yet). */
-export const afterSignInPath = () => "/jobs";
+/** Where a sign-in, a verified email or a reset goes when no return address was given. */
+export const afterSignInPath = () => "/account";
+/** The account pages (P17); the header, the bell and the emails link to these. */
+export const applicationsPath = () => "/account/applications";
+export const savedPath = () => "/account/saved";
+export const alertsPath = () => "/account/alerts";
+export const noticesPath = () => "/account/notices";
+export const profilePath = () => "/account/profile";
+export const settingsPath = () => "/account/settings";
+export const casesPath = () => "/account/cases";
 export const casePath = (caseId: string) => `/account/cases/${encodeURIComponent(caseId)}`;
+/** Delete account (frame A10) and the page a deleted person lands on (outside /account: the session is gone). */
+export const settingsDeletePath = () => "/account/settings/delete";
+export const goodbyePath = () => "/account-deleted";

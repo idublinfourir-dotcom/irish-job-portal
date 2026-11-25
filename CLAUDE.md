@@ -4,7 +4,7 @@
 
 ## Project
 
-Job portal for Irish work permit jobs: a candidate site, an employer portal and an admin, deployed separately from this one repo. The database is built by migrations, and the job rules, the occupation matcher (rules and AI), the 98% gate, the job-board adapters and the fetcher that saves found jobs are in `packages/`. There are no pages yet. Run `npm run check` before calling any change finished.
+Job portal for Irish work permit jobs: a candidate site, an employer portal and an admin, deployed separately from this one repo. The database is built by migrations, and the job rules, the occupation matcher (rules and AI), the 98% gate, the job-board adapters and the fetcher that saves found jobs are in `packages/`. The pages are in `apps/*/app`. Run `npm run check` before calling any change finished.
 
 Decisions and evidence live outside this repo, in `~/Brainstorm about Job Portal/`. Read them before changing the stack or a product rule:
 

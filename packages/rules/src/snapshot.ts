@@ -88,7 +88,7 @@ export function checkSnapshot(s: RulesSnapshot): RulesSnapshot {
 }
 
 /** The public pay candidates the chain reads (`publicPayTier`), from the snapshot. */
-export const publicPayCandidatesOf = (s: RulesSnapshot): PublicPayCandidates =>
+export const publicPayCandidatesOf = (s: Pick<RulesSnapshot, "publicPayEmployers">): PublicPayCandidates =>
   new Map(Object.entries(s.publicPayEmployers).map(([k, v]) => [k, v.tier]));
 
 /** What the rules chain takes from the snapshot (ChainData without the DETE names and the matcher). */

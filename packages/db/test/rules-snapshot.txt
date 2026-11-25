@@ -177,6 +177,7 @@ check strike_check4 on strike: CHECK (((stage <> ALL (ARRAY['upheld'::text, 'ove
 check strike_check5 on strike: CHECK ((appeal_decided_by_staff_user_id <> appeal_entered_by_staff_user_id))
 check strike_check6 on strike: CHECK ((decided_by_staff_user_id <> reply_entered_by_staff_user_id))
 check strike_level_check on strike: CHECK (((level >= 1) AND (level <= 3)))
+check strike_note_body_check on strike_note: CHECK (((length(body) >= 1) AND (length(body) <= 5000)))
 check strike_outcome_check on strike: CHECK ((outcome = ANY (ARRAY['cleared'::text, 'strike'::text, 'ban'::text])))
 check strike_reason_code_check on strike: CHECK ((reason_code = ANY (ARRAY['false_sponsorship'::text, 'false_pay_floor'::text, 'asks_for_money'::text, 'fake_company'::text, 'fake_job'::text])))
 check strike_stage_check on strike: CHECK ((stage = ANY (ARRAY['case_open'::text, 'employer_notified'::text, 'reply_window'::text, 'decided'::text, 'applied'::text, 'appealed'::text, 'upheld'::text, 'overturned'::text])))
@@ -263,6 +264,7 @@ rights app_admin on staff_session: table[delete,insert,select,update] columns[]
 rights app_admin on staff_user: table[delete,insert,select,update] columns[]
 rights app_admin on staff_verification: table[delete,insert,select,update] columns[]
 rights app_admin on strike: table[select] columns[insert(appeal_due_at,appeal_received_at,appeal_text,approval_request_id,case_kind,employer_reply,job_id,level,notice_summary,organisation_id,outcome,pay_floor_id,reason_code,reply_due_at,reply_received_at,report_id,stage) update(appeal_due_at,appeal_received_at,appeal_text,approval_request_id,case_kind,employer_reply,evidence_storage_key,job_id,level,notice_summary,notified_at,organisation_id,outcome,pay_floor_id,reason_code,reply_due_at,reply_received_at,report_id,stage)]
+rights app_admin on strike_note: table[insert,select] columns[]
 rights app_admin on tracker_entry: table[] columns[select(origin)]
 rights app_admin on wrc_licence: table[delete,insert,select,update] columns[]
 rights app_candidate on alert: table[delete,insert,select,update] columns[]
@@ -344,6 +346,7 @@ rights app_candidate on staff_session: table[] columns[]
 rights app_candidate on staff_user: table[] columns[]
 rights app_candidate on staff_verification: table[] columns[]
 rights app_candidate on strike: table[] columns[]
+rights app_candidate on strike_note: table[] columns[]
 rights app_candidate on tracker_entry: table[delete,insert,select,update] columns[]
 rights app_candidate on wrc_licence: table[] columns[]
 rights app_fetcher on alert: table[] columns[]
@@ -425,6 +428,7 @@ rights app_fetcher on staff_session: table[] columns[]
 rights app_fetcher on staff_user: table[] columns[]
 rights app_fetcher on staff_verification: table[] columns[]
 rights app_fetcher on strike: table[] columns[]
+rights app_fetcher on strike_note: table[] columns[]
 rights app_fetcher on tracker_entry: table[] columns[]
 rights app_fetcher on wrc_licence: table[] columns[]
 rights app_portal on alert: table[] columns[]
@@ -506,6 +510,7 @@ rights app_portal on staff_session: table[] columns[]
 rights app_portal on staff_user: table[] columns[]
 rights app_portal on staff_verification: table[] columns[]
 rights app_portal on strike: table[] columns[]
+rights app_portal on strike_note: table[] columns[]
 rights app_portal on tracker_entry: table[] columns[]
 rights app_portal on wrc_licence: table[] columns[]
 trigger alert_dormant_guard on alert: CREATE TRIGGER alert_dormant_guard BEFORE INSERT OR UPDATE OF pause_reason ON public.alert FOR EACH ROW WHEN ((CURRENT_USER = ANY (ARRAY['app_candidate'::name, 'app_portal'::name, 'app_admin'::name, 'app_fetcher'::name]))) EXECUTE FUNCTION private.alert_dormant_guard()

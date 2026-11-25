@@ -25,7 +25,7 @@ const Q = "('scam_flag','post_strike_job_review','agency_client_check','licence_
 // Only employer and agency jobs: the fetcher may write scam_flag items on fetched jobs, which this queue never releases.
 const JOINS = "from review_item r join job j on j.id = r.job_id join organisation o on o.id = j.organisation_id";
 const COLS =
-  "r.id, r.queue, r.status, r.claimed_by_staff_user_id, r.reason, r.created_at::text as created_text, j.id as job_id, j.status as job_status, j.source, j.title, " +
+  "r.id, r.queue, r.status, r.claimed_by_staff_user_id, r.reason, r.created_at, r.created_at::text as created_text, j.id as job_id, j.status as job_status, j.source, j.title, " +
   "j.employer_name, j.county, j.occupation_code, j.permit_type, j.salary_low, j.salary_high, j.pay_grade, j.badge, j.closes_at, " +
   "j.permit_employer_name as client_name, j.permit_employer_check as client_check, o.id as organisation_id, o.display_name as company, o.status as company_status, " +
   "o.restricted_until > now() as restricted";
@@ -36,13 +36,13 @@ export const JOBQ_AFTER = `select ${COLS} ${JOINS} where ${OPEN} and (r.created_
 export const JOBQ_ITEM = `select ${COLS}, t.advert_text ${JOINS} left join job_text t on t.job_id = j.id where r.id = $1::bigint and r.queue in ${Q} and j.source in ('employer','agency')`;
 
 type Row = {
-  id: string; queue: JobQueue; status: string; claimed_by_staff_user_id: string | null; reason: string | null; created_text: string; job_id: string; job_status: string;
+  id: string; queue: JobQueue; status: string; claimed_by_staff_user_id: string | null; reason: string | null; created_at: Date; created_text: string; job_id: string; job_status: string;
   source: string; title: string; employer_name: string; county: string | null; occupation_code: string | null; permit_type: string; salary_low: number | null;
   salary_high: number | null; pay_grade: string | null; badge: string | null; closes_at: Date; client_name: string | null; client_check: string;
   organisation_id: string; company: string; company_status: string; restricted: boolean | null;
 };
 export type JobQueueItem = {
-  id: string; queue: JobQueue; status: string; claimedBy: string | null; reason: string | null; jobId: string; jobStatus: string; source: string; title: string;
+  id: string; queue: JobQueue; status: string; claimedBy: string | null; reason: string | null; /** When the item was opened: how long the job has been held. */ createdAt: Date; jobId: string; jobStatus: string; source: string; title: string;
   employerName: string; county: string | null; occupationCode: string | null; permitType: string; salaryLow: number | null; salaryHigh: number | null;
   payGrade: string | null; badge: string | null; closesAt: Date; organisationId: string; company: string; companyStatus: string;
   /** The company is under a strike 2 restriction now. */
@@ -51,7 +51,7 @@ export type JobQueueItem = {
   clientName: string | null; clientCheck: string;
 };
 const item = (r: Row): JobQueueItem => ({
-  id: r.id, queue: r.queue, status: r.status, claimedBy: r.claimed_by_staff_user_id, reason: r.reason, jobId: r.job_id, jobStatus: r.job_status, source: r.source,
+  id: r.id, queue: r.queue, status: r.status, claimedBy: r.claimed_by_staff_user_id, reason: r.reason, createdAt: r.created_at, jobId: r.job_id, jobStatus: r.job_status, source: r.source,
   title: r.title, employerName: r.employer_name, county: r.county, occupationCode: r.occupation_code, permitType: r.permit_type, salaryLow: r.salary_low,
   salaryHigh: r.salary_high, payGrade: r.pay_grade, badge: r.badge, closesAt: r.closes_at, organisationId: r.organisation_id, company: r.company,
   companyStatus: r.company_status, restricted: r.restricted === true, clientName: r.client_name, clientCheck: r.client_check,

@@ -62,7 +62,7 @@ export function Detail({ item, mine, listHref }: { item: ReviewItem; mine: boole
         <h2 className="text-[22px] [overflow-wrap:anywhere]">{item.displayName}</h2>
         <Pill tone="peach" className="min-h-[30px]">{typeLabel(item)}</Pill>
       </header>
-      <p className="text-small text-muted [overflow-wrap:anywhere]">{signedUpBy(item)} · {when(item.createdAt)}</p>
+      <p className="text-small text-muted [overflow-wrap:anywhere]">{signedUpBy(item)} · {when(item.createdAt)} · <A href={`/companies/${item.organisationId}`} className="font-semibold text-deep-green underline">Company page</A></p>
       {item.organisationStatus === "needs_info" && item.status !== "done" && <Notice kind="info">Waiting for the company&apos;s answer to your question.</Notice>}
       {item.answer && (
         <Notice kind="success" title={`The company answered${item.answeredAt ? ` on ${when(item.answeredAt)}` : ""}`}>
@@ -88,7 +88,7 @@ export function AccountReviews({ tab, items, counts, selected, missingId, meId, 
       </header>
       <CountTabs label="Account review tabs" items={TABS.map(([k, label]) => ({ label, count: counts[COUNT[k]], href: href(k), active: k === tab }))} />
       {missingId && <Notice kind="warning">That item is not an account review. Pick one from the list.</Notice>}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_26rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_26rem]">
         <List tab={tab} items={items} selected={selected?.id} now={now} next={next} prev={prev} />
         {selected && <Detail item={selected} mine={selected.claimedBy === meId} listHref={href(tab)} />}
       </div>

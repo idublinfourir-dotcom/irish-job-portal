@@ -3,6 +3,7 @@
 // The "verify your email" variant cannot be reached here (an unverified account cannot sign in); the request form shows it when the route says NOT_VERIFIED.
 import type { ReactNode } from "react";
 import { A, Breadcrumb, Button, Icon, Notice, Pill } from "@portal/ui";
+import { permitFeeLabel } from "../jobs/format";
 import { Dot, Hl, Join, wrap } from "../jobs/parts";
 
 export type Variant = "visitor" | "no-case" | "open-case";
@@ -34,7 +35,7 @@ const FREE = <Pill tone="green">Free</Pill>;
 const PAID = <Pill tone="lilac">Paid service</Pill>;
 const ROWS = {
   employers: [["First consultation", FREE], ["EPOS set-up", PAID], ["Application handling", PAID], ["Labour Market Needs Test guidance", PAID], ["Renewals", PAID]],
-  candidates: [["Eligibility check", FREE], ["Document checklist", FREE], ["First consultation", FREE], ["Employment permit application or renewal", <Pill key="e" tone="lilac">Paid by your employer</Pill>]],
+  candidates: [["Eligibility check", FREE], ["Document checklist", FREE], ["First consultation", FREE], ["Our help with the application or renewal", <Pill key="e" tone="lilac">Paid by your employer</Pill>], ["Critical Skills permit fee (DETE)", <Pill key="c" tone="peach">{permitFeeLabel("critical_skills")}</Pill>], ["General permit fee (DETE)", <Pill key="g" tone="peach">{permitFeeLabel("general")}</Pill>]],
 } as const satisfies Record<string, readonly (readonly [string, ReactNode])[]>;
 const STEPS = [
   ["Received", "We record your request at once. We aim to come back to you within 1 working day."],
@@ -45,7 +46,7 @@ const STEPS = [
 const PROMISES = [
   ["mail", "Updates by email", "Documents needed, the decision and the close of your case come by email. Every change also shows in your case tracker."],
   ["users", "Our own team", "The same team handles your case from request to decision."],
-  ["file", "Uploaded copies only", "We work from the copies you upload. We keep them for 30 days after your case closes, then delete them."],
+  ["file", "Copies only, never originals", "We work from the copies you upload. We keep them for 30 days after your case closes, then delete them."],
 ] as const;
 
 function List({ title, rows, dark }: { title: string; rows: readonly (readonly [string, ReactNode])[]; dark?: boolean }) {

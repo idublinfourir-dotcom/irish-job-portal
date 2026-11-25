@@ -3,17 +3,19 @@ import type { ReactNode } from "react";
 import { cx } from "./cx";
 import { Icon } from "./icons";
 
-export type TabItem = { label: string; href?: string; active?: boolean };
+/** `count`: shown after the label in a small pill (frames E08, D02). */
+export type TabItem = { label: string; href?: string; active?: boolean; count?: number | string };
 
 /** Tabs: links when `href` is given, otherwise buttons for the page to wire. The active one is selected. */
 export function Tabs({ items, label }: { items: TabItem[]; label: string }) {
   return (
     <div role="tablist" aria-label={label} className="flex gap-1 overflow-x-auto border-b border-line">
       {items.map((t) => {
-        const cls = cx("min-h-11 shrink-0 border-b-4 px-4 font-semibold", t.active ? "border-deep-green text-ink" : "border-transparent text-muted hover:text-ink");
+        const cls = cx("inline-flex min-h-11 shrink-0 items-center border-b-4 px-4 font-semibold", t.active ? "border-deep-green text-ink" : "border-transparent text-muted hover:text-ink");
         return t.href ? (
           <A key={t.label} role="tab" aria-selected={!!t.active} href={t.href} className={cls}>
             {t.label}
+            {t.count !== undefined && <span className={cx("ml-2 rounded-pill px-2 text-caption font-semibold leading-6 text-ink", t.active ? "bg-green-tint" : "bg-lilac")}>{t.count}</span>}
           </A>
         ) : (
           <button key={t.label} type="button" role="tab" aria-selected={!!t.active} className={cls}>

@@ -24,7 +24,7 @@ const PUBLIC_NAV_ALL = [
 // The account menu (frame M08 and the signed-in header of NA1): the public links stay in the bar.
 const ACCOUNT_NAV = [
   { label: "Account", href: "/account" },
-  { label: "Tracker", href: "/account/tracker" },
+  { label: "Tracker", href: "/account/applications" },
   { label: "Saved", href: "/account/saved" },
   { label: "Alerts", href: "/account/alerts" },
 ];
@@ -72,7 +72,7 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
           </div>
           {signedIn ? (
             <div className="flex items-center gap-2">
-              <A href="/account" aria-label="Notices" className="grid size-11 place-items-center rounded-pill bg-white text-ink hover:bg-hover-light">
+              <A href="/account/notices" aria-label="Notices" className="grid size-11 place-items-center rounded-pill bg-white text-ink hover:bg-hover-light">
                 <Icon name="bell" />
               </A>
               <details className="group relative" data-account-menu>

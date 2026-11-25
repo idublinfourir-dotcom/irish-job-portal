@@ -1,9 +1,9 @@
 // Trust and safety cases (#44, #104, #134 to #137, #213, #214 d): GET lists the cases that need a step or shows one (?id=); POST opens a case,
 // notifies the employer, enters a reply or appeal received by email or post, decides, confirms or refuses as the second person, decides an appeal,
-// proposes a ban lift, or ticks off the WRC report. Every call needs a signed-in staff member; the trust_and_safety role check is in each database call.
+// proposes a ban lift, ticks off the WRC report, or adds a staff note (B69). Every call needs a signed-in staff member; the trust_and_safety role check is in each database call.
 import { StaffRefused, staffSettings } from "@portal/auth";
 import {
-  confirmDecision, decideAppeal, decideCase, getCase, getPool, listCases, markWrcReported, notifyEmployer, openCase, proposeBanLift, recordAppeal,
+  addStrikeNote, confirmDecision, decideAppeal, decideCase, getCase, getPool, listCases, markWrcReported, notifyEmployer, openCase, proposeBanLift, recordAppeal,
   recordReply, refuseDecision,
 } from "@portal/db";
 import { checkOrigin } from "../../../../lib/account-review";
@@ -56,6 +56,7 @@ export async function POST(request: Request) {
       case "decide_appeal": return Response.json({ ok: true, ...(await decideAppeal(db, staff, id, s("result"))) });
       case "propose_ban_lift": return Response.json({ ok: true, ...(await proposeBanLift(db, staff, id)) });
       case "mark_wrc": await markWrcReported(db, staff, id); break;
+      case "add_note": return Response.json({ ok: true, ...(await addStrikeNote(db, staff, id, s("text"))) });
     }
     return Response.json({ ok: true });
   } catch (e) {

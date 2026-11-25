@@ -100,3 +100,6 @@ export function jobDescription(j: { title: string; employerName: string; county:
   for (const extra of [" Rules are checked against DETE guidance.", " Free for candidates.", " Jobs are rechecked daily."]) if (d.length < 120) d += extra;
   return d.length > 160 ? `${d.slice(0, 159).trimEnd()}…` : d;
 }
+
+/** Who pays DETE's permit fee, by permit type (#297). Not our service fee: the employer or agency pays that, never the candidate (#3, #84). */
+export const permitFeeLabel = (permitType: string) => (permitType === "critical_skills" ? "Paid by the employee or employer" : "Usually paid by the employer");

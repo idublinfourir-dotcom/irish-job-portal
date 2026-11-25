@@ -8,7 +8,8 @@ import { cleanEmployerName } from "@portal/rules";
 import { QueueRefused } from "./admin-queue";
 import { FLOOR_ACT } from "./pay-floors";
 import { validId } from "./search";
-import { BadRulesData, cleanData, entriesOf, IN_FORCE, RULES_KINDS, validDate, type BigName, type VersionData, type RulesKind } from "./rules-data";
+import { BadRulesData, cleanData, entriesOf, IN_FORCE, RULES_KINDS, validDate, type BigName, type Minimums, type PayDealEntry, type PayDealList, type VersionData, type RulesKind } from "./rules-data";
+import { decodeIdCursor, encodeIdCursor } from "./wire";
 
 type Q = Pick<pg.Pool, "query">;
 type Db = Pick<pg.Pool, "query" | "connect">;
@@ -73,16 +74,21 @@ const empty = (d: Change) => !Object.keys(d.added).length && !Object.keys(d.remo
 const TODAY_IN_FORCE = IN_FORCE.replace("$1::date", "current_date");
 const UPCOMING = "select kind, data, id::text as id, effective_from::text as effective_from from rules_version where effective_from > current_date order by kind, effective_from, id";
 export const PENDING =
-  "select q.id::text as id, q.kind, q.target_table, q.target_id, q.change, q.proposed_by_staff_user_id as proposed_by, q.created_at::text as created_at, o.display_name " +
-  "from approval_request q left join organisation o on q.target_table = 'organisation' and o.id::text = q.target_id where q.status = 'pending' " +
+  "select q.id::text as id, q.kind, q.target_table, q.target_id, q.change, q.proposed_by_staff_user_id as proposed_by, u.name as proposed_by_name, q.created_at::text as created_at, o.display_name " +
+  "from approval_request q left join staff_user u on u.id = q.proposed_by_staff_user_id left join organisation o on q.target_table = 'organisation' and o.id::text = q.target_id where q.status = 'pending' " +
   "and ((q.target_table = 'rules_version' and q.kind in ('threshold','critical_skills_list','ineligible_list','public_pay_employer','big_company_entry','pay_scales')) " +
   "or (q.target_table = 'organisation' and q.kind = 'big_company_entry')) order by q.created_at, q.id";
 type VersionRow = { kind: RulesKind; data: VersionData; id: string; effective_from: string };
-export type Version = { kind: RulesKind; versionId: string; effectiveFrom: string; data: VersionData };
+export type Version = { kind: RulesKind; versionId: string; effectiveFrom: string; data: VersionData; hourly?: Record<string, number> };
 export type Pending =
-  | { requestId: string; kind: RulesKind; effectiveFrom: string; proposedBy: string; createdAt: string; change: Change }
-  | { requestId: string; kind: "big_company_flag"; organisationId: string; displayName: string | null; proposedBy: string; createdAt: string };
-const version = (r: VersionRow): Version => ({ kind: r.kind, versionId: r.id, effectiveFrom: r.effective_from, data: r.data });
+  | { requestId: string; kind: RulesKind; effectiveFrom: string; proposedBy: string; proposedByName: string; createdAt: string; change: Change }
+  | { requestId: string; kind: "big_company_flag"; organisationId: string; displayName: string | null; proposedBy: string; proposedByName: string; createdAt: string };
+const HOURLY = ["criticalSkills", "graduate", "nonList", "general", "generalLower"] as const;
+/** B64: each yearly minimum as euro an hour, to the cent, over 52 weeks of the standard week (32,691 at 39 hours is 16.12). Pure. */
+export const hourlyOf = (m: Minimums): Record<string, number> =>
+  Object.fromEntries(HOURLY.flatMap((k) => (m[k] === undefined ? [] : [[k, Math.round((m[k]! * 100) / (52 * m.standardWeekHours)) / 100]])));
+const version = (r: VersionRow): Version => ({ kind: r.kind, versionId: r.id, effectiveFrom: r.effective_from, data: r.data,
+  ...(r.kind === "minimums" ? { hourly: hourlyOf(r.data as Minimums) } : {}) });
 
 /** The versions in force today, the confirmed ones still to come, and the pending proposals with their change against the version in force. Any active staff member. */
 export async function listRules(db: Q, staff: string): Promise<{ inForce: Version[]; upcoming: Version[]; pending: Pending[] }> {
@@ -90,15 +96,76 @@ export async function listRules(db: Q, staff: string): Promise<{ inForce: Versio
   const [now, later, pend] = await Promise.all([db.query<VersionRow>(TODAY_IN_FORCE), db.query<VersionRow>(UPCOMING), db.query(PENDING)]);
   const current = new Map(now.rows.map((r) => [r.kind, r.data]));
   const pending = pend.rows.map((r): Pending => {
-    if (r.target_table === "organisation") return { requestId: r.id, kind: "big_company_flag", organisationId: r.target_id, displayName: r.display_name, proposedBy: r.proposed_by, createdAt: r.created_at };
+    if (r.target_table === "organisation") return { requestId: r.id, kind: "big_company_flag", organisationId: r.target_id, displayName: r.display_name, proposedBy: r.proposed_by, proposedByName: r.proposed_by_name, createdAt: r.created_at };
     const kind = r.target_id as RulesKind;
-    return { requestId: r.id, kind, effectiveFrom: r.change.effective_from, proposedBy: r.proposed_by, createdAt: r.created_at, change: diffVersion(kind, current.get(kind) ?? null, r.change.data) };
+    return { requestId: r.id, kind, effectiveFrom: r.change.effective_from, proposedBy: r.proposed_by, proposedByName: r.proposed_by_name, createdAt: r.created_at, change: diffVersion(kind, current.get(kind) ?? null, r.change.data) };
   });
   return { inForce: now.rows.map(version), upcoming: later.rows.map(version), pending };
 }
 
+// ===== B64: the versions of one kind that have started, newest first (the first is the one in force), each with its change against the one before it =====
+export const HISTORY_PAGE = 10; // whole lists are read to make the change (the Ineligible list is about 35 kB), so the page is short
+export const HISTORY =
+  "select v.id::text as id, v.effective_from::text as effective_from, v.data, v.seeded_by_owner, q.proposed_by_staff_user_id as proposed_by, p.name as proposed_by_name, " +
+  "c.name as confirmed_by_name, q.decided_at::text as confirmed_at, (select n.effective_from::text from rules_version n where n.kind = v.kind and n.effective_from <= current_date " +
+  "and (n.effective_from, n.id) > (v.effective_from, v.id) order by n.effective_from, n.id limit 1) as until " +
+  "from rules_version v left join approval_request q on q.id = v.approval_request_id left join staff_user p on p.id = q.proposed_by_staff_user_id " +
+  "left join staff_user c on c.id = q.confirmed_by_staff_user_id where v.kind = $1 and v.effective_from <= current_date " +
+  "and ($2::bigint is null or (v.effective_from, v.id) < (select a.effective_from, a.id from rules_version a where a.id = $2::bigint and a.kind = $1)) " +
+  `order by v.effective_from desc, v.id desc limit ${HISTORY_PAGE + 1}`;
+export type PastVersion = {
+  versionId: string; effectiveFrom: string; until: string | null; inForce: boolean; seeded: boolean; proposedBy: string | null; proposedByName: string | null;
+  confirmedByName: string | null; confirmedAt: string | null; change: Change;
+};
+
+/** The started versions of one kind, a page of HISTORY_PAGE; `after` is the `next` of the page before. The first version's change is every entry added. Any active staff member. */
+export async function listRulesHistory(db: Q, staff: string, opts: { kind?: unknown; after?: string }): Promise<{ kind: RulesKind; items: PastVersion[]; next: string | null }> {
+  if (!isRulesKind(opts.kind)) throw new QueueRefused("bad_kind");
+  const kind = opts.kind, after = opts.after === undefined ? null : decodeIdCursor("rules_history", opts.after);
+  await check(db, staff, "any");
+  const all = (await db.query(HISTORY, [kind, after])).rows;
+  const items = all.slice(0, HISTORY_PAGE).map((r, i): PastVersion => ({
+    versionId: r.id, effectiveFrom: r.effective_from, until: r.until, inForce: r.until === null, seeded: r.seeded_by_owner, proposedBy: r.proposed_by,
+    proposedByName: r.proposed_by_name, confirmedByName: r.confirmed_by_name, confirmedAt: r.confirmed_at, change: diffVersion(kind, all[i + 1]?.data ?? null, r.data),
+  }));
+  return { kind, items, next: all.length > HISTORY_PAGE ? encodeIdCursor("rules_history", items.at(-1)!.versionId) : null };
+}
+
+// ===== B66: the pay-deal list in force, entry by entry =====
+// Each entry's companies are matched as the badge matches them (public-pages.ts): by display name or any name row, lower case; the HSE entry by the HSE name test
+// (public-pay.ts). Then those companies' name rows and live jobs. ponytail: reads every company name (the staff page only); an index on lower(name) if it passes 100,000 rows.
+export const PAY_DEAL_COUNTS =
+  "with n as (select id as org, display_name as name from organisation where merged_into_id is null union all select organisation_id, name from organisation_name), " +
+  "m as (select e.entry, n.org from unnest($1::text[]) e(entry) join n on lower(btrim(n.name)) = e.entry " +
+  "union select 'health service executive', n.org from n where 'health service executive' = any($1::text[]) and n.name ~* '\\mhse\\M|health service executive') " +
+  "select m.entry, count(*)::int as companies, sum((select count(*) from organisation_name x where x.organisation_id = m.org and x.kind = 'legal'))::int as legal_names, " +
+  "sum((select count(*) from job j where j.organisation_id = m.org and j.status = 'live'))::int as live_jobs from m group by m.entry";
+const STAFF_NAMES = "select id, name from staff_user where id = any($1::text[])";
+export type PayDealRow = {
+  name: string; tier: 1 | 2; note: string | null; bodyType: string | null; evidence: PayDealEntry["evidence"] | null; addedOn: string | null; addedBy: string | null;
+  addedByName: string | null; on: boolean; companies: number; legalNames: number; liveJobs: number;
+};
+
+/** The public pay-deal employers in force (on and off), by name, with their counts. Any active staff member. */
+export async function listPayDealEmployers(db: Q, staff: string): Promise<{ versionId: string; effectiveFrom: string; items: PayDealRow[] } | { versionId: null; effectiveFrom: null; items: [] }> {
+  await check(db, staff, "any");
+  const v = (await db.query<{ id: string; effective_from: string; data: PayDealList }>(CURRENT_OF, ["public_pay_employers"])).rows[0];
+  if (!v) return { versionId: null, effectiveFrom: null, items: [] };
+  const entries = Object.entries(v.data).sort(([a], [b]) => (a < b ? -1 : 1));
+  const [counts, people] = await Promise.all([
+    db.query<{ entry: string; companies: number; legal_names: number; live_jobs: number }>(PAY_DEAL_COUNTS, [entries.map(([n]) => n)]),
+    db.query<{ id: string; name: string }>(STAFF_NAMES, [[...new Set(entries.flatMap(([, e]) => e.addedBy ?? []))]]),
+  ]);
+  const count = new Map(counts.rows.map((r) => [r.entry, r])), who = new Map(people.rows.map((r) => [r.id, r.name]));
+  return { versionId: v.id, effectiveFrom: v.effective_from, items: entries.map(([name, e]) => ({
+    name, tier: e.tier, note: e.note ?? null, bodyType: e.bodyType ?? null, evidence: e.evidence ?? null, addedOn: e.addedOn ?? null, addedBy: e.addedBy ?? null,
+    addedByName: who.get(e.addedBy ?? "") ?? null, on: e.on !== false, companies: count.get(name)?.companies ?? 0, legalNames: count.get(name)?.legal_names ?? 0,
+    liveJobs: count.get(name)?.live_jobs ?? 0,
+  })) };
+}
+
 // ===== propose =====
-const CURRENT_OF = "select data, current_date::text as today from rules_version where kind = $1 and effective_from <= current_date order by effective_from desc, id desc limit 1";
+const CURRENT_OF = "select id::text as id, effective_from::text as effective_from, data, current_date::text as today from rules_version where kind = $1 and effective_from <= current_date order by effective_from desc, id desc limit 1";
 const TODAY = "select current_date::text as today";
 const PROPOSE = "insert into approval_request(kind, target_table, target_id, change, effective_from, reason) values ($1, $2, $3, $4::jsonb, $5::date, $6) returning id::text as id";
 
@@ -111,9 +178,35 @@ async function insertRequest(c: pg.PoolClient, args: unknown[]): Promise<string>
   }
 }
 
+// B66: who uploaded what (staff-uploads.ts writes the row with the file): the one place an uploaded file's name comes from
+const UPLOADED = "select object_id as id, after->>'file_name' as name from audit_event where object_type = 'rules_evidence' and object_id = any($1::text[]) and action = 'rules.evidence_upload'";
+
+/**
+ * B66: the pay-deal entries as they will be saved, whatever the sender put in them: an entry already on the list keeps its date added and added by, a new one gets today
+ * and the proposer; an evidence file must be an uploaded one, and takes the name it was uploaded with.
+ */
+async function payDealEntries(c: pg.PoolClient, staff: string, today: string, current: VersionData | null, list: PayDealList): Promise<PayDealList> {
+  const before = new Map(Object.entries((current ?? {}) as PayDealList));
+  const ids = Object.values(list).flatMap((e) => e.evidence?.file?.id ?? []);
+  const uploaded = new Map(ids.length ? (await c.query<{ id: string; name: string }>(UPLOADED, [ids])).rows.map((r) => [r.id, r.name]) : []);
+  return Object.fromEntries(Object.entries(list).map(([name, sent]) => {
+    const e = { ...sent }, was = before.get(name), file = e.evidence?.file;
+    if (e.evidence && file) {
+      const label = was?.evidence?.file?.id === file.id ? was.evidence.file.name : uploaded.get(file.id);
+      if (label === undefined) throw new QueueRefused("bad_data", `${name}: the evidence file is not an uploaded file`);
+      e.evidence = { ...e.evidence, file: { id: file.id, name: label } };
+    }
+    delete e.addedOn;
+    delete e.addedBy;
+    const added = was ? { ...(was.addedOn ? { addedOn: was.addedOn } : {}), ...(was.addedBy ? { addedBy: was.addedBy } : {}) } : { addedOn: today, addedBy: staff };
+    return [name, { ...e, ...added }];
+  }));
+}
+
 /**
  * A rules data editor proposes a new whole version of one kind, in force from `effectiveFrom` (today or later). The data is checked for its kind;
- * a big-company name that is new or changed needs its link, date read and next review date (#230). Refused when nothing changes.
+ * a big-company name that is new or changed needs its link, date read and next review date (#230); a pay-deal entry that is new or changed and on needs its
+ * body type and evidence (#67, B66). Refused when nothing changes.
  */
 export async function proposeRules(db: Db, staff: string, input: { kind: unknown; effectiveFrom: unknown; data: unknown }): Promise<{ requestId: string; change: Change }> {
   if (!isRulesKind(input.kind)) throw new QueueRefused("bad_kind");
@@ -130,6 +223,7 @@ export async function proposeRules(db: Db, staff: string, input: { kind: unknown
     const cur = (await c.query<{ data: VersionData; today: string }>(CURRENT_OF, [kind])).rows[0];
     const today = cur?.today ?? (await c.query<{ today: string }>(TODAY)).rows[0]!.today;
     if (from < today) throw new QueueRefused("date_in_past");
+    if (kind === "public_pay_employers") data = await payDealEntries(c, staff, today, cur?.data ?? null, data as PayDealList);
     const change = diffVersion(kind, cur?.data ?? null, data);
     if (empty(change)) throw new QueueRefused("no_change");
     if (kind === "big_company_names") {
@@ -137,6 +231,10 @@ export async function proposeRules(db: Db, staff: string, input: { kind: unknown
         if (e.link === null || e.readOn === null || e.reviewOn === null) throw new QueueRefused("bad_data", `${e.name}: a new or changed name needs its link, date read and next review date`);
         if (cleanEmployerName(e.name) !== e.name) throw new QueueRefused("bad_data", `${e.name}: not a cleaned name`);
       }
+    }
+    if (kind === "public_pay_employers") {
+      for (const [name, e] of [...Object.entries(change.added), ...Object.entries(change.changed).map(([k, x]) => [k, x.after])] as [string, PayDealEntry][])
+        if (e.on !== false && (!e.bodyType || !e.evidence)) throw new QueueRefused("bad_data", `${name}: a new or changed entry that is on needs its body type and evidence`);
     }
     const requestId = await insertRequest(c, [REQUEST_KIND[kind], "rules_version", kind, JSON.stringify({ data, effective_from: from }), from, "rules version"]);
     const counts = { added: Object.keys(change.added).length, removed: Object.keys(change.removed).length, changed: Object.keys(change.changed).length };

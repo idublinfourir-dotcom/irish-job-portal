@@ -473,7 +473,7 @@ describe("performance", () => {
     await askReassign("account_reviewer", t.next);
     const client = await admin.connect();
     try {
-      const costs = await measurePages(client, [MANUAL_LIST_FIRST, { text: MANUAL_LIST_AFTER, values: ["999999999"] }, OWNER_LIST_FIRST, { text: MERGE_PREVIEW, values: [[String(o), String(t.o)]] }]);
+      const costs = await measurePages(client, [{ text: MANUAL_LIST_FIRST, values: [null] }, { text: MANUAL_LIST_AFTER, values: [null, "999999999"] }, OWNER_LIST_FIRST, { text: MERGE_PREVIEW, values: [[String(o), String(t.o)]] }]);
       // Measured 13 November 2026 with 4,025 jobs in one company and 25 manual posts: 52, 52, 15 and 182 pages (about 3 times each for the limits).
       // The manual list reads the partial index job_manual_idx, not the job table; the preview counts one company's jobs by job_organisation_idx, so it grows with that company.
       const [list, after, owners, preview] = costs as [typeof costs[0], typeof costs[0], typeof costs[0], typeof costs[0]];

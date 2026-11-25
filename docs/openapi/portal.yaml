@@ -988,7 +988,7 @@ paths:
                 properties:
                   company:
                     type: object
-                    required: [organisationId, slug, kind, name, status, description, descriptionMax, website, county, logoUrl, hasLogo, memberLimit, claimed, labels, croNumber, croStatus, legalNames, permitsSince, permitCount]
+                    required: [organisationId, slug, kind, name, status, description, descriptionMax, website, county, logoUrl, hasLogo, memberLimit, claimed, labels, croNumber, croStatus, legalNames, publicPayTier, permitHistory, permitsSince, permitCount]
                     properties:
                       organisationId: { $ref: '#/components/schemas/Id' }
                       slug: { type: string, description: "The company's public page name (`/companies/<slug>`).", example: example-software-ltd }
@@ -1015,9 +1015,19 @@ paths:
                         description: The company's legal names on record (at most 20), A to Z.
                         items: { type: string }
                         example: [Example Software Limited]
+                      publicPayTier:
+                        type: integer
+                        enum: [0, 1, 2]
+                        description: "The company's tier on the public pay-deal employer list (#67): 1 the HSE, 2 a section 38 employer, 0 not on the list. Always 0 for an agency (#39, CF98: the permit employer must be the public body itself), so the posting form offers the pay-scale grade only when it is above 0."
+                        example: 0
+                      permitHistory:
+                        type: string
+                        enum: [has_history, first_time, not_linked]
+                        description: "The company's permit history in DETE records: `has_history` (permits found), `first_time` (a first-time sponsor), `not_linked` (no DETE name linked yet). The preview's label comes from it."
+                        example: first_time
                       permitsSince: { type: integer, description: The first year of the DETE files the site shows., example: 2019 }
                       permitCount: { type: [integer, 'null'], description: "DETE permits issued from `permitsSince` on, added up over the linked names; null when no DETE name is linked (not zero).", example: 148 }
-              example: { company: { organisationId: '1042', slug: example-software-ltd, kind: employer, name: Example Software Ltd, status: verified, description: We build payment software., descriptionMax: 2000, website: 'https://www.example.ie', county: Dublin, logoUrl: null, hasLogo: false, memberLimit: 10, claimed: true, labels: [First-time sponsor], croNumber: '123456', croStatus: Normal, legalNames: [Example Software Limited], permitsSince: 2019, permitCount: null } }
+              example: { company: { organisationId: '1042', slug: example-software-ltd, kind: employer, name: Example Software Ltd, status: verified, description: We build payment software., descriptionMax: 2000, website: 'https://www.example.ie', county: Dublin, logoUrl: null, hasLogo: false, memberLimit: 10, claimed: true, labels: [First-time sponsor], croNumber: '123456', croStatus: Normal, legalNames: [Example Software Limited], publicPayTier: 0, permitHistory: first_time, permitsSince: 2019, permitCount: null } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
         '404': { description: "`NO_COMPANY`: the login has no company.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NO_COMPANY } } } }
@@ -1592,6 +1602,60 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
+  /api/portal/jobs/form:
+    get:
+      operationId: portalJobForm
+      summary: Read what the posting form shows before it is filled in
+      description: |
+        One read for the posting form (B51): the wording of the sponsorship statement in force, the occupation picker's list, and the note for a pay range that starts
+        below the minimum (#66) with the graduate minimum it quotes. The graduate minimum and the note come from the minimums in force in the rules data, never typed.
+        The wording and the note are placeholder text until the real copy is written. Any signed-in portal login; no parameters (any query key is 400 `BAD_REQUEST`).
+        Whether the company gets the pay-scale grade picker is `publicPayTier` on `GET /api/portal/company`, not here.
+      security: [{ portalSession: [] }]
+      x-roles: [any active portal login]
+      responses:
+        '200':
+          description: The statement wording, the occupations, the graduate minimum and the range note.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [statement, occupations, graduateMinimum, rangeNote]
+                properties:
+                  statement:
+                    description: The sponsorship statement wording in force (the newest `sponsorship_statement` text), which the signer confirms; null when no text is published yet.
+                    oneOf:
+                      - type: 'null'
+                      - type: object
+                        additionalProperties: false
+                        required: [version, body, publishedAt]
+                        properties:
+                          version: { type: string, description: The text's version label., example: v1 }
+                          body: { type: string, description: The wording shown next to the confirm tick., example: We will sponsor an employment permit for the successful candidate. }
+                          publishedAt: { type: string, format: date-time, description: When this version was published., example: '2026-11-20T09:00:00.000Z' }
+                  occupations:
+                    type: array
+                    description: Every SOC 2010 unit group for the picker, A to Z by code. The same list as `GET /api/occupations` on the candidate site.
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [code, title, slug, listStatus]
+                      properties:
+                        code: { $ref: '#/components/schemas/SocCode' }
+                        title: { type: string, description: The occupation's title., example: Chefs }
+                        slug: { type: string, description: The occupation page's address name (`/occupations/<slug>`)., example: chefs }
+                        listStatus: { type: string, enum: [critical-skills, ineligible, other], description: "On the Critical Skills list, on the Ineligible list, or on neither.", example: critical-skills }
+                  graduateMinimum: { type: integer, description: "The recent-graduate minimum in force, euro a year (#69).", example: 36848 }
+                  rangeNote: { type: string, description: "The note shown for a range that starts below the minimum (#66), with the graduate minimum filled in.", example: "Pay depends on where you start on the scale. Experienced candidates, and recent graduates (\u20ac36,848 minimum), usually qualify. Employer-paid health insurance also counts." }
+              example:
+                statement: { version: v1, body: We will sponsor an employment permit for the successful candidate., publishedAt: '2026-11-20T09:00:00.000Z' }
+                occupations: [{ code: '5434', title: Chefs, slug: chefs, listStatus: critical-skills }]
+                graduateMinimum: 36848
+                rangeNote: "Pay depends on where you start on the scale. Experienced candidates, and recent graduates (\u20ac36,848 minimum), usually qualify. Employer-paid health insurance also counts."
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/NoSession' }
+        '403': { $ref: '#/components/responses/ReadForbidden' }
   /api/portal/jobs/{id}:
     parameters:
       - { name: id, in: path, required: true, description: The job id. Not an id is 400., schema: { $ref: '#/components/schemas/Id' } }
@@ -1753,15 +1817,16 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [id, title, agencyName, status, postedAt]
+                      required: [id, title, agencyId, agencyName, status, postedAt]
                       properties:
                         id: { $ref: '#/components/schemas/Id' }
                         title: { type: string }
+                        agencyId: { $ref: '#/components/schemas/Id', description: "The agency's company id, for a report of the agency (POST /api/portal/report `companyId`)." }
                         agencyName: { type: string }
                         status: { type: string, enum: [live, under_review] }
                         postedAt: { $ref: '#/components/schemas/Timestamp' }
                   next: { oneOf: [{ $ref: '#/components/schemas/Cursor' }, { type: 'null' }] }
-              example: { jobs: [{ id: '5501', title: Staff Nurse, agencyName: Fake Recruit Ltd, status: live, postedAt: '2026-11-18T09:30:00.000Z' }], next: null }
+              example: { jobs: [{ id: '5501', title: Staff Nurse, agencyId: '88', agencyName: Fake Recruit Ltd, status: live, postedAt: '2026-11-18T09:30:00.000Z' }], next: null }
         '400': { description: "`BAD_REQUEST`: a bad `after` token or an unknown or repeated query key.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }

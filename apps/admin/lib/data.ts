@@ -6,14 +6,16 @@
 import "server-only";
 import { headers } from "next/headers";
 import {
-  type ApproveInput, dryRunApprove, getAccountReview, getContact, getContentPage, getFloorCheck, getItem, getJobQueueItem, getPool, getReport, getServiceCase, getCase, latestPermitRises, listAccountReviews, listAudit,
-  listContact, listContentPages, listCases, listDomains, listFloorChecks, listJobQueue, listManualPosts, listOwnerReassigns, listQueue, listReports, listRules, listServiceCases,
+  type ApproveInput, dryRunApprove, getAccountReview, getContact, getContentPage, getFloorCheck, getItem, getJobQueueItem, getPool, getReport, getServiceCase, getCase, latestPermitRises, listAccountReviews, listAudit, listBans, listTrust, listWrcReported,
+  listContact, listJobAuthority, listContentPages, listCases, listDomains, listFloorChecks, listJobQueue, listManualPosts, listOwnerReassigns, listPayDealEmployers, listRulesHistory, searchManualCompanies, listQueue, listReports, listRules, listServiceCases,
   listSolicitors, listStaff, listStaleContent, previewCompanies, previewContentPage, signupNoCounts, staffMe, deteLinkSuggestions, searchStaff,
 } from "@portal/db";
 import {
   accuracySample, fetchedDecisions, listCandidateMerges, listCompanySeed, listDataRequests, listOverdue, listScheduledChecks, listSettings, myCounts, targetCounts,
 } from "@portal/db/staff-tools";
 import { listLegal } from "@portal/db/legal-texts";
+import { listSponsorConfirmations } from "@portal/db/staff-uploads";
+import { listCaseDocuments } from "@portal/db/staff-case-files";
 import { queueRules } from "./queue-rules";
 import { sidebarCounts } from "./sidebar";
 import { requireStaff } from "./staff";
@@ -54,18 +56,25 @@ export const readAccountReviews = asStaff(listAccountReviews);
 export const readAccountReview = asStaff(getAccountReview);
 export const readEmployerJobs = asStaff(listJobQueue); // (queue, options?)
 export const readEmployerJob = asStaff(getJobQueueItem);
+export const readJobAuthority = asStaff(listJobAuthority); // (jobId) the copies of an agency job's written authority, metadata only; the file opens through GET /api/employer-jobs/authority
 export const readFloorChecks = asStaff(listFloorChecks);
 export const readFloorCheck = asStaff(getFloorCheck);
 export const readManualPosts = asStaff(listManualPosts);
+export const readSponsorConfirmations = asStaff(listSponsorConfirmations); // Q6: the "Sponsor confirmed" uploads waiting for an administrator
+export const readManualCompanies = asStaff(searchManualCompanies); // B72: (q) the employer picker of the manual post
 export const readReports = asStaff(listReports);
 export const readReport = asStaff(getReport);
 export const readStrikeCases = asStaff(listCases);
 export const readStrikeCase = asStaff(getCase);
+export const readTrustList = asStaff(listTrust); // B69: (options?) { tab: open | waiting | appeals | closed, after }; counts per tab come with the first page
+export const readBans = asStaff(listBans); // B70: (options?) { after }
+export const readWrcReported = asStaff(listWrcReported); // B70: (options?) { after }
 export const readContactMessages = asStaff(listContact);
 export const readContactMessage = asStaff(getContact);
 export const readServiceCases = asStaff(listServiceCases);
 export const readServiceCase = asStaff(getServiceCase);
 export const readSolicitors = asStaff(listSolicitors);
+export const readServiceCaseDocuments = asStaff(listCaseDocuments); // (caseId) the stored copies of a case, for its assigned handler only
 export const readDeteLinks = asStaff(deteLinkSuggestions); // (page)
 
 // companies and accounts
@@ -78,6 +87,8 @@ export const readDataRequests = asStaff(listDataRequests);
 
 // rules, settings, texts, content
 export const readRules = asStaff(listRules);
+export const readRulesHistory = asStaff(listRulesHistory); // B64: ({ kind, after })
+export const readPayDealEmployers = asStaff(listPayDealEmployers); // B66: every entry, on and off, with its counts
 export const readSettings = asStaff(listSettings);
 export const readLegal = asStaff(listLegal);
 export const readContentPages = asStaff(listContentPages);

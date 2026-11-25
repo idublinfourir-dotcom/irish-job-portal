@@ -3,18 +3,19 @@
 // `server-only` is Next's own copy (aliased by its compilers): importing this file from a Client Component fails the build. Not in packages/db,
 // which the CLIs and vitest load outside Next.
 import "server-only";
+import { cache } from "react";
 import { headers } from "next/headers";
 import {
-  checkerRead, closedJobRead, companyRead, countJobView, gatedRead, getPool, getRules, guideRead, guidesRead, helpListRead, helpRead, jobRead, jobsRead, legalRead, minimumsRead, occupationRead, occupationsRead,
+  dataRequestGet, checkerRead, closedJobRead, companyRead, countJobView, gatedRead, getPool, getRules, guideRead, guidesRead, helpListRead, helpRead, jobRead, jobsRead, legalRead, minimumsRead, occupationRead, occupationsRead,
   permitNoticeRead, registrationBodiesRead, sectorsRead, similarRead, sitemapIds, sitemapIndexXml, sitemapPart, updatesRead, type ReadResult, type SitemapEntry, type Work,
 } from "@portal/db";
 import { candidateSettings, googleSettings } from "@portal/auth";
 import { standingLine } from "@portal/rules";
-import { alertsGet } from "./alerts";
+import { alertsGet, unsubscribeGet } from "./alerts";
 import { dataAccessGet, jobGet, noticesGet, profileGet, promptsGet, savedList, securityGet, settingsGet, trackerGet } from "./account";
 import { caseList, caseRead, caseTimeline } from "./cases";
-import { signedInCandidate } from "./candidate";
-import { cvRead } from "./files";
+import { candidateAuth, signedInCandidate } from "./candidate";
+import { cvRead, docsList } from "./files";
 
 type Query = ConstructorParameters<typeof URLSearchParams>[0];
 const read = (work: Work) => async (query?: Query): Promise<ReadResult> => gatedRead(await headers(), new URLSearchParams(query), signedInCandidate, work);
@@ -64,6 +65,11 @@ export const readAlerts = () => mine(alertsGet);
 export const readAlert = (id: string) => mine(alertsGet, { id }); // one alert for the edit form (/account/alerts?edit=<id>); 404 ALERT_NOT_FOUND for another candidate's
 export const readTracker = () => mine(trackerGet); // B31
 export const readNotices = (query?: Query) => mine(noticesGet, query); // B38: ?after=
+/** The signed-in candidate's email, whether it is confirmed, and the name given at sign-up (the profile has its own, empty until it is saved), or null when signed out. */
+export const readAccountEmail = cache(async (): Promise<{ email: string; verified: boolean; name: string } | null> => {
+  const s = await candidateAuth().api.getSession({ headers: await headers() }).catch(() => null);
+  return s ? { email: s.user.email, verified: s.user.emailVerified === true, name: s.user.name ?? "" } : null;
+});
 export const readSecurity = () => mine(securityGet); // B40: passwordChangedAt and signInMethods
 export const readDataAccess = () => mine(dataAccessGet); // B41: who viewed my data
 export const readDidYouApply = () => mine(promptsGet);
@@ -72,6 +78,21 @@ export const readMyJob = (jobId: string) => mine(jobGet, { id: jobId }); // save
 export const readCases = (query?: Query) => mine(caseList, query);
 export const readCase = (id: string) => mine((r) => caseRead(r, id));
 export const readCaseTimeline = (id: string) => mine((r) => caseTimeline(r, id));
+export const readCaseDocuments = (id: string) => mine((r) => docsList(r, id)); // P17c: the copies this candidate uploaded to one case
+
+/**
+ * P17c: the two emailed-link pages (/unsubscribe, /data-request) read what the link would do through the API's own GET handlers, with the request's headers (the
+ * client address for the rate limit). No sign-in: the token is the credential. A refusal comes back as { ok: false, status, code }; neither read changes anything.
+ */
+async function linkRead(handler: (r: Request) => Promise<Response>, path: string, query: Record<string, string>): Promise<ReadResult> {
+  const url = new URL(path, siteOrigin());
+  url.search = new URLSearchParams(query).toString();
+  const res = await handler(new Request(url, { headers: await headers() }));
+  const body: unknown = await res.json().catch(() => null);
+  return res.ok ? { ok: true, data: body } : { ok: false, status: res.status, code: (body as { code?: string } | null)?.code ?? "ERROR" };
+}
+export const readUnsubscribe = (token: string, scope: string) => linkRead(unsubscribeGet, "/api/alerts/unsubscribe", { token, scope });
+export const readDataRequest = (token: string) => linkRead((r) => dataRequestGet(r, "candidate"), "/api/data-request", { token });
 
 // The sitemap is for crawlers, so it has no per-address limit (a limited crawler would see an empty site); instead each answer is kept
 // SITEMAP_TTL_MS per instance, so a flood costs the database one read per file per instance in that time.

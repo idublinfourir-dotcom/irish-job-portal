@@ -170,7 +170,7 @@ export function ResultView({ caseHref, jobLine, freeCheck, docs, uploading, uplo
             <h2 id="docs-h" className="text-[1.25rem]">Add copies of your documents</h2>
             <label className="flex cursor-pointer flex-col gap-2 rounded-card border-[1.5px] border-dashed border-line-strong bg-white p-5 has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ink">
               <span className="flex items-center gap-3 font-semibold"><Icon name="upload" size={20} />Choose files</span>
-              <span className="text-small text-muted">Offer letter, passport photo page, degree, registration decision letter. PDF, JPG or PNG, up to 4 MB each.</span>
+              <span className="text-small text-muted">Offer letter, passport photo page, degree, registration decision letter. PDF, JPG or PNG, up to 4 MB each. Copies only, never originals.</span>
               <input type="file" name="file" multiple accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" disabled={uploading} onChange={(e) => onFiles?.(e.currentTarget.files)} className="text-small" />
             </label>
             {uploading && <p role="status" className="text-small text-muted">Uploading</p>}

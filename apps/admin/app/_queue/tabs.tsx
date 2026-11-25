@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { A, cx, Icon } from "@portal/ui";
 
-export type CountTab = { label: string; count: number; href: string; active: boolean };
+export type CountTab = { label: string; count: number | string; href: string; active: boolean };
 
 /** Frame D02's tabs: a label with its count in a lilac pill, the open one underlined in green. Links, so it needs no script. */
 export function CountTabs({ items, label }: { items: CountTab[]; label: string }) {
@@ -10,7 +10,7 @@ export function CountTabs({ items, label }: { items: CountTab[]; label: string }
       {items.map((t) => (
         <A key={t.label} href={t.href} aria-current={t.active ? "page" : undefined} className={cx("flex min-h-11 shrink-0 items-center gap-2 border-b-4 px-3 text-small font-semibold no-underline", t.active ? "border-deep-green text-deep-green" : "border-transparent text-ink hover:border-line")}>
           {t.label}
-          <span className="rounded-pill bg-lilac px-2 text-caption font-semibold leading-6 text-ink">{t.count}</span>
+          {t.count !== "" && <span className="rounded-pill bg-lilac px-2 text-caption font-semibold leading-6 text-ink">{t.count}</span>}
         </A>
       ))}
     </nav>

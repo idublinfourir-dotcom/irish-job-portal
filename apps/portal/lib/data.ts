@@ -8,13 +8,18 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { ownPath, type PortalLogin } from "@portal/auth";
 import { agencyJobs } from "./agency-jobs";
-import { caseList } from "./cases";
+import { caseList, caseRead, caseTimeline } from "./cases";
+import { occupationList, permitNotice } from "./permit-pages";
+import { dataRequestInfo } from "./data-request";
 import { statsGet } from "./job-stats";
 import { companySearch, portalLogin } from "./company";
+import { docsList } from "./files";
 import { freeEmail } from "./free-email";
-import { jobGet, jobList } from "./jobs";
+import { jobFormGet } from "./job-form";
+import { jobGet, jobGrades, jobList } from "./jobs";
 import { portalLegalRead } from "./legal";
-import { noticesGet } from "./notices";
+import { floorGet } from "./pay-floors";
+import { noticesGet, settingsGet } from "./notices";
 import { portalOrigin } from "./portal";
 import { profileGet } from "./profile";
 import { statusGet } from "./status";
@@ -37,11 +42,25 @@ export const readVerification = read(verificationGet, "/api/portal/verification"
 export const readClaimSearch = read(companySearch, "/api/portal/claim/search"); // ?q= a name or CRO number; any signed-in login (the claim and first-time steps)
 export const readJobs = read(jobList, "/api/portal/jobs");
 export const readJob = (id: string) => read((r) => jobGet(r, id), "/api/portal/jobs/one")();
+export const readJobForm = read(jobFormGet, "/api/portal/jobs/form"); // B51: the statement wording, the occupation picker, the #66 range note and the graduate minimum
+export const readJobGrades = read(jobGrades, "/api/portal/jobs/grades"); // P19: the public pay-scale grades for the grade picker
 export const readJobStats = read(statsGet, "/api/portal/job-stats"); // ?days=&jobId=
 export const readTeam = read(teamGet, "/api/portal/team");
 export const readStatus = read(statusGet, "/api/portal/status");
 export const readCases = read(caseList, "/api/portal/cases"); // ?after=
+export const readCase = (id: string) => read((r) => caseRead(r, id), "/api/portal/cases/one")(); // P20: 404 CASE_NOT_FOUND for a case this login may not read
+export const readCaseTimeline = (id: string) => read((r) => caseTimeline(r, id), "/api/portal/cases/one/timeline")();
+export const readCaseDocuments = (id: string) => read((r) => docsList(r, id), "/api/portal/cases/one/documents")(); // the requester's own copies; 404 for anyone else
+export const readOccupations = async (): Promise<Read> => ({ status: 200, body: (await occupationList()) as unknown as Read["body"] }); // P20: the request form's occupation list (the public picker)
+/** P20, DD37 (#291): the notice for the permit pages while DETE's portal is closed, or 404 when staff have it off. */
+export const readPermitNotice = async (): Promise<Read> => {
+  const n = await permitNotice();
+  return n ? { status: 200, body: n as unknown as Read["body"] } : { status: 404, body: { code: "NOT_FOUND" } };
+};
+export const readDataRequest = (token: string) => read(dataRequestInfo, "/api/data-request")({ token }); // P17c: no sign-in; what the emailed link would do, changes nothing
 export const readNotices = read(noticesGet, "/api/portal/notices"); // ?after=
+export const readPayFloors = read(floorGet, "/api/portal/pay-floors"); // the company's pay floors and the wording to sign (DD33)
+export const readNoticeSettings = read(settingsGet, "/api/portal/notices/settings"); // P21: my email switches
 export const readAgencyJobs = read(agencyJobs, "/api/portal/agency-jobs"); // ?after=
 
 /** The signed-in login with its company and role (the shell and every page's guard), or null when there is no usable session. */
