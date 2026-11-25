@@ -5,7 +5,8 @@ import { meta } from "../../../_site/meta";
 import { needLogin, outLinks } from "../../../_site/guard";
 import { SignOutButton } from "../../forms";
 import { AuthFrame } from "../../frame";
-import { croFound, FirstTimeForm } from "../../company-forms";
+import { FirstTimeForm } from "../../company-forms";
+import { croFound } from "../../cro";
 
 export const metadata: Metadata = meta("First-time sponsor", "Give your CRO number and company name. We check your company against the CRO open data and review the account by hand before your jobs go live.");
 

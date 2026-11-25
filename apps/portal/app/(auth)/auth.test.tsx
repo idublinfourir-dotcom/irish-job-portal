@@ -6,7 +6,8 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ replace() {}, refresh() 
 
 import { AuthFrame, STEPS } from "./frame";
 import { afterVerify, CheckEmailView, ForgotView, ResendView, ResetView, SignInView, SignUpView } from "./forms";
-import { AcceptView, AgencyView, AnswerView, ClaimView, croFound, FirstTimeView, firstTimeHref } from "./company-forms";
+import { AcceptView, AgencyView, AnswerView, ClaimView, FirstTimeView, firstTimeHref } from "./company-forms";
+import { croFound } from "./cro";
 import { verifyCallback } from "./api";
 import {
   acceptMessage, answerMessage, companyMessage, INVALID_LINK, linkMessage, MAX_PASSWORD, MIN_PASSWORD, noMatch, passwordProblem, resetMessage, searchMessage, signInMessage, signUpMessage, tooLong, tooShort,

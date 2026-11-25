@@ -4,12 +4,11 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { A, Button, Checkbox, Icon, Input, Notice, Textarea } from "@portal/ui";
-import { api, fields, type Reply } from "./api";
+import { api, fields } from "./api";
+import { asMatches, croFound, type Found, type Match } from "./cro";
 import { acceptMessage, answerMessage, companyMessage, NOTE_MAX, searchMessage } from "./messages";
 
 type Submit = (e: FormEvent<HTMLFormElement>) => void;
-export type Match = { organisationId: string | null; name: string; croNumber: string | null; county: string | null };
-const asMatches = (body: Reply["body"]): Match[] => (Array.isArray(body.results) ? (body.results as Match[]) : []);
 const detail = (m: Match) => [m.county, m.croNumber && `CRO ${m.croNumber}`].filter(Boolean).join(" · ");
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
 export const firstTimeHref = (m?: Pick<Match, "croNumber" | "name">) => (m?.croNumber ? `/sign-up/first-time?cro=${encodeURIComponent(m.croNumber)}&name=${encodeURIComponent(m.name)}` : "/sign-up/first-time");
@@ -103,7 +102,7 @@ export function ClaimForm({ email, initialQ }: { email: string; initialQ: string
 
 /** The first-time sponsor form (frame E04): CRO number with a look-up, company name, the sign-in email and what the label means. */
 export function FirstTimeView({ cro, onCro, found, name, onName, email, free, error, pending, onSubmit, onBlurCro }: {
-  cro: string; onCro?: (v: string) => void; onBlurCro?: () => void; found?: { kind: "found"; name: string; county: string | null } | { kind: "onsite" } | { kind: "none" } | { kind: "error"; text: string };
+  cro: string; onCro?: (v: string) => void; onBlurCro?: () => void; found?: Found;
   name: string; onName?: (v: string) => void; email: string; free?: boolean; error?: string; pending?: boolean; onSubmit?: Submit;
 }) {
   return (
@@ -125,17 +124,9 @@ export function FirstTimeView({ cro, onCro, found, name, onName, email, free, er
   );
 }
 
-type Found = Parameters<typeof FirstTimeView>[0]["found"];
-/** The look-up of a CRO number in the register data, as the claim search answers it (the page runs it too, for a number the claim step handed over). */
-export function croFound(body: Reply["body"], cro: string): Found {
-  const want = cro.replace(/\s+/g, "").replace(/^ie/i, "").replace(/^0+/, "");
-  const hit = asMatches(body).find((m) => m.croNumber?.replace(/^0+/, "") === want);
-  return !hit ? { kind: "none" } : hit.organisationId ? { kind: "onsite" } : { kind: "found", name: hit.name, county: hit.county };
-}
-
 export function FirstTimeForm({ email, free, initialCro, initialName, initialFound }: { email: string; free: boolean; initialCro: string; initialName: string; initialFound?: Found }) {
   const router = useRouter(), [cro, setCro] = useState(initialCro), [name, setName] = useState(initialName);
-  const [found, setFound] = useState<Found>(initialFound), [error, setError] = useState<string>(), [pending, setPending] = useState(false);
+  const [found, setFound] = useState<Found | undefined>(initialFound), [error, setError] = useState<string>(), [pending, setPending] = useState(false);
   async function look() {
     const digits = cro.replace(/\s+/g, "").replace(/^ie/i, "");
     if (!/^\d{3,8}$/.test(digits)) return;
