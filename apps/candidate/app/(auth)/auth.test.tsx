@@ -281,9 +281,9 @@ describe("the pages (server components): redirects, the checked return address, 
     state.signedIn = true;
     for (const page of [SignupPage, LoginPage]) {
       expect(await redirectsTo(() => page(search({ next: "/jobs/staff-nurse-cork-4821" })))).toBe("/jobs/staff-nurse-cork-4821");
-      expect(await redirectsTo(() => page(search({})))).toBe("/jobs");
-      for (const bad of ["//evil.example", "https://evil.example", "/\\evil.example", "/login"]) expect(await redirectsTo(() => page(search({ next: bad }))), bad).toBe("/jobs");
-      expect(await redirectsTo(() => page(search({ next: ["/jobs/a-1", "/jobs/b-2"] })))).toBe("/jobs");
+      expect(await redirectsTo(() => page(search({})))).toBe("/account");
+      for (const bad of ["//evil.example", "https://evil.example", "/\\evil.example", "/login"]) expect(await redirectsTo(() => page(search({ next: bad }))), bad).toBe("/account");
+      expect(await redirectsTo(() => page(search({ next: ["/jobs/a-1", "/jobs/b-2"] })))).toBe("/account");
     }
   });
   it("a visitor gets the sign-up form with the employer link from the setting (hidden when the setting is absent) and Google only when set", async () => {
@@ -306,18 +306,18 @@ describe("the pages (server components): redirects, the checked return address, 
     const verified = await VerifyPage(search({ verified: "1", next: "/jobs/a-1" }));
     expect(verified.props).toMatchObject({ signedIn: false, loginHref: "/login?next=%2Fjobs%2Fa-1", continueHref: "/jobs/a-1" });
     state.signedIn = true;
-    expect((await VerifyPage(search({ verified: "1" }))).props).toMatchObject({ signedIn: true, continueHref: "/jobs" });
+    expect((await VerifyPage(search({ verified: "1" }))).props).toMatchObject({ signedIn: true, continueHref: "/account" });
     const err = await VerifyPage(search({ verified: "1", error: "TOKEN_EXPIRED" }));
     expect(err.props).toMatchObject({ email: null, initialFlash: { kind: "error" } });
     expect(err.props.initialFlash.text).toMatch(/expired or was already used/);
     expect((await VerifyPage(search({ error: "<b>x</b>" }))).props.initialFlash.text).not.toContain("<b>");
     expect((await VerifyPage(search({}))).props).toMatchObject({ email: null, next: null });
-    expect((await VerifyPage(search({ verified: "1", next: "//evil.example" }))).props.continueHref).toBe("/jobs");
+    expect((await VerifyPage(search({ verified: "1", next: "//evil.example" }))).props.continueHref).toBe("/account");
   });
   it("/reset: no token asks for the email; a token chooses the password (also when signed in); an error or an empty or huge token is the 'did not work' screen", async () => {
     expect((await ResetPage(search({}))).type.name).toBe("ForgotFlow");
     state.signedIn = true;
-    expect(await redirectsTo(() => ResetPage(search({})))).toBe("/jobs"); // the bare address: a signed-in person goes to their account
+    expect(await redirectsTo(() => ResetPage(search({})))).toBe("/account"); // the bare address: a signed-in person goes to their account
     const withToken = await ResetPage(search({ token: "abc123" }));
     expect(withToken.type.name).toBe("ResetFlow"); // an emailed link opened while signed in keeps its token
     expect(withToken.props).toEqual({ token: "abc123" });

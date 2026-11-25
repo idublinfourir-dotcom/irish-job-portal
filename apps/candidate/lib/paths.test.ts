@@ -68,7 +68,7 @@ describe("the sign-up, sign-in and permit service addresses (W2)", () => {
   it("are the ones the header, footer and job pages already link to", () => {
     expect([signupPath(), loginPath(), verifyPath(), resetPath(), accountPath()]).toEqual(["/signup", "/login", "/verify", "/reset", "/account"]);
     expect(staticPath("permit-services")).toBe("/permit-services");
-    expect(afterSignInPath()).toBe("/jobs"); // P17 changes this to /account
+    expect(afterSignInPath()).toBe("/account");
   });
   it("keep the return address as one encoded value, and the verified landing keeps it too", () => {
     expect(loginPath("/jobs/staff-nurse-cork-4821?x=1&y=2")).toBe("/login?next=%2Fjobs%2Fstaff-nurse-cork-4821%3Fx%3D1%26y%3D2");
