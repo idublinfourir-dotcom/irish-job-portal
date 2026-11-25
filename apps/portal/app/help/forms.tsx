@@ -5,16 +5,7 @@ import { useState, type FormEvent } from "react";
 import { Button, Input, Notice, Select, Textarea } from "@portal/ui";
 import { send } from "../_account/client";
 import { MESSAGE_MAX, say } from "../_account/messages";
-
-export const TOPICS: Record<string, string> = {
-  general: "A question about the site",
-  account: "My account or company",
-  data_request: "My data: export or erase",
-  other: "Something else",
-  appeal: "My login is blocked or my account was banned",
-};
-/** The topics each kind of sender may pick: an active login not `appeal`, a visitor only `appeal`. */
-export const topicsFor = (signedIn: boolean) => (signedIn ? ["general", "account", "data_request", "other"] : ["appeal"]);
+import { TOPICS, topicsFor } from "./topics";
 
 export function ContactView({ signedIn, topic, sent, error, pending, onSubmit }: { signedIn: boolean; topic: string; sent?: boolean; error?: string; pending?: boolean; onSubmit?: (e: FormEvent<HTMLFormElement>) => void }) {
   const topics = topicsFor(signedIn);
