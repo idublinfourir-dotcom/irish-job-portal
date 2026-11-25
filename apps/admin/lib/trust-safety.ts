@@ -52,6 +52,7 @@ export const CASE_ACTIONS: Record<string, Spec> = {
   decide_appeal: { need: ["caseId", "result"] },
   propose_ban_lift: { need: ["caseId"] },
   mark_wrc: { need: ["caseId"] },
+  add_note: { need: ["caseId", "text"] },
 };
 
 export type Body = { action: string } & Record<string, string | boolean | undefined>;
@@ -79,7 +80,7 @@ export function parseBody(text: string, actions: Record<string, Spec>): Body {
 
 const STATUS = new Map<string, number>(Object.entries({
   bad_body: 400, bad_action: 400, bad_id: 400, bad_kind: 400, bad_reason: 400, bad_summary: 400, bad_text: 400, bad_time: 400, bad_outcome: 400,
-  bad_flag: 400, bad_result: 400, bad_cursor: 400, bad_input: 400, bad_query: 400,
+  bad_flag: 400, bad_result: 400, bad_cursor: 400, bad_tab: 400, bad_input: 400, bad_query: 400,
   no_session: 401, not_active: 401,
   reauth_required: 403, bad_origin: 403, not_active_staff: 403, not_trust_and_safety: 403,
   not_found: 404,

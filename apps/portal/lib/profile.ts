@@ -2,7 +2,8 @@
 // county; the close POST needs the company's exact name typed back. The acting login always comes from the session. The database functions (migration 0031)
 // check the account owner under the company's lock, write the audit row and do the work; this file refuses bad requests early and maps the refusals.
 // Name, CRO number, status, verification and slug are never fields here (an unknown field is a 400), and app_portal cannot update organisation at all.
-import { COMPANY_QUERIES, FIRST_PERMIT_YEAR, getPool, summarisePermits } from "@portal/db";
+import { COMPANY_QUERIES, FIRST_PERMIT_YEAR, getPool, getRules, summarisePermits } from "@portal/db";
+import { publicPayCandidatesOf, publicPayTier } from "@portal/rules";
 import { isObject, no, ok, only, portalLogin, readPost, withinLimit, type Refusal } from "./company";
 import { checkUrl, COUNTIES } from "./jobs";
 
@@ -73,12 +74,15 @@ export async function profileGet(request: Request): Promise<Response> {
   if (login instanceof Response) return login;
   if (!login.membership) return no(404, "NO_COMPANY");
   const id = login.membership.organisationId;
-  const [org, permits] = await Promise.all([getPool().query(COMPANY_READ, [id]), getPool().query(COMPANY_QUERIES.permits, [id])]);
+  const [org, permits, rules] = await Promise.all([getPool().query(COMPANY_READ, [id]), getPool().query(COMPANY_QUERIES.permits, [id]), getRules(getPool())]);
   const o = org.rows[0];
+  // #67: the tier of the public pay-deal list (1 HSE, 2 section 38, 0 none) by the company's names; an agency never has one (#39, CF98: the permit employer is the public body itself)
+  const pay = publicPayCandidatesOf(rules);
+  const publicPay = o.kind === "agency" ? 0 : Math.max(0, ...[o.display_name, ...o.legal_names].map((n: string) => publicPayTier(n, pay)));
   const labels = [o.permit_history === "first_time" && "First-time sponsor", o.permit_history === "not_linked" && "Permit history not linked yet", o.claims_removed_at && "Sponsorship claims removed"].filter(Boolean);
   const p = summarisePermits(permits.rows);
   return ok({ company: { organisationId: o.id, slug: o.slug, kind: o.kind, name: o.display_name, status: o.status, description: o.short_description, descriptionMax: MAX_DESCRIPTION,
     website: o.website, county: o.county, logoUrl: o.logo_url, hasLogo: o.has_logo, memberLimit: o.member_limit,
     claimed: o.claimed_at !== null && (o.status === "verified" || o.status === "verified_restricted"), labels,
-    croNumber: o.cro_number, croStatus: o.cro_status, legalNames: o.legal_names, permitsSince: FIRST_PERMIT_YEAR, permitCount: p && p.byYear.reduce((n, y) => n + y.permits, 0) } });
+    croNumber: o.cro_number, croStatus: o.cro_status, legalNames: o.legal_names, publicPayTier: publicPay, permitHistory: o.permit_history, permitsSince: FIRST_PERMIT_YEAR, permitCount: p && p.byYear.reduce((n, y) => n + y.permits, 0) } });
 }

@@ -42,7 +42,7 @@ export const TS_ACT =
   "select set_config('app.staff_user_id', $1, true), exists (select 1 from staff_user where id = $1 and status = 'active') as active, " +
   "exists (select 1 from staff_user u join staff_role r on r.staff_user_id = u.id where u.id = $1 and u.status = 'active' and r.role = 'trust_and_safety') as ts";
 
-async function checkTs(db: Q, staff: string): Promise<void> {
+export async function checkTs(db: Q, staff: string): Promise<void> {
   if (typeof staff !== "string" || staff.length === 0 || staff.length > 200) throw new QueueRefused("not_active_staff");
   const r = (await db.query<{ active: boolean; ts: boolean }>(TS_ACT, [staff])).rows[0]!;
   if (!r.active) throw new QueueRefused("not_active_staff");
@@ -252,6 +252,9 @@ export const CASE_ITEM =
   " or (a.target_table = 'ban' and a.target_id in (select b.id::text from ban b where b.strike_id = s.id)))) as pending, " +
   "(select coalesce(jsonb_agg(jsonb_build_object('id', b.id, 'croNumber', b.cro_number, 'emailDomain', b.email_domain, 'emailAddress', b.email_address) order by b.id), '[]') " +
   " from ban b where b.strike_id = s.id) as bans, " +
+  // B69: the staff notes, oldest first, at most 200 (strike_note_strike_idx); staff text, shown in the panel only
+  "(select coalesce(jsonb_agg(jsonb_build_object('id', n.id::text, 'text', n.body, 'staffName', u.name, 'createdAt', n.created_at) order by n.id), '[]') " +
+  " from (select * from strike_note where strike_id = s.id order by id limit 200) n join staff_user u on u.id = n.author_staff_user_id) as notes, " +
   "exists (select 1 from audit_event e where e.object_id = s.id::text and e.object_type = 'strike' and e.action = 'trust_safety.wrc_reported') as wrc_reported " +
   "from strike s join organisation o on o.id = s.organisation_id where s.id = $1::bigint";
 
@@ -530,5 +533,15 @@ export async function markWrcReported(db: Db, staff: string, caseId: string | nu
     if ((await c.query("select 1 from audit_event where object_id = $1 and object_type = 'strike' and action = 'trust_safety.wrc_reported'", [id])).rowCount)
       throw new QueueRefused("already_marked");
     await audit(c, staff, "wrc_reported", "strike", id, { wrc_reported: true }, { caseId: id });
+  });
+}
+
+/** B69: a staff note on a case (frame D08 "Add note"). Staff text: it shows in the case panel only and never goes into a notice or an email; the audit row holds the note's id, not its words. */
+export async function addStrikeNote(db: Db, staff: string, caseId: string | number, text: string): Promise<{ noteId: string }> {
+  return acting(db, staff, caseId, async (c, id) => {
+    await lockCase(c, id);
+    const n = (await c.query<{ id: string }>("insert into strike_note(strike_id, author_staff_user_id, body) values ($1::bigint, $2, $3) returning id::text as id", [id, staff, text])).rows[0]!;
+    await audit(c, staff, "note_add", "strike", id, { note_id: n.id }, { caseId: id });
+    return { noteId: n.id };
   });
 }

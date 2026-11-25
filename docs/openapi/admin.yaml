@@ -455,6 +455,58 @@ components:
         replyDueAt: { $ref: '#/components/schemas/NullableTimestamp' }
         appealDueAt: { $ref: '#/components/schemas/NullableTimestamp' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
+    TrustItem:
+      type: object
+      description: One row of the trust and safety list, a report or a case. No reporter and no evidence text (#99).
+      required: [kind, id, label, createdAt, organisationId, displayName, organisationKind, jobId, jobTitle, reason, state, outcome, level, reportId, jobReports, companyReports]
+      properties:
+        kind: { type: string, enum: [report, case], description: Whether the row is a report or a case., example: report }
+        id: { $ref: '#/components/schemas/Id' }
+        label: { type: string, pattern: '^[RC]-[0-9]{4,}$', description: "The one id label: `R-` and the report id, or `C-` and the case id, at least 4 digits (reports and cases have separate id spaces).", example: R-0801 }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        organisationId: { type: [string, 'null'], description: "The company: the job's company, or the reported or case company. Null for a report on a message or a person.", example: '312' }
+        displayName: { type: [string, 'null'], description: The company's name now., example: Example Recruitment Ltd }
+        organisationKind: { type: [string, 'null'], enum: [employer, agency, public_body, null], description: "The company's kind (the frame's `(agency)` mark).", example: agency }
+        jobId: { type: [string, 'null'], description: "The reported job, or the case's job; null when there is none.", example: '5501' }
+        jobTitle: { type: [string, 'null'], example: Care Assistant }
+        reason: { type: string, description: "A report's reason code, or a case's reason code (for example `asks_for_money`, `false_sponsorship`).", example: asks_for_money }
+        state: { type: string, description: "A report's status (`open`, `job_hidden`, `cleared`, `upheld`) or a case's stage (`case_open`, `employer_notified`, `reply_window`, `decided`, `applied`, `appealed`, `upheld`, `overturned`).", example: open }
+        outcome: { type: [string, 'null'], description: "A case's decision (`cleared`, `strike`, `ban`); null for a report and for an undecided case.", example: null }
+        level: { type: [integer, 'null'], description: "A case's strike level 1 to 3; null for a report, an instant-ban case and an undecided case.", example: null }
+        reportId: { type: [string, 'null'], description: The report a case came from; null for a report row and for a case opened by hand., example: null }
+        jobReports: { type: integer, minimum: 0, maximum: 200, description: "How many reports (any status) name this job; 200 means 200 or more.", example: 3 }
+        companyReports: { type: integer, minimum: 0, maximum: 200, description: "How many reports (any status) name this company or one of its jobs; 200 means 200 or more.", example: 5 }
+    BanItem:
+      type: object
+      description: One banned value. A ban row that holds more than one value (a CRO number and an email domain) gives one item for each.
+      required: [banId, type, value, reasonCode, caseId, caseLabel, caseKind, organisationId, displayName, addedAt, proposedBy, confirmedBy, liftPending]
+      properties:
+        banId: { $ref: '#/components/schemas/Id' }
+        type: { type: string, enum: [cro_number, email_domain, email_address], description: What the value is., example: cro_number }
+        value: { type: string, description: "The banned CRO number, email domain or email address; none of them can sign up again.", example: '123456' }
+        reasonCode: { type: string, enum: [asks_for_money, fake_company, fake_job, strike_3], description: Why the ban was made., example: asks_for_money }
+        caseId: { $ref: '#/components/schemas/Id' }
+        caseLabel: { type: string, description: The case's id label., example: C-0064 }
+        caseKind: { type: string, enum: [false_claim, false_pay_floor, instant_ban], example: instant_ban }
+        organisationId: { $ref: '#/components/schemas/Id' }
+        displayName: { type: string, description: The company the case was about., example: Example Recruitment Ltd }
+        addedAt: { $ref: '#/components/schemas/NullableTimestamp' }
+        proposedBy: { type: [string, 'null'], description: The officer who proposed the ban (the name; null if the login was removed)., example: Kit Nolan }
+        confirmedBy: { type: [string, 'null'], description: The second officer who confirmed it., example: Dara Kelly }
+        liftPending: { type: boolean, description: A lift of this ban waits for its second officer., example: false }
+    WrcItem:
+      type: object
+      description: One case ticked off as reported to the WRC.
+      required: [caseId, caseLabel, organisationId, displayName, organisationKind, reasonCode, reportedAt, reportedBy]
+      properties:
+        caseId: { $ref: '#/components/schemas/Id' }
+        caseLabel: { type: string, example: C-0064 }
+        organisationId: { $ref: '#/components/schemas/Id' }
+        displayName: { type: string, example: Example Recruitment Ltd }
+        organisationKind: { type: string, example: agency }
+        reasonCode: { type: string, example: asks_for_money }
+        reportedAt: { $ref: '#/components/schemas/Timestamp' }
+        reportedBy: { type: [string, 'null'], description: The officer who ticked it off., example: Kit Nolan }
   headers:
     RetryAfter:
       description: Seconds until the limit that was hit has a new window.
@@ -2952,7 +3004,7 @@ paths:
                           The case row in camel case (id, organisationId, caseKind, jobId, reportId, reasonCode, noticeSummary, level, stage,
                           outcome, the reply and appeal fields and who entered them, decidedBy and decidedAt, banLiftedAt, createdAt), the
                           company (displayName, organisationKind, organisationStatus, restrictedUntil, claimsRemovedAt), `pending` (the
-                          two-person requests), `bans`, `wrcReported` and `evidenceFile`.
+                          two-person requests), `bans`, `notes` (B69), `wrcReported` and `evidenceFile`.
                         required: [id, organisationId, caseKind, stage, pending, bans, wrcReported]
                         properties:
                           id: { $ref: '#/components/schemas/Id' }
@@ -2961,6 +3013,7 @@ paths:
                           stage: { type: string }
                           pending: { type: array, items: { type: object } }
                           bans: { type: array, items: { type: object } }
+                          notes: { type: array, maxItems: 200, description: "The staff notes on the case, oldest first (B69). Staff text: it is never put in a notice or an email.", items: { type: object, required: [id, text, staffName, createdAt], properties: { id: { $ref: '#/components/schemas/Id' }, text: { type: string, example: "Phoned the employer, no answer." }, staffName: { type: string, example: Kit Nolan }, createdAt: { type: string, description: "The time the note was written, as the database writes it in JSON.", example: '2026-11-19T10:15:00.123456+00:00' } } } }
                           wrcReported: { type: boolean }
                           evidenceFile: { type: boolean, description: "Q7: an evidence file is attached (GET /api/trust-safety/evidence?caseId=)." }
               example:
@@ -2987,7 +3040,7 @@ paths:
         (instant_ban cases only) ban; clearing and strike 1 apply at once, strike 2, strike 3 and a ban wait for a second officer;
         `conclusive` only with ban. `confirm`, `refuse`: the second officer on what waits (never the proposer or whoever entered the
         reply). `decide_appeal`: upheld or overturned (not by whoever entered the appeal or decided the case). `propose_ban_lift`: propose
-        lifting the case's bans. `mark_wrc`: tick off that an agency's instant-ban case was reported to the WRC. The Origin header must be
+        lifting the case's bans. `mark_wrc`: tick off that an agency's instant-ban case was reported to the WRC. `add_note` (B69): add a staff note to the case (text 1 to 5,000 characters, line breaks and tabs allowed); it needs no fresh sign-in and the audit row holds the note's id, not its words. The Origin header must be
         the admin app's origin. C4 (#270): `decide`, `confirm`, `decide_appeal` and `propose_ban_lift` need a session from a sign-in in the
         last 10 minutes, else 403 `reauth_required` (before the role check); the other actions do not.
       security: [{ staffSession: [] }]
@@ -3026,6 +3079,13 @@ paths:
                     receivedAt: { type: string, description: 'An ISO date and time with a zone, for example 2026-11-17T14:05:00Z.', pattern: '^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d{1,3})?)?(Z|[+-]\d\d:\d\d)$' }
                 - type: object
                   additionalProperties: false
+                  required: [action, caseId, text]
+                  properties:
+                    action: { const: add_note }
+                    caseId: { $ref: '#/components/schemas/Id' }
+                    text: { type: string, minLength: 1, maxLength: 5000, description: The note., example: "Phoned the employer, no answer." }
+                - type: object
+                  additionalProperties: false
                   required: [action, caseId, outcome]
                   properties:
                     action: { const: decide }
@@ -3045,7 +3105,7 @@ paths:
           description: >-
             `open`: `caseId`. `notify`: `notices` queued. `decide`: `outcome`, `level`, whether it was `applied` and the `requestId` waiting
             for a second officer. `confirm`: what was `applied` (strike_2, strike_3, ban or ban_lift). `decide_appeal`: `result` and
-            `liftsProposed`. `propose_ban_lift`: `requests`. The rest `{ ok: true }`.
+            `liftsProposed`. `propose_ban_lift`: `requests`. `add_note`: `noteId`. The rest `{ ok: true }`.
           content:
             application/json:
               schema:
@@ -3062,6 +3122,7 @@ paths:
                   result: { type: string }
                   liftsProposed: { type: integer }
                   requests: { type: integer }
+                  noteId: { $ref: '#/components/schemas/Id' }
               example: { ok: true, outcome: strike, level: 1, applied: true }
         '400':
           description: >-
@@ -3085,6 +3146,127 @@ paths:
             `entered_appeal`, `decided_case`: the two-person rules. `no_appeal_window`, `already_appealed`, `no_appeal`, `appeal_decided`,
             `window_closed`: the appeal's state. `not_agency_ban`, `already_marked`: mark_wrc on a case it does not apply to, or twice.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: reply_window_open } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/trust-safety/list:
+    get:
+      operationId: listTrust
+      summary: One list of reports and cases for a tab (B69)
+      description: >-
+        The page behind the reports and strikes screen: reports and cases together, each with one id label (`R-0801` for a report, `C-0051` for a case), the company, the job and how
+        many reports name that job and that company. `tab`: `open` (reports not yet decided, and cases that need a step other than a reply or an appeal), `waiting` (cases waiting for the
+        employer's reply), `appeals` (cases with an appeal waiting) or `closed` (decided reports and finished cases, newest first, the history); default `open`. The other tabs are oldest first.
+        20 a page, keyset paging: `after` is the `next` of the page before and is good for the same tab only. `counts` (the number on each tab, at most 200: 200 means 200 or more) comes
+        with the first page only and is null on later pages. No reporter and no evidence text is in the list (read one report for that). A case's staff notes are on `GET /api/trust-safety/cases?id=`.
+        An unknown or repeated query key is 400 `bad_query`.
+      security: [{ staffSession: [] }]
+      x-roles: [trust_and_safety]
+      x-rate-limit: none
+      parameters:
+        - { name: tab, in: query, required: false, schema: { type: string, enum: [open, waiting, appeals, closed], default: open }, example: open }
+        - { name: after, in: query, required: false, description: "The `next` token of the page before, from the same tab.", schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: One page and, on the first page, the count of each tab.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next, counts]
+                properties:
+                  items: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/TrustItem' } }
+                  next: { type: [string, 'null'], description: The token for the next page; null on the last page. }
+                  counts:
+                    description: The number on each tab (at most 200 each); null on a page after the first.
+                    oneOf:
+                      - type: 'null'
+                      - type: object
+                        required: [open, waiting, appeals, closed]
+                        properties:
+                          open: { type: integer, minimum: 0, maximum: 200, example: 6 }
+                          waiting: { type: integer, minimum: 0, maximum: 200, example: 2 }
+                          appeals: { type: integer, minimum: 0, maximum: 200, example: 1 }
+                          closed: { type: integer, minimum: 0, maximum: 200, example: 143 }
+              example:
+                items: [{ kind: report, id: '801', label: R-0801, createdAt: '2026-11-18T09:30:00.123Z', organisationId: '312', displayName: Example Recruitment Ltd, organisationKind: agency, jobId: '5501', jobTitle: Care Assistant, reason: asks_for_money, state: open, outcome: null, level: null, reportId: null, jobReports: 3, companyReports: 5 }]
+                next: null
+                counts: { open: 6, waiting: 2, appeals: 1, closed: 143 }
+        '400':
+          description: "`bad_tab`: a tab that does not exist. `bad_cursor`: a token this list and tab did not make. `bad_query`: an unknown or repeated query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_tab } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_trust_and_safety`: no trust_and_safety role (no other role stands in, #104)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_trust_and_safety } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/trust-safety/bans:
+    get:
+      operationId: listBans
+      summary: Every ban (B70)
+      description: >-
+        The ban list: every banned CRO number, email domain and email address with the company, the reason, the case, the date and who proposed and confirmed it, newest first. A page is
+        20 ban rows; a row that holds several values gives one item for each, so a page can hold up to 60 items. `after` is the `next` of the page before. There is no way to add a ban here:
+        a ban comes from a decided case (a strike 3 or an instant ban, with a second officer) and is lifted by `propose_ban_lift` and a second officer's `confirm` on `POST /api/trust-safety/cases`.
+        An unknown or repeated query key is 400 `bad_query`.
+      security: [{ staffSession: [] }]
+      x-roles: [trust_and_safety]
+      x-rate-limit: none
+      parameters:
+        - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: One page of banned values.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next]
+                properties:
+                  items: { type: array, maxItems: 60, items: { $ref: '#/components/schemas/BanItem' } }
+                  next: { type: [string, 'null'] }
+              example:
+                items: [{ banId: '17', type: cro_number, value: '123456', reasonCode: asks_for_money, caseId: '64', caseLabel: C-0064, caseKind: instant_ban, organisationId: '312', displayName: Example Recruitment Ltd, addedAt: '2026-11-19T10:15:00.000Z', proposedBy: Kit Nolan, confirmedBy: Dara Kelly, liftPending: false }]
+                next: null
+        '400':
+          description: "`bad_cursor`: a token this list did not make. `bad_query`: an unknown or repeated query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`, `not_trust_and_safety`: as on `GET /api/trust-safety/list`."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_trust_and_safety } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/trust-safety/wrc:
+    get:
+      operationId: listWrcReported
+      summary: The cases reported to the WRC (B70)
+      description: >-
+        The agency instant-ban cases staff ticked off as reported to the WRC (`mark_wrc`, #214 d), newest first, 20 a page, with the date and who ticked it off. `after` is the `next` of the
+        page before. An unknown or repeated query key is 400 `bad_query`.
+      security: [{ staffSession: [] }]
+      x-roles: [trust_and_safety]
+      x-rate-limit: none
+      parameters:
+        - { name: after, in: query, required: false, schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: One page of reported cases.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next]
+                properties:
+                  items: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/WrcItem' } }
+                  next: { type: [string, 'null'] }
+              example:
+                items: [{ caseId: '64', caseLabel: C-0064, organisationId: '312', displayName: Example Recruitment Ltd, organisationKind: agency, reasonCode: asks_for_money, reportedAt: '2026-11-20T11:00:00.000Z', reportedBy: Kit Nolan }]
+                next: null
+        '400':
+          description: "`bad_cursor`: a token this list did not make. `bad_query`: an unknown or repeated query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`, `not_trust_and_safety`: as on `GET /api/trust-safety/list`."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_trust_and_safety } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/trust-safety/evidence:
     get:

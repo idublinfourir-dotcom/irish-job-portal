@@ -1811,6 +1811,28 @@ export const strike = pgTable("strike", {
 	check("strike_check4", sql`(stage <> ALL (ARRAY['upheld'::text, 'overturned'::text])) OR ((appealed_at IS NOT NULL) AND (appeal_decided_at IS NOT NULL) AND (appeal_decided_by_staff_user_id IS NOT NULL))`),
 ]);
 
+export const strikeNote = pgTable("strike_note", {
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "strike_note_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	strikeId: bigint("strike_id", { mode: "number" }).notNull(),
+	authorStaffUserId: text("author_staff_user_id").notNull(),
+	body: text().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("strike_note_author_idx").using("btree", table.authorStaffUserId.asc().nullsLast().op("text_ops")),
+	index("strike_note_strike_idx").using("btree", table.strikeId.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	foreignKey({
+			columns: [table.strikeId],
+			foreignColumns: [strike.id],
+			name: "strike_note_strike_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.authorStaffUserId],
+			foreignColumns: [staffUser.id],
+			name: "strike_note_author_staff_user_id_fkey"
+		}),
+	check("strike_note_body_check", sql`(length(body) >= 1) AND (length(body) <= 5000)`),
+]);
+
 export const ban = pgTable("ban", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "ban_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),

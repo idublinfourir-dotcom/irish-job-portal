@@ -33,6 +33,7 @@
     "portalJobCheck": "POST /api/portal/jobs/check (account_owner, recruiter, poster)",
     "portalJobSuggest": "GET /api/portal/jobs/suggest (any active portal login)",
     "portalJobGrades": "GET /api/portal/jobs/grades (any active portal login)",
+    "portalJobForm": "GET /api/portal/jobs/form (any active portal login)",
     "portalJobGet": "GET /api/portal/jobs/{id} (any member)",
     "portalJobAuthorityList": "GET /api/portal/jobs/{id}/authority (account_owner, recruiter, poster)",
     "portalJobAuthorityUpload": "POST /api/portal/jobs/{id}/authority (account_owner, recruiter, poster)",
