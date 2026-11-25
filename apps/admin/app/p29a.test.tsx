@@ -38,7 +38,7 @@ describe("act: the button and its answers", () => {
   });
   it("reauth_required offers a sign in that comes back to this page; any other error does not", () => {
     const re = html(<ErrorNote error={{ code: "reauth_required", text: "For safety, sign in again to do this." }} here="/accounts" />);
-    expect(re).toMatch(/href="\/sign-in\?next=%2Faccounts"/);
+    expect(re).toMatch(/href="\/sign-in\?again=1(&amp;|&)next=%2Faccounts"/);
     expect(html(<ErrorNote error={{ code: "not_found", text: "x" }} here="/accounts" />)).not.toMatch(/sign-in/);
   });
 });

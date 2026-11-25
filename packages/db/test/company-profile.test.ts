@@ -239,7 +239,7 @@ describe("P3: the logo", () => {
 
 // Step 16 B54 (frame E18): the company read's facts from the records, and the logo's public address.
 const KEYS = ["claimed", "county", "croNumber", "croStatus", "description", "descriptionMax", "hasLogo", "kind", "labels", "legalNames", "logoUrl", "memberLimit", "name", "organisationId",
-  "permitCount", "permitsSince", "slug", "status", "website"];
+  "permitCount", "permitHistory", "permitsSince", "publicPayTier", "slug", "status", "website"];
 // An organisation update with its guard triggers off (a status the real flows reach only through staff steps).
 async function setOrg(org: string, sql: string) {
   const k = await su.connect();

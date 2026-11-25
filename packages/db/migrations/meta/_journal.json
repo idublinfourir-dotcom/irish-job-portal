@@ -491,6 +491,13 @@
       "when": 1794300075000,
       "tag": "0075_closed_job_read",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1794300076000,
+      "tag": "0076_trust_notes",
+      "breakpoints": true
     }
   ]
 }

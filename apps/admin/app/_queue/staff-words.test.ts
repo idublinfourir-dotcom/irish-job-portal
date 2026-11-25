@@ -50,7 +50,7 @@ describe("the form body", () => {
     expect(bodyOf({}, [...fields], data({ n: "7", t: "hi", s: "a", x: "z" })).c).toBe(false);
   });
   it("a fresh sign-in comes back to the same page, and the address is encoded", () => {
-    expect(signInAgain("/accounts")).toBe("/sign-in?next=%2Faccounts");
-    expect(signInAgain("/employer-jobs?queue=scam_flag&id=4")).toBe("/sign-in?next=%2Femployer-jobs%3Fqueue%3Dscam_flag%26id%3D4");
+    expect(signInAgain("/accounts")).toBe("/sign-in?again=1&next=%2Faccounts");
+    expect(signInAgain("/employer-jobs?queue=scam_flag&id=4")).toBe("/sign-in?again=1&next=%2Femployer-jobs%3Fqueue%3Dscam_flag%26id%3D4");
   });
 });

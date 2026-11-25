@@ -13,6 +13,7 @@ import { dataRequestInfo } from "./data-request";
 import { statsGet } from "./job-stats";
 import { companySearch, portalLogin } from "./company";
 import { freeEmail } from "./free-email";
+import { jobFormGet } from "./job-form";
 import { jobGet, jobList } from "./jobs";
 import { portalLegalRead } from "./legal";
 import { floorGet } from "./pay-floors";
@@ -39,6 +40,7 @@ export const readVerification = read(verificationGet, "/api/portal/verification"
 export const readClaimSearch = read(companySearch, "/api/portal/claim/search"); // ?q= a name or CRO number; any signed-in login (the claim and first-time steps)
 export const readJobs = read(jobList, "/api/portal/jobs");
 export const readJob = (id: string) => read((r) => jobGet(r, id), "/api/portal/jobs/one")();
+export const readJobForm = read(jobFormGet, "/api/portal/jobs/form"); // B51: the statement wording, the occupation picker, the #66 range note and the graduate minimum
 export const readJobStats = read(statsGet, "/api/portal/job-stats"); // ?days=&jobId=
 export const readTeam = read(teamGet, "/api/portal/team");
 export const readStatus = read(statusGet, "/api/portal/status");

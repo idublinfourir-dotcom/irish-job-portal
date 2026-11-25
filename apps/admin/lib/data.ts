@@ -6,7 +6,7 @@
 import "server-only";
 import { headers } from "next/headers";
 import {
-  type ApproveInput, dryRunApprove, getAccountReview, getContact, getContentPage, getFloorCheck, getItem, getJobQueueItem, getPool, getReport, getServiceCase, getCase, latestPermitRises, listAccountReviews, listAudit,
+  type ApproveInput, dryRunApprove, getAccountReview, getContact, getContentPage, getFloorCheck, getItem, getJobQueueItem, getPool, getReport, getServiceCase, getCase, latestPermitRises, listAccountReviews, listAudit, listBans, listTrust, listWrcReported,
   listContact, listJobAuthority, listContentPages, listCases, listDomains, listFloorChecks, listJobQueue, listManualPosts, listOwnerReassigns, listPayDealEmployers, listRulesHistory, searchManualCompanies, listQueue, listReports, listRules, listServiceCases,
   listSolicitors, listStaff, listStaleContent, previewCompanies, previewContentPage, signupNoCounts, staffMe, deteLinkSuggestions, searchStaff,
 } from "@portal/db";
@@ -64,6 +64,9 @@ export const readReports = asStaff(listReports);
 export const readReport = asStaff(getReport);
 export const readStrikeCases = asStaff(listCases);
 export const readStrikeCase = asStaff(getCase);
+export const readTrustList = asStaff(listTrust); // B69: (options?) { tab: open | waiting | appeals | closed, after }; counts per tab come with the first page
+export const readBans = asStaff(listBans); // B70: (options?) { after }
+export const readWrcReported = asStaff(listWrcReported); // B70: (options?) { after }
 export const readContactMessages = asStaff(listContact);
 export const readContactMessage = asStaff(getContact);
 export const readServiceCases = asStaff(listServiceCases);
