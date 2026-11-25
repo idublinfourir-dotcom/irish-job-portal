@@ -15,7 +15,8 @@ export const occupationPagePath = (o: { slug: string; listStatus: string }) => (
 /** The job search for one occupation code. */
 export const occupationJobsPath = (code: string) => `/jobs?occupationCode=${encodeURIComponent(code)}`;
 export const guidePath = (guideSlug: string) => `/guides/${encodeURIComponent(guideSlug)}`;
-export const updatePath = (updateSlug: string) => `/updates/${encodeURIComponent(updateSlug)}`;
+/** An update has no page of its own: its place in the feed (20 a page, newest first). */
+export const updatePath = (updateSlug: string) => `/updates#${encodeURIComponent(updateSlug)}`;
 export const helpPath = (helpSlug: string) => `/help/${encodeURIComponent(helpSlug)}`;
 /** The legal text of a consent purpose (frame C22's sidebar); a purpose with no public page gives null. */
 const LEGAL = new Map([["privacy_notice", "/privacy"], ["signup_terms", "/terms"], ["cookie_policy", "/cookies"], ["employer_acceptable_use", "/employer-acceptable-use"], ["data_retention", "/data-retention"]]);

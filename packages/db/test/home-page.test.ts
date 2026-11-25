@@ -19,7 +19,7 @@ const secret = "trial-only-secret-trial-only-secret-32";
 const BASE = "http://localhost:3000";
 let db: TestDb, su: pg.Pool, AUTH: (r: Request) => Promise<Response>, H: typeof import("../../../apps/candidate/app/_home/load"), P: HomePage;
 // The page is a .tsx file and this package has no JSX setting, so its path is held in a variable (the type checker does not follow it) and typed by hand.
-type HomePage = { default: (p: { searchParams: Promise<{ sector?: string | string[] }> }) => Promise<import("react").ReactElement>; generateMetadata: () => { title: string; description: string; [k: string]: unknown } }; // never import "next" root types here: they make NODE_ENV required on every ProcessEnv
+type HomePage = { default: (p: { searchParams: Promise<{ sector?: string | string[] }> }) => Promise<import("react").ReactElement>; generateMetadata: () => { title: string; description: string; alternates?: { canonical?: unknown }; [k: string]: unknown } }; // never import "next" root types here: they make NODE_ENV required on every ProcessEnv
 let C: typeof import("../../../apps/candidate/app/_home/counties");
 
 beforeAll(async () => {
@@ -140,6 +140,7 @@ describe("home page output", () => {
     expect(m.description!.length).toBeGreaterThanOrEqual(120);
     expect(m.description!.length).toBeLessThanOrEqual(160);
     expect(String(m.title).replace(/ \| .*$/, "").length).toBeLessThanOrEqual(60);
+    expect(m.alternates?.canonical).toBe(`${BASE}/`); // a sector tab (?sector=) is this same address
   });
   it("the county list of the search form is the job list's own", () => expect([...C.COUNTIES]).toEqual([...DB_COUNTIES]));
   it("shows a wait notice, not an error page, when the read limit is reached", async () => {

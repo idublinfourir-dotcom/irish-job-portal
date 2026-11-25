@@ -2,15 +2,20 @@
 // the state); a signed-in candidate gets pages, save and alerts. A signed-in candidate is told by readSaved (401 for a visitor), which also marks saved jobs.
 import type { Metadata } from "next";
 import { readJobs, readMinimums, readOccupations, readSaved, readSectors } from "../../lib/data";
+import { staticPath } from "../../lib/paths";
+import { breadcrumbLd, isFilteredSearch } from "../../lib/seo";
+import { PageLd } from "../_content/ld";
+import { meta } from "../_content/meta";
 import type { CardJob } from "./card";
 import { parseSearch, queryOf, readQuery, searchDescription, searchTitle } from "./format";
-import { SearchView, type ListRead, type RuleMinimums } from "./search";
+import { SearchView, searchCrumbs, type ListRead, type RuleMinimums } from "./search";
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
-  const { filters } = parseSearch(await searchParams);
-  return { title: searchTitle(filters), description: searchDescription(filters) };
+  const state = parseSearch(await searchParams);
+  // Our own filters, sort and paging make a second copy of /jobs; a key we do not know (a campaign tag) is the same page and only needs the canonical.
+  return meta(searchTitle(state.filters), searchDescription(state.filters), staticPath("jobs")!, isFilteredSearch(Object.fromEntries(readQuery(state))));
 }
 
 type Answer = { jobs: CardJob[]; next: string | null; previous: string | null; count: { n: number; more: boolean } | null; signInForMore: boolean };
@@ -30,16 +35,19 @@ export default async function Page({ searchParams }: Props) {
     signedIn ? null : readMinimums(), // the visitor's "Permit rules" card
   ]);
   return (
-    <SearchView
-      state={state}
-      now={new Date()}
-      list={list}
-      signedIn={signedIn}
-      savedIds={savedIds}
-      sectorCounts={counts?.ok ? (counts.data as { sectors: { sector: string; jobs: number }[] }).sectors : undefined}
-      occupationTitle={titles?.ok ? (titles.data as { occupations: { code: string; title: string }[] }).occupations.find((o) => o.code === state.filters.occupationCode)?.title ?? null : null}
-      minimums={rules?.ok ? (rules.data as RuleMinimums) : null}
-      newest={newest?.ok ? (newest.data as Answer).jobs.slice(0, 2) : undefined}
-    />
+    <>
+      <PageLd make={(origin) => [breadcrumbLd(origin, searchCrumbs())]} />
+      <SearchView
+        state={state}
+        now={new Date()}
+        list={list}
+        signedIn={signedIn}
+        savedIds={savedIds}
+        sectorCounts={counts?.ok ? (counts.data as { sectors: { sector: string; jobs: number }[] }).sectors : undefined}
+        occupationTitle={titles?.ok ? (titles.data as { occupations: { code: string; title: string }[] }).occupations.find((o) => o.code === state.filters.occupationCode)?.title ?? null : null}
+        minimums={rules?.ok ? (rules.data as RuleMinimums) : null}
+        newest={newest?.ok ? (newest.data as Answer).jobs.slice(0, 2) : undefined}
+      />
+    </>
   );
 }

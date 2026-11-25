@@ -99,7 +99,7 @@ describe("home page, normal state", () => {
   });
   it("has guides and updates cards, the FAQ as visible text, and the account block", () => {
     expect(h).toContain('href="/guides/g-one"');
-    expect(h).toContain('href="/updates/u-one"');
+    expect(h).toContain('href="/updates#u-one"');
     expect(h).toContain("Checked on 1 Nov 2026");
     expect(h).toContain("Do I pay to use the site");
     expect(h).toContain("Visitors see the latest 6 jobs");

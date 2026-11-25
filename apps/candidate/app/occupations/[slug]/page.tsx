@@ -6,9 +6,11 @@ import { notFound } from "next/navigation";
 import { readOccupation, readSaved } from "../../../lib/data";
 import { occupationCodeOfSlug, occupationTitle } from "../../../lib/occupations";
 import { occupationPath } from "../../../lib/paths";
+import { breadcrumbLd, canonicalUrl, occupationLd } from "../../../lib/seo";
+import { PageLd } from "../../_content/ld";
 import { meta } from "../../_content/meta";
 import { Problem, type Failed } from "../../_content/problem";
-import { OccupationView, headingOf, titleOf, type OccupationData } from "../occupation-view";
+import { OccupationView, headingOf, occupationCrumbs, titleOf, type OccupationData } from "../occupation-view";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -35,5 +37,11 @@ export default async function Page({ params }: Props) {
   const path = occupationPath(slug);
   const mine = await readSaved(); // 200 only for a signed-in candidate; it also marks the saved jobs
   const savedIds = mine.ok ? ((mine.data as { saved: { jobId: string }[] }).saved ?? []).map((s) => s.jobId) : [];
-  return <OccupationView occupation={r.data as OccupationData} name={occupationTitle(code)} now={new Date()} path={path} signedIn={mine.ok} savedIds={savedIds} />;
+  const o = r.data as OccupationData, name = occupationTitle(code), title = titleOf(o, name);
+  return (
+    <>
+      <PageLd make={(origin) => [occupationLd({ name: title, code: o.code, url: canonicalUrl(origin, path), registrationBody: o.registration?.body }), breadcrumbLd(origin, occupationCrumbs(title))]} />
+      <OccupationView occupation={o} name={name} now={new Date()} path={path} signedIn={mine.ok} savedIds={savedIds} />
+    </>
+  );
 }

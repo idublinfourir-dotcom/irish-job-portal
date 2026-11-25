@@ -1,6 +1,7 @@
 // Unit: the pure helpers (no database, no network, no browser).
 import { describe, expect, it } from "vitest";
 import { activeFilters, ago, contractText, euro, euroText, initials, jobDescription, jobTitleText, loginHref, parseSearch, queryOf, readQuery, searchDescription, searchHeading, searchHref, searchTitle } from "./format";
+import { pageTitle } from "../../lib/seo";
 import { NOW } from "./test-fixtures";
 
 describe("money and dates", () => {
@@ -55,7 +56,7 @@ describe("the search query", () => {
 describe("titles and descriptions (frame 01 SEO spec)", () => {
   it("has a title of 60 characters or fewer plus the site name, and a description of 120 to 160", () => {
     for (const f of [{}, { county: "Cork" }, { q: "nurse", county: "Roscommon" }, { q: "x".repeat(300), county: "Westmeath", sector: "construction and engineering" }]) {
-      const t = searchTitle(f);
+      const t = pageTitle(searchTitle(f));
       expect(t.endsWith(" | Irish Work Permit")).toBe(true);
       expect(t.length - " | Irish Work Permit".length).toBeLessThanOrEqual(60);
       const d = searchDescription(f);
@@ -64,11 +65,11 @@ describe("titles and descriptions (frame 01 SEO spec)", () => {
     }
     expect(searchHeading({ q: "nurse", county: "Cork" })).toBe("Nurse jobs in Cork");
     expect(searchHeading({ county: "Cork'; drop table job;--", sector: "Narnia" })).toBe("Jobs"); // a value the read refuses never reaches a heading or a title
-    expect(searchTitle({ county: "<script>" })).toBe("Find a job | Irish Work Permit");
+    expect(searchTitle({ county: "<script>" })).toBe("Find a job");
   });
   it("has a job title and description inside the limits whatever the job", () => {
     for (const j of [{ title: "A", employerName: "B", county: null, badge: null }, { title: "T".repeat(200), employerName: "E".repeat(200), county: "Cork", badge: "sponsor_confirmed" }, { title: "Staff Nurse", employerName: "Example Care Ltd", county: "Cork", badge: "critical_skills_eligible" }]) {
-      expect(jobTitleText(j).length - " | Irish Work Permit".length).toBeLessThanOrEqual(60);
+      expect(pageTitle(jobTitleText(j)).length - " | Irish Work Permit".length).toBeLessThanOrEqual(60);
       const d = jobDescription(j);
       expect(d.length).toBeGreaterThanOrEqual(120);
       expect(d.length).toBeLessThanOrEqual(160);

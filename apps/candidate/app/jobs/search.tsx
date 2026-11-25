@@ -160,6 +160,9 @@ const ScamBar = () => (
 
 const SORT_CHIP = "inline-flex min-h-[34px] items-center rounded-pill px-3.5 text-small font-medium no-underline";
 
+/** The breadcrumb of the page; without a sector it is also the page's markup (a filtered search is noindex). */
+export const searchCrumbs = (sector?: string | null) => [{ label: "Home", href: "/" }, { label: "Find jobs", href: sector ? "/jobs" : undefined }, ...(sector ? [{ label: capFirst(sector) }] : [])];
+
 export function SearchView(p: SearchProps) {
   const { state, list } = p;
   const f = state.filters;
@@ -177,7 +180,7 @@ export function SearchView(p: SearchProps) {
   return (
     <>
       <div className={`${wrap} pb-8 pt-6 sm:pt-8`}>
-        <Breadcrumb items={[{ label: "Home", href: "/" }, { label: "Find jobs", href: sector ? "/jobs" : undefined }, ...(sector ? [{ label: capFirst(sector) }] : [])]} />
+        <Breadcrumb items={searchCrumbs(sector)} />
         {visitor ? (
           <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-8">
             <h1 className="min-w-0 break-words text-[2.1rem] leading-[1.5] sm:text-[3rem] lg:text-[4rem]">

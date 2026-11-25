@@ -22,8 +22,9 @@ type SearchPage = (p: { searchParams: Promise<Record<string, string | string[] |
 type JobPageFn = (p: { params: Promise<{ job: string }> }) => Promise<Element>;
 let db: TestDb, su: pg.Pool;
 let AUTH: Handler, SAVED: Handler, CLICK: Handler, ANSWER: Handler, TRACKER: Handler, PROFILE: Handler;
-let Search: SearchPage, SearchMeta: (p: { searchParams: Promise<Record<string, string>> }) => Promise<{ title: string; description: string }>;
-let JobP: JobPageFn, JobMeta: (p: { params: Promise<{ job: string }> }) => Promise<{ title: string; description?: string }>;
+type Meta = { title: string; description?: string; alternates?: { canonical?: string }; robots?: { index: boolean; follow: boolean } };
+let Search: SearchPage, SearchMeta: (p: { searchParams: Promise<Record<string, string | string[]>> }) => Promise<Meta>;
+let JobP: JobPageFn, JobMeta: (p: { params: Promise<{ job: string }> }) => Promise<Meta>;
 let paths: { jobPath: (j: { id: string; title: string; county: string | null }) => string };
 const ids: Record<string, string> = {};
 const BUDGET = { searchVisitor: 9, searchSignedIn: 11, jobVisitor: 9, jobSignedIn: 20, medianMs: 120 };
@@ -58,18 +59,21 @@ beforeAll(async () => {
     const c = await su.connect();
     try { await c.query("set session_replication_role = replica"); return (await c.query(sql, params)).rows[0] as { id: string }; } finally { c.release(); }
   };
-  const add = async (key: string, o: { title?: string; county?: string; status?: string; badge?: string | null; salary?: number | null; text?: string; permit?: string } = {}) => {
+  const add = async (key: string, o: { title?: string; county?: string; status?: string; badge?: string | null; salary?: number | null; text?: string; permit?: string; source?: string } = {}) => {
     const status = o.status ?? "live";
     const live = status === "live" || status === "under_review";
     const extra = live ? ", search_vector" : status === "hidden" ? ", hidden_reason" : status === "closed" ? ", close_reason" : "";
     const vals = live ? ", to_tsvector('english','cook')" : status === "hidden" ? ", 'report'" : status === "closed" ? ", 'closed'" : "";
-    const run = o.badge === "sponsor_confirmed" ? quiet : async (sql: string, params: unknown[]) => (await su.query(sql, params)).rows[0] as { id: string };
+    const run = o.badge === "sponsor_confirmed" || o.source ? quiet : async (sql: string, params: unknown[]) => (await su.query(sql, params)).rows[0] as { id: string };
     ids[key] = (await run(
       `insert into job(organisation_id, source, job_source_id, title, employer_name, county, sector, occupation_code, permit_type, badge, salary_low, salary_high, quota_full, status, closes_at, own_page_url${extra})
-       values ($1, 'admin_manual', $2, $3, 'Pages Org', $4, 'IT', '1122', $5, $6, $7, $7, false, '${status}', now() + interval '20 days', 'https://example.test/apply'${vals}) returning id::text`,
+       values ($1, '${o.source ?? "admin_manual"}', $2, $3, 'Pages Org', $4, 'IT', '1122', $5, $6, $7, $7, false, '${status}', now() + interval '20 days', 'https://example.test/apply'${vals}) returning id::text`,
       [org.id, src, o.title ?? `Page Cook ${key}`, o.county ?? "Cork", o.permit ?? "critical_skills", o.badge === undefined ? "critical_skills_eligible" : o.badge, o.salary === undefined ? 50000 : o.salary])).id;
     if (o.text !== undefined) await su.query("insert into job_text(job_id, advert_text) values ($1, $2)", [ids[key], o.text]);
   };
+  // The same advert on every source (SEO1: markup only on the employer's own); the oldest jobs, so the first page of a search is the others
+  for (const source of ["employer", "agency", "fetched", "admin_manual"]) await add(`ld-${source}`, { title: `Meath ${source.replace("_", " ")} Role`, county: "Meath", source, text: "Made-up advert.\nSecond line & </script><script>alert(1)</script>" });
+  await add("ld-no-text", { title: "Meath Textless Role", county: "Meath", source: "employer" });
   for (let i = 0; i < 8; i++) await add(`c${i}`, { county: i < 5 ? "Cork" : "Dublin" });
   for (let i = 0; i < 14; i++) await add(`f${i}`, { county: "Sligo", title: `Filler Role ${i}` });
   await add("sponsor", { title: "Sponsor Chef", county: "Galway", badge: "sponsor_confirmed", permit: "general", text: "Made-up advert.\n<b>not html</b>" });
@@ -124,13 +128,13 @@ describe("P7: /jobs", () => {
     const h = await search({});
     expect(cards(h)).toBe(6);
     expect(h).toContain("Want to see more jobs?");
-    expect(h).toContain("You can see 6 of 25");
-    expect(h).toContain("25 jobs");
+    expect(h).toContain("You can see 6 of 30");
+    expect(h).toContain("30 jobs");
     expect(h).not.toContain('aria-label="Pagination"');
     expect(h).not.toMatch(/Report Page Cook|Save Page Cook/);
     expect(h).toContain("Sign in to create an alert");
     // frame N02: the big count, the pills, the rail with the rules read from the database (never typed), no signed-in-only part
-    expect(h).toMatch(/data-count-big[^>]*><span[^>]*>25<\/span>/);
+    expect(h).toMatch(/data-count-big[^>]*><span[^>]*>30<\/span>/);
     expect(h).toContain("<summary");
     expect(h).toMatch(/Permit rules.*Checked \d{1,2} [A-Z][a-z]{2} \d{4}.*€[\d,]+ is the minimum salary for a Critical Skills permit.*at least \d+ years?/);
     expect(h).not.toMatch(/\d{4}-\d{2}-\d{2}/); // a date on the page is written out
@@ -151,7 +155,7 @@ describe("P7: /jobs", () => {
     expect(await search({ county: "Cork" }, cookie)).toContain("Saved: Page Cook c0");
     const next = /href="(\/jobs\?after=[^"]+)"/.exec(first)![1]!.replaceAll("&amp;", "&");
     const second = await search(Object.fromEntries(new URL(next, BASE).searchParams), cookie);
-    expect(cards(second)).toBe(5);
+    expect(cards(second)).toBe(10);
     expect(second).toContain('rel="prev"');
   });
   it("filters by county and says the count; an unmatched search is the empty state with the newest sponsor jobs", async () => {
@@ -190,8 +194,8 @@ describe("P7: /jobs", () => {
     const m = await as(undefined, () => SearchMeta({ searchParams: Promise.resolve({ county: "Cork" }) }));
     expect(m.title.endsWith(" | Irish Work Permit")).toBe(true);
     expect(m.title.length - " | Irish Work Permit".length).toBeLessThanOrEqual(60);
-    expect(m.description.length).toBeGreaterThanOrEqual(120);
-    expect(m.description.length).toBeLessThanOrEqual(160);
+    expect(m.description!.length).toBeGreaterThanOrEqual(120);
+    expect(m.description!.length).toBeLessThanOrEqual(160);
   });
   it("shows no job that is not live and no field a visitor must not see", async () => {
     const all = (await search({})) + (await search({ q: "Secret" })) + (await search({ county: "Sligo" }));
@@ -311,6 +315,73 @@ describe("P8: /jobs/[job]", () => {
   it("shows no field a visitor must not see", async () => {
     const h = await jobPage(addressOf("c5", "Page Cook c5", "Dublin"));
     for (const t of ["search_vector", "hidden_reason", "close_reason", "weekly_hours", "claims_removed", "organisation_id", "Secret Draft Role", "@example.test"]) expect(h).not.toContain(t);
+  });
+});
+
+describe("SEO1: canonical, noindex and markup of the search and the job page", () => {
+  const blocks = (h: string) => [...h.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/gs)].map((m) => JSON.parse(m[1]!) as Record<string, unknown>);
+  const ofType = (h: string, t: string) => blocks(h).filter((b) => b["@type"] === t);
+  const launched = async <T>(fn: () => Promise<T>) => { process.env.SITE_INDEXABLE = "1"; try { return await fn(); } finally { delete process.env.SITE_INDEXABLE; } };
+  const jobMeta = (seg: string, ip?: string) => as(undefined, () => JobMeta({ params: Promise.resolve({ job: seg }) }), ip);
+  const searchMeta = (q: Record<string, string | string[]>) => as(undefined, () => SearchMeta({ searchParams: Promise.resolve(q) }));
+  const segOf = (key: string) => addressOf(key, `Meath ${key.slice(3).replace("_", " ")} Role`, "Meath");
+
+  it("/jobs has one canonical address; our own filter, sort or page is noindex, a key we do not know is the same page", async () => {
+    await launched(async () => {
+      for (const q of [{}, { utm_source: "x" }, { evil: "1" }, { county: "" }] as Record<string, string>[]) {
+        const m = await searchMeta(q);
+        expect([m.robots, m.alternates?.canonical], JSON.stringify(q)).toEqual([{ index: true, follow: true }, `${BASE}/jobs`]);
+      }
+      for (const q of [{ county: "Cork" }, { q: "cook" }, { sort: "newest" }, { after: "abc" }, { before: "abc" }, { county: ["Cork", "Dublin"] }, { sector: "Narnia" }] as Record<string, string | string[]>[]) {
+        const m = await searchMeta(q);
+        expect([m.robots, m.alternates], JSON.stringify(q)).toEqual([{ index: false, follow: false }, undefined]);
+      }
+    });
+    expect((await searchMeta({})).robots).toEqual({ index: false, follow: false }); // before launch
+    expect(ofType(await search({}), "BreadcrumbList")).toHaveLength(1);
+    expect(ofType(await search({}), "JobPosting")).toEqual([]); // never on a list (Google's rule)
+  });
+  it("a job's canonical is its current address, whatever slug it was opened on and whatever host was asked for", async () => {
+    await launched(async () => {
+      const want = `${BASE}/jobs/${segOf("ld-fetched")}`;
+      for (const seg of [segOf("ld-fetched"), `an-old-title-${ids["ld-fetched"]}`]) expect((await jobMeta(seg)).alternates?.canonical, seg).toBe(want);
+      state.headers = new Headers({ host: "evil.test", "x-forwarded-host": "evil.test", "x-vercel-forwarded-for": freshIp() });
+      expect((await JobMeta({ params: Promise.resolve({ job: segOf("ld-fetched") }) })).alternates?.canonical).toBe(want);
+      expect((await jobMeta(segOf("ld-fetched"))).robots).toEqual({ index: true, follow: true });
+    });
+  });
+  it("job markup only on the employer's own job (#92), with what Google requires; the same advert on every other source has none", async () => {
+    const h = await jobPage(segOf("ld-employer"));
+    const [ld, ...more] = ofType(h, "JobPosting");
+    expect(more).toEqual([]);
+    expect(ld).toMatchObject({
+      title: "Meath employer Role", url: `${BASE}/jobs/${segOf("ld-employer")}`, hiringOrganization: { "@type": "Organization", name: "Pages Org" },
+      description: "Made-up advert.\nSecond line &amp; &lt;/script&gt;&lt;script&gt;alert(1)&lt;/script&gt;",
+      jobLocation: { "@type": "Place", address: { addressRegion: "Meath", addressCountry: "IE" } }, baseSalary: { currency: "EUR", value: { value: 50000, unitText: "YEAR" } },
+    });
+    for (const k of ["datePosted", "validThrough"]) expect(new Date(ld![k] as string).toISOString(), k).toBe(ld![k]);
+    expect(h).not.toContain("<script>alert(1)"); // the advert can neither close the script nor open one
+    for (const source of ["agency", "fetched", "admin_manual"]) {
+      const page = await jobPage(segOf(`ld-${source}`));
+      expect(ofType(page, "JobPosting"), source).toEqual([]);
+      expect(page, source).not.toContain("JobPosting");
+      expect(ofType(page, "BreadcrumbList").map((b) => (b.itemListElement as { name: string; item?: string }[]).map((x) => [x.name, x.item])), source)
+        .toEqual([[["Find a job", `${BASE}/jobs`], [`Meath ${source.replace("_", " ")} Role`, undefined]]]); // the sector crumb is a filtered search
+    }
+    expect(ofType(await jobPage(addressOf("ld-no-text", "Meath Textless Role", "Meath")), "JobPosting")).toEqual([]); // the description is required
+  });
+  it("a job that has closed loses its markup and is noindex, a 404 is noindex, and the read limit is not", async () => {
+    await launched(async () => {
+      const seg = addressOf("closed", "Closed Role", "Cork");
+      expect((await jobMeta(seg)).robots).toEqual({ index: false, follow: false });
+      expect(await jobPage(seg)).not.toContain("ld+json");
+      for (const s of ["abc", "99999999", `x-${ids.draft}`]) expect((await jobMeta(s)).robots, s).toEqual({ index: false, follow: false });
+      await su.query("update job set status = 'closed', close_reason = 'closed' where id = $1", [ids["ld-employer"]]);
+      expect(await jobPage(segOf("ld-employer"))).not.toContain("JobPosting");
+      const ip = freshIp();
+      for (let i = 0; i < 62; i++) await jobMeta(segOf("ld-fetched"), ip);
+      expect(await jobMeta(segOf("ld-fetched"), ip)).toEqual({ title: "Job" }); // a crawler told to slow down does not drop the job
+    });
   });
 });
 

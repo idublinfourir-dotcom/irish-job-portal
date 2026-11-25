@@ -4,12 +4,12 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { readCases, readPermitNotice, readSignedIn } from "../../lib/data";
 import { safe } from "../_home/safe";
-import { accountPath, casePath, loginPath, permitRequestPath, signupPath } from "../../lib/paths";
-import { pageDescription, pageTitle } from "../../lib/seo";
+import { accountPath, casePath, loginPath, permitRequestPath, permitServicesPath, signupPath } from "../../lib/paths";
+import { meta } from "../_content/meta";
 import { LandingView, noticeOf } from "./landing";
 
 const DESCRIPTION = "Our own team prepares your employment permit application and tracks the case with you and your employer. Candidates never pay for our services. The employer or agency does.";
-export const generateMetadata = (): Metadata => ({ title: pageTitle("Permit services"), description: pageDescription(DESCRIPTION) });
+export const generateMetadata = (): Metadata => meta("Permit services", DESCRIPTION, permitServicesPath());
 
 type Case = { id: string; status: string };
 export default async function Page() {

@@ -29,7 +29,7 @@ function Item({ u }: { u: UpdateData }) {
   const src = sourceOf(u.sourceUrl);
   const day = dublinDay(u.publishedAt);
   return (
-    <article data-update className="grid gap-3 rounded-bento bg-sand p-6 sm:grid-cols-[9.5rem_minmax(0,1fr)] sm:gap-6 sm:p-7">
+    <article id={u.slug} data-update className="grid scroll-mt-6 gap-3 rounded-bento bg-sand p-6 sm:grid-cols-[9.5rem_minmax(0,1fr)] sm:gap-6 sm:p-7">
       <div className="flex flex-col items-start gap-2">
         <p className="font-semibold">{day}</p>
         {cat && <Pill tone="green" className="min-h-0 px-3 py-[3px] text-[13px] text-pressed-dark">{cat}</Pill>}

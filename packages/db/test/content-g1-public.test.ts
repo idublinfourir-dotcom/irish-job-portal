@@ -250,7 +250,7 @@ describe("B20 and #290: the new legal purposes on GET /api/legal", () => {
 describe("B21: the sitemap parts and the index", () => {
   it("the ids name every file once, and /sitemap-index.xml lists exactly those", async () => {
     const ids = await as(() => D.readSitemapIds());
-    expect(ids).toEqual(["jobs-0", "companies-0", "occupations-0", "pages-0", "guides-0", "updates-0", "help-0"]);
+    expect(ids).toEqual(["jobs-0", "companies-0", "occupations-0", "pages-0", "guides-0", "help-0"]);
     const res = await INDEX(new Request(`${BASE}/sitemap-index.xml`));
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/^application\/xml/);
@@ -264,14 +264,11 @@ describe("B21: the sitemap parts and the index", () => {
     const legal = await D.readSitemapPart("pages-0");
     expect(legal!.filter((e) => e.kind === "legal").every((e) => !Number.isNaN(Date.parse(e.lastModified!)))).toBe(true);
   });
-  it("guides, updates and help list only published pages by their readable address, with a change date", async () => {
+  it("guides and help list only published pages by their readable address, with a change date", async () => {
     const guides = await SITEMAP({ id: Promise.resolve("guides-0") });
     expect(guides.map((e) => e.url.replace(BASE, "")).sort()).toEqual(["/guides/alpha-guide", "/guides/dete-portal-closed", "/guides/zeta-guide"]);
     expect(guides.every((e) => e.lastModified)).toBe(true);
-    const updates = (await SITEMAP({ id: Promise.resolve("updates-0") })).map((e) => e.url.replace(BASE, ""));
-    expect(updates).toHaveLength(27);
-    expect(updates).toContain("/updates/min-1");
-    expect(updates.some((u) => /draft|old/.test(u))).toBe(false);
+    expect(await SITEMAP({ id: Promise.resolve("updates-0") })).toEqual([]); // an update has no page of its own: the feed /updates is in pages-0
     expect((await SITEMAP({ id: Promise.resolve("help-0") })).map((e) => e.url.replace(BASE, "")).sort()).toEqual(["/help/delete-account", "/help/no-group", "/help/who-needs-a-permit"]);
     expect(await SITEMAP({ id: Promise.resolve("guides-1") })).toEqual([]);
   });
@@ -315,7 +312,7 @@ describe("rate limit, statements and time", () => {
     const { sitemapIds, sitemapPart, getPool } = await import("../src");
     await sitemapIds(getPool()); // warms the rules
     expect((await counted(() => sitemapIds(getPool())))[1]).toBeLessThanOrEqual(BUDGET.ids);
-    for (const id of ["guides-0", "updates-0", "help-0", "pages-0", "companies-0"]) expect((await counted(() => sitemapPart(getPool(), id)))[1], id).toBeLessThanOrEqual(BUDGET.part);
+    for (const id of ["guides-0", "help-0", "pages-0", "companies-0"]) expect((await counted(() => sitemapPart(getPool(), id)))[1], id).toBeLessThanOrEqual(BUDGET.part);
     expect((await counted(() => INDEX(new Request(`${BASE}/sitemap-index.xml`))))[1]).toBe(0); // the ids are kept
   });
   it("the new routes have no write method", async () => {

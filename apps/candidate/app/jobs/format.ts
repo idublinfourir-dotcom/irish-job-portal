@@ -1,5 +1,4 @@
 // Pure helpers of the job pages (no data reads, no React): money, dates, the search query and its links.
-import { SITE_NAME } from "@portal/ui";
 
 export const euro = (n: number) => `€${new Intl.NumberFormat("en-IE").format(n)}`;
 /** The pay scale line comes from the read as "EUR 38,166 to 56,592" (placeholder wording, CF54): print the euro sign. */
@@ -68,7 +67,7 @@ export const searchHref = (s: SearchState, extra?: { after?: string; before?: st
 };
 export const activeFilters = (f: Filters) => FILTER_KEYS.filter((k) => f[k] !== undefined).length;
 
-// ===== titles and descriptions (frame 01 SEO spec: title 60 or fewer plus the site name, description 120 to 160) =====
+// ===== titles and descriptions (frame 01 SEO spec: title 60 or fewer plus the site name, which _content/meta.ts cuts and adds; description 120 to 160) =====
 const clip = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`);
 // Only values the read accepts reach a heading, a title or a description: a bad filter is worded as an error on the page, never echoed as a title.
 const known = <T extends string>(list: readonly T[], v: string | undefined) => list.find((x) => x === v);
@@ -81,7 +80,7 @@ export function searchHeading(f: Filters): string {
   const { what, county } = headingParts(f);
   return county ? `${what} in ${county}` : what;
 }
-export const searchTitle = (f: Filters) => `${clip(searchHeading(f) === "Jobs" ? "Find a job" : searchHeading(f), 60)} | ${SITE_NAME}`;
+export const searchTitle = (f: Filters) => (searchHeading(f) === "Jobs" ? "Find a job" : searchHeading(f));
 const DESCRIPTION = "Live jobs in Ireland where an employment permit is realistic. Filter by county, sector, salary and permit badge. Rules are checked against DETE guidance.";
 export const searchDescription = (f: Filters) => {
   const d = searchHeading(f) !== "Jobs" ? `${searchHeading(f)}: live jobs where an employment permit is realistic. Filter by sector, salary and permit badge. Checked against DETE guidance.` : DESCRIPTION;
@@ -91,7 +90,7 @@ export const searchDescription = (f: Filters) => {
 /** The log in link that comes back to `path` (an own path only; anything else goes to plain /login). Whether the login page honours `next` is the sign-in slice's call. */
 export const loginHref = (path: string) => (/^\/(?!\/)[\w\-./?=&%~]*$/.test(path) ? `/login?next=${encodeURIComponent(path)}` : "/login");
 
-export const jobTitleText = (j: { title: string; employerName: string }) => `${clip(`${j.title} at ${j.employerName}`, 60)} | ${SITE_NAME}`;
+export const jobTitleText = (j: { title: string; employerName: string }) => `${j.title} at ${j.employerName}`;
 /** 120 to 160 characters: what the job is, then fixed lines until it is long enough, then cut. */
 export function jobDescription(j: { title: string; employerName: string; county: string | null; badge: string | null }): string {
   const lead = `${j.title} at ${j.employerName}${j.county ? ` in ${j.county}` : ""}.`;

@@ -33,7 +33,7 @@ describe("the other addresses", () => {
   it("are plural folders with the slug", () => {
     expect(companyPath("acme-ltd")).toBe("/companies/acme-ltd");
     expect(guidePath("working-in-ireland")).toBe("/guides/working-in-ireland");
-    expect(updatePath("new-minimums")).toBe("/updates/new-minimums");
+    expect(updatePath("new-minimums")).toBe("/updates#new-minimums"); // an update has no page of its own
     expect(occupationPath(occupationSlug("1115")!)).toBe("/occupations/chief-executives-and-senior-officials");
     expect(occupationCodeOfSlug("chief-executives-and-senior-officials")).toBe("1115");
   });
@@ -44,7 +44,8 @@ describe("the other addresses", () => {
     expect(occupationJobsPath("6145&x=1#y")).toBe("/jobs?occupationCode=6145%26x%3D1%23y");
   });
   it("encode a hostile slug rather than pass it through", () => {
-    for (const f of [companyPath, guidePath, updatePath, occupationPath]) expect(f("a/b?c#d ../").split("/").length, f.name).toBe(3);
+    for (const f of [companyPath, guidePath, occupationPath]) expect(f("a/b?c#d ../").split("/").length, f.name).toBe(3);
+    expect(updatePath("a/b?c#d ../")).toBe("/updates#a%2Fb%3Fc%23d%20..%2F");
     expect(companyPath("a/b")).toBe("/companies/a%2Fb");
   });
 });

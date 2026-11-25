@@ -29,6 +29,8 @@ export type OccupationProps = { occupation: OccupationData; name?: string | null
 
 /** The occupation's name: its SOC unit group title, else the title of its Critical Skills list entry, else its first entry. */
 export const titleOf = (o: Pick<OccupationData, "entries">, name?: string | null) => name || (o.entries.find((e) => e.list === "critical-skills") ?? o.entries[0])?.title || "";
+/** The breadcrumb of the page, also its markup. */
+export const occupationCrumbs = (title: string) => [{ label: "Home", href: "/" }, { label: title }];
 /** The title of the page: "<name> visa sponsorship jobs in Ireland" (frame C14). */
 export const headingOf = (title: string) => `${title} visa sponsorship jobs in Ireland`;
 const countText = (n: { n: number; more: boolean } | null, fallback: number) => (n ? (n.more ? `${n.n}+` : String(n.n)) : String(fallback));
@@ -41,7 +43,7 @@ function Hero({ o, title, signedIn }: { o: OccupationData; title: string; signed
     <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
       <section aria-labelledby="occ-h" className="flex min-h-[300px] flex-col justify-between gap-10 rounded-bento bg-ink p-6 text-white sm:p-10 lg:min-h-[416px]">
         <div className="flex flex-col gap-6">
-          <div className="text-white/85 [&_a]:text-white/85 [&_li]:text-white/85 [&_span]:text-white"><Breadcrumb items={[{ label: "Home", href: "/" }, { label: title }]} /></div>
+          <div className="text-white/85 [&_a]:text-white/85 [&_li]:text-white/85 [&_span]:text-white"><Breadcrumb items={occupationCrumbs(title)} /></div>
           <h1 id="occ-h" className="break-words text-[2rem] leading-[1.25] text-white sm:text-[2.9rem]">{a}<span className="text-deep-green">visa sponsorship</span>{b}</h1>
         </div>
         <div className="flex flex-col gap-6">

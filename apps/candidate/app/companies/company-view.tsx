@@ -126,6 +126,9 @@ function Names({ names }: { names: { name: string; kind: string }[] }) {
   );
 }
 
+/** The breadcrumb of the page, also its markup. */
+export const companyCrumbs = (c: { name: string }) => [{ label: "Home", href: "/" }, { label: c.name }];
+
 export function CompanyView({ company: c, now, signedIn, savedIds, path, prevHref, nextHref }: CompanyProps): ReactNode {
   const n = c.jobs.count;
   const total = n ? (n.more ? `${n.n}+` : String(n.n)) : String(c.jobs.jobs.length);
@@ -133,7 +136,7 @@ export function CompanyView({ company: c, now, signedIn, savedIds, path, prevHre
   return (
     <>
       <div className={`${wrap} pb-4 pt-5`}>
-        <Breadcrumb items={[{ label: "Home", href: "/" }, { label: c.name }]} />
+        <Breadcrumb items={companyCrumbs(c)} />
         <div className="mt-6"><PhotoBlock className="h-[140px] sm:h-[240px]" /></div>
         <div className={`mt-5 grid grid-cols-[minmax(0,1fr)] items-start gap-5 ${permits && permits.byYear.length ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]" : ""}`}>
           <Identity c={c} path={path} signedIn={signedIn} />
