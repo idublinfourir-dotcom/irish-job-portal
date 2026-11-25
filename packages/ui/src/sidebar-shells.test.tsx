@@ -27,6 +27,7 @@ describe("portal shell: company status banner", () => {
 describe("portal shell: bell, post button, footer", () => {
   it("shows the unread count, caps it at 200+, and says none when zero", () => {
     expect(portal({ unread: 3 })).toContain("Notices, 3 unread");
+    expect(portal({ unread: 3 })).toMatch(/<a(?=[^>]*href="\/notices")(?=[^>]*aria-label="Notices, 3 unread")/); // DD34: the bell is a link to the notice list
     expect(portal({ unread: 3 })).toMatch(/data-unread[^>]*>3</);
     expect(portal({ unread: 200 })).toContain("200+");
     expect(portal({ unread: 200 })).toContain("200 or more");

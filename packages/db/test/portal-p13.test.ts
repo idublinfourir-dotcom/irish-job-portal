@@ -213,7 +213,7 @@ describe("where each login goes (landing, sign-in, dashboard)", () => {
     expect(await redirectOf("dashboard", none.cookie)).toBe("/sign-up/claim");
     expect(await redirectOf("dashboard", pending.cookie)).toBe("/verification");
     expect(await redirectOf("dashboard", undefined)).toBe("/sign-in");
-    expect(await open("dashboard", live.cookie)).toMatch(/Nothing here yet/);
+    expect(await open("dashboard", live.cookie)).toMatch(/Good (morning|afternoon|evening)/); // P18 replaced the stand-in page
     const landing = await open("landing", undefined);
     expect(landing).toMatch(/Hire people/);
     expect(landing.match(/<h1/g)).toHaveLength(1);
