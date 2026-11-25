@@ -104,7 +104,7 @@ export const roleWord = (r: string) => ROLE_WORD[r] ?? "Member";
 const SERVER = "This is not working right now. Try again in a few minutes.";
 const isOrigin = (a: Answer) => a.status === 403 && a.code === "BAD_ORIGIN";
 /** The answers every route can give. */
-function common(a: Answer): string | null {
+export function common(a: Answer): string | null {
   if (a.status === 0) return "We could not reach the server. Check your connection and try again.";
   if (a.status === 429) return "Too many tries. Wait a few minutes, then try again.";
   if (a.status === 401) return "Your sign-in has ended. Sign in again to carry on.";

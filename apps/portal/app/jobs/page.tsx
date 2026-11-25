@@ -15,5 +15,5 @@ export default async function Page({ searchParams }: { searchParams: Query }) {
   const q = await searchParams;
   const m = await member("/jobs");
   const [jobs, stats] = await Promise.all([readJobs().catch(() => null), readJobStats({ days: "30" }).catch(() => null)]);
-  return <JobsView now={nowMs()} role={m.role} jobs={bodyOf<Job[]>(jobs, "jobs")} stats={bodyOf<StatRow[]>(stats, "stats")} tab={one(q.tab)} from={one(q.from)} pick={one(q.job)} />;
+  return <JobsView now={nowMs()} role={m.role} jobs={bodyOf<Job[]>(jobs, "jobs")} stats={bodyOf<StatRow[]>(stats, "stats")} tab={one(q.tab)} from={one(q.from)} pick={one(q.job)} saved={one(q.saved)} />;
 }

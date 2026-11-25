@@ -2,6 +2,7 @@
 // Tabs count from the one list the page read (CF128: the same rule everywhere: the number of that list's jobs in that state, "200+" at the route's cap). Previous and Next only (#125).
 import { Button, EmptyState, Notice, Pager, Tabs } from "@portal/ui";
 import { JobsTable, StatsCard } from "../_jobs/table";
+import { SAVED, savedWord } from "../_jobform/words";
 import { JOB_FORM_LIVE } from "../_site/flags";
 import { countWord, dateWord, holdWord, inTab, jobState, STATE_WORD, TABS, tabKey, totals, type Job, type StatRow } from "../_jobs/words";
 
@@ -9,7 +10,7 @@ export const PAGE = 20;
 const href = (tab: string, from = 0, job?: string) => { const p = new URLSearchParams(); if (tab !== "all") p.set("tab", tab); if (from > 0) p.set("from", String(from)); if (job) p.set("job", job); const s = p.toString(); return `/jobs${s ? `?${s}` : ""}`; };
 const offset = (v: string | undefined, max: number) => (v && /^\d{1,4}$/.test(v) ? Math.min(Number(v), max) : 0);
 
-export function JobsView({ now, role, jobs, stats, tab: tabValue, from, pick }: { now: number; role: string; jobs?: Job[]; stats?: StatRow[]; tab?: string; from?: string; pick?: string }) {
+export function JobsView({ now, role, jobs, stats, tab: tabValue, from, pick, saved }: { now: number; role: string; jobs?: Job[]; stats?: StatRow[]; tab?: string; from?: string; pick?: string; saved?: string }) {
   const canPost = role !== "viewer";
   const tab = tabKey(tabValue);
   const all = jobs ?? [];
@@ -26,6 +27,7 @@ export function JobsView({ now, role, jobs, stats, tab: tabValue, from, pick }: 
         <div><h1>Jobs</h1><p className="mt-2 text-muted">Each job is live for 30 days. We remind you before it expires.</p></div>
         {canPost && JOB_FORM_LIVE && <Button href="/jobs/new" variant="dark" size="lg">Post a job</Button>}
       </header>
+      {saved && SAVED.includes(saved) && <Notice kind="success">{savedWord(saved, saved === "draft")}</Notice>}
       {!jobs ? <Notice kind="error" title="We cannot show your jobs now">Reload the page in a minute.</Notice> : (
         <>
           <Tabs label="Jobs by state" items={TABS.map(([key, label]) => ({ label: `${label} ${countWord(all.filter((j) => inTab(key, j)).length)}`, href: href(key), active: key === tab }))} />
