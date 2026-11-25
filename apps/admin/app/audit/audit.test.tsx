@@ -1,5 +1,5 @@
 // The audit log page (frame D13): the rows, the filters, the export button and the roles. react-dom/server, no browser, no network.
-import type { AuditRow } from "@portal/db";
+import type { AuditRow } from "../../lib/data";
 import { renderToStaticMarkup as html } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { ExportView } from "./export";

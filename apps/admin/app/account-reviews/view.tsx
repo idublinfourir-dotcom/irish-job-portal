@@ -62,7 +62,7 @@ export function Detail({ item, mine, listHref }: { item: ReviewItem; mine: boole
         <h2 className="text-[22px] [overflow-wrap:anywhere]">{item.displayName}</h2>
         <Pill tone="peach" className="min-h-[30px]">{typeLabel(item)}</Pill>
       </header>
-      <p className="text-small text-muted [overflow-wrap:anywhere]">{signedUpBy(item)} · {when(item.createdAt)}</p>
+      <p className="text-small text-muted [overflow-wrap:anywhere]">{signedUpBy(item)} · {when(item.createdAt)} · <A href={`/companies/${item.organisationId}`} className="font-semibold text-deep-green underline">Company page</A></p>
       {item.organisationStatus === "needs_info" && item.status !== "done" && <Notice kind="info">Waiting for the company&apos;s answer to your question.</Notice>}
       {item.answer && (
         <Notice kind="success" title={`The company answered${item.answeredAt ? ` on ${when(item.answeredAt)}` : ""}`}>

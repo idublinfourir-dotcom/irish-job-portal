@@ -42,6 +42,8 @@ export const ADMIN_NAV: { title: string; links: AdminLink[] }[] = [
       { label: "Fetched jobs", href: "/fetched-jobs", icon: "layers", roles: ["fetched_job_reviewer"] },
       { label: "Reports and strikes", href: "/reports", icon: "flag", roles: ["trust_and_safety"] },
       { label: "Services cases", href: "/services", icon: "file", roles: ["services_case_handler", "administrator"] },
+      { label: "Contact messages", href: "/contact", icon: "help", roles: ["services_case_handler", "content_editor", "administrator"] },
+      { label: "Held jobs", href: "/employer-jobs", icon: "briefcase", roles: ["trust_and_safety", "account_reviewer", "administrator"] },
     ],
   },
   {
@@ -49,6 +51,9 @@ export const ADMIN_NAV: { title: string; links: AdminLink[] }[] = [
     links: [
       { label: "Rules data", href: "/rules", icon: "clipboard" },
       { label: "Big-company list", href: "/rules/big-companies", icon: "building", roles: ["rules_data_editor", "administrator"] },
+      { label: "Pay floor checks", href: "/pay-floors", icon: "clipboard", roles: ["rules_data_editor", "administrator"] },
+      { label: "Company seed", href: "/companies/seed", icon: "building", roles: ["rules_data_editor", "administrator"] },
+      { label: "DETE name links", href: "/companies/dete-links", icon: "copy", roles: ["account_reviewer", "trust_and_safety", "administrator"] },
       { label: "Name merges", href: "/name-merges", icon: "copy", roles: ["account_reviewer", "fetched_job_reviewer", "rules_data_editor", "trust_and_safety", "administrator"] },
       { label: "Ban list", href: "/ban-list", icon: "close", roles: ["trust_and_safety"] },
     ],
@@ -59,6 +64,7 @@ export const ADMIN_NAV: { title: string; links: AdminLink[] }[] = [
       { label: "Manual posting", href: "/manual-posting", icon: "plus", roles: ["account_reviewer", "trust_and_safety", "administrator"] },
       { label: "Content editor", href: "/content", icon: "pen", roles: ["content_editor", "rules_data_editor", "administrator"] },
       { label: "Audit log", href: "/audit", icon: "clock" },
+      { label: "Accounts", href: "/accounts", icon: "shield", roles: ["administrator"] },
       { label: "Staff and roles", href: "/staff", icon: "lock", roles: ["administrator"] },
     ],
   },

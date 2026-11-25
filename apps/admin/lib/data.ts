@@ -7,7 +7,7 @@ import "server-only";
 import { headers } from "next/headers";
 import {
   type ApproveInput, dryRunApprove, getAccountReview, getContact, getContentPage, getFloorCheck, getItem, getJobQueueItem, getPool, getReport, getServiceCase, getCase, latestPermitRises, listAccountReviews, listAudit,
-  listContact, listContentPages, listCases, listDomains, listFloorChecks, listJobQueue, listManualPosts, listOwnerReassigns, listQueue, listReports, listRules, listServiceCases,
+  listContact, listJobAuthority, listContentPages, listCases, listDomains, listFloorChecks, listJobQueue, listManualPosts, listOwnerReassigns, listPayDealEmployers, listRulesHistory, searchManualCompanies, listQueue, listReports, listRules, listServiceCases,
   listSolicitors, listStaff, listStaleContent, previewCompanies, previewContentPage, signupNoCounts, staffMe, deteLinkSuggestions, searchStaff,
 } from "@portal/db";
 import {
@@ -55,9 +55,11 @@ export const readAccountReviews = asStaff(listAccountReviews);
 export const readAccountReview = asStaff(getAccountReview);
 export const readEmployerJobs = asStaff(listJobQueue); // (queue, options?)
 export const readEmployerJob = asStaff(getJobQueueItem);
+export const readJobAuthority = asStaff(listJobAuthority); // (jobId) the copies of an agency job's written authority, metadata only; the file opens through GET /api/employer-jobs/authority
 export const readFloorChecks = asStaff(listFloorChecks);
 export const readFloorCheck = asStaff(getFloorCheck);
 export const readManualPosts = asStaff(listManualPosts);
+export const readManualCompanies = asStaff(searchManualCompanies); // B72: (q) the employer picker of the manual post
 export const readReports = asStaff(listReports);
 export const readReport = asStaff(getReport);
 export const readStrikeCases = asStaff(listCases);
@@ -80,6 +82,8 @@ export const readDataRequests = asStaff(listDataRequests);
 
 // rules, settings, texts, content
 export const readRules = asStaff(listRules);
+export const readRulesHistory = asStaff(listRulesHistory); // B64: ({ kind, after })
+export const readPayDealEmployers = asStaff(listPayDealEmployers); // B66: every entry, on and off, with its counts
 export const readSettings = asStaff(listSettings);
 export const readLegal = asStaff(listLegal);
 export const readContentPages = asStaff(listContentPages);
