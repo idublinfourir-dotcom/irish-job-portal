@@ -8,10 +8,12 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { ownPath, type PortalLogin } from "@portal/auth";
 import { agencyJobs } from "./agency-jobs";
-import { caseList } from "./cases";
+import { caseList, caseRead, caseTimeline } from "./cases";
+import { occupationList, permitNotice } from "./permit-pages";
 import { dataRequestInfo } from "./data-request";
 import { statsGet } from "./job-stats";
 import { companySearch, portalLogin } from "./company";
+import { docsList } from "./files";
 import { freeEmail } from "./free-email";
 import { jobGet, jobList } from "./jobs";
 import { portalLegalRead } from "./legal";
@@ -43,6 +45,15 @@ export const readJobStats = read(statsGet, "/api/portal/job-stats"); // ?days=&j
 export const readTeam = read(teamGet, "/api/portal/team");
 export const readStatus = read(statusGet, "/api/portal/status");
 export const readCases = read(caseList, "/api/portal/cases"); // ?after=
+export const readCase = (id: string) => read((r) => caseRead(r, id), "/api/portal/cases/one")(); // P20: 404 CASE_NOT_FOUND for a case this login may not read
+export const readCaseTimeline = (id: string) => read((r) => caseTimeline(r, id), "/api/portal/cases/one/timeline")();
+export const readCaseDocuments = (id: string) => read((r) => docsList(r, id), "/api/portal/cases/one/documents")(); // the requester's own copies; 404 for anyone else
+export const readOccupations = async (): Promise<Read> => ({ status: 200, body: (await occupationList()) as unknown as Read["body"] }); // P20: the request form's occupation list (the public picker)
+/** P20, DD37 (#291): the notice for the permit pages while DETE's portal is closed, or 404 when staff have it off. */
+export const readPermitNotice = async (): Promise<Read> => {
+  const n = await permitNotice();
+  return n ? { status: 200, body: n as unknown as Read["body"] } : { status: 404, body: { code: "NOT_FOUND" } };
+};
 export const readDataRequest = (token: string) => read(dataRequestInfo, "/api/data-request")({ token }); // P17c: no sign-in; what the emailed link would do, changes nothing
 export const readNotices = read(noticesGet, "/api/portal/notices"); // ?after=
 export const readPayFloors = read(floorGet, "/api/portal/pay-floors"); // the company's pay floors and the wording to sign (DD33)
