@@ -25,9 +25,9 @@ export function greeting(now: Date) {
 }
 
 const Tile = ({ href, n, label, icon, cls }: { href: string; n: number | null; label: string; icon: "bookmark" | "briefcase" | "bell"; cls: string }) => (
-  <A href={href} className={`flex min-h-36 flex-col justify-between gap-6 rounded-bento p-5 no-underline ${cls}`}>
+  <A href={href} className={`flex min-h-36 min-w-0 flex-col justify-between gap-6 rounded-bento p-4 no-underline sm:p-5 ${cls}`}>
     <span aria-hidden="true" className="grid size-10 place-items-center rounded-pill bg-white text-ink"><Icon name={icon} size={18} /></span>
-    <span><span className="block font-heading text-[2.4rem] font-semibold leading-none">{n ?? "-"}</span><span className="mt-1 block">{label}</span></span>
+    <span><span className="block font-heading text-[2.4rem] font-semibold leading-none">{n ?? "-"}</span><span className="mt-1 block break-words text-caption sm:text-body">{label}</span></span>
   </A>
 );
 
@@ -37,6 +37,7 @@ export function HomeView({ d, now }: { d: HomeData; now: Date }) {
   return (
     <>
       <Head
+        big
         title={<>{greeting(now)}{first && <>, <Hl c="green">{first}</Hl></>}</>}
         action={<Button href="/jobs" variant="dark" size="lg">Find jobs <Icon name="arrow" size={16} /></Button>}
       />

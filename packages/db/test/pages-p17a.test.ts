@@ -11,6 +11,7 @@ import { createTestDb, urlFor, type TestDb } from "./db";
 const { state } = vi.hoisted(() => ({ state: { headers: new Headers() } }));
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({ headers: async () => state.headers }));
+vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), connection: async () => {} }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace() {}, refresh() {}, push() {} }), usePathname: () => "/account", redirect: (to: string) => { throw new Error(`NEXT_REDIRECT ${to}`); } }));
 
 // Measured 25 Nov 2026 (see the printed line): the layout's five reads and the session are the `layout` figure (a page render adds its own reads on top, the session included in each).

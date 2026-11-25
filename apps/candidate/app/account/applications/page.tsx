@@ -1,5 +1,6 @@
 // /account/applications (frames NA2, M07): see view.tsx.
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { SITE_NAME } from "@portal/ui";
 import { readAlerts, readOccupations, readSaved, readTracker } from "../../../lib/data";
 import { safe } from "../../_home/safe";
@@ -10,6 +11,7 @@ import { ApplicationsView, type SavedBit, type TrackedRow } from "./view";
 export const metadata: Metadata = { title: `Your applications | ${SITE_NAME}`, robots: { index: false, follow: false } };
 
 export default async function Page() {
+  await connection(); // per visit: a failed read below must not turn the page into a static one
   const [t, s, a, o] = await Promise.all([safe(readTracker(), "tracker"), safe(readSaved(), "saved"), safe(readAlerts(), "alerts"), safe(readOccupations(), "occupations")]);
   if (!t.ok) return <><Head title="Your applications and saved jobs" /><Failed what="your applications" code={t.code} /></>;
   const { tracker, count } = t.data as { tracker: TrackedRow[]; count: number };

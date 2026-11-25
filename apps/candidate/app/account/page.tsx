@@ -1,5 +1,6 @@
 // /account (frame NA1): see home.tsx.
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { SITE_NAME } from "@portal/ui";
 import { readAlerts, readCases, readDidYouApply, readNotices, readProfile, readSaved, readTracker } from "../../lib/data";
 import { safe } from "../_home/safe";
@@ -10,6 +11,7 @@ export const metadata: Metadata = { title: `Your account | ${SITE_NAME}`, robots
 const ok = <T,>(r: { ok: boolean; data?: unknown }): T | null => (r.ok ? (r.data as T) : null);
 
 export default async function Page() {
+  await connection(); // per visit: a failed read below must not turn the page into a static one
   const [profile, saved, alerts, tracker, cases, prompts, notices] = await Promise.all([
     safe(readProfile(), "profile"), safe(readSaved(), "saved"), safe(readAlerts(), "alerts"), safe(readTracker(), "tracker"), safe(readCases(), "cases"), safe(readDidYouApply(), "prompts"), safe(readNotices(), "notices"),
   ]);
