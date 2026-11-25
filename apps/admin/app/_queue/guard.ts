@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 
 const SIGN_IN = new Set(["no_session", "not_active", "not_active_staff"]);
 /** The codes that say "your roles do not let you": a role this page needs and the login does not hold. */
-const WRONG_ROLE = /^(not_reviewer|not_administrator|no_role|not_case_staff|not_case_handler)$/;
+const WRONG_ROLE = /^(not_reviewer|not_administrator|no_role|not_case_staff|not_case_handler|not_dete_link_viewer|not_content_staff)$/;
 
 export type Guarded<T> = { refused: false; value: T } | { refused: true };
 
