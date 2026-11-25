@@ -3,7 +3,8 @@
 import { renderToStaticMarkup as html } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { NOW, card } from "../jobs/test-fixtures";
-import { OccupationView, headingOf, searchHref, titleOf, type OccupationData } from "./occupation-view";
+import { occupationJobsPath } from "../../lib/paths";
+import { OccupationView, headingOf, titleOf, type OccupationData } from "./occupation-view";
 
 vi.mock("server-only", () => ({}));
 
@@ -38,7 +39,7 @@ describe("a listed occupation", () => {
     expect(h).toContain('href="https://nmbi.example/"');
   });
   it("links to the search for the code, with the job count from the read", () => {
-    expect(h).toContain(`href="${searchHref("2231")}"`);
+    expect(h).toContain(`href="${occupationJobsPath("2231")}"`);
     expect(h).toContain("See 2 jobs");
     expect(h).toContain("Live jobs in this occupation");
     expect(view({ occupation: occ({ jobs: { jobs: [card()], count: { n: 1, more: false }, signInForMore: false } }) })).toContain("See 1 job ");

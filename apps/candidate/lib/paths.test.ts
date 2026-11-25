@@ -1,7 +1,7 @@
 // The public addresses of decision #288, made in one place (paths.ts). No database.
 import { describe, expect, it } from "vitest";
 import { occupationCodeOfSlug, occupationSlug } from "./occupations";
-import { accountPath, afterSignInPath, casePath, companyPath, guidePath, helpPath, jobIdOf, jobPath, legalPath, loginPath, occupationPath, permitRequestPath, resetPath, signupPath, staticPath, updatePath, verifiedPath, verifyPath } from "./paths";
+import { accountPath, afterSignInPath, casePath, companyPath, guidePath, helpPath, jobIdOf, jobPath, legalPath, loginPath, occupationJobsPath, occupationPagePath, occupationPath, permitRequestPath, resetPath, signupPath, staticPath, updatePath, verifiedPath, verifyPath } from "./paths";
 
 describe("the job address", () => {
   it("is title, county and id, in lower-case words", () => {
@@ -36,6 +36,12 @@ describe("the other addresses", () => {
     expect(updatePath("new-minimums")).toBe("/updates/new-minimums");
     expect(occupationPath(occupationSlug("1115")!)).toBe("/occupations/chief-executives-and-senior-officials");
     expect(occupationCodeOfSlug("chief-executives-and-senior-officials")).toBe("1115");
+  });
+  it("give an occupation a page only when its code is on a list (a code on neither has none, OCC1)", () => {
+    for (const listStatus of ["critical-skills", "ineligible"]) expect(occupationPagePath({ slug: "nurses", listStatus })).toBe("/occupations/nurses");
+    expect(occupationPagePath({ slug: "care-workers-and-home-carers", listStatus: "other" })).toBeNull();
+    expect(occupationJobsPath("6145")).toBe("/jobs?occupationCode=6145");
+    expect(occupationJobsPath("6145&x=1#y")).toBe("/jobs?occupationCode=6145%26x%3D1%23y");
   });
   it("encode a hostile slug rather than pass it through", () => {
     for (const f of [companyPath, guidePath, updatePath, occupationPath]) expect(f("a/b?c#d ../").split("/").length, f.name).toBe(3);
