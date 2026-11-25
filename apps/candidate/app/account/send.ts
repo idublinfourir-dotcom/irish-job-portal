@@ -1,6 +1,6 @@
 // The browser side of the account forms: one request helper, and the re-sign-in (DD10). Client components only (never imports @portal/auth).
 import { loginPath } from "../../lib/paths";
-import type { Res } from "./messages";
+import type { Res } from "./settings-messages";
 
 /** A request to one of our documented routes from the page (the browser adds the Origin header the route checks). A plain object is sent as JSON, FormData as is. */
 export async function send(method: "GET" | "POST" | "PUT" | "DELETE", url: string, body?: object | FormData): Promise<Res & { response?: Response; json?: Record<string, unknown> }> {

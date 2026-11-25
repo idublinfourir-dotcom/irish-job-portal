@@ -4,8 +4,8 @@
 import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Button, Icon, Input, Notice, Radio, Select } from "@portal/ui";
 import { shortDate, eur } from "../../_home/format";
-import { send } from "../client";
-import { sayAccount } from "../messages";
+import { send } from "../send";
+import { sayAccount } from "../settings-messages";
 import { ReauthNotice } from "../reauth";
 import { settingsDeletePath } from "../../../lib/paths";
 

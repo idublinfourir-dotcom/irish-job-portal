@@ -1,6 +1,6 @@
 "use client";
 import { Button, Notice } from "@portal/ui";
-import { signInAgain } from "./client";
+import { signInAgain } from "./send";
 
 /** DD10: shown when a route answered REAUTH_REQUIRED. The button signs out and opens the sign-in page, which brings the person back to `back`. */
 export function ReauthNotice({ text, back }: { text: string; back: string }) {

@@ -7,7 +7,7 @@ import { readAccountEmail, readDataAccess, readNotificationSettings, readSecurit
 import { loginPath, settingsDeletePath, settingsPath } from "../../../lib/paths";
 import { pageDescription, pageTitle } from "../../../lib/seo";
 import { shortDate } from "../../_home/format";
-import { emailLinkError } from "../messages";
+import { emailLinkError } from "../settings-messages";
 import { need } from "../guard";
 import { Section } from "../section";
 import { DataLog, type LogRow } from "./data-log";

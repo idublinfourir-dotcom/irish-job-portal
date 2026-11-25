@@ -25,7 +25,7 @@ let db: TestDb, su: pg.Pool;
 let AUTH: { GET: Handler; POST: Handler }, PROFILE: { PUT: Handler }, NOTIF: { PUT: Handler }, ACCOUNT: { DELETE: Handler }, EXPORT: { GET: Handler }, CASES: { POST: Handler };
 let mail: () => { kind: string; to: string; link: string }[];
 const P = {} as Record<"profile" | "settings" | "delete" | "goodbye", Page>;
-let sayAccount: typeof import("../../../apps/candidate/app/account/messages").sayAccount;
+let sayAccount: typeof import("../../../apps/candidate/app/account/settings-messages").sayAccount;
 
 beforeAll(async () => {
   db = await createTestDb();
@@ -41,7 +41,7 @@ beforeAll(async () => {
   EXPORT = await import("../../../apps/candidate/app/api/candidate/export/route");
   CASES = await import("../../../apps/candidate/app/api/candidate/cases/route");
   ({ candidateMail: mail } = await import("../../../apps/candidate/lib/candidate"));
-  ({ sayAccount } = await import("../../../apps/candidate/app/account/messages"));
+  ({ sayAccount } = await import("../../../apps/candidate/app/account/settings-messages"));
   const page = async (p: string) => (await import(p)).default as Page;
   P.profile = await page("../../../apps/candidate/app/account/profile/page");
   P.settings = await page("../../../apps/candidate/app/account/settings/page");

@@ -1,12 +1,12 @@
 "use client";
 // The interactive rows of /account/settings (frame A09): email, password, Google, sign out everywhere, the email switch and the data export. Each calls a
-// documented route (docs/openapi/candidate.yaml) and says every answer in the words of ../messages.ts. A route that answers REAUTH_REQUIRED (change of email,
+// documented route (docs/openapi/candidate.yaml) and says every answer in the words of ../settings-messages.ts. A route that answers REAUTH_REQUIRED (change of email,
 // linking Google, export) shows the sign-in-again notice (DD10); the sign-in page brings the person back here.
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Button, Input, Notice, Toggle } from "@portal/ui";
 import { passwordProblem } from "../../(auth)/messages";
-import { send } from "../client";
-import { sayAccount } from "../messages";
+import { send } from "../send";
+import { sayAccount } from "../settings-messages";
 import { ReauthNotice } from "../reauth";
 import { goodbyePath, settingsPath } from "../../../lib/paths";
 

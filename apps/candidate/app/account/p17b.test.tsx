@@ -10,7 +10,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("next/navigation", () => ({ redirect: (to: string) => { throw new Error(`NEXT_REDIRECT ${to}`); } }));
 vi.mock("../../lib/data", () => ({}));
 import { descriptionProblem, titleProblem } from "../../lib/seo";
-import { BY_CODE, emailLinkError, sayAccount } from "./messages";
+import { BY_CODE, emailLinkError, sayAccount } from "./settings-messages";
 import { DegreeCard, CvCard, MAX_CV_BYTES, STAMPS } from "./profile/profile-form";
 import { monthLimits } from "./profile/dates";
 import { DataLog } from "./settings/data-log";
