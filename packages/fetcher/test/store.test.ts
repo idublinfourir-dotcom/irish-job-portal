@@ -175,7 +175,7 @@ describe("failures", () => {
     expect((await su("select last_error from job_source where board=$1", [b]))[0].last_error).toBe(r!.error);
   });
 
-  it("a matcher model error writes nothing and the advert comes back; a bad answer is queued (real chain and planAdvert)", async () => {
+  it("a matcher model error and a bad answer both write nothing and the advert comes back (real chain and planAdvert)", async () => {
     const b = board();
     const list = [advert("mm1", { employer: "Model Fake Ltd" })];
     const t = task("fake", b, list);
@@ -185,8 +185,11 @@ describe("failures", () => {
     expect(r1).toMatchObject({ unsaved: [list[0]!.id], passed: 0, queued: 0, rejected: 0 });
     expect(await count("fetched_advert", "external_id='fake:b:mm1'")).toBe(0);
     const [r2] = await run([t], planAdvert, { matcher: model({ kind: "bad answer", why: "junk" }) });
-    expect(r2).toMatchObject({ queued: 1, unsaved: [] });
-    expect((await su("select j.status, f.matcher_model from job j join fetched_advert f on f.id=j.fetched_advert_id where f.external_id='fake:b:mm1'"))[0]).toEqual({ status: "in_review", matcher_model: "fake-model" });
+    expect(r2).toMatchObject({ unsaved: [list[0]!.id], passed: 0, queued: 0, rejected: 0 });
+    expect(await count("fetched_advert", "external_id='fake:b:mm1'")).toBe(0);
+    const [r3] = await run([t], planAdvert, { matcher: model(null) }); // a usable answer the rules find doubtful: the advert row, no job, no review item (#298)
+    expect(r3).toMatchObject({ rejected: 1, queued: 0, unsaved: [] });
+    expect((await su("select f.result, f.matcher_model, j.id as job from fetched_advert f left join job j on j.fetched_advert_id=f.id where f.external_id='fake:b:mm1'"))[0]).toEqual({ result: "rejected", matcher_model: "fake-model", job: null });
   });
 });
 

@@ -5,12 +5,12 @@ import { advert, deps, plan, task } from "./helpers";
 
 type Log = { sql: string[]; inTx: number; maxOpen: number };
 // Answers like the database would, just enough for the loop. `fail` makes a statement throw.
-function fakeDb(known: string[] = [], fail?: (sql: string) => boolean): { db: Db; log: Log } {
+function fakeDb(known: string[] = [], fail?: (sql: string) => boolean, content_hash: string | null = "h"): { db: Db; log: Log } {
   const log: Log = { sql: [], inTx: 0, maxOpen: 0 };
   const query = async (sql: string) => {
     log.sql.push(sql);
     if (fail?.(sql)) throw new Error("fake database error");
-    if (sql.startsWith("select external_id")) return { rows: known.map((external_id) => ({ external_id })) };
+    if (sql.startsWith("select external_id")) return { rows: known.map((external_id) => ({ external_id, content_hash })) };
     if (sql.startsWith("with k as")) return { rows: [{ norm: "acme ltd", id: "7", status: "unclaimed" }] };
     return { rows: [{ id: "1" }] };
   };
@@ -67,6 +67,12 @@ describe("runBoards", () => {
     const t = task("fake", "b", []);
     await runBoards(deps(db, [t]));
     expect([...t.calls[0]!]).toEqual(["fake:b:old"]);
+  });
+  it("an advert with no hash is never known, whatever its board's reread day: it comes back with its text at the next run (0077)", async () => {
+    const { db } = fakeDb(["fake:b:old"], undefined, null);
+    const t = task("fake", "b", [advert("old")]);
+    await runBoards(deps(db, [t]), (x) => plan(x, "reject"));
+    expect([...t.calls[0]!]).toEqual([]);
   });
 
   it("stops assessing after the deadline and leaves the rest for the next run", async () => {

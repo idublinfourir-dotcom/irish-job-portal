@@ -31,12 +31,21 @@ describe("second opinion in a fetcher run", () => {
     expect(written(log)).toEqual([["fake:b:s0", "passed", "PASS (salary stated)", MODEL]]);
   });
 
-  it("a badge the model does not agree with goes to the admin queue, with no badge", async () => {
+  it("a badge the model does not agree with is refused (#298): the advert row keeps the stage and the model, no job, no text, no review item", async () => {
     const { db, log } = fakeDb();
     const [r] = await runBoards(deps(db, [task("fake", "b", ads(1))], fakeModel((_n, a) => a.map(() => says(false)))));
-    expect(r).toMatchObject({ passed: 0, queued: 1, unsaved: [] });
-    expect(written(log)).toEqual([["fake:b:s0", "queued", "5 unsure occupation (admin queue)", MODEL]]);
-    expect(log.sql.filter((s) => s.startsWith("insert into job(")).length).toBe(1); // a job in review, not a drop
+    expect(r).toMatchObject({ passed: 0, queued: 0, rejected: 1, unsaved: [] });
+    expect(written(log)).toEqual([["fake:b:s0", "rejected", "5 unsure occupation (admin queue)", MODEL]]);
+    expect(log.sql.filter((s) => /^insert into (job|job_text|review_item)\b/.test(s))).toEqual([]);
+  });
+
+  it("an answer that cannot be used is not a no (#298): only that advert is left for the next run, the rest of its batch is saved", async () => {
+    const { db, log } = fakeDb();
+    const bad = { ...says(false), failure: { kind: "bad answer" as const, why: "quote not found in this advert" } };
+    const list = ads(3);
+    const [r] = await runBoards(deps(db, [task("fake", "b", list)], fakeModel((_n, a) => a.map((_x, i) => (i === 1 ? bad : says(i === 0))))));
+    expect(r).toMatchObject({ passed: 1, queued: 0, rejected: 1, unsaved: [list[1]!.id] });
+    expect(written(log).map((w) => w[0])).toEqual([list[0]!.id, list[2]!.id]);
   });
 
   it("an advert with no badge makes no request and is saved as before", async () => {
@@ -138,8 +147,8 @@ describe("second opinion, hostile model and key", () => {
     const { db, log } = fakeDb();
     const [r] = await runBoards(deps(db, [task("fake", "b", ads(1))], { checkBatch: real(reply) }));
     expect(r).toMatchObject({ passed: 0, ok: true });
-    expect(r!.queued + r!.unsaved.length).toBe(1);
-    expect(written(log).filter((w) => w[1] === "passed")).toEqual([]);
+    expect([r!.queued, r!.rejected + r!.unsaved.length]).toEqual([0, 1]);
+    expect(written(log).filter((w) => w[1] !== "rejected")).toEqual([]);
   });
 
   it("the key never reaches the log or a row, even when the host's error repeats it", async () => {

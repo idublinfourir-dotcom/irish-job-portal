@@ -341,7 +341,7 @@ components:
         itemId: { $ref: '#/components/schemas/Id' }
         jobId: { $ref: '#/components/schemas/Id' }
         wouldPublish: { type: boolean, description: "Approve would put the job live with these inputs.", example: true }
-        passRoute: { type: [string, 'null'], enum: [stated_pay, big_company, null], example: stated_pay }
+        passRoute: { type: [string, 'null'], enum: [stated_pay, big_company, public_pay, null], example: stated_pay }
         failedStage: { type: [string, 'null'], description: "The rules stage that would refuse Approve (`rules_failed`); null when it would publish.", example: null }
         badge: { type: [string, 'null'], enum: [critical_skills_eligible, null], description: "The badge the job would get.", example: critical_skills_eligible }
         occupationCode: { type: string, example: '2231' }
@@ -2211,7 +2211,7 @@ paths:
                 properties:
                   ok: { const: true }
                   jobId: { $ref: '#/components/schemas/Id' }
-                  passRoute: { type: string, enum: [stated_pay, big_company] }
+                  passRoute: { type: string, enum: [stated_pay, big_company, public_pay] }
               example: { ok: true, jobId: '6601', passRoute: stated_pay }
         '400':
           description: >-

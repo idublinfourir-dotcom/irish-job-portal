@@ -92,8 +92,23 @@ describe("publicPayTier (R17)", () => {
   it("known quirk: a curly and a straight apostrophe are different names", () => {
     expect(publicPayTier("Children's Health Ireland Jobs", candidates)).toBe(0);
   });
-  it("known quirk: the HSE test wins over a candidate entry, and any name with the word hse is tier 1", () => {
-    expect(publicPayTier("Acme HSE Contractors", new Map([["acme hse contractors", 2], [HSE_ENTRY, 1]]))).toBe(1);
+  it("#299: every name the HSE itself uses on live and in the frozen set is tier 1", () => {
+    for (const e of ["HSE Mid West", "HSE Mid-West", "HSE Dublin and North East", "HSE Dublin & South East", "HSE West and North West region", "HSE West North West", "HSE South West", "HSE Dublin and Midlands",
+      "HSE Dublin and North East Recruitment", "HSE Medical Manpower Donegal", "Health Service Executive", "Health Service Executive (HSE)", "Health Service Executive, Dublin and Midlands", "HSE - Cork Kerry Community Healthcare", "HSE CHO Dublin North City and County",
+      "Health Service Executive Mid West Mental Health Services", "The Health Service Executive", "hse - cork"])
+      expect([e, publicPayTier(e, candidates)]).toEqual([e, 1]);
+  });
+  it("#299: a company whose name only holds the word (health, safety and environment) is not the HSE, so it never passes with no pay check", () => {
+    for (const e of ["Acme HSE Contractors", "HSE Recruitment Ltd", "HSE Recruitment", "HSE Staffing Dublin", "HSE Dublin Limited", "HSE Safety Consultants Cork", "HSE Solutions", "HSE Ireland", "HSE Training Galway",
+      "Dublin HSE", "Not the HSE Dublin", "Health Service Executive Search Ltd", "Health Service Executive Staffing", "HSEDublin", "HSE Westside", "HSE Corkscrew", "Dublin Health Service Executive", "HSE West Engineering", "HSE Cork Scaffolding",
+      "Health Service Executive Recruitment Partners", "HSE\u200bDublin", "HSE Dublin \u041bimited", "HSE and", "HSE Region", "HSE D\u0443blin", "HSE Dublin\nAcme"])
+      expect([e, publicPayTier(e, candidates)]).toEqual([e, 0]);
+    expect(publicPayTier("Acme HSE Contractors", new Map([["acme hse contractors", 2], [HSE_ENTRY, 1]]))).toBe(2); // an exact list name still matches as any other
+  });
+  it("#299: a very long name costs nothing", () => {
+    const t = performance.now();
+    for (const e of ["hse ".repeat(20_000), `hse ${"dubli".repeat(20_000)}`, `HSE ${"-".repeat(100_000)}`]) publicPayTier(e, candidates);
+    expect(performance.now() - t).toBeLessThan(500);
   });
   it("names like constructor or __proto__ do not hit object internals", () => {
     expect(publicPayTier("constructor", candidates)).toBe(0);

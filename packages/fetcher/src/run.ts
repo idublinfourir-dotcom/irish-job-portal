@@ -27,9 +27,10 @@ async function runBoard(deps: Deps, task: BoardTask, plan: typeof planAdvert, bu
     return report;
   };
 
-  // `known` = the adverts not gone, minus the ones due for a second read (design 3.8). A gone advert is never known, so it comes back with its text.
+  // `known` = the adverts not gone, minus the ones due for a second read (design 3.8) and the ones with no hash (something asked for them to be read again, as
+  // migration 0077 did). A gone advert is never known, so it comes back with its text.
   const present = [...run.rows].filter(([, k]) => !k.gone).map(([id]) => id);
-  const known = new Set(present.filter((id) => !isDue(id, task.rereadDays, now())));
+  const known = new Set(present.filter((id) => run.rows.get(id)!.hash !== null && !isDue(id, task.rereadDays, now())));
   let fetched;
   try {
     fetched = await task.fetch(known); // no transaction is open here
@@ -128,8 +129,8 @@ async function prepare(deps: Deps, run: BoardRun, advert: RawAdvert): Promise<It
 
 /**
  * The AI second opinion (the gate's `applySecondOpinion`, one call a batch so a fault only costs its own batch). Returns the items in the same order, with a badge
- * the model did not back moved to the admin queue. A badge that could not be checked (budget used up, model error, timeout, a reply of the wrong size) is null:
- * it is never saved without the model's word, so the caller leaves it for the next run.
+ * the model did not back taken away (the plan refuses it, #298). A badge that could not be checked (budget used up, model error, timeout, a reply of the wrong size)
+ * is null, and one whose own answer cannot be used carries its failure (the plan defers it): neither is ever saved without the model's word, both come back next run.
  */
 async function secondOpinion(deps: Deps, budget: { left: number }, items: Item[], where: string): Promise<(Item | null)[]> {
   const size = deps.batchSize ?? 10;
