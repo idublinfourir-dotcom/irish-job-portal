@@ -9,7 +9,7 @@ import { TileCard, type CardJob } from "./card";
 import { DegreeBox } from "./degree-box";
 import { criticalSkillsResult, generalResult, type DegreeChoice, type DegreeResult } from "./degree";
 import { JobActions, ReportJob, SaveButton } from "./client";
-import { ago, capFirst, contractText, euro } from "./format";
+import { ago, capFirst, contractText, euro, permitFeeLabel } from "./format";
 import { Hl, Join, Logo, PhotoBlock, wrap } from "./parts";
 
 /** Launch B: applying on the site is behind the flag (D72, D78). Off: a job whose route is `on_site` shows no apply button. */
@@ -291,7 +291,7 @@ export function JobView({ job, now, path, signedIn, saved, stage, degree, prompt
             <A href={staticPath("permit-services")!} className="order-7 flex items-start justify-between gap-4 rounded-bento bg-ink p-6 text-white no-underline lg:order-none">
               <span>
                 <span className="block font-heading text-[22px] font-semibold leading-snug">Got an offer? We can handle your permit</span>
-                <span className="mt-2 block text-small text-white/75">Our services team prepares the application. Usually paid by the employer.</span>
+                <span className="mt-2 block text-small text-white/75">Our services team prepares the application; the employer or agency pays for that. Permit fee: {permitFeeLabel(job.permitType).toLowerCase()}.</span>
               </span>
               <span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-pill bg-deep-green"><Icon name="up-right" size={18} /></span>
             </A>

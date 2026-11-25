@@ -6,7 +6,7 @@ import { shortDate } from "../_home/format";
 import { AlertBuilder } from "./client";
 import { ResultCard, TileCard, VisitorCard, type CardJob } from "./card";
 import { FilterPanel, FilterPills, SearchBar, POSTED } from "./filters";
-import { COUNTIES, SECTORS, SORTS, capFirst, contractText, euro, headingParts, loginHref, searchHref, type FilterKey, type Filters, type SearchState } from "./format";
+import { COUNTIES, SECTORS, SORTS, capFirst, contractText, euro, headingParts, loginHref, permitFeeLabel, searchHref, type FilterKey, type Filters, type SearchState } from "./format";
 import { Dot, Hl, Join, wrap } from "./parts";
 
 export type ListRead =
@@ -145,7 +145,7 @@ function OfferCard({ big }: { big?: boolean }) {
     <A href="/permit-services" className="flex items-start justify-between gap-4 rounded-bento bg-ink p-5 text-white no-underline">
       <span>
         <span className={`block font-heading font-semibold leading-snug ${big ? "text-[22px]" : "text-[18px]"}`}>Got an offer? We can handle your permit</span>
-        <span className="mt-1 block text-small text-white/75">Our services team prepares the application. Usually paid by the employer.</span>
+        <span className="mt-1 block text-small text-white/75">Our services team prepares the application; the employer or agency pays for that. Critical Skills permit fee: {permitFeeLabel("critical_skills").toLowerCase()}. General permit fee: {permitFeeLabel("general").toLowerCase()}.</span>
       </span>
       <span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-pill bg-deep-green"><Icon name="up-right" size={18} /></span>
     </A>

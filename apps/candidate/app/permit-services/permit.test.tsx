@@ -38,10 +38,12 @@ describe("the services landing (DD26, from the old text of C19)", () => {
     expect(text(p)).toMatch(/For employers and agencies/);
     expect(text(p)).toMatch(/For candidates/);
     for (const row of ["EPOS set-up", "Application handling", "Labour Market Needs Test guidance", "Renewals", "Eligibility check", "Document checklist", "First consultation"]) expect(p).toContain(row);
-    expect(text(p)).toMatch(/Employment permit application or renewal Paid by your employer/);
+    expect(text(p)).toMatch(/Our help with the application or renewal Paid by your employer/);
+    expect(text(p)).toMatch(/Critical Skills permit fee \(DETE\) Paid by the employee or employer/); // #297
+    expect(text(p)).toMatch(/General permit fee \(DETE\) Usually paid by the employer/);
     for (const step of ["Received", "Documents needed", "Submitted", "Decision"]) expect(p).toContain(step);
     expect(p).toMatch(/Updates by email/);
-    expect(p).toMatch(/Uploaded copies only/);
+    expect(p).toMatch(/Copies only, never originals/);
     expect(p).toMatch(/data-join/);
     expect(p).toContain('href="/login?next=%2Fpermit-services%2Frequest"');
     expect(p).toContain('href="/signup?next=%2Fpermit-services%2Frequest"');

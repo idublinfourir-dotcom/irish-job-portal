@@ -591,7 +591,7 @@ const SERVICES: [IconName, string, string, string][] = [
   ["clipboard", "Document checklist", "Exactly what to prepare", "bg-sand"],
   ["chat", "First consultation, free", "With a named case handler", "bg-sand"],
   ["receipt", "Who pays", "The employer or agency, never you", "bg-deep-green text-white"],
-  ["copy", "Copies, never originals", "You upload copies; your passport stays with you", "bg-sand"],
+  ["copy", "Copies only, never originals", "You upload copies; your passport stays with you", "bg-sand"],
   ["pulse", "Case tracker", "Every step, live", "bg-lilac"],
 ];
 function PermitServices() {

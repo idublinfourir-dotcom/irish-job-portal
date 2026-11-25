@@ -123,7 +123,8 @@ describe("notices, labels and blocks", () => {
   it("shows similar jobs and the report and permit-services blocks", () => {
     const h = view({ similar: [card({ id: "2", title: "Care Assistant" })] });
     for (const t of ["More jobs <span", "like this</span>", "Care Assistant", "Got an offer? We can handle your permit", "No genuine employer asks you to pay for a job offer.", "Log in to report this job"]) expect(h).toContain(t);
-    expect(h).not.toContain("Critical Skills fee can be paid by you"); // CF1: waits for the solicitor (Q130)
+    expect(h).toContain("the employer or agency pays for that. Permit fee: paid by the employee or employer."); // #297: a Critical Skills job; our service fee stays the employer's (#3)
+    expect(view({ job: job({ permitType: "general" }) })).toContain("Permit fee: usually paid by the employer.");
   });
 });
 
