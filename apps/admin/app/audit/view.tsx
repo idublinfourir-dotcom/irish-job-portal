@@ -13,7 +13,7 @@ const whenText = (at: string) => `${DAY.format(parse(at))} ${clock(at)}`;
 export function Rows({ events }: { events: AuditRow[] }) {
   if (events.length === 0) return <EmptyState icon="clock" title="No rows match">Clear a filter, or widen the dates.</EmptyState>;
   return (
-    <div className="overflow-x-auto rounded-card border border-line bg-white">
+    <div className="relative overflow-x-auto rounded-card border border-line bg-white">
       <table className="w-full min-w-[44rem] text-left text-small">
         <thead>
           <tr className="border-b border-line"><th className="px-4 py-3 font-semibold">When</th><th className="px-4 py-3 font-semibold">Who</th><th className="px-4 py-3 font-semibold">Action</th><th className="px-4 py-3 font-semibold">Object</th><th className="px-4 py-3 font-semibold">Before → after</th></tr>

@@ -53,7 +53,7 @@ export function ActView({ p, s, h }: { p: ActProps; s: ActState; h: ActHandlers 
       {fields.map((f) => <FieldView key={f.name} f={f} />)}
       {s.error && !s.asking && <ErrorNote error={s.error} here={p.here} />}
       {s.done && <Notice kind="success">{s.done}</Notice>}
-      <Button type="submit" variant={p.variant ?? "primary"} disabled={s.pending} className="self-start">{p.label}</Button>
+      <Button type="submit" variant={p.variant ?? "primary"} disabled={s.pending} className="self-start whitespace-normal!">{p.label}</Button>
       {p.confirm !== undefined && (
         <Dialog open={s.asking} onClose={h.onCancel} title={`${p.label}?`}>
           <p className="mb-4">{p.confirm}</p>

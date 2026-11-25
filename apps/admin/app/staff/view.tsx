@@ -2,7 +2,7 @@
 // second administrator (who proposed each, and the same person cannot confirm), the permission matrix, and the invite. No two-step or last-active column (CF111, Q86); "Super admin" is the
 // administrator role (CF103, Q75). The last active administrator cannot lose the role or be disabled (the buttons say so, and the route refuses it too).
 import type { StaffRow } from "@portal/db";
-import { Notice, Pill, cx } from "@portal/ui";
+import { Notice, Pill } from "@portal/ui";
 import { ageText } from "../_queue/age";
 import { PostButton } from "../_queue/post-button";
 import { InviteForm, RoleForm } from "./actions";
@@ -58,8 +58,8 @@ export function Team({ staff, pending, meId }: { staff: StaffRow[]; pending: Pen
               {s.roles.length === 0 && <span className="text-small text-muted">No role yet</span>}
               {s.roles.map((r) => (
                 <span key={r} className="inline-flex items-center gap-1">
-                  <Pill tone={r === "administrator" ? "outline" : "lilac"} className={cx("min-h-[30px]", r === "administrator" && "bg-ink text-white")}>{roleLabel(r)}</Pill>
-                  <PostButton url="/api/staff" body={{ action: "remove_role", staffId: s.id, role: r }} label={`Remove ${roleLabel(r)}`} variant="chip" back={BACK} disabled={r === "administrator" && lastAdmin}
+                  {r === "administrator" ? <span className="inline-flex min-h-[30px] items-center rounded-pill bg-ink px-3.5 text-small font-medium text-white">{roleLabel(r)}</span> : <Pill tone="lilac" className="min-h-[30px]">{roleLabel(r)}</Pill>}
+                  <PostButton url="/api/staff" body={{ action: "remove_role", staffId: s.id, role: r }} label="Remove" what={roleLabel(r)} variant="chip" back={BACK} disabled={r === "administrator" && lastAdmin}
                     confirm={{ title: "Remove this role?", text: `${s.name} loses the ${roleLabel(r)} role at once.`, button: "Remove" }} />
                 </span>
               ))}
@@ -82,7 +82,7 @@ export function Team({ staff, pending, meId }: { staff: StaffRow[]; pending: Pen
 
 export function Matrix() {
   return (
-    <div className="overflow-x-auto rounded-card border border-line bg-white">
+    <div className="relative overflow-x-auto rounded-card border border-line bg-white">
       <table className="w-full min-w-[34rem] text-left text-small">
         <caption className="sr-only">Who sees each area</caption>
         <thead>
@@ -112,7 +112,7 @@ export function Staff({ staff, truncated, pending, meId, now }: { staff: StaffRo
         <InviteForm />
       </header>
       {truncated && <Notice kind="warning">There are more than 200 logins. Only the first 200 are shown.</Notice>}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
         <div className="flex min-w-0 flex-col gap-6">
           <section aria-label="Team" className="flex flex-col gap-3"><h2 className="text-[22px]">Team</h2><Team staff={staff} pending={pending} meId={meId} /></section>
           <section aria-label="Waiting for a second administrator" className="flex flex-col gap-3 rounded-bento bg-lilac-soft p-5">

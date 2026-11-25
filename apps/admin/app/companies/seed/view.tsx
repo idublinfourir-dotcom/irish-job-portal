@@ -14,7 +14,7 @@ const URL = "/api/companies/seed";
 
 export function Rows({ rows }: { rows: SeedRow[] }) {
   return (
-    <div className="overflow-x-auto rounded-card border border-line">
+    <div className="relative overflow-x-auto rounded-card border border-line">
       <table className="w-full text-left text-small">
         <thead className="bg-lilac"><tr><th className="px-3 py-2">Line</th><th className="px-3 py-2">Company</th><th className="px-3 py-2">Kind</th><th className="px-3 py-2">Brand names</th><th className="px-3 py-2">DETE names</th></tr></thead>
         <tbody>

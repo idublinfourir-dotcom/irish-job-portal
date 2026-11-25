@@ -149,7 +149,7 @@ export function Overview({ now, tiles, work, audit, auditFull, upcoming, roleCou
           {roleCount === 0 ? "Ask an administrator to give you a role. Until then you can search, read the rules data and read your own audit rows." : "Your work is in the pages listed on the left. The audit log and the targets are below."}
         </EmptyState>
       )}
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="flex min-w-0 flex-col gap-6">
           <WorkTable rows={work} now={now} />
           <AuditLatest rows={audit} full={auditFull} />

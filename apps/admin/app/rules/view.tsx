@@ -66,7 +66,7 @@ export function MinimumsTable({ inForce, upcoming }: { inForce: Version | undefi
   const rows = minimumRows(inForce, upcoming);
   if (rows.length === 0) return <p className="text-small text-muted">No salary minimums are in force.</p>;
   return (
-    <div className="overflow-x-auto rounded-card border border-line bg-white">
+    <div className="relative overflow-x-auto rounded-card border border-line bg-white">
       <table className="w-full min-w-[46rem] text-left text-small">
         <caption className="sr-only">Salary minimums in force today</caption>
         <thead><tr className="border-b border-line bg-lilac-soft">{["Permit", "Case", "In force now", "Since", "Source checked", "Next value", "Starts"].map((h) => <th key={h} scope="col" className="px-3 py-3 font-semibold">{h}</th>)}</tr></thead>
@@ -100,7 +100,7 @@ export function Quotas({ m }: { m: Minimums | undefined }) {
   const full = m?.generalQuotaFullCodes, lower = m?.generalLowerCodes;
   if (!m || (!full && !lower)) return <p className="text-small text-muted">The version in force holds no General permit figures, so it has no quota codes.</p>;
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2">
       <Codes title="Quota full" codes={full} none="No code has a full quota." />
       <Codes title="Lower rate" codes={lower} none="No code is at the lower rate." />
     </div>
@@ -146,7 +146,7 @@ export function Rules(p: RulesProps) {
   return (
     <div className="flex flex-col gap-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
-        <Head title="Rules data">Every figure here is read from the database, none is written into the code. A change is proposed by a rules data editor and confirmed by a different administrator.</Head>
+        <Head title="Rules data" big={<>Rules <span className="rounded-2xl bg-deep-green px-3 pb-1 text-white">data</span>, nothing is <span className="rounded-2xl bg-lilac px-3 pb-1">hard-coded</span></>}>Every figure here is read from the database, none is written into the code. A change is proposed by a rules data editor and confirmed by a different administrator.</Head>
         <div className="flex flex-wrap gap-2">
           {edit && mins && (p.tab === "minimums" || p.tab === "quotas") && <MinimumsEditor m={mins.data as Minimums} today={p.today} last={lastDay(p.upcoming, "minimums")} />}
           {edit && later && (p.tab === "minimums" || p.tab === "quotas") && <MinimumsEditor m={later.data as Minimums} today={later.effectiveFrom} label={`Change the version of ${dayText(later.effectiveFrom)}`} />}
@@ -187,8 +187,8 @@ export function PayDeal(p: PayDealProps) {
       <PendingList items={pendingFor(p.pending, ["public_pay_employers"])} who={p.who} back={back} now={p.now} />
       <Upcoming kind="public_pay_employers" upcoming={p.upcoming} />
       {p.versionId === null && <Notice kind="info">No pay-deal list is in force yet.</Notice>}
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-        <div className="overflow-x-auto rounded-card border border-line bg-white">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <div className="relative overflow-x-auto rounded-card border border-line bg-white">
           <table className="w-full min-w-[40rem] text-left text-small">
             <caption className="sr-only">Pay-deal employers in force today</caption>
             <thead><tr className="border-b border-line bg-lilac-soft">{["Employer", "Type", "Evidence", "Added", "Added by", "On"].map((h) => <th key={h} scope="col" className="px-3 py-3 font-semibold">{h}</th>)}</tr></thead>

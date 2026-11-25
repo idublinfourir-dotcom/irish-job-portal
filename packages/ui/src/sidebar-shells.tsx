@@ -21,6 +21,7 @@ const DARK_ITEM = { base: "flex min-h-12 shrink-0 items-center gap-3 rounded-pil
  */
 function Sidebar({ brand, chip, groups, counts = {}, current, dark, top, footer, children }: { brand: ReactNode; chip?: ReactNode; groups: Group[]; counts?: Record<string, number | undefined>; current?: string; dark?: boolean; top?: ReactNode; footer?: ReactNode; children: ReactNode }) {
   const item = dark ? DARK_ITEM : ITEM;
+  const all = groups.flatMap((g) => g.links.map((l) => l.href));
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
       <A href="#main" className="sr-only focus:not-sr-only focus:p-3">Skip to content</A>
@@ -35,7 +36,7 @@ function Sidebar({ brand, chip, groups, counts = {}, current, dark, top, footer,
             <div key={g.title ?? i} className="flex gap-1 md:flex-col" role={g.title ? "group" : undefined} aria-label={g.title}>
               {g.title && <p className="hidden px-4 pb-1 pt-2 text-small text-muted md:block">{g.title}</p>}
               {g.links.map((l) => (
-                <NavItem key={l.href} href={l.href} current={current} {...item}>
+                <NavItem key={l.href} href={l.href} current={current} among={all} {...item}>
                   <Icon name={l.icon} size={18} className="shrink-0" />
                   <span className="flex-1 whitespace-nowrap">{l.label}</span>
                   {counts[l.label] !== undefined && (

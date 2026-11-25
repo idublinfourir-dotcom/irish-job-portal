@@ -60,7 +60,7 @@ export function RenewView({ text, exception, ticked, onTick, error, pending, onR
 }
 
 /** Renew and Close on one job row. A viewer never gets this (the page does not render it and the routes refuse). */
-export function JobActions({ id, title, state }: { id: string; title: string; state: JobState }) {
+export function JobActions({ id, title, state, banner }: { id: string; title: string; state: JobState; banner?: boolean }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(null), [hire, setHire] = useState<string>(), [error, setError] = useState<string>(), [pending, setPending] = useState(false);
   const [held, setHeld] = useState<string>(), [exception, setException] = useState<string>(), [ticked, setTicked] = useState(false);
@@ -84,8 +84,9 @@ export function JobActions({ id, title, state }: { id: string; title: string; st
   }
   return (
     <>
-      {live && <Button variant="chip" onClick={() => open("renew")}>Renew</Button>}
-      {(live || state === "under_review" || state === "in_review" || draft) && <Button variant="chip" onClick={() => open("close")} aria-label={`Close ${title}`}>Close</Button>}
+      {live && banner && <><Button size="md" className="bg-white text-ink" variant="filter-on" onClick={() => open("close")} aria-label={`Close ${title}`}>Close job</Button><Button variant="dark" size="md" onClick={() => open("renew")}>Renew for 30 days</Button></>}
+      {live && !banner && <Button variant="chip" onClick={() => open("renew")}>Renew</Button>}
+      {!banner && (live || state === "under_review" || state === "in_review" || draft) && <Button variant="chip" onClick={() => open("close")} aria-label={`Close ${title}`}>Close</Button>}
       <Dialog open={mode !== null} onClose={() => (held ? done() : setMode(null))} title={mode === "close" ? `Close "${title}"?` : `Renew "${title}"?`}>
         {mode === "close" ? (
           <CloseView title={title} draft={draft} canRenew={live} hire={hire} onHire={setHire} error={error} pending={pending} onClose={close} onKeep={() => setMode(null)} onRenew={() => { setMode("renew"); }} />

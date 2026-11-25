@@ -78,7 +78,7 @@ export function Contact({ items, selected, missingId, meId, canAct, now, next, p
     <div className="flex flex-col gap-6">
       <Head title="Contact messages">Messages from the contact form, oldest first. The list shows no name or text: opening a message does, and that is logged.</Head>
       {missingId && <Notice kind="warning">That message does not exist. Pick one from the list.</Notice>}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_28rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_28rem]">
         <List items={items} selected={selected?.id} meId={meId} now={now} next={next} prev={prev} />
         {selected ? <Detail m={selected} meId={meId} canAct={canAct} now={now} /> : !missingId && items.length > 0 && <Notice kind="info">Pick a message to read it.</Notice>}
       </div>

@@ -30,7 +30,7 @@ describe("the team", () => {
   });
   it("the only active administrator has Disable and Remove administrator switched off, with the reason", () => {
     const p = page();
-    expect(p).toMatch(/<button[^>]*disabled[^>]*>Remove Administrator/);
+    expect(p).toMatch(/<button[^>]*disabled[^>]*>Remove<span class="sr-only"> Administrator/);
     expect(p).toMatch(/<button[^>]*disabled[^>]*>Disable/);
     expect(p).toMatch(/last active administrator cannot lose the role or be disabled/);
     expect(p).not.toMatch(/<button[^>]*disabled[^>]*>Remove Account reviewer/);

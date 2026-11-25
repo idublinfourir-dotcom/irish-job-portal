@@ -70,7 +70,7 @@ export function Landing({ candidates, rules, help }: { candidates: string | null
             </h2>
             <p className="max-w-xs text-small text-muted">Three sign-up paths. Your permit history decides which one you take.</p>
           </div>
-          <ul className="grid gap-4 md:grid-cols-3">
+          <ul className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-3">
             {PATHS.map((p) => (
               <li key={p.title} className={`relative flex min-h-[290px] flex-col justify-end gap-3 rounded-bento p-7 ${p.tone}`}>
                 <span aria-hidden="true" className="mb-auto grid size-11 place-items-center rounded-pill bg-white text-ink"><Icon name={p.icon} size={20} /></span>
@@ -108,7 +108,7 @@ export function Landing({ candidates, rules, help }: { candidates: string | null
           </div>
         </section>
 
-        <section aria-label="What you get" className="grid gap-4 md:grid-cols-3">
+        <section aria-label="What you get" className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-3">
           {FEATURES.map((f) => (
             <div key={f.title} className="flex flex-col gap-3 rounded-bento bg-sand p-7">
               <span aria-hidden="true" className="grid size-11 place-items-center rounded-pill bg-green-tint text-deep-green"><Icon name={f.icon} size={20} /></span>

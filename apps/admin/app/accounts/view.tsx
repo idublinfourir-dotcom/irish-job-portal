@@ -12,7 +12,7 @@ const idField = (label: string, name = "userId") => ({ name, label, kind: "text"
 
 export function Holds() {
   return (
-    <section aria-label="Suspend, block and lift" className="grid gap-6 md:grid-cols-2">
+    <section aria-label="Suspend, block and lift" className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-2">
       {HOLDS.map((h) => (
         <div key={h.action} className="flex flex-col gap-3 rounded-card bg-sand p-5">
           <h2 className="text-[19px]">{h.label}</h2>

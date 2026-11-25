@@ -23,7 +23,7 @@ export function Documents({ caseId, state, asked }: { caseId: string; state: Doc
       {state.kind === "hidden" && <Notice kind="info">{state.why === "admin" ? "Administrators do not see the copies. Only the handler the case is assigned to does." : "Take this case to see its copies."}</Notice>}
       {state.kind === "error" && <Notice kind="error">{state.text}</Notice>}
       {state.kind === "list" && (state.docs.length === 0 ? <p className="text-muted">No copies have been uploaded yet.</p> : (
-        <div className="overflow-x-auto rounded-card border border-line bg-white">
+        <div className="relative overflow-x-auto rounded-card border border-line bg-white">
           <table className="w-full min-w-[34rem] text-left">
             <thead><tr className="border-b border-line text-small"><th className="px-4 py-3 font-semibold">Document</th><th className="px-4 py-3 font-semibold">From</th><th className="px-4 py-3 font-semibold">State</th><th className="px-4 py-3"><span className="sr-only">Open</span></th></tr></thead>
             <tbody>
@@ -65,7 +65,7 @@ export function CaseView({ item, meId, isHandler, isAdmin, docs, handlers, solic
   return (
     <div className="flex flex-col gap-6">
       <A href="/services" className="self-start text-small font-semibold">Back to services cases</A>
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_26rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_26rem]">
         <div className="flex min-w-0 flex-col gap-6">
           <section className="flex flex-col gap-4 rounded-card bg-sand p-5 sm:p-6 lg:rounded-bento" aria-label={`Case ${caseRef(item.id)}`}>
             <header className="flex flex-wrap items-start justify-between gap-2">

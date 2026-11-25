@@ -94,7 +94,7 @@ function History({ c, now }: { c: CompanyData; now: Date }) {
   const permitsIn = (y: number) => p.byYear.find((b) => b.year === y)?.permits ?? 0;
   const cutOff = p.dataThrough ? `${p.dataThrough.year} covers January to ${MONTH_NAMES[p.dataThrough.month - 1]}.` : null;
   return (
-    <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+    <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
       <div className="rounded-bento border border-line bg-sand p-6 shadow-card sm:p-8">
         <PermitChart years={yearBars(p.byYear, p.peakYear, year)} months={end ? monthSeries(p.byMonth, end) : null} endLabel={cutOff} />
       </div>
@@ -135,7 +135,7 @@ export function CompanyView({ company: c, now, signedIn, savedIds, path, prevHre
       <div className={`${wrap} pb-4 pt-5`}>
         <Breadcrumb items={[{ label: "Home", href: "/" }, { label: c.name }]} />
         <div className="mt-6"><PhotoBlock className="h-[140px] sm:h-[240px]" /></div>
-        <div className={`mt-5 grid items-start gap-5 ${permits && permits.byYear.length ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]" : ""}`}>
+        <div className={`mt-5 grid grid-cols-[minmax(0,1fr)] items-start gap-5 ${permits && permits.byYear.length ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]" : ""}`}>
           <Identity c={c} path={path} signedIn={signedIn} />
           {permits && permits.byYear.length > 0 && (
             <section aria-label="Permits since 2019" className="flex min-h-[300px] flex-col justify-between rounded-bento bg-ink p-6 text-white shadow-card sm:p-8">

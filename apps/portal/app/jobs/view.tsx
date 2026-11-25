@@ -1,6 +1,6 @@
 // Frame E08: the jobs list with tabs, a table, a stats card for one job and the card that says why a job is held. Presentational (props from the reads), so a test renders each state.
 // Tabs count from the one list the page read (CF128: the same rule everywhere: the number of that list's jobs in that state, "200+" at the route's cap). Previous and Next only (#125).
-import { Button, EmptyState, Notice, Pager, Tabs } from "@portal/ui";
+import { Button, EmptyState, Icon, Notice, Pager, Tabs } from "@portal/ui";
 import { JobsTable, StatsCard } from "../_jobs/table";
 import { SAVED, savedWord } from "../_jobform/words";
 import { JOB_FORM_LIVE } from "../_site/flags";
@@ -25,12 +25,12 @@ export function JobsView({ now, role, jobs, stats, tab: tabValue, from, pick, sa
     <div className="mx-auto flex max-w-page flex-col gap-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div><h1>Jobs</h1><p className="mt-2 text-muted">Each job is live for 30 days. We remind you before it expires.</p></div>
-        {canPost && JOB_FORM_LIVE && <Button href="/jobs/new" variant="dark" size="lg">Post a job</Button>}
+        {canPost && JOB_FORM_LIVE && <Button href="/jobs/new" variant="dark" size="lg"><Icon name="plus" size={18} />Post a job</Button>}
       </header>
       {saved && SAVED.includes(saved) && <Notice kind="success">{savedWord(saved, saved === "draft")}</Notice>}
       {!jobs ? <Notice kind="error" title="We cannot show your jobs now">Reload the page in a minute.</Notice> : (
         <>
-          <Tabs label="Jobs by state" items={TABS.map(([key, label]) => ({ label: `${label} ${countWord(all.filter((j) => inTab(key, j)).length)}`, href: href(key), active: key === tab }))} />
+          <Tabs label="Jobs by state" items={TABS.map(([key, label]) => ({ label, count: countWord(all.filter((j) => inTab(key, j)).length), href: href(key), active: key === tab }))} />
           {rows.length === 0 ? (
             <EmptyState icon="briefcase" title={all.length === 0 ? "No jobs yet" : "No jobs in this tab"} action={all.length === 0 && canPost && JOB_FORM_LIVE ? <Button href="/jobs/new">Post a job</Button> : undefined}>
               {all.length === 0 ? (canPost ? "A job you post shows here with its views and apply clicks." : "Jobs your team posts show here.") : "Pick another tab to see the rest."}
@@ -40,11 +40,11 @@ export function JobsView({ now, role, jobs, stats, tab: tabValue, from, pick, sa
           )}
           {(start > 0 || shown.length > start + PAGE) && <Pager prevHref={start > 0 ? href(tab, Math.max(0, start - PAGE)) : undefined} nextHref={shown.length > start + PAGE ? href(tab, start + PAGE) : undefined} />}
           {sel && (
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2">
               <StatsCard title={sel.title} rows={(stats ?? []).filter((r) => r.jobId === sel.id)} now={now} />
               {held && (
                 <section aria-labelledby="held-h" data-card="held" className="flex flex-col gap-3 rounded-bento bg-peach p-6">
-                  <h2 id="held-h" className="text-xl">{held.title}: {STATE_WORD[jobState(held)].toLowerCase()}</h2>
+                  <h2 id="held-h" className="flex items-start gap-3 text-xl"><Icon name="warning" size={22} />{held.title} is {STATE_WORD[jobState(held)].toLowerCase()}</h2>
                   <p>{holdWord(held, dateWord(held.closedAt ?? held.closesAt))}</p>
                   {canPost && JOB_FORM_LIVE && jobState(held) === "under_review" && <Button href={`/jobs/${held.id}/edit`} variant="dark" className="self-start">Edit the job</Button>}
                   {(jobState(held) === "hidden" || jobState(held) === "removed") && <Button href="/account-status" variant="dark" className="self-start">See why</Button>}

@@ -231,7 +231,7 @@ const PATHS = {
   ),
   // Not in the pack, drawn on the same grid.
   minus: P("M5 12h14"),
-  euro: P("M17 6.5A7 7 0 107 17.5M5 10h9M5 14h9"),
+  euro: P("M17 6.5A7 7 0 1017 17.5M5 10h9M5 14h9"),
   trend: P("M3 17l6-6 4 4 8-8M15 7h6v6"),
   clipboard: (
     <>

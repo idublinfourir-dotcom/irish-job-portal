@@ -42,7 +42,7 @@ export function ProfileView({ p, canEdit, error, saved, pending, logo, onSubmit,
   const [text, setText] = useState(p.description ?? "");
   const ro = !canEdit;
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-6 rounded-bento bg-sand p-6 sm:p-8" aria-busy={pending || undefined}>
+    <form id="profile-form" onSubmit={onSubmit} className="flex flex-col gap-6 rounded-bento bg-sand p-6 sm:p-8" aria-busy={pending || undefined}>
       <h2 className="text-[22px]">Basics</h2>
       <LogoBlock name={p.name} logoSrc={p.logoSrc} canEdit={canEdit} onFile={onFile} {...logo} />
       <div className="grid gap-5 sm:grid-cols-2">
@@ -59,7 +59,7 @@ export function ProfileView({ p, canEdit, error, saved, pending, logo, onSubmit,
       </div>
       {error && <Notice kind="error">{error}</Notice>}
       {saved && <Notice kind="success">Saved. This is what candidates see now.</Notice>}
-      {canEdit ? <Button type="submit" size="lg" disabled={pending} className="self-start">{pending ? "Saving" : "Save"}</Button> : !p.isOwner && <p className="text-small text-muted">Only the account owner can change the profile.</p>}
+      {canEdit ? <Button type="submit" size="lg" disabled={pending} className="self-start lg:hidden">{pending ? "Saving" : "Save"}</Button> : !p.isOwner && <p className="text-small text-muted">Only the account owner can change the profile.</p>}
     </form>
   );
 }

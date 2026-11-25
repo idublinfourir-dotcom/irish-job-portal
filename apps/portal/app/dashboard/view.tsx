@@ -2,6 +2,7 @@
 // "New applicants" tile and the "Hire recorded" tile are later or dropped (#287, L56); the third tile is "Apply clicks" (CF70). Photos are left out (frame NS6).
 import type { ReactNode } from "react";
 import { A, Button, EmptyState, Icon, Notice, Pill } from "@portal/ui";
+import { initials } from "../_account/messages";
 import { JobActions, NotRecognisedButton, ReportButton } from "../_jobs/actions";
 import { JobsTable } from "../_jobs/table";
 import { JOB_FORM_LIVE } from "../_site/flags";
@@ -20,10 +21,11 @@ const COMPANY_LINE: Record<string, string> = {
 };
 
 const tile = "flex min-h-44 flex-col justify-between rounded-bento p-6";
-function Tile({ n, label, tone, icon }: { n: ReactNode; label: string; tone: string; icon: "briefcase" | "eye" | "pulse" | "clock" }) {
+const HL = "rounded-2xl px-3 pb-1.5 pt-0.5 sm:px-4"; // the frame's highlighted word
+function Tile({ n, label, tone, icon, dot = "bg-white text-ink" }: { n: ReactNode; label: string; tone: string; icon: "briefcase" | "eye" | "pulse" | "clock"; dot?: string }) {
   return (
     <div data-tile={label} className={`${tile} ${tone}`}>
-      <span aria-hidden="true" className="grid size-10 place-items-center rounded-pill bg-white text-ink"><Icon name={icon} size={20} /></span>
+      <span aria-hidden="true" className={`grid size-10 place-items-center rounded-pill ${dot}`}><Icon name={icon} size={20} /></span>
       <p><span className="block font-heading text-5xl tabular-nums">{n}</span><span className="text-lead">{label}</span></p>
     </div>
   );
@@ -48,23 +50,28 @@ export function DashboardView({ now, role, jobs, stats, status, team, teamOk, ag
   return (
     <div className="mx-auto flex max-w-page flex-col gap-6">
       <header>
-        <h1>{greeting(now)}{me ? <>, <span className="rounded-pill bg-deep-green px-3 text-white">{me}</span></> : ""}</h1>
-        {jobs && <p className="mt-2 text-lead text-muted" data-live-count>{live.length === 0 ? "You have no live jobs." : `${live.length} live ${live.length === 1 ? "job" : "jobs"} right now.`}</p>}
+        <h1 className="leading-[1.5]">{greeting(now)}{me ? <>, <span className={`${HL} bg-deep-green text-white`}>{me}</span></> : ""}</h1>
+        {jobs && (
+          <p className="flex flex-wrap items-center gap-x-4 gap-y-2 font-heading text-[1.75rem] font-semibold leading-[1.5] sm:text-[2.5rem]" data-live-count>
+            {live.length === 0 ? "You have no live jobs." : <span><span className={`${HL} bg-peach`}>{live.length} live {live.length === 1 ? "job" : "jobs"}</span> right now</span>}
+            <A href="/jobs" aria-label="Open the jobs list" className="grid size-12 place-items-center rounded-pill bg-deep-green text-white hover:bg-hover-dark"><Icon name="arrow" size={22} className="-rotate-45" /></A>
+          </p>
+        )}
       </header>
 
       {ending && (
         <section aria-label="A job ends soon" className="flex flex-wrap items-center justify-between gap-4 rounded-bento bg-peach p-5">
           <p className="flex items-center gap-3"><Icon name="clock" size={22} /><span><span className="block font-semibold">{ending.j.title} {ending.n <= 0 ? "ends today" : `ends in ${daysWord(ending.n).replace(" left", "")}`}</span><span className="text-small">Renew in one click, or close it and tell us if you hired.</span></span></p>
-          {canPost ? <span className="flex gap-2"><JobActions id={ending.j.id} title={ending.j.title} state="live" /></span> : <span className="text-small">Ask a poster or the account owner to renew it.</span>}
+          {canPost ? <span className="flex flex-wrap gap-2"><JobActions id={ending.j.id} title={ending.j.title} state="live" banner /></span> : <span className="text-small">Ask a poster or the account owner to renew it.</span>}
         </section>
       )}
 
       {jobs ? (
         <section aria-label="Your numbers" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Tile n={live.length} label="Live jobs" tone="bg-sand" icon="briefcase" />
+          <Tile n={live.length} label="Live jobs" tone="bg-sand" icon="briefcase" dot="bg-deep-green text-white" />
           <Tile n={views} label="Job views, 30 days" tone="bg-lilac" icon="eye" />
           <Tile n={clicks} label="Apply clicks, 30 days" tone="bg-ink text-white" icon="pulse" />
-          <Tile n={held} label="Held for a check" tone="bg-ink text-white" icon="clock" />
+          <Tile n={held} label="Held for a check" tone="bg-ink text-white [&_.font-heading]:text-peach" icon="clock" dot="bg-deep-green text-white" />
         </section>
       ) : <Unavailable what="Your jobs" />}
 
@@ -75,9 +82,10 @@ export function DashboardView({ now, role, jobs, stats, status, team, teamOk, ag
         ) : <JobsTable jobs={[...jobs].sort((a, b) => rank(a) - rank(b)).slice(0, 5)} totals={sums} now={now} canPost={canPost} />}
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-3">
         <section className="flex flex-col gap-3 rounded-bento bg-sand p-6" aria-labelledby="acct-h" data-card="account-status">
-          <div className="flex items-center justify-between gap-2"><h2 id="acct-h" className="text-xl">Account status</h2>{status && <Pill tone="lilac">{COMPANY_WORD[status.status] ?? "Active"}</Pill>}</div>
+          <div className="flex items-center justify-between gap-2"><h2 id="acct-h" className="text-xl">Account status</h2>{status && <Pill tone="lilac">{status.status === "verified" && status.strikesLast12Months > 0 ? `Strike ${Math.min(status.strikesLast12Months, 3)} of 3` : COMPANY_WORD[status.status] ?? "Active"}</Pill>}</div>
+          {status && status.strikesLast12Months > 0 && <span aria-hidden="true" data-strike-bar className="grid grid-cols-3 gap-1.5">{[1, 2, 3].map((n) => <span key={n} className={`h-2 rounded-pill ${n <= status.strikesLast12Months ? "bg-peach" : "bg-lilac"}`} />)}</span>}
           {!status ? <p className="text-muted">The account status cannot be shown now.</p> : (
             <>
               <p className="text-muted">{COMPANY_LINE[status.status] ?? "Open Account status for the details."}</p>
@@ -94,7 +102,7 @@ export function DashboardView({ now, role, jobs, stats, status, team, teamOk, ag
           <div className="flex items-center justify-between gap-2"><h2 id="team-h" className="text-xl">Team</h2>{owner && <Button href="/team" variant="dark" size="sm">Invite</Button>}</div>
           {!teamOk ? <p>The team cannot be shown now.</p> : (
             <ul className="flex flex-col gap-2">
-              {(team?.members ?? []).slice(0, 5).map((m) => <li key={m.membershipId}><span className="block font-semibold">{m.name ?? m.email}</span><span className="text-small">{roleWord(m.role)}{m.isSigner ? " · can sign" : ""}</span></li>)}
+              {(team?.members ?? []).slice(0, 5).map((m) => <li key={m.membershipId} className="flex items-center gap-3"><span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-pill bg-green-tint text-small font-semibold text-sponsor-ink">{initials(m.name ?? m.email)}</span><span className="min-w-0"><span className="block break-words font-semibold">{m.name ?? m.email}</span><span className="text-small">{roleWord(m.role)}{m.isSigner ? " · can sign" : ""}</span></span></li>)}
             </ul>
           )}
           <A href="/team" className={link}>Open Team <Icon name="arrow" size={16} /></A>

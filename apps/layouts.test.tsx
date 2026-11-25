@@ -132,7 +132,7 @@ describe("admin layout (P4)", () => {
     sidebar.value = { name: "Fake Staff", roles: [], counts: {} };
     const h = await admin();
     for (const t of ["Fake Staff", "Internal, staff only", "Nothing here yet."]) expect(h).toContain(t);
-    expect(links(h)).toEqual(["Skip to content", "Overview", "Rules data", "Audit log"]);
+    expect(links(h)).toEqual(["Skip to content", "Overview", "Rules data", "Audit log", "Figures", "My data"]);
     expect(h).not.toContain("Account reviews");
   });
   it("each role sees its own links and its counts", async () => {
@@ -148,7 +148,7 @@ describe("admin layout (P4)", () => {
   });
   it("a role the shell does not know is dropped, not shown", async () => {
     sidebar.value = { name: "Fake Staff", roles: ["superuser"], counts: {} };
-    expect(links(await admin())).toEqual(["Skip to content", "Overview", "Rules data", "Audit log"]);
+    expect(links(await admin())).toEqual(["Skip to content", "Overview", "Rules data", "Audit log", "Figures", "My data"]);
   });
   it("the staff search box (B58) is a plain GET form to /search, for a visitor never", async () => {
     sidebar.value = { name: "Fake Staff", roles: ["administrator"], counts: {} };

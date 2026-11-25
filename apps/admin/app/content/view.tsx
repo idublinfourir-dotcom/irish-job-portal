@@ -86,7 +86,7 @@ export function Content({ tab, items, selected, open, preview, isNew, missingId,
       <Tabs label="Content tabs" items={TABS.map(([k, label]) => ({ label, href: href(k), active: k === tab }))} />
       {missingId && <Notice kind="warning">That page was not found. Pick one from the list.</Notice>}
       {tab === "stale" && <Notice kind="info">Published guides, help and occupation pages whose checked-on day is long past. Open one, check it against the DETE page and set a new day.</Notice>}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_28rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_28rem]">
         <List tab={tab} items={items} selected={selected} now={now} next={next} prev={prev} />
         {preview ? <PreviewCard p={preview} closeHref={href(tab, { id: selected })} />
           : (open || (isNew && canWrite)) && <ContentForm kind={formKind} item={open} roles={roles} today={today} back={href(tab, { id: open?.id, isNew: open ? false : isNew })} listHref={href(tab)} />}

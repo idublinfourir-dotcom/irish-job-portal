@@ -67,7 +67,7 @@ export function RequestView({ occupations, jobs, degree, onDegree, notice, error
         <p className="text-muted">About five minutes. Our team checks the offer and prepares the application.</p>
       </div>
       <ClosedNotice notice={notice} />
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <form onSubmit={onSubmit} aria-busy={pending || undefined} className="flex flex-col gap-4">
           <Step n={1} title="The permit">
             <Select label="Permit type" name="permitType" required defaultValue="critical_skills">
@@ -130,7 +130,7 @@ export function ResultView({ caseHref, freeCheck, docs, uploading, uploadError, 
         <p className="max-w-2xl text-muted">Our team has your request. We aim to come back to you within 1 working day, and we email you when we need documents or a decision is made.</p>
       </div>
       <ClosedNotice notice={notice} />
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex flex-col gap-4">
           <section aria-labelledby="fc-h" className="flex flex-col gap-3 rounded-bento bg-sand p-6 sm:p-8">
             <div className="flex flex-wrap items-center gap-3">

@@ -47,8 +47,9 @@ function CaseCard({ c }: { c: CaseRow }) {
         <span className="flex flex-wrap gap-x-5 gap-y-1 text-small text-muted">
           <span>Case {c.id}</span>
           <span>Last change {fmtDate(c.lastChangeAt)}</span>
-          {isOpen(c) && c.status === "documents_needed" && <span className="font-semibold text-ink">Documents needed</span>}
+          <span className="font-semibold text-deep-green">{isOpen(c) && c.status === "documents_needed" ? "Upload documents" : "Open case"}</span>
         </span>
+        <Stepper c={c} events={[]} light />
       </A>
     </li>
   );
@@ -56,16 +57,16 @@ function CaseCard({ c }: { c: CaseRow }) {
 
 function Side({ permitType }: { permitType?: string }) {
   return (
-    <div className="flex flex-col gap-4">
+    <div className={permitType ? "flex flex-col gap-4" : "grid gap-4 md:grid-cols-2"}>
       <aside aria-labelledby="pay-h" className="flex flex-col gap-2 rounded-bento bg-peach p-6">
         <h2 id="pay-h" className="text-ui font-semibold">Payment</h2>
         <p>{SERVICE_FEE}</p>
         {permitType ? <p className="text-small">DETE&apos;s permit fee for this permit: {permitFeeLabel(permitType)}.</p> : <p className="text-small">DETE&apos;s permit fee: {permitFeeLabel("critical_skills")} for Critical Skills, {permitFeeLabel("general").toLowerCase()} for General.</p>}
       </aside>
       {!permitType && (
-        <section aria-labelledby="what-h" className="flex flex-col gap-2 rounded-bento bg-sand p-6">
-          <h2 id="what-h" className="text-ui font-semibold">What we handle</h2>
-          <p className="text-small">EPOS set-up, application handling, Labour Market Needs Test guidance and renewals.</p>
+        <section aria-labelledby="what-h" className="flex flex-col gap-2 rounded-bento bg-ink p-6 text-white">
+          <h2 id="what-h" className="text-ui font-semibold text-white">What we handle</h2>
+          <p className="text-small text-white/75">EPOS set-up, application handling, Labour Market Needs Test guidance and renewals.</p>
         </section>
       )}
     </div>
@@ -85,7 +86,7 @@ export function CasesView({ cases, prevHref, nextHref, notice, error }: { cases:
       </div>
       <ClosedNotice notice={notice} />
       {full && <Notice kind="warning" title={`You have ${MAX_OPEN_CASES} open cases`}>That is the most one login can have open at once. A new request is refused until one finishes or is withdrawn.</Notice>}
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_293px]">
+      <div className="flex flex-col gap-4">
         {error ? <Notice kind="error" title="Your cases could not be loaded">{error}</Notice> : cases.length === 0 ? (
           <EmptyState icon="file" title="No permit cases yet" action={<Button href="/services/request">New request</Button>}>
             Ask our team to prepare a permit application for a hire. You get a free check of the pay rule first.
@@ -100,7 +101,7 @@ export function CasesView({ cases, prevHref, nextHref, notice, error }: { cases:
   );
 }
 
-function Stepper({ c, events }: { c: CaseRow; events: CaseEvent[] }) {
+function Stepper({ c, events, light }: { c: CaseRow; events: CaseEvent[]; light?: boolean }) {
   const list = steps(c, events);
   return (
     <ol aria-label="Progress" className="grid grid-cols-4">
@@ -110,11 +111,11 @@ function Stepper({ c, events }: { c: CaseRow; events: CaseEvent[] }) {
             <span aria-hidden="true" className={`grid size-[30px] shrink-0 place-items-center rounded-pill text-small font-semibold ${s.state === "todo" ? "bg-lilac text-ink" : "bg-deep-green text-white"}`}>
               {s.state === "done" ? <Icon name="check" size={16} /> : i + 1}
             </span>
-            {i < list.length - 1 && <span aria-hidden="true" className={`h-0.5 flex-1 ${list[i + 1]!.state === "todo" ? "bg-white/30" : "bg-deep-green"}`} />}
+            {i < list.length - 1 && <span aria-hidden="true" className={`h-0.5 flex-1 ${list[i + 1]!.state !== "todo" ? "bg-deep-green" : light ? "bg-line" : "bg-white/30"}`} />}
           </div>
           <div className="flex flex-col gap-1 pr-1 text-caption sm:pr-2 sm:text-small">
             <span className="font-semibold">{s.label}</span>
-            <span className="text-white/70">{s.detail}</span>
+            {!light && <span className="text-white/70">{s.detail}</span>}
           </div>
         </li>
       ))}

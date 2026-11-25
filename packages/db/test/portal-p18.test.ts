@@ -171,7 +171,8 @@ describe("dashboard, jobs, notices and pay floors: what each role sees (checks 4
     await job(c.org, { status: "hidden", title: "Fake Hidden" });
     await job(c.other, { title: "Fake Other Company Job" });
     const all = await open("jobs", c.owner.cookie);
-    for (const t of ["All 7", "Live 2", "In review 1", "Under review 1", "Expired 1", "Closed 1", "Removed 1", "Drafts 0"]) expect(all, t).toContain(t);
+    const tabs = all.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    for (const t of ["All 7", "Live 2", "In review 1", "Under review 1", "Expired 1", "Closed 1", "Removed 1", "Drafts 0"]) expect(tabs, t).toContain(t);
     expect(all).not.toMatch(/Fake Other/);
     expect(await open("jobs", c.owner.cookie, { tab: "in_review" })).toMatch(/Fake In Review/);
     const closed = await open("jobs", c.owner.cookie, { tab: "closed" });

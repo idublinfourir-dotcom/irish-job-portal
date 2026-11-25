@@ -15,7 +15,7 @@ export function Settings({ settings, pending, meId }: { settings: Setting[]; pen
         <p className="text-muted">The retention periods and limits. A change needs two administrators: one proposes, a different one confirms. The value is written when the second confirms.</p>
       </header>
       {settings.length === 0 && <Notice kind="info">There are no settings yet.</Notice>}
-      <ul className="flex flex-col gap-4">
+      <ul className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
         {settings.map((s) => {
           const change = pending.find((x) => x.key === s.key);
           return (

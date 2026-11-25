@@ -27,14 +27,14 @@ const Block = ({ id, title, note, children }: { id: string; title: string; note?
   </section>
 );
 const Table = ({ head, children }: { head: string[]; children: React.ReactNode }) => (
-  <div className="overflow-x-auto">
+  <div className="relative overflow-x-auto">
     <table className="w-full min-w-[34rem] border-collapse text-left text-small">
       <thead><tr className="bg-lilac">{head.map((h) => <th key={h} scope="col" className="px-3 py-2 font-semibold">{h}</th>)}</tr></thead>
       <tbody className="[&_td]:border-b [&_td]:border-line/60 [&_td]:px-3 [&_td]:py-2 [&_td]:align-top [&_td]:[overflow-wrap:anywhere]">{children}</tbody>
     </table>
   </div>
 );
-const pay = (lo: number | null, hi: number | null) => (lo === null && hi === null ? "Not stated" : `€${lo === null ? "?" : num(lo)} to €${hi === null ? "?" : num(hi)}`);
+const pay = (lo: number | null, hi: number | null) => (lo === null && hi === null ? "Not stated" : lo === null || hi === null || lo === hi ? `€${num((lo ?? hi)!)}` : `€${num(lo)} to €${num(hi)}`);
 
 export function SignupBlock({ d }: { d: Signup }) {
   const shown = d.slice(0, 30);

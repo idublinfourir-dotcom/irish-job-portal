@@ -93,7 +93,7 @@ export function ManualForm({ occupations, hours, today, last }: { occupations: O
     router.refresh();
   }
   return (
-    <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+    <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
       <form onChange={() => setDry(null)} onSubmit={(e: FormEvent<HTMLFormElement>) => { e.preventDefault(); void publish(e.currentTarget); }} className="flex flex-col gap-4 rounded-bento bg-sand p-5">
         <div className="flex flex-col gap-2">
           <Input label="Employer" name="employerSearch" icon="search" value={company ? company.displayName : text} onChange={(e) => { setCompany(null); setText(e.target.value); }} autoComplete="off" maxLength={100}

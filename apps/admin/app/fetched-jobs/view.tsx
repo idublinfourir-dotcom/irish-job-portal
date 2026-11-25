@@ -131,7 +131,7 @@ export function FetchedJobs({ items, counts, stage, selected, missingId, meId, d
       </header>
       <Categories counts={counts} stage={stage} />
       {missingId && <Notice kind="warning">That item is not a fetched job. Pick one from the list.</Notice>}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)] xl:grid-cols-[minmax(0,1fr)_32rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)] xl:grid-cols-[minmax(0,1fr)_32rem]">
         <List items={items} selected={selected?.id} stage={stage} now={now} next={next} prev={prev} />
         {selected && <Detail item={selected} mine={selected.claimedBy === meId} dryState={dryState} socOptions={socOptions} soc={soc} contract={contract} low={low} high={high} stage={stage} now={now} />}
       </div>

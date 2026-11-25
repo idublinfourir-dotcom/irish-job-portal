@@ -74,7 +74,7 @@ export function BanList({ bans, wrc, missing }: { bans: { items: Ban[]; next?: s
       </header>
       {missing && <Notice kind="warning">That page link is not valid, so the first page shows.</Notice>}
       <Bans {...bans} />
-      <div className="grid items-start gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-2">
         <section className="flex flex-col gap-3 rounded-card bg-sand p-5 sm:p-6 lg:rounded-bento" aria-label="Scam wording">
           <h2 className="text-[22px]">Scam wording flags</h2>
           <p className="text-small text-muted">Run on posted and fetched jobs. A flag sends the job to a person. It is part of the rules code, so it is read here and not edited. An employer&apos;s own warning against scams does not count.</p>

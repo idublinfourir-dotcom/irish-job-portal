@@ -88,7 +88,7 @@ export function AccountReviews({ tab, items, counts, selected, missingId, meId, 
       </header>
       <CountTabs label="Account review tabs" items={TABS.map(([k, label]) => ({ label, count: counts[COUNT[k]], href: href(k), active: k === tab }))} />
       {missingId && <Notice kind="warning">That item is not an account review. Pick one from the list.</Notice>}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_26rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_26rem]">
         <List tab={tab} items={items} selected={selected?.id} now={now} next={next} prev={prev} />
         {selected && <Detail item={selected} mine={selected.claimedBy === meId} listHref={href(tab)} />}
       </div>

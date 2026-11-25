@@ -20,10 +20,10 @@ export function JobsTable({ jobs, totals, now, canPost, detail, selected, select
   jobs: readonly Job[]; totals: ReadonlyMap<string, { views: number; clicks: number }>; now: number; canPost: boolean; detail?: boolean; selected?: string; selectHref?: (id: string) => string;
 }) {
   return (
-    <div className="relative overflow-x-auto rounded-bento border border-line bg-white">
+    <div className="relative overflow-x-auto rounded-bento border border-line bg-sand">
       <table className="w-full min-w-[40rem] border-collapse text-small">
         <caption className="sr-only">Your jobs</caption>
-        <thead className="bg-lilac-soft">
+        <thead className="bg-lilac">
           <tr><th scope="col" className={th}>Job</th><th scope="col" className={th}>Status</th><th scope="col" className={`${th} text-right`}>Views</th><th scope="col" className={`${th} text-right`}>Apply clicks</th><th scope="col" className={th}>Expiry</th><th scope="col" className={th}><span className="sr-only">Actions</span></th></tr>
         </thead>
         <tbody>
@@ -31,7 +31,7 @@ export function JobsTable({ jobs, totals, now, canPost, detail, selected, select
             const state = jobState(j), t = totals.get(j.id);
             const hold = detail ? holdWord(j, dateWord(j.closedAt ?? j.closesAt)) : null;
             return (
-              <tr key={j.id} data-job={j.id} data-state={state} className={`border-t border-line ${selected === j.id ? "bg-sand" : ""}`}>
+              <tr key={j.id} data-job={j.id} data-state={state} className={`border-t border-line ${selected === j.id ? "bg-lilac-soft" : ""}`}>
                 <td className={`${td} max-w-[18rem]`}>
                   {selectHref ? <a href={selectHref(j.id)} className="font-semibold underline-offset-2 hover:underline">{j.title}</a> : <span className="font-semibold">{j.title}</span>}
                   <span className="block text-muted">{[j.county, PERMIT[j.permitType]].filter(Boolean).join(" · ")}</span>

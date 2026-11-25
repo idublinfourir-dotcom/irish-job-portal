@@ -26,25 +26,26 @@ export function caseState(c: Case): { text: string; tone: "peach" | "green" | "l
   if (c.stage === "overturned") return { text: "Appeal decided: decision overturned", tone: "green" };
   if (c.stage === "appealed" || (c.appealedAt && !c.appealDecidedAt)) return { text: "Appeal sent", tone: "lilac" };
   if (c.decidedAt) return { text: c.outcome === "cleared" ? "Decided: no strike" : c.outcome === "ban" ? "Decided: account banned" : "Decided: strike applied", tone: c.outcome === "cleared" ? "green" : "peach" };
-  return { text: c.repliedAt ? "Reply sent, waiting for a decision" : c.canReply ? "Waiting for your reply" : "Open", tone: "peach" };
+  return { text: c.repliedAt || c.employerReply ? "Reply sent, waiting for a decision" : c.canReply ? "Waiting for your reply" : "Open", tone: "peach" };
 }
 
 function Step({ state, n, title, children }: { state: "done" | "now" | "todo"; n: number; title: string; children?: ReactNode }) {
   return (
-    <li data-step-state={state} className="flex gap-3 sm:flex-col sm:gap-2">
-      <span aria-hidden="true" className={`grid size-9 shrink-0 place-items-center rounded-pill text-small font-semibold ${state === "done" ? "bg-deep-green text-white" : state === "now" ? "border-2 border-deep-green bg-white text-deep-green" : "border border-line bg-white text-muted"}`}>{state === "done" ? <Icon name="check" size={16} /> : n}</span>
+    <li data-step-state={state} className="relative flex gap-3 sm:flex-col sm:gap-2">
+      {n < 5 && <span aria-hidden="true" className={`absolute left-9 right-0 top-[17px] hidden h-0.5 sm:block ${state === "done" ? "bg-deep-green" : "bg-line"}`} />}
+      <span aria-hidden="true" className={`relative grid size-9 shrink-0 place-items-center rounded-pill text-small font-semibold ${state === "done" ? "bg-deep-green text-white" : state === "now" ? "border-2 border-deep-green bg-white text-deep-green" : "border border-line bg-white text-muted"}`}>{state === "done" ? <Icon name="check" size={16} /> : n}</span>
       <span><span className="block text-small font-semibold">{title}</span><span className="block text-small text-muted">{children}</span></span>
     </li>
   );
 }
 
 function Timeline({ c }: { c: Case }) {
-  const appealed = !!c.appealedAt, decided = !!c.decidedAt;
+  const appealed = !!c.appealedAt, decided = !!c.decidedAt, replied = !!c.repliedAt || !!c.employerReply; // a reply staff recorded for the company has its text and no time of its own
   return (
     <ol aria-label="Where the case is" className="grid gap-4 sm:grid-cols-5">
       <Step n={1} state="done" title="Case opened">{day(c.createdAt) ?? ""}</Step>
       <Step n={2} state={c.notifiedAt ? "done" : "todo"} title="You were told">{day(c.notifiedAt) ?? "Not yet"}</Step>
-      <Step n={3} state={c.repliedAt ? "done" : decided ? "todo" : "now"} title="Your reply">{c.repliedAt ? day(c.repliedAt) : decided ? "No reply sent" : c.replyDueAt ? `Reply by ${day(c.replyDueAt)}` : "Not open"}</Step>
+      <Step n={3} state={replied ? "done" : decided ? "todo" : "now"} title="Your reply">{replied ? day(c.repliedAt) ?? "Received" : decided ? "No reply sent" : c.replyDueAt ? `Reply by ${day(c.replyDueAt)}` : "Not open"}</Step>
       <Step n={4} state={decided ? "done" : "todo"} title="Decision">{day(c.decidedAt) ?? "Not yet"}</Step>
       <Step n={5} state={c.appealDecidedAt ? "done" : appealed ? "now" : "todo"} title="Appeal">{c.appealDecidedAt ? day(c.appealDecidedAt) : appealed ? `Sent ${day(c.appealedAt) ?? ""}` : c.canAppeal && c.appealDueAt ? `Until ${day(c.appealDueAt)}` : decided ? "One appeal allowed" : "After a decision"}</Step>
     </ol>
@@ -100,11 +101,11 @@ export function StatusView({ p }: { p: StatusPage }) {
           <p className="text-small text-white/70">Strikes count for 12 months</p>
         </div>
         {strikes === 0 && !ended && <p className="mt-2 text-white/80">No strikes. Your jobs show the badges they earned.</p>}
-        <ol className="mt-5 grid gap-3 md:grid-cols-3">
+        <ol className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-3">
           {STEPS.map((s) => <li key={s.n} data-strike={s.n} data-on={strikes === s.n} className={`rounded-bento p-5 ${strikes === s.n ? "bg-peach text-ink" : "bg-ink-hover text-white/80"}`}><span className="block font-semibold">Strike {s.n}</span><span className="block text-small">{s.text}</span></li>)}
         </ol>
       </section>
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex flex-col gap-6">
           {p.cases.length === 0 ? <p data-empty className="rounded-bento bg-sand p-6 text-muted">No cases. When our team opens one about your company, it shows here with what to do next.</p> : p.cases.map((c) => <CaseCard key={c.id} c={c} isOwner={p.isOwner} />)}
         </div>

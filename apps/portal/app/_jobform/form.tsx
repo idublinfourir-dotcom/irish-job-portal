@@ -4,7 +4,8 @@
 // sentence and keeps everything typed. Parts that come later (apply on site, screening question) and Town or Eircode (L52) are not here.
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { Button, Checkbox, CriticalSkillsBadge, Input, JobCard, Notice, Radio, Select, SponsorBadge, Textarea } from "@portal/ui";
+import { Button, Checkbox, CriticalSkillsBadge, Icon, Input, Notice, Radio, Select, SponsorBadge, Textarea } from "@portal/ui";
+import { initials } from "../_account/messages";
 import { api } from "../(auth)/api";
 import { Authority } from "./authority";
 import { blockedCount, bodyOf, COUNTIES, emptyForm, eur, formFromJob, missing, money, payLine, payModes, socOf, withOccupation, type Check, type Form, type JobDetail, type PayMode } from "./model";
@@ -23,6 +24,7 @@ type Checked = { checks: Check[]; ok: boolean; exception?: string } | { error: s
 const PERMIT = { critical_skills: "Critical Skills Employment Permit", general: "General Employment Permit" } as const;
 const MODE_WORD: Record<PayMode, string> = { one: "One amount", range: "A range", grade: "Public pay-scale grade" };
 const card = "flex flex-col gap-4 rounded-bento bg-sand p-6";
+const HL = "rounded-2xl px-3 pb-1.5 pt-0.5 sm:px-4"; // the frame's highlighted word
 const stepBadge = "grid size-8 place-items-center rounded-pill bg-ink text-small font-semibold text-white";
 const Step = ({ n, title, children }: { n: number; title: string; children: ReactNode }) => (
   <section aria-labelledby={`step-${n}`} className={card}><h2 id={`step-${n}`} className="flex items-center gap-3 text-xl"><span aria-hidden="true" className={stepBadge}>{n}</span>{title}</h2>{children}</section>
@@ -78,6 +80,8 @@ export function JobForm({ company, statement, occupations, rangeNote, grades, jo
   const occ = occupations.find((o) => o.code === socOf(f.occupation));
   const minEur = typeof checks?.find((c) => c.id === "pay")?.detail?.minimumEur === "number" ? (checks.find((c) => c.id === "pay")!.detail!.minimumEur as number) : null;
   const low = money(f.salaryLow);
+  const pay = checks?.find((c) => c.id === "pay"), counted = pay?.detail?.countedEur;
+  const payNote = minEur === null || typeof counted !== "number" ? undefined : pay!.state === "blocked" ? { status: "blocked" as const, text: `${eur(counted)} counted is below the minimum of ${eur(minEur)}.` } : { status: "passed" as const, text: `Counted: ${eur(counted)} clears ${eur(minEur)}.` };
   const client = ctx.agency && f.employerIs === "client";
   const grade = grades.find((g) => g.code === f.grade);
   const posted = mode === "edit" && job !== undefined && job.status !== "draft"; // past draft: an edit of the text alone runs no rule (#226), so the route decides, not the checks panel
@@ -105,18 +109,18 @@ export function JobForm({ company, statement, occupations, rangeNote, grades, jo
     <form onSubmit={(e) => { e.preventDefault(); void save("live"); }} noValidate className="mx-auto flex max-w-page flex-col gap-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1>{mode === "edit" ? "Edit job" : mode === "repost" ? "Post this job again" : "Post a job"}</h1>
+          <h1 className={mode === "new" ? "leading-[1.5]" : undefined}>{mode === "edit" ? "Edit job" : mode === "repost" ? "Post this job again" : <>Post a <span className={`${HL} bg-deep-green text-white`}>job</span> <span className="block">checks run <span className={`${HL} bg-peach`}>while you type</span></span></>}</h1>
           <p className="mt-2 max-w-2xl text-muted">{company.tier > 0 && !ctx.agency ? `${company.name} is on the public pay-deal employer list, so you can choose a grade instead of typing a salary. ` : ""}Checks run while you type, so you see what blocks a post before you publish.</p>
         </div>
         <div className="flex flex-wrap gap-3">
           {!posted && <Button type="button" variant="outline" size="lg" disabled={pending !== null} onClick={() => void save("draft")}>{pending === "draft" ? "Saving" : "Save draft"}</Button>}
-          <Button href="#preview" variant="outline" size="lg">Preview</Button>
+          <Button href="#preview" variant="outline" size="lg"><Icon name="eye" size={18} />Preview</Button>
         </div>
       </header>
       {saved && <Notice kind="success">{savedWord(saved, saved === "draft")}</Notice>}
       {error && <Notice kind="error" title="This was not saved">{error}</Notice>}
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-6">
           <Step n={1} title="The job">
             <Input label="Job title" value={f.title} maxLength={200} onChange={(e) => set("title", e.target.value)} error={shown("title")} autoComplete="off" />
@@ -146,9 +150,15 @@ export function JobForm({ company, statement, occupations, rangeNote, grades, jo
           </Step>
 
           <Step n={2} title="Pay">
-            <fieldset className="flex flex-wrap gap-x-6">
-              <legend className="mb-1 text-small font-semibold">How is the pay set?</legend>
-              {payModes(ctx).map((m) => <Radio key={m} name="pay-mode" label={MODE_WORD[m]} checked={f.payMode === m} onChange={() => set("payMode", m)} />)}
+            <fieldset>
+              <legend className="sr-only">How is the pay set?</legend>
+              <div className="inline-flex max-w-full flex-wrap gap-1 rounded-bento bg-lilac p-1.5">
+                {payModes(ctx).map((m) => (
+                  <label key={m} className={`relative inline-flex min-h-11 cursor-pointer items-center rounded-pill px-5 font-medium has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ink ${f.payMode === m ? "bg-ink text-white" : "text-ink hover:bg-lilac-hover"}`}>
+                    <input type="radio" name="pay-mode" className="sr-only" checked={f.payMode === m} onChange={() => set("payMode", m)} />{MODE_WORD[m]}
+                  </label>
+                ))}
+              </div>
             </fieldset>
             {f.payMode === "grade" ? (
               <>
@@ -161,9 +171,9 @@ export function JobForm({ company, statement, occupations, rangeNote, grades, jo
               </>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
-                <Input label={f.payMode === "range" ? "From, euro a year" : "Salary, euro a year"} inputMode="numeric" value={f.salaryLow} onChange={(e) => set("salaryLow", e.target.value)} error={shown("pay")} />
-                {f.payMode === "range" && <Input label="To, euro a year" inputMode="numeric" value={f.salaryHigh} onChange={(e) => set("salaryHigh", e.target.value)} />}
-                <Input label="Employer-paid health insurance, euro a year (optional)" inputMode="numeric" value={f.health} onChange={(e) => set("health", e.target.value)} error={shown("health")} help="DETE counts basic salary plus health insurance paid to a registered insurer." />
+                <Input label={f.payMode === "range" ? "From, euro a year" : "Salary, euro a year"} icon="euro" inputMode="numeric" value={f.salaryLow} onChange={(e) => set("salaryLow", e.target.value)} error={shown("pay")} status={payNote?.status} note={payNote?.text} />
+                {f.payMode === "range" && <Input label="To, euro a year" icon="euro" inputMode="numeric" value={f.salaryHigh} onChange={(e) => set("salaryHigh", e.target.value)} />}
+                <Input label="Health insurance you pay, euro a year (optional)" icon="euro" inputMode="numeric" value={f.health} onChange={(e) => set("health", e.target.value)} error={shown("health")} help="DETE counts basic salary plus health insurance paid to a registered insurer." />
               </div>
             )}
             <div className="grid gap-4 sm:grid-cols-2"><Input label="Hours a week" inputMode="numeric" value={f.hours} onChange={(e) => set("hours", e.target.value)} error={shown("hours")} /></div>
@@ -219,11 +229,17 @@ export function JobForm({ company, statement, occupations, rangeNote, grades, jo
 
         <aside className="flex flex-col gap-4 lg:sticky lg:top-4">
           <ChecksPanel checks={checks} missing={Object.keys(miss).map((k) => LABEL[k] ?? k)} checking={checking && isReady} error={result && "error" in result ? result.error : undefined} />
-          <p className="text-small text-muted" id="preview">How it will look</p>
-          <JobCard
-            title={f.title.trim() || "Job title"} employer={company.name} place={f.county || "County"} salary={payLine(f, grade) || undefined}
-            badges={<>{f.statement && <SponsorBadge />}{occ?.listStatus === "critical-skills" && f.permitType === "critical_skills" && <CriticalSkillsBadge />}</>}
-          />
+          <p className="scroll-mt-6 text-small" id="preview">How it will look</p>
+          <article data-card="preview" className="flex flex-col gap-3 rounded-bento bg-peach p-6">
+            <div className="flex items-start justify-between gap-3">
+              <span className="rounded-pill bg-white/50 px-3.5 py-1.5 text-small font-medium">{[f.contractType === "permanent" ? "Permanent" : f.contractType === "fixed_term" ? "Fixed term" : null, f.county || "County"].filter(Boolean).join(" · ")}</span>
+              <span aria-hidden="true" className="grid size-12 shrink-0 place-items-center rounded-pill bg-white font-semibold">{initials(company.name)}</span>
+            </div>
+            <div className="flex flex-wrap gap-2">{f.statement && <SponsorBadge />}{occ?.listStatus === "critical-skills" && f.permitType === "critical_skills" && <CriticalSkillsBadge />}</div>
+            <p className="break-words font-heading text-[1.375rem] font-semibold leading-tight">{f.title.trim() || "Job title"}</p>
+            <p className="text-small">{company.name}</p>
+            <p className="mt-2 flex items-center justify-between gap-3 font-heading text-xl font-semibold">{payLine(f, grade) || "Salary"}<span aria-hidden="true" className="grid size-12 shrink-0 place-items-center rounded-pill bg-deep-green text-white"><Icon name="arrow" size={22} className="-rotate-45" /></span></p>
+          </article>
           {company.permitHistory === "first_time" && <FirstTimeCard />}
         </aside>
       </div>

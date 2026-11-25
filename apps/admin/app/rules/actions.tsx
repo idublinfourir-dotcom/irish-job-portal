@@ -59,7 +59,7 @@ export function ProposeDialog({ label, title, today, last, back, variant = "prim
   }
   return (
     <>
-      <Button type="button" variant={variant} size="md" onClick={() => { p.reset(); setLocal(null); setOpen(true); }}>{label}</Button>
+      <Button type="button" variant={variant} size="lg" onClick={() => { p.reset(); setLocal(null); setOpen(true); }}>{label}</Button>
       <Dialog open={open} onClose={() => setOpen(false)} title={title}>
         {p.sent ? (
           <div className="flex flex-col gap-4"><Outcome failed={null} sent back={back} /><Button type="button" variant="outline" onClick={() => setOpen(false)}>Close</Button></div>
@@ -98,7 +98,7 @@ export function MinimumsFields({ m }: { m: Minimums }) {
 }
 export function MinimumsEditor({ m, today, last, label = "Add a future value" }: { m: Minimums; today: string; last?: string; label?: string }) {
   return (
-    <ProposeDialog label={label} title="New salary minimums" kind="minimums" today={today} last={last} back="/rules" build={minimumsData}>
+    <ProposeDialog label={label} variant="dark" title="New salary minimums" kind="minimums" today={today} last={last} back="/rules" build={minimumsData}>
       <MinimumsFields m={m} />
     </ProposeDialog>
   );
@@ -184,7 +184,7 @@ export function ListEditor({ kind, rows, today, last, canEdit, back }: ListEdito
     <div className="flex flex-col gap-3">
       {canEdit && <div><Button type="button" size="md" onClick={() => open(null)}>{`Add ${WORD[kind]}`}</Button></div>}
       {p.sent && at === "none" && removing === null && <Notice kind="success">{SENT}</Notice>}
-      <div className="overflow-x-auto rounded-card border border-line bg-white">
+      <div className="relative overflow-x-auto rounded-card border border-line bg-white">
         <table className="w-full min-w-[34rem] text-left text-small">
           <caption className="sr-only">{KIND_LABEL[kind]} in force today</caption>
           <thead><tr className="border-b border-line bg-lilac-soft">{head.map((h) => <th key={h} scope="col" className="px-3 py-3 font-semibold">{h}</th>)}{canEdit && <th scope="col" className="px-3 py-3"><span className="sr-only">Actions</span></th>}</tr></thead>

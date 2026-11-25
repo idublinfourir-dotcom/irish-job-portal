@@ -176,7 +176,7 @@ export function TeamView({ team, myId, isOwner, limit, act, error, note, pending
         </section>
       )}
       {isOwner && act && (
-        <div className="grid items-start gap-6 lg:grid-cols-2">
+        <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-2">
           <InviteForm act={act} pending={pending} full={full} />
           <Transfer members={team.members} act={act} pending={pending} />
         </div>

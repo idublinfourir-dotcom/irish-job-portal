@@ -8,14 +8,14 @@ import { Failure } from "./failure";
 import { postJson, type Result } from "./post";
 
 export type Confirm = { title: string; text: string; button: string };
-export type Props = { url: string; body: object; label: string; variant?: ButtonVariant; confirm?: Confirm; then?: string; back: string; disabled?: boolean };
+export type Props = { url: string; body: object; label: string; /** Said by a screen reader after the label, when the label alone does not say what it acts on. */ what?: string; variant?: ButtonVariant; confirm?: Confirm; then?: string; back: string; disabled?: boolean };
 export type Failed = { code: string; status: number } | null;
 
 export function PostButtonView({ p, open, pending, failed, onOpen, onSend, onClose }: { p: Props; open: boolean; pending: boolean; failed: Failed; onOpen: () => void; onSend: () => void; onClose: () => void }) {
   const fail = failed && <Failure code={failed.code} status={failed.status} back={p.back} />;
   return (
     <>
-      <Button type="button" variant={p.variant ?? "primary"} size="md" disabled={p.disabled || pending} onClick={p.confirm ? onOpen : onSend}>{p.label}</Button>
+      <Button type="button" variant={p.variant ?? "primary"} size="md" disabled={p.disabled || pending} onClick={p.confirm ? onOpen : onSend}>{p.label}{p.what && <span className="sr-only"> {p.what}</span>}</Button>
       {!open && fail}
       {p.confirm && (
         <Dialog open={open} onClose={onClose} title={p.confirm.title}>

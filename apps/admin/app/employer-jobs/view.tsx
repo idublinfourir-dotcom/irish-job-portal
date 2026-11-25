@@ -111,7 +111,7 @@ export function EmployerJobs({ queues, queue, items, selected, missingId, meId, 
       <Head title="Held jobs">Employer and agency jobs that wait for a person before they go live, or stay live. {QUEUE_NOTE[queue]}</Head>
       <Tabs label="Held job queues" items={QUEUES.filter(([k]) => queues.includes(k)).map(([k, label]) => ({ label, href: href(k), active: k === queue }))} />
       {missingId && <Notice kind="warning">That item is not in a queue you can open. Pick one from the list.</Notice>}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_30rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_30rem]">
         <List queue={queue} items={items} selected={selected?.id} meId={meId} now={now} next={next} prev={prev} />
         {selected && <DetailCard item={selected} meId={meId} documents={documents} canOpenCompany={canOpenCompany} listHref={href(queue)} now={now} />}
       </div>

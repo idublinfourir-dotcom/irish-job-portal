@@ -1,7 +1,7 @@
 // Frame E18: the company profile page. A presentational part: every value arrives as a prop from the page's reads (GET /api/portal/company, GET /api/portal/team), so a test renders every state.
 // The frame's dummy data is never used (#287). Copy rows: CF20 county is editable, CF47 the 2000 limit, CF48 PNG, JPEG or WebP, CF100 the name is read-only with "ask us to fix it".
 import type { ReactNode } from "react";
-import { A, Icon, Notice, Pill } from "@portal/ui";
+import { A, Button, Icon, Notice, Pill } from "@portal/ui";
 import { initials } from "../_account/messages";
 import { CloseCompany, ProfileForm } from "./forms";
 
@@ -27,12 +27,15 @@ export function CompanyView({ c, isOwner, logoSrc, publicHref, members, invites 
           <h1>Company profile</h1>
           <p className="mt-1 text-muted">This is what candidates see on your company page.</p>
         </div>
-        {publicHref && PUBLIC.has(c.status) && (
-          <A href={publicHref} className="inline-flex min-h-11 items-center gap-2 font-semibold text-deep-green underline-offset-2 hover:underline"><Icon name="external" size={18} />View public page</A>
-        )}
+        <div className="flex flex-wrap items-center gap-6">
+          {publicHref && PUBLIC.has(c.status) && (
+            <A href={publicHref} className="inline-flex min-h-11 items-center gap-2 font-semibold text-deep-green underline-offset-2 hover:underline"><Icon name="external" size={18} />View public page</A>
+          )}
+          {canEdit && <Button type="submit" form="profile-form" size="lg" className="hidden lg:inline-flex">Save</Button>}
+        </div>
       </header>
       {isOwner && !canEdit && <Notice kind="warning" title="The profile cannot be changed now">This company is not open for changes. Open Account status to see where it stands.</Notice>}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="flex flex-col gap-6">
           <ProfileForm p={{ isOwner, name: c.name, description: c.description, website: c.website, county: c.county, descriptionMax: c.descriptionMax, logoSrc }} canEdit={canEdit} />
           <section aria-labelledby="records-h" className="rounded-bento bg-sand p-6 sm:p-8">

@@ -30,7 +30,7 @@ export function HelpView({ signedIn, member, topic, candidateHelp, signIn }: { s
           ))}
         </ul>
       )}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <section id="contact" aria-labelledby="contact-h" className="flex flex-col gap-5 rounded-bento bg-sand p-6 sm:p-8">
           <h2 id="contact-h" className="text-[22px]">Contact us</h2>
           <ContactForm signedIn={signedIn} topic={topic} />

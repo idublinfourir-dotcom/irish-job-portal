@@ -65,7 +65,7 @@ export function PayFloors({ items, selected, missingId, meId, roles, now, next, 
     <div className="flex flex-col gap-6">
       <Head title="Pay floor checks">Pay floors signed by big companies. A rules data editor proposes, then a different administrator confirms.</Head>
       {missingId && <Notice kind="warning">That pay floor does not exist. Pick one from the list.</Notice>}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_28rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_28rem]">
         <List items={items} selected={selected?.floorId} now={now} next={next} prev={prev} />
         {selected && <Detail f={selected} meId={meId} roles={roles} now={now} />}
       </div>

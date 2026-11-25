@@ -1,6 +1,6 @@
 // Reports and strikes (frame D08) as parts that take their data as props, so a test renders every state. The page (page.tsx) reads and hands them over. Every action is an Act (a documented
 // POST; the route checks the role, the Origin and, for a decision, a fresh sign-in again). Text from candidates and employers is shown as text only.
-import { A, EmptyState, Notice, Pager, Pill, cx } from "@portal/ui";
+import { A, EmptyState, Icon, Notice, Pager, Pill, cx } from "@portal/ui";
 import { Act } from "../_queue/act";
 import { ageText, when } from "../_queue/age";
 import { OpenCopy } from "../_queue/open-copy";
@@ -117,7 +117,16 @@ export function CasePanel({ c, label, reportLabel, meId, here, now }: { c: CaseI
         {reportLabel && <> &middot; <A href={href("open", reportLabel)} className="font-semibold text-deep-green underline">Report {reportLabel}</A></>}
       </p>
       {c.noticeSummary && <Text title="What the employer was told">{c.noticeSummary}</Text>}
-      <ul className="divide-y divide-line border-y border-line">{timeline(c, now).map((s) => <CheckRow key={s.title} ok={s.ok} title={s.title}>{s.note || " "}</CheckRow>)}</ul>
+      <ol aria-label="Where the case is" className="grid grid-cols-5 gap-2">
+        {timeline(c, now).map((s, i, all) => (
+          <li key={s.title} aria-current={s.ok === false ? "step" : undefined} className="relative flex min-w-0 flex-col gap-1.5">
+            {i < all.length - 1 && <span aria-hidden="true" className={cx("absolute left-8 right-0 top-[15px] h-0.5", s.ok === true ? "bg-deep-green" : "bg-line")} />}
+            <span aria-hidden="true" className={cx("relative grid size-8 place-items-center rounded-pill text-small font-semibold", s.ok === null ? "bg-lilac text-ink" : "bg-deep-green text-white", s.ok === false && "border-2 border-ink")}>{s.ok === true ? <Icon name="check" size={16} /> : i + 1}</span>
+            <span className="text-caption font-semibold leading-tight">{s.title}<span className="sr-only">{s.ok === true ? ", done" : s.ok === false ? ", now" : ", not reached"}</span></span>
+            {s.note && <span className="text-caption text-muted [overflow-wrap:anywhere]">{s.note}</span>}
+          </li>
+        ))}
+      </ol>
       {c.employerReply && <Text title={`The employer's reply${c.replyReceivedAt ? `, received ${when(iso(c.replyReceivedAt))}` : ""}`}>{c.employerReply}</Text>}
       {c.appealText && <Text title={`The appeal${c.appealedAt ? `, received ${when(iso(c.appealedAt))}` : ""}`}>{c.appealText}</Text>}
       {c.wrcReported && <Notice kind="success">Reported to the WRC.</Notice>}
@@ -142,8 +151,8 @@ export function CasePanel({ c, label, reportLabel, meId, here, now }: { c: CaseI
         {c.organisationKind === "agency" && c.caseKind === "instant_ban" && !c.wrcReported && <Act url={CASES} fixed={fix("mark_wrc")} label="Mark as reported to the WRC" variant="outline" here={here} confirm="Tick this off once the report to the WRC is made. It is written to the audit log." />}
       </div>
       {open && !waiting && c.caseKind === "instant_ban" && (
-        <Act url={CASES} fixed={fix("decide", { outcome: "ban" })} fields={[{ name: "conclusive", label: "Conclusive evidence", help: "For written requests for money you may apply the ban before the 7 days are over. The 7 days then become the appeal window.", kind: "check" }]}
-          label="Propose the ban" variant="danger" here={here} confirm="A ban waits for a second officer. On confirming, the company's CRO number and email domains are banned." />
+        <div className="rounded-card bg-error-tint p-4"><Act url={CASES} fixed={fix("decide", { outcome: "ban" })} fields={[{ name: "conclusive", label: "Conclusive evidence", help: "For written requests for money you may apply the ban before the 7 days are over. The 7 days then become the appeal window.", kind: "check" }]}
+          label="Propose the ban" variant="danger" here={here} confirm="A ban waits for a second officer. On confirming, the company's CRO number and email domains are banned." /></div>
       )}
       {open && notified && !waiting && <Act url={CASES} fixed={fix("record_reply")} fields={[{ name: "text", label: "The employer's reply (by email or post)", kind: "textarea", maxLength: 5000, required: true }, { name: "receivedAt", label: "Received on", kind: "datetime" }]} label="Record the reply" variant="outline" here={here} />}
       {appealOpen && <Act url={CASES} fixed={fix("record_appeal")} fields={[{ name: "text", label: "The appeal (by email or post)", kind: "textarea", maxLength: 5000, required: true }, { name: "receivedAt", label: "Received on", kind: "datetime" }]} label="Record the appeal" variant="outline" here={here} />}
@@ -175,7 +184,7 @@ export function Reports({ tab, items, counts, selected, missingId, meId, now, ne
       </header>
       <CountTabs label="Report tabs" items={TABS.map(([k, label]) => ({ label, count: counts ? count(counts[k]) : "", href: href(k), active: k === tab }))} />
       {missingId && <Notice kind="warning">That report or case was not found. Pick one from the list.</Notice>}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_28rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_28rem]">
         <List tab={tab} items={items} selected={selected?.label} now={now} next={next} prev={prev} />
         {selected?.kind === "report" && <ReportPanel r={selected.item} label={selected.label} here={here} now={now} />}
         {selected?.kind === "case" && <CasePanel c={selected.item} label={selected.label} reportLabel={selected.reportLabel} meId={meId} here={here} now={now} />}

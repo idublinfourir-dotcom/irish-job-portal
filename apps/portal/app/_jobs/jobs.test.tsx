@@ -147,7 +147,8 @@ describe("dashboard view", () => {
 describe("jobs view", () => {
   it("tabs with counts by one rule, hold sentences, stats card with Apply clicks", () => {
     const s = html(<JobsView now={NOW} role="account_owner" jobs={STATES} stats={fx.stats} />);
-    for (const t of ["All 9", "Live 1", "In review 1", "Under review 2", "Expired 1", "Closed 1", "Removed 2", "Drafts 1"]) expect(s, t).toContain(t);
+    const tabs = s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    for (const t of ["All 9", "Live 1", "In review 1", "Under review 2", "Expired 1", "Closed 1", "Removed 2", "Drafts 1"]) expect(tabs, t).toContain(t);
     expect(s).toContain("Apply clicks"); expect(s).toContain("Click rate"); expect(s).toContain("Fake Live stats"); expect(s).toContain("Last 30 days");
     expect(s).not.toMatch(/>Applied<|page 2/i);
   });

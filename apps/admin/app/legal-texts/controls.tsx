@@ -49,12 +49,15 @@ export function ControlsView({ p, s, ui, h }: { p: ControlsProps; s: ActState; u
     );
   if (!p.canPropose) return <p className="text-small text-muted">A content editor proposes a new version. Then a different administrator publishes it.</p>;
   return (
+    <details open={!!err || undefined}>
+    <summary className="min-h-11 cursor-pointer py-2.5 font-semibold">Propose a new version</summary>
     <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); if (!s.pending) h.onPropose(); }}>
       {err}
       <Input label="Version label" name="version" maxLength={64} value={ui.version} onChange={(e) => h.onField({ version: e.target.value })} help="Lower-case letters, digits, dots, dashes and underscores, for example 2026-12-01." />
       <Textarea label="New text (plain text)" name="body" rows={10} maxLength={MAX_BODY} value={ui.body} onChange={(e) => h.onField({ body: e.target.value })} help="Up to 100,000 characters. Line breaks are kept. This is the whole text, not a change." />
       <Button type="submit" variant="outline" disabled={s.pending} className="self-start">Propose this version</Button>
     </form>
+    </details>
   );
 }
 
