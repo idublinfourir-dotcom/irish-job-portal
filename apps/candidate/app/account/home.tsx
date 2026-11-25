@@ -68,7 +68,7 @@ export function HomeView({ d, now }: { d: HomeData; now: Date }) {
             <h2 id="case-h" className="text-[24px] leading-snug text-white">{c.status === "documents_needed" ? <>Documents needed: <Hl c="green">{c.documentsNeeded.length}</Hl></> : CASE_TEXT[c.status] ?? "Your permit case"}</h2>
             {(c.jobTitle || c.employerName) && <p className="break-words text-small text-white/75">{[c.jobTitle, c.employerName].filter(Boolean).join(" at ")}</p>}
             {c.status === "documents_needed" && c.documentsNeeded.length > 0 && <ul className="list-inside list-disc text-small text-white/90">{c.documentsNeeded.map((x) => <li key={x.code}>{x.label ?? x.code}</li>)}</ul>}
-            {c.payer === "employer" && <p className="text-small text-peach">Your employer is paying the fee for this application.</p>}
+            {c.payer === "employer" && <p className="text-small text-peach">Our permit services for this application are paid by your employer, never by you.</p>}
             <Button href={casePath(c.id)} className="mt-auto self-start">Open case <Icon name="arrow" size={16} /></Button>
           </section>
         ) : (

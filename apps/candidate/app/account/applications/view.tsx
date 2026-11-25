@@ -7,6 +7,7 @@ import { Logo } from "../../jobs/parts";
 import { alertName, type AlertRow } from "../alerts/view";
 import { AlertToggle, StageSelect, WithdrawButton } from "../client";
 import { reasonText, STAGE_TEXT } from "../messages";
+import { Hl } from "../../jobs/parts";
 import { Head } from "../parts";
 
 export type TrackedRow = { jobId: string; title: string; employerName: string; county?: string | null; live: boolean; reason: string | null; route: string; stage: string; updatedAt: string; employerLogoUrl?: string | null };
@@ -51,7 +52,7 @@ export function ApplicationsView({ tracked, count, saved, savedCount, alerts, ti
   const cols = COLUMNS.map((s) => ({ s, rows: open.filter((r) => r.stage === s) })).filter((c) => c.rows.length);
   return (
     <>
-      <Head title="Your applications and saved jobs" />
+      <Head big title={<>Your <Hl c="green">applications</Hl> and <Hl c="peach">saved jobs</Hl></>} />
       <div className="mb-5"><Notice kind="info">A job you applied to on the employer&apos;s own site enters your tracker only when you tap &quot;Yes, I applied&quot;. A click alone never counts.</Notice></div>
       {tracked.length === 0 ? (
         <EmptyState icon="briefcase" title="No applications yet" action={<Button href="/jobs">Find jobs</Button>}>When you apply on an employer&apos;s site and tell us, the job appears here.</EmptyState>

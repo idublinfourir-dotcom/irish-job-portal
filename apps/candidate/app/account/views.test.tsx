@@ -143,7 +143,7 @@ describe("home (NA1)", () => {
     expect(out).toContain("Yes, I applied");
     expect(out).toContain("Not yet");
     expect(out).toContain("Passport copy");
-    expect(out).toContain("Your employer is paying the fee");
+    expect(out).toContain("Our permit services for this application are paid by your employer, never by you."); // our service, never DETE's fee (#297)
     expect(out).toContain('href="/account/cases/9"');
     expect(out).toContain("Nothing tracked yet");
     expect(out).toContain("Your case has an update");

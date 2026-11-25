@@ -6,6 +6,7 @@ import { A, Notice } from "@portal/ui";
 import { readCv, readMinimums, readOccupations, readProfile, readRegistrationBodies } from "../../../lib/data";
 import { profilePath, settingsDeletePath } from "../../../lib/paths";
 import { pageDescription, pageTitle } from "../../../lib/seo";
+import { Hl } from "../../jobs/parts";
 import { need } from "../guard";
 import { monthLimits } from "./dates";
 import { ProfileForm, type CvInfo, type Mins, type ProfileData } from "./profile-form";
@@ -28,11 +29,11 @@ export default async function Page() {
   const stamp4 = profile?.currentStamp?.startsWith("4") ?? false;
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-[2rem] leading-tight sm:text-[2.5rem]">Your profile</h1>
+      <h1 className="text-[2.4rem] leading-[1.25] sm:text-[3.5rem] xl:text-[4rem]">Your <Hl c="lilac">profile</Hl></h1>
       <p className="text-muted">Add what you want us to know. It helps us show jobs that fit and decide which minimum pay applies to you. Nothing here is shown to an employer.</p>
       {stamp4 && (
         <Notice kind="info" title="Your stamp means you no longer need a permit">
-          We paused your job alerts. You can turn them back on in <A href="/account/alerts" className="font-semibold underline">Job alerts</A>, or <A href={settingsDeletePath()} className="font-semibold underline">delete your account</A> if you do not want to keep it.
+          Your job alerts stay paused while your profile says Stamp 4. If that changes, change it here and turn them on in <A href="/account/alerts" className="font-semibold underline">Job alerts</A>. You can also <A href={settingsDeletePath()} className="font-semibold underline">delete your account</A>.
         </Notice>
       )}
       <ProfileForm

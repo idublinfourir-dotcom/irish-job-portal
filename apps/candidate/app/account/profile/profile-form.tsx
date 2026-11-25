@@ -2,7 +2,7 @@
 // The profile and CV forms (frame NA3). Uncontrolled fields read with FormData; the saves are PUT /api/candidate/profile and PUT, DELETE /api/candidate/cv
 // (docs/openapi/candidate.yaml). The CV download is the route's own link (a 302 to a link that works for 60 seconds), never stored in the page.
 import { useRef, useState, type FormEvent, type ReactNode } from "react";
-import { Button, Icon, Input, Notice, Radio, Select } from "@portal/ui";
+import { Button, Icon, Input, Notice, Select } from "@portal/ui";
 import { shortDate, eur } from "../../_home/format";
 import { send } from "../send";
 import { sayAccount } from "../settings-messages";
@@ -28,9 +28,12 @@ export function DegreeCard({ box, month, field, mins, limits, onBox }: { box: Pr
   return (
     <div className="flex flex-col gap-3">
       <div role="radiogroup" aria-label="Your degree" className="flex flex-col gap-2">
-        <Radio label="I have a relevant degree" name="degree" value="relevant" checked={box === "relevant"} onChange={() => onBox?.("relevant")} />
-        <Radio label="I got my degree in the last 12 months" name="degree" value="last_12_months" checked={box === "last_12_months"} onChange={() => onBox?.("last_12_months")} />
-        <Radio label="I do not have a relevant degree" name="degree" value="none" checked={box === "none"} onChange={() => onBox?.("none")} />
+        {([["relevant", "I have a relevant degree"], ["last_12_months", "I got my degree in the last 12 months"], ["none", "I do not have a relevant degree"]] as const).map(([value, label]) => (
+          <label key={value} className="flex min-h-[52px] cursor-pointer items-center gap-3 rounded-pill bg-lilac px-5 py-2 text-[15px] has-[:checked]:bg-deep-green has-[:checked]:text-white has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink">
+            <input type="radio" name="degree" value={value} checked={box === value} onChange={() => onBox?.(value)} className="size-5 shrink-0 accent-ink" />
+            {label}
+          </label>
+        ))}
       </div>
       {box === "last_12_months" && <Input label="Month you got your degree" name="degreeMonth" type="month" required min={limits.min} max={limits.max} defaultValue={month} help="Pick the month of your award. It must be in the last 12 months." />}
       {box !== "none" && <Input label="Degree subject (optional)" name="degreeField" maxLength={120} defaultValue={field} />}
@@ -135,9 +138,13 @@ export function ProfileForm({ profile, cv: first, mins, bodies, limits, occupati
           </div>
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-1 text-small font-semibold">Where are you now?</legend>
-            <div className="flex flex-wrap gap-4">
-              <Radio label="Abroad" name="locationKind" value="abroad" checked={where === "abroad"} onChange={() => setWhere("abroad")} />
-              <Radio label="In Ireland" name="locationKind" value="ireland" checked={where === "ireland"} onChange={() => setWhere("ireland")} />
+            <div className="flex self-start rounded-pill bg-lilac p-1">
+              {([["abroad", "Abroad"], ["ireland", "In Ireland"]] as const).map(([value, label]) => (
+                <label key={value} className="inline-flex min-h-11 cursor-pointer items-center rounded-pill px-5 text-small font-semibold has-[:checked]:bg-ink has-[:checked]:text-white has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink">
+                  <input type="radio" name="locationKind" value={value} checked={where === value} onChange={() => setWhere(value)} className="sr-only" />
+                  {label}
+                </label>
+              ))}
             </div>
           </fieldset>
           {where === "ireland" && (
