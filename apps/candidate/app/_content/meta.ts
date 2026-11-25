@@ -11,11 +11,12 @@ export function fit(text: string, fillers: readonly string[] = [" Rules are chec
   return out.length < 120 && d.length > 160 ? `${d.slice(0, 159)}…` : out; // one very long word has no space to cut at: cut it hard, still 120 to 160
 }
 
+/** The site's own address, or null where there is none (a build, a test). */
+export const originOrNull = () => { try { return siteOrigin(); } catch { return null; } };
+
 /** Next metadata for a page at `path` (made by lib/paths.ts). The site origin can be missing in a test: the title and description are still set. */
 export function meta(title: string, description: string, path?: string, noindex = false): Metadata {
-  const d = fit(description);
-  try {
-    if (path) return pageMetadata({ title, description: d, path, origin: siteOrigin(), noindex });
-  } catch { /* no origin: no canonical */ }
+  const d = fit(description), origin = originOrNull();
+  if (path && origin) return pageMetadata({ title, description: d, path, origin, noindex });
   return { title: pageTitle(title), description: d, ...(noindex ? { robots: { index: false, follow: false } } : {}) };
 }

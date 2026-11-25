@@ -2,9 +2,9 @@ import type { SitemapEntry } from "@portal/db";
 import type { MetadataRoute } from "next";
 import { readSitemapIds, readSitemapPart, siteOrigin } from "../lib/data";
 import { occupationSlug } from "../lib/occupations";
-import { companyPath, guidePath, helpPath, jobPath, legalPath, occupationPath, staticPath, updatePath } from "../lib/paths";
+import { companyPath, guidePath, helpPath, jobPath, legalPath, occupationPath, staticPath } from "../lib/paths";
 
-// S13: /sitemap/<id>.xml, one file per part of live jobs, company pages and occupation pages, plus the static pages, legal texts, guides, updates and
+// S13: /sitemap/<id>.xml, one file per part of live jobs, company pages and occupation pages, plus the static pages, legal texts, guides and
 // help pages (packages/db/src/sitemap.ts). /sitemap-index.xml lists them all (app/sitemap-index.xml/route.ts). Read at request time: the build has no database.
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,6 @@ const path = (e: SitemapEntry) => {
     case "company": return companyPath(e.key);
     case "occupation": return occupationPath(occupationSlug(e.key) ?? e.key);
     case "guide": return guidePath(e.key);
-    case "update": return updatePath(e.key);
     case "help": return helpPath(e.key);
     case "legal": return legalPath(e.key);
     case "page": return staticPath(e.key);

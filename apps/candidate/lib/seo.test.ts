@@ -1,14 +1,15 @@
 // P2: the SEO helpers (pure) and robots.txt. No database, no network: robots reads the site origin from the setting only.
+import { readdirSync, readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import robots from "../app/robots";
-import { canonicalUrl, descriptionProblem, isFilteredSearch, jobPostingLd, jsonLd, occupationLd, organizationLd, pageDescription, pageMetadata, pageTitle, siteIndexable, titleProblem, websiteLd, type JobLdInput } from "./seo";
+import { breadcrumbLd, canonicalUrl, descriptionProblem, isFilteredSearch, jobPostingLd, jsonLd, occupationLd, organizationLd, pageDescription, pageMetadata, pageTitle, siteIndexable, titleProblem, websiteLd, type JobLdInput } from "./seo";
 import { jobPath, occupationPath } from "./paths";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 
 const ORIGIN = "https://irishworkpermit.example";
-const job: JobLdInput = { source: "employer", title: "Fake Cook", advertText: "Fake advert text.", postedAt: "2026-11-17T08:00:00.000Z", closesAt: "2026-12-17T08:00:00.000Z", url: `${ORIGIN}/jobs/fake-cook-cork-7`, employerName: "Fake Org Ltd", employerWebsite: "https://example.test", county: "Cork", salaryLow: 40000, salaryHigh: 45000 };
+const job: JobLdInput = { source: "employer", title: "Fake Cook", advertText: "Fake advert text.", postedAt: new Date("2026-11-17T08:00:00.000Z"), closesAt: new Date("2026-12-17T08:00:00.000Z"), url: `${ORIGIN}/jobs/fake-cook-cork-7`, employerName: "Fake Org Ltd", employerWebsite: "https://example.test", county: "Cork", salaryLow: 40000, salaryHigh: 45000 };
 
 describe("the one indexing setting", () => {
   it("is off unless SITE_INDEXABLE is exactly 1", () => {
@@ -20,6 +21,13 @@ describe("the one indexing setting", () => {
     expect(pageMetadata(seo, {}).robots).toEqual({ index: false, follow: false });
     expect(pageMetadata(seo, { SITE_INDEXABLE: "1" }).robots).toEqual({ index: true, follow: true });
     expect(pageMetadata({ ...seo, noindex: true }, { SITE_INDEXABLE: "1" }).robots).toEqual({ index: false, follow: false });
+  });
+  it("gives a canonical address, launched or not, except on a page that asks for noindex", () => {
+    const seo = { title: "Jobs", description: "x".repeat(130), path: "/jobs", origin: ORIGIN };
+    for (const env of [{}, { SITE_INDEXABLE: "1" }]) {
+      expect(pageMetadata(seo, env).alternates).toEqual({ canonical: `${ORIGIN}/jobs` });
+      expect(pageMetadata({ ...seo, noindex: true }, env)).not.toHaveProperty("alternates");
+    }
   });
 });
 
@@ -94,6 +102,15 @@ describe("filtered search pages are noindex (#287)", () => {
   });
 });
 
+describe("every page of the site", () => {
+  it("sets a canonical address through meta() or legalMeta(), or is noindex: a new page cannot miss both", () => {
+    const app = new URL("../app/", import.meta.url).pathname;
+    const pages = (readdirSync(app, { recursive: true }) as string[]).filter((f) => /(^|\/)page\.tsx$/.test(f) && !f.startsWith("kit/")); // /kit is a 404 in production
+    expect(pages.length).toBeGreaterThan(30);
+    expect(pages.filter((f) => !/\b(meta|legalMeta|authMeta)\(|robots: \{ index: false, follow: false \}/.test(readFileSync(app + f, "utf8")))).toEqual([]);
+  });
+});
+
 describe("JSON-LD", () => {
   it("Organization and WebSite name the brand and the site", () => {
     expect(organizationLd(ORIGIN)).toMatchObject({ "@context": "https://schema.org", "@type": "Organization", name: "Irish Work Permit", url: `${ORIGIN}/` });
@@ -106,7 +123,7 @@ describe("JSON-LD", () => {
   });
   it("JobPosting for an employer-posted job, with the pay and place", () => {
     expect(jobPostingLd(job)).toMatchObject({
-      "@type": "JobPosting", title: "Fake Cook", datePosted: job.postedAt, validThrough: job.closesAt, hiringOrganization: { name: "Fake Org Ltd" },
+      "@type": "JobPosting", title: "Fake Cook", datePosted: "2026-11-17T08:00:00.000Z", validThrough: "2026-12-17T08:00:00.000Z", hiringOrganization: { name: "Fake Org Ltd" },
       jobLocation: { address: { addressRegion: "Cork", addressCountry: "IE" } }, baseSalary: { currency: "EUR", value: { minValue: 40000, maxValue: 45000, unitText: "YEAR" } },
     });
   });
@@ -116,6 +133,29 @@ describe("JSON-LD", () => {
   it("no JobPosting without advert text (the description is required)", () => {
     expect(jobPostingLd({ ...job, advertText: null })).toBeNull();
     expect(jobPostingLd({ ...job, advertText: "" })).toBeNull();
+  });
+  it("gives one pay figure as a value and a range as its two ends (Google: a value, or a minValue and a maxValue)", () => {
+    const pay = (low: number, high: number | null) => ((jobPostingLd({ ...job, salaryLow: low, salaryHigh: high })!.baseSalary as { value: Record<string, unknown> }).value);
+    expect(pay(52000, null)).toEqual({ "@type": "QuantitativeValue", value: 52000, unitText: "YEAR" });
+    expect(pay(52000, 52000)).toEqual({ "@type": "QuantitativeValue", value: 52000, unitText: "YEAR" });
+    expect(pay(52000, 60000)).toEqual({ "@type": "QuantitativeValue", minValue: 52000, maxValue: 60000, unitText: "YEAR" });
+  });
+  it("keeps the advert text (Google reads the description as HTML), line breaks included", () => {
+    expect(jobPostingLd({ ...job, advertText: "Cook & clean.\n<b>Bold</b> &amp; <script>x()</script>" })!.description).toBe("Cook &amp; clean.\n&lt;b&gt;Bold&lt;/b&gt; &amp;amp; &lt;script&gt;x()&lt;/script&gt;");
+  });
+  it("adds little to the page: the advert once more and under 1,000 characters around it", () => {
+    const text = "Plain words about a made-up job. ".repeat(600);
+    expect(jsonLd(jobPostingLd({ ...job, advertText: text })!).length).toBeLessThan(text.length + 1000);
+  });
+  it("BreadcrumbList numbers the crumbs from 1, with absolute addresses, the page itself last without one", () => {
+    expect(breadcrumbLd(ORIGIN, [{ label: "Home", href: "/" }, { label: "Nurses" }])).toEqual({
+      "@context": "https://schema.org", "@type": "BreadcrumbList",
+      itemListElement: [{ "@type": "ListItem", position: 1, name: "Home", item: `${ORIGIN}/` }, { "@type": "ListItem", position: 2, name: "Nurses" }],
+    });
+    // a crumb that is a filtered search (noindex) is left out, and the last crumb never carries an address
+    const ld = breadcrumbLd(ORIGIN, [{ label: "Find a job", href: "/jobs" }, { label: "IT", href: "/jobs?sector=IT" }, { label: "Cook", href: "/jobs/cook-1" }]);
+    expect((ld.itemListElement as { name: string; item?: string }[]).map((x) => [x.name, x.item])).toEqual([["Find a job", `${ORIGIN}/jobs`], ["Cook", undefined]]);
+    for (const href of ["//evil.test/x", "https://evil.test/"]) expect(() => breadcrumbLd(ORIGIN, [{ label: "x", href }, { label: "y" }]), href).toThrow();
   });
   it("leaves out pay it does not have", () => {
     const ld = jobPostingLd({ ...job, salaryLow: null, salaryHigh: null, closesAt: null, county: null })!;

@@ -6,10 +6,12 @@ import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 import { readCompany, readSaved } from "../../../lib/data";
 import { companyPath } from "../../../lib/paths";
+import { breadcrumbLd } from "../../../lib/seo";
+import { PageLd } from "../../_content/ld";
 import { meta } from "../../_content/meta";
 import { Problem, type Failed } from "../../_content/problem";
 import { cursorOf, pagerLinks, parseTrail } from "../../_content/trail";
-import { CompanyView, type CompanyData } from "../company-view";
+import { CompanyView, companyCrumbs, type CompanyData } from "../company-view";
 
 type Props = { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> };
 
@@ -40,5 +42,10 @@ export default async function Page({ params, searchParams }: Props) {
   const links = pagerLinks({ base: path, after, back: parseTrail(sp.back), next: company.jobs.next });
   const signedIn = mine.ok;
   const savedIds = mine.ok ? ((mine.data as { saved: { jobId: string }[] }).saved ?? []).map((s) => s.jobId) : [];
-  return <CompanyView company={company} now={new Date()} signedIn={signedIn} savedIds={savedIds} path={path} {...links} />;
+  return (
+    <>
+      <PageLd make={(origin) => [breadcrumbLd(origin, companyCrumbs(company))]} />
+      <CompanyView company={company} now={new Date()} signedIn={signedIn} savedIds={savedIds} path={path} {...links} />
+    </>
+  );
 }

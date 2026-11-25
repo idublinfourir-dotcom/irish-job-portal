@@ -41,9 +41,9 @@ describe("the sitemap index and the content parts (B21)", () => {
     expect(pages.at(-1)).toEqual({ kind: "legal", key: "cookie_policy", lastModified: "2026-11-20T10:00:00.000Z" });
     expect(seen[0]).toEqual([SITEMAP_QUERIES.legal, [LEGAL_PAGES]]);
     expect(await sitemapPart(db, "guides-0")).toEqual([{ kind: "guide", key: "a-slug" }]);
-    expect(await sitemapPart(db, "updates-0")).toEqual([{ kind: "update", key: "a-slug" }]);
+    expect(await sitemapPart(db, "updates-0")).toBeNull(); // an update has no page of its own: the feed is a static page
     expect(await sitemapPart(db, "help-0")).toEqual([{ kind: "help", key: "a-slug" }]);
-    expect(seen.slice(1).map((s) => s[1])).toEqual([["guide"], ["update"], ["help"]]);
+    expect(seen.slice(1).map((s) => s[1])).toEqual([["guide"], ["help"]]);
     expect(await sitemapPart(db, "pages-1")).toEqual([]);
     expect(await sitemapPart(db, "guides-3")).toEqual([]);
   });

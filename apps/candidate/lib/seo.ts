@@ -51,13 +51,16 @@ export const isFilteredSearch = (params: Record<string, string | string[] | unde
 
 export type PageSeo = { title: string; description: string; path: string; origin: string; noindex?: boolean };
 
-/** The Next metadata of a page: title, description, canonical and robots. Noindex when the page asks for it or while the site is not indexable. */
+/**
+ * The Next metadata of a page: title, description, canonical and robots. Noindex when the page asks for it or while the site is not indexable. A page that asks
+ * for noindex gets no canonical: "do not index me" and "index that other address for me" contradict each other.
+ */
 export function pageMetadata({ title, description, path, origin, noindex = false }: PageSeo, env: Record<string, string | undefined> = process.env): Metadata {
   const index = siteIndexable(env) && !noindex;
   return {
     title: pageTitle(title),
     description: pageDescription(description),
-    alternates: { canonical: canonicalUrl(origin, path) },
+    ...(noindex ? {} : { alternates: { canonical: canonicalUrl(origin, path) } }),
     robots: index ? { index: true, follow: true } : { index: false, follow: false },
   };
 }
@@ -84,10 +87,22 @@ export function occupationLd(o: { name: string; code?: string | null; url: strin
   };
 }
 
+/** The breadcrumb a page shows (frame 01). A crumb that points at a filtered search is left out: that address is noindex. The last one is the page itself, with no address (Google's BreadcrumbList rules). */
+export function breadcrumbLd(origin: string, crumbs: readonly { label: string; href?: string }[]): Ld {
+  const shown = crumbs.filter((c, i) => i === crumbs.length - 1 || (c.href && !c.href.includes("?")));
+  return {
+    "@context": "https://schema.org", "@type": "BreadcrumbList",
+    itemListElement: shown.map((c, i) => ({ "@type": "ListItem", position: i + 1, name: c.label, ...(i < shown.length - 1 ? { item: canonicalUrl(origin, c.href!) } : {}) })),
+  };
+}
+
 export type JobLdInput = {
-  source: string; title: string; advertText: string | null; postedAt: string; closesAt: string | null; url: string; employerName: string; employerWebsite?: string | null;
-  county: string | null; salaryLow: number | null; salaryHigh: number | null; contractType?: string | null;
+  source: string; title: string; advertText: string | null; postedAt: Date; closesAt: Date | null; url: string; employerName: string; employerWebsite?: string | null;
+  county: string | null; salaryLow: number | null; salaryHigh: number | null;
 };
+
+/** Google reads the description as HTML; ours is plain text, so `<` and `&` in an advert must stay text. Line breaks count as paragraph breaks there. */
+const asHtml = (s: string) => s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
 /**
  * Google job markup, ONLY for a job an employer posted on this site (decision #92: marking up a fetched job, or one staff posted for a company, would
@@ -97,10 +112,10 @@ export type JobLdInput = {
 export function jobPostingLd(j: JobLdInput): Ld | null {
   if (j.source !== "employer" || !j.advertText) return null;
   return {
-    "@context": "https://schema.org", "@type": "JobPosting", title: j.title, description: j.advertText, datePosted: j.postedAt, url: j.url,
-    ...(j.closesAt ? { validThrough: j.closesAt } : {}),
+    "@context": "https://schema.org", "@type": "JobPosting", title: j.title, description: asHtml(j.advertText), datePosted: j.postedAt.toISOString(), url: j.url,
+    ...(j.closesAt ? { validThrough: j.closesAt.toISOString() } : {}),
     hiringOrganization: { "@type": "Organization", name: j.employerName, ...(j.employerWebsite ? { sameAs: j.employerWebsite } : {}) },
     jobLocation: { "@type": "Place", address: { "@type": "PostalAddress", ...(j.county ? { addressRegion: j.county } : {}), addressCountry: "IE" } },
-    ...(j.salaryLow !== null ? { baseSalary: { "@type": "MonetaryAmount", currency: "EUR", value: { "@type": "QuantitativeValue", minValue: j.salaryLow, ...(j.salaryHigh !== null ? { maxValue: j.salaryHigh } : {}), unitText: "YEAR" } } } : {}),
+    ...(j.salaryLow !== null ? { baseSalary: { "@type": "MonetaryAmount", currency: "EUR", value: { "@type": "QuantitativeValue", ...(j.salaryHigh !== null && j.salaryHigh !== j.salaryLow ? { minValue: j.salaryLow, maxValue: j.salaryHigh } : { value: j.salaryLow }), unitText: "YEAR" } } } : {}),
   };
 }

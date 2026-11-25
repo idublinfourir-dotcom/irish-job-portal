@@ -3,8 +3,10 @@
 import type { Metadata } from "next";
 import { readChecker, readOccupations, readSignedIn } from "../../lib/data";
 import { staticPath } from "../../lib/paths";
+import { breadcrumbLd } from "../../lib/seo";
+import { PageLd } from "../_content/ld";
 import { meta } from "../_content/meta";
-import { CheckerView, type Answer } from "./checker-view";
+import { CHECKER_CRUMBS, CheckerView, type Answer } from "./checker-view";
 import { parseChecker, type Occupation } from "./input";
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
@@ -27,5 +29,10 @@ export default async function Page({ searchParams }: Props) {
     if (r.ok) answer = r.data as Answer;
     else failed = { status: r.status };
   }
-  return <CheckerView parsed={parsed} occupations={occupations} answer={answer} failed={failed} signedIn={signedIn} />;
+  return (
+    <>
+      <PageLd make={(origin) => [breadcrumbLd(origin, CHECKER_CRUMBS)]} />
+      <CheckerView parsed={parsed} occupations={occupations} answer={answer} failed={failed} signedIn={signedIn} />
+    </>
+  );
 }

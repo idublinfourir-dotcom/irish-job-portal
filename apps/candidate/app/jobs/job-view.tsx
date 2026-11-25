@@ -214,6 +214,9 @@ function Head({ job, now, result, signedIn, saved }: { job: JobPage; now: Date; 
   );
 }
 
+/** The breadcrumb of the page, also its markup. */
+export const jobCrumbs = (job: { title: string; sector: string | null }) => [{ label: "Find a job", href: "/jobs" }, ...(job.sector ? [{ label: capFirst(job.sector), href: `/jobs?sector=${encodeURIComponent(job.sector)}` }] : []), { label: job.title }];
+
 export function JobView({ job, now, path, signedIn, saved, stage, degree, prompt, similar }: JobViewProps) {
   const m = job.minimums;
   const cs = job.permitType === "critical_skills";
@@ -231,7 +234,7 @@ export function JobView({ job, now, path, signedIn, saved, stage, degree, prompt
   return (
     <>
       <div className={`${wrap} pb-28 pt-6 lg:pb-10`}>
-        <Breadcrumb items={[{ label: "Find a job", href: "/jobs" }, ...(job.sector ? [{ label: capFirst(job.sector), href: `/jobs?sector=${encodeURIComponent(job.sector)}` }] : []), { label: job.title }]} />
+        <Breadcrumb items={jobCrumbs(job)} />
         <div className="mt-4 flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_26rem] lg:items-start lg:gap-5">
           <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-5">
             <div className="order-1 flex flex-col gap-4 lg:order-none lg:gap-5">

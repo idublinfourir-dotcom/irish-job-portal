@@ -104,11 +104,14 @@ function Result({ p, occupations, a, failed }: { p: Parsed; occupations: Occupat
   );
 }
 
+/** The breadcrumb of the page, also its markup. */
+export const CHECKER_CRUMBS = [{ label: "Home", href: "/" }, { label: "Eligibility checker" }];
+
 export function CheckerView({ parsed, occupations, answer, failed, signedIn }: CheckerProps): ReactNode {
   return (
     <>
       <div className={`${wrap} pb-10 pt-6 sm:pt-8`}>
-        <Breadcrumb items={[{ label: "Home", href: "/" }, { label: "Eligibility checker" }]} />
+        <Breadcrumb items={CHECKER_CRUMBS} />
         <h1 className="mt-4">Eligibility <span className="text-deep-green">checker</span></h1>
         <p className="mt-3 max-w-[40rem] text-lead text-muted">Answer a few questions. The same rules engine as the job badges. This is guidance, not legal advice.</p>
         <div className="mt-8 grid items-start gap-5 lg:grid-cols-2">

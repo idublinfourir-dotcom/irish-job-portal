@@ -155,6 +155,7 @@ const render = async (k: string, o: { params?: Record<string, string>; sp?: Sp; 
 const metaOf = (k: string, o: { params?: Record<string, string>; sp?: Sp } = {}) => as(undefined, () => P[k]!.meta({ params: Promise.resolve(o.params ?? {}), searchParams: Promise.resolve(o.sp ?? {}) })) as Promise<{ title?: string; description?: string; alternates?: { canonical?: string }; robots?: { index?: boolean } }>;
 const digestOf = async (p: Promise<unknown>) => { try { await p; return null; } catch (e) { return (e as { digest?: string }).digest ?? String(e); } };
 const NOT_FOUND = /NEXT_(HTTP_ERROR_FALLBACK|NOT_FOUND)(;404)?/;
+const ldOf = (h: string, t: string) => [...h.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/gs)].map((m) => JSON.parse(m[1]!) as Record<string, unknown>).filter((b) => b["@type"] === t);
 const cards = (h: string) => (h.match(/data-job-card="/g) ?? []).length;
 const write = (route: Handler, cookie: string, body: unknown, path = "/api/x") =>
   route(new Request(`${BASE}${path}`, { method: "POST", headers: { cookie, origin: BASE, "content-type": "application/json" }, body: JSON.stringify(body) }));
@@ -280,6 +281,24 @@ describe("P10: /occupations/<name-slug>", () => {
     expect(cards(h)).toBeLessThanOrEqual(6);
     for (const t of ["Related occupations", "W3 Draft Role", "W3 Closed Role", "close_reason"]) expect(h).not.toContain(t);
   });
+  it("carries the Occupation markup with the registration body, and its breadcrumb (frame 01); an unregulated code names no body", async () => {
+    const { occupationSlug, occupationTitle } = await import("../../../apps/candidate/lib/occupations");
+    const slug = occupationSlug("2231")!, h = await render("occupation", { params: { slug } });
+    const ld = ldOf(h, "Occupation");
+    expect(ld).toEqual([expect.objectContaining({ name: occupationTitle("2231"), occupationalCategory: "2231", url: `${BASE}/occupations/${slug}`, sameAs: expect.stringMatching(/^https:\/\//) })]);
+    expect(ld[0]!.qualifications).toMatch(/NMBI|Nursing/);
+    expect(ldOf(h, "BreadcrumbList")).toHaveLength(1);
+    const other = ldOf(await render("occupation", { params: { slug: occupationSlug("1225")! } }), "Occupation");
+    expect(other).toHaveLength(1);
+    expect(other[0]).not.toHaveProperty("qualifications");
+    expect((await metaOf("occupation", { params: { slug } })).alternates!.canonical).toBe(`${BASE}/occupations/${slug}`);
+  });
+  it("a company and the eligibility checker carry their breadcrumb, and no job list carries job markup", async () => {
+    const c = await render("company", { params: { slug: "w3-hospital" } });
+    expect(ldOf(c, "BreadcrumbList")).toHaveLength(1);
+    expect(c).not.toContain("JobPosting");
+    expect(ldOf(await render("checker"), "BreadcrumbList").map((b) => (b.itemListElement as { name: string }[]).map((x) => x.name))).toEqual([["Home", "Eligibility checker"]]);
+  });
   it("an ineligible code has no minimums; a code on neither list, an unknown slug and hostile slugs are 404", async () => {
     const { occupationSlug } = await import("../../../apps/candidate/lib/occupations");
     const h = await render("occupation", { params: { slug: occupationSlug("1225")! } });
@@ -324,6 +343,14 @@ describe("P10: /guides, /guides/<slug>, /updates", () => {
     const h = await render("guides");
     for (const t of ["W3 Guide Alpha", "W3 Guide Beta", "Checked on 12 Nov 2026", "W3 Update 0", "W3 Update 1", "W3 Update 2"]) expect(h).toContain(t);
     for (const t of ["W3 Secret Draft Guide", "W3 Withdrawn Guide", "W3 Update 3<"]) expect(h).not.toContain(t);
+  });
+  it("an update's link on the home page lands on it in the feed (an update has no page of its own)", async () => {
+    const path: string = "../../../apps/candidate/app/page";
+    const home = ((await import(path)) as { default: PageFn }).default;
+    const links = [...renderToStaticMarkup(await as(undefined, () => home({ searchParams: Promise.resolve({}) }))).matchAll(/href="\/updates#([^"]+)"/g)].map((x) => x[1]!);
+    const feed = await render("updates");
+    for (const id of links) expect(feed, id).toContain(`id="${id}"`);
+    expect(feed).toContain('id="w3-update-0"');
   });
   it("shows a guide as plain paragraphs (markup in the text is text), 404 for a draft, a withdrawn, another kind's and a hostile slug", async () => {
     const h = await render("guide", { params: { slug: "w3-guide-a" } });
@@ -382,7 +409,7 @@ describe("P10: /eligibility-checker", () => {
     expect(statements).toBeLessThanOrEqual(5); // the picker list and the session look-up only
     for (const sp of [{ occupation: "'; drop table job;--", pay: "1e9", degree: "yes" }, { occupation: ["2231", "x"], pay: ["1", "2"], degree: "yes", months: "99999" }, { ...ok, title: "x".repeat(9000) }, { ...ok, degreeMonth: "2026-99" }]) {
       const out = await render("checker", { sp });
-      expect(out).not.toContain("<script");
+      expect(out.replace(/<script type="application\/ld\+json">[^<]*<\/script>/g, "")).not.toContain("<script"); // only the page's own markup (jsonLd escapes every <)
       expect(out).toContain("Eligibility");
     }
   });

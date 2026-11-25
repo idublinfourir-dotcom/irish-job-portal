@@ -8,11 +8,14 @@ import { notFound, permanentRedirect } from "next/navigation";
 import { Notice } from "@portal/ui";
 import { countView, readClosedJob, readDidYouApply, readJob, readMyJob, readProfile, readSignedIn, readSimilar } from "../../../lib/data";
 import { jobIdOf, jobPath } from "../../../lib/paths";
+import { breadcrumbLd, canonicalUrl, jobPostingLd } from "../../../lib/seo";
+import { PageLd } from "../../_content/ld";
+import { meta } from "../../_content/meta";
 import { fromSmall, type CardJob } from "../card";
 import { ClosedJob } from "../closed";
 import type { DegreeChoice } from "../degree";
 import { jobDescription, jobTitleText } from "../format";
-import { JobView } from "../job-view";
+import { JobView, jobCrumbs } from "../job-view";
 
 type Props = { params: Promise<{ job: string }> };
 
@@ -29,10 +32,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const r = id ? await load(id) : null;
   if (r?.ok) {
     const j = r.data as JobPage;
-    return { title: jobTitleText(j), description: jobDescription(j) };
+    return meta(jobTitleText(j), jobDescription(j), jobPath(j));
   }
-  const closed = id && r && r.status === 404 ? await loadClosed(id) : null;
-  return { title: closed?.ok ? "This job has closed" : "Job not found" };
+  // Not read for another reason (the read limit): no noindex, or a crawler that is told to slow down would drop a live job.
+  if (r && r.status !== 404) return { title: "Job" };
+  const closed = id ? await loadClosed(id) : null;
+  return { title: closed?.ok ? "This job has closed" : "Job not found", robots: { index: false, follow: false } };
 }
 
 export default async function Page({ params }: Props) {
@@ -75,16 +80,19 @@ export default async function Page({ params }: Props) {
   const similarCards: CardJob[] = similar.ok ? (similar.data as { jobs: Parameters<typeof fromSmall>[0][] }).jobs.map(fromSmall) : [];
 
   return (
-    <JobView
-      job={job}
-      now={now}
-      path={path}
-      signedIn={signedIn}
-      saved={own?.saved ?? false}
-      stage={own?.stage ?? null}
-      degree={degree}
-      prompt={asked ? { clickId: asked.clickId, title: asked.title, employerName: asked.employerName, county: asked.county } : null}
-      similar={similarCards}
-    />
+    <>
+      <PageLd make={(origin) => [jobPostingLd({ ...job, url: canonicalUrl(origin, path), employerWebsite: job.employer.website }), breadcrumbLd(origin, jobCrumbs(job))]} />
+      <JobView
+        job={job}
+        now={now}
+        path={path}
+        signedIn={signedIn}
+        saved={own?.saved ?? false}
+        stage={own?.stage ?? null}
+        degree={degree}
+        prompt={asked ? { clickId: asked.clickId, title: asked.title, employerName: asked.employerName, county: asked.county } : null}
+        similar={similarCards}
+      />
+    </>
   );
 }

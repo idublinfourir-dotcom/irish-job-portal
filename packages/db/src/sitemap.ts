@@ -2,8 +2,8 @@
 // in-review, under-review, hidden, closed or expired job), the companies getCompanyPage shows (not rejected, closed or merged away) and the occupations
 // on the rules' lists (getOccupationPage). sitemaps.org/protocol.html: at most 50,000 URLs and 50 MB a file, so each kind is cut into parts of
 // SITEMAP_URLS, named `<kind>-<n>` for Next's generateSitemaps. A job's lastModified is posted_at: the table keeps no other change time.
-// Step 16 (B21) adds the pages that are not jobs: `pages-0` (the static pages and the legal texts in force), `guides-0`, `updates-0` and `help-0` (each content
-// page by its change time), and a sitemap index (sitemaps.org: a file that lists the files), which Next's generateSitemaps does not make. A company's
+// Step 16 (B21) adds the pages that are not jobs: `pages-0` (the static pages and the legal texts in force), `guides-0` and `help-0` (each content
+// page by its change time; an update has no page of its own, the feed /updates is a static page), and a sitemap index (sitemaps.org: a file that lists the files), which Next's generateSitemaps does not make. A company's
 // lastModified is its newest live job or its last claim or claim removal (the columns app_candidate may read); an occupation's is its text block's, when it has one.
 import type pg from "pg";
 import { getRules } from "./rules-data";
@@ -30,17 +30,17 @@ export const LEGAL_PAGES = ["privacy_notice", "signup_terms", "cookie_policy", "
 // "companies" (the directory, C13) joins this list when its page is built (B25, B26); until then its address answers 404.
 export const STATIC_PAGES = ["home", "jobs", "guides", "updates", "help", "eligibility-checker", "permit-services"] as const;
 // The part ids of the content kinds. ponytail: one part each (a few hundred pages at most); cut like jobs when one kind nears SITEMAP_URLS.
-const CONTENT_PARTS = { guides: "guide", updates: "update", help: "help" } as const;
+const CONTENT_PARTS = { guides: "guide", help: "help" } as const;
 /** `title` and `county` only on a job: its address is made from them and the id (#288). `legal` keys are consent purposes, `page` keys are in STATIC_PAGES. */
-export type SitemapEntry = { kind: "job" | "company" | "occupation" | "page" | "legal" | "guide" | "update" | "help"; key: string; title?: string; county?: string | null; lastModified?: string };
+export type SitemapEntry = { kind: "job" | "company" | "occupation" | "page" | "legal" | "guide" | "help"; key: string; title?: string; county?: string | null; lastModified?: string };
 
 export const partIds = (kind: string, n: number) => Array.from({ length: Math.max(1, Math.ceil(n / SITEMAP_URLS)) }, (_, i) => `${kind}-${i}`);
 const occupationCodes = async (db: Db) => [...new Set((await getRules(db)).occupationLists.map((e) => e.code))].sort();
 
-/** The ids of every sitemap file: jobs-0.., companies-0.., occupations-0.., pages-0, guides-0, updates-0, help-0 (one part each at least, so the files never move). */
+/** The ids of every sitemap file: jobs-0.., companies-0.., occupations-0.., pages-0, guides-0, help-0 (one part each at least, so the files never move). */
 export async function sitemapIds(db: Db): Promise<string[]> {
   const [c, codes] = await Promise.all([db.query<{ jobs: number; companies: number }>(SITEMAP_QUERIES.counts), occupationCodes(db)]);
-  return [...partIds("jobs", c.rows[0]!.jobs), ...partIds("companies", c.rows[0]!.companies), ...partIds("occupations", codes.length), "pages-0", "guides-0", "updates-0", "help-0"];
+  return [...partIds("jobs", c.rows[0]!.jobs), ...partIds("companies", c.rows[0]!.companies), ...partIds("occupations", codes.length), "pages-0", "guides-0", "help-0"];
 }
 
 const modified = (d: Date | null) => (d ? { lastModified: d.toISOString() } : {});
@@ -48,7 +48,7 @@ type Timed = { key: string; modified: Date | null };
 
 /** One sitemap file's entries, or null for an id that is not one (Next answers 404 for those before this runs; this is the second wall). */
 export async function sitemapPart(db: Db, id: string): Promise<SitemapEntry[] | null> {
-  const m = /^(jobs|companies|occupations|pages|guides|updates|help)-([0-9]{1,4})$/.exec(id);
+  const m = /^(jobs|companies|occupations|pages|guides|help)-([0-9]{1,4})$/.exec(id);
   if (!m) return null;
   const kind = m[1]!, n = Number(m[2]);
   const offset = n * SITEMAP_URLS;
