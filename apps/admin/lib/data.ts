@@ -14,6 +14,7 @@ import {
   accuracySample, fetchedDecisions, listCandidateMerges, listCompanySeed, listDataRequests, listOverdue, listScheduledChecks, listSettings, myCounts, targetCounts,
 } from "@portal/db/staff-tools";
 import { listLegal } from "@portal/db/legal-texts";
+import { listCaseDocuments } from "@portal/db/staff-case-files";
 import { queueRules } from "./queue-rules";
 import { sidebarCounts } from "./sidebar";
 import { requireStaff } from "./staff";
@@ -66,6 +67,7 @@ export const readContactMessage = asStaff(getContact);
 export const readServiceCases = asStaff(listServiceCases);
 export const readServiceCase = asStaff(getServiceCase);
 export const readSolicitors = asStaff(listSolicitors);
+export const readServiceCaseDocuments = asStaff(listCaseDocuments); // (caseId) the stored copies of a case, for its assigned handler only
 export const readDeteLinks = asStaff(deteLinkSuggestions); // (page)
 
 // companies and accounts
