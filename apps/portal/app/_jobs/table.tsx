@@ -45,8 +45,8 @@ export function JobsTable({ jobs, totals, now, canPost, detail, selected, select
                 <td className={td}>
                   <span className="flex flex-wrap justify-end gap-2">
                     {canPost && <JobActions id={j.id} title={j.title} state={state} />}
-                    {canPost && JOB_FORM_LIVE && (state === "draft" || state === "under_review") && <Button href={`/jobs/${j.id}/edit`} variant="chip">Edit</Button>}
-                    {canPost && JOB_FORM_LIVE && (state === "expired" || state === "closed") && <Button href="/jobs/new" variant="chip">Repost</Button>}
+                    {canPost && JOB_FORM_LIVE && (state === "draft" || state === "live" || state === "in_review" || state === "under_review") && <Button href={`/jobs/${j.id}/edit`} variant="chip">Edit</Button>}
+                    {canPost && JOB_FORM_LIVE && (state === "expired" || state === "closed") && <Button href={`/jobs/new?from=${j.id}`} variant="chip">Repost</Button>}
                     {(state === "hidden" || state === "removed") && <Button href="/account-status" variant="chip">See why</Button>}
                   </span>
                 </td>

@@ -16,7 +16,7 @@ import { companySearch, portalLogin } from "./company";
 import { docsList } from "./files";
 import { freeEmail } from "./free-email";
 import { jobFormGet } from "./job-form";
-import { jobGet, jobList } from "./jobs";
+import { jobGet, jobGrades, jobList } from "./jobs";
 import { portalLegalRead } from "./legal";
 import { floorGet } from "./pay-floors";
 import { noticesGet, settingsGet } from "./notices";
@@ -43,6 +43,7 @@ export const readClaimSearch = read(companySearch, "/api/portal/claim/search"); 
 export const readJobs = read(jobList, "/api/portal/jobs");
 export const readJob = (id: string) => read((r) => jobGet(r, id), "/api/portal/jobs/one")();
 export const readJobForm = read(jobFormGet, "/api/portal/jobs/form"); // B51: the statement wording, the occupation picker, the #66 range note and the graduate minimum
+export const readJobGrades = read(jobGrades, "/api/portal/jobs/grades"); // P19: the public pay-scale grades for the grade picker
 export const readJobStats = read(statsGet, "/api/portal/job-stats"); // ?days=&jobId=
 export const readTeam = read(teamGet, "/api/portal/team");
 export const readStatus = read(statusGet, "/api/portal/status");

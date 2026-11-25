@@ -146,10 +146,12 @@ describe("jobs view", () => {
     const s = html(<JobsView now={NOW} role="account_owner" jobs={STATES} stats={[]} tab="closed" />);
     expect(s).toContain("Fake Closed"); expect(s).not.toContain("Fake Live<"); expect(s).toContain("Closed by you on 3 Nov 2026");
   });
-  it("Previous and Next only, and links to the job form stay hidden while P19 is not built", () => {
+  it("Previous and Next only; the job form links show for a poster (P19 is built) and never for a viewer", () => {
     const many = Array.from({ length: 45 }, (_, i) => j({ id: String(100 + i), title: `Fake Bulk ${i}` }));
     const s = html(<JobsView now={NOW} role="poster" jobs={many} stats={[]} from="20" />);
-    expect(s).toContain('rel="prev"'); expect(s).toContain('rel="next"'); expect(s).not.toMatch(/\/jobs\/new|\/edit/);
+    expect(s).toContain('rel="prev"'); expect(s).toContain('rel="next"'); expect(s).toContain('href="/jobs/new"'); expect(s).toMatch(/href="\/jobs\/\d+\/edit"/);
+    expect(html(<JobsView now={NOW} role="viewer" jobs={many} stats={[]} />)).not.toMatch(/\/jobs\/new|\/edit/);
+    expect(html(<JobsView now={NOW} role="poster" jobs={STATES} stats={[]} />)).toContain('href="/jobs/new?from=7"'); // Repost on an expired job
   });
   it("viewer sees no write button; empty and failed states", () => {
     expect(html(<JobsView now={NOW} role="viewer" jobs={STATES} stats={[]} />)).not.toMatch(/>Renew<|>Close</);

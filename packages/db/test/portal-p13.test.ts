@@ -317,7 +317,7 @@ describe("verification (E06)", () => {
       expect(html).toMatch(/Ask them to open this page/);
       expect(html).not.toMatch(/which director|<textarea/);
     }
-    expect(await open("verification", poster.cookie)).not.toMatch(/Draft a job/); // P19 builds /jobs/new (JOB_FORM_LIVE)
+    expect(await open("verification", poster.cookie)).toMatch(/Draft a job/); // P19 built /jobs/new (JOB_FORM_LIVE is true)
     expect(await open("verification", viewer.cookie)).not.toMatch(/Draft a job/);
   });
   it("the answer: the owner's note moves the company back to review; a member who is not the owner is refused, and that answer has a message", async () => {
