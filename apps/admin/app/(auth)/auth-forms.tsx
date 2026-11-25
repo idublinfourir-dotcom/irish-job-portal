@@ -30,14 +30,14 @@ export function SignInView({ error, pending, onSubmit }: { error?: string; pendi
     </form>
   );
 }
-export function SignInForm() {
+export function SignInForm({ next }: { next?: string }) {
   const router = useRouter(), [error, setError] = useState<string>(), [pending, setPending] = useState(false);
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const { email, password } = fields(e);
     setPending(true); setError(undefined);
     const a = await post("sign-in/email", { email: email!.trim(), password });
-    if (a.status === 200) return void (router.replace("/"), router.refresh()); // refresh: the layout reads the new session
+    if (a.status === 200) return void (router.replace(next ?? "/"), router.refresh()); // refresh: the layout reads the new session
     setError(signInMessage(a)); setPending(false);
   }
   return <SignInView error={error} pending={pending} onSubmit={onSubmit} />;
