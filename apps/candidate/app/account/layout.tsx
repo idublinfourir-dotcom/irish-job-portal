@@ -1,14 +1,11 @@
 // The account frame (DD39, CF127): ONE nav for every account page, the card of frame NA1 (284 px at 1440, a dark pill on the current page, counts read from the
-// candidate's own rows) with the page beside it. On a phone the card becomes a row of pills and the bottom bar of frame M07. The layout is also the guard: a visitor
-// goes to sign-in and comes back to the same page; a suspended or deleted login is told so. Not indexed. Reads only through lib/data.ts.
+// candidate's own rows) with the page beside it. On a phone the card becomes a row of pills and the bottom bar of frame M07. A visitor gets no frame: each page sends
+// them to sign-in and back (guard.ts); a suspended or deleted login is told so here. Not indexed. Reads only through lib/data.ts.
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 import { A, Icon, Notice, SITE_NAME, type IconName } from "@portal/ui";
 import { readAlerts, readCases, readProfile, readSaved, readTracker } from "../../lib/data";
-import { alertsPath, applicationsPath, casesPath, loginPath, profilePath, savedPath, settingsPath } from "../../lib/paths";
-import { checkedNext } from "../(auth)/next-path";
+import { alertsPath, applicationsPath, casesPath, profilePath, savedPath, settingsPath } from "../../lib/paths";
 import { NavLink } from "./nav";
 
 export const metadata: Metadata = { title: `Your account | ${SITE_NAME}`, robots: { index: false, follow: false } };
@@ -41,7 +38,7 @@ const countOf = (r: { ok: boolean; data?: unknown }, pick: (d: never) => number 
 export default async function AccountLayout({ children }: { children: ReactNode }) {
   const [profile, saved, alerts, tracker, cases] = await Promise.all([readProfile(), readSaved(), readAlerts(), readTracker(), readCases()]);
   if (!profile.ok) {
-    if (profile.status === 401) redirect(loginPath(checkedNext((await headers()).get("x-own-path") ?? undefined)));
+    if (profile.status === 401) return <>{children}</>; // signed out: the page itself sends the visitor to sign-in (guard.ts knows its address)
     return (
       <div className="mx-auto max-w-page px-5 py-16 sm:px-8">
         <h1 className="mb-4 text-[2rem]">Your account</h1>

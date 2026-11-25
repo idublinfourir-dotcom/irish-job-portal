@@ -5,6 +5,8 @@ import { SITE_NAME } from "@portal/ui";
 import { readAlerts, readCases, readDidYouApply, readNotices, readProfile, readSaved, readTracker } from "../../lib/data";
 import { safe } from "../_home/safe";
 import { HomeView, type Case, type HomeData, type Prompt, type Tracked, type Update } from "./home";
+import { accountPath } from "../../lib/paths";
+import { orSignIn } from "./guard";
 
 export const metadata: Metadata = { title: `Your account | ${SITE_NAME}`, robots: { index: false, follow: false } };
 
@@ -15,6 +17,7 @@ export default async function Page() {
   const [profile, saved, alerts, tracker, cases, prompts, notices] = await Promise.all([
     safe(readProfile(), "profile"), safe(readSaved(), "saved"), safe(readAlerts(), "alerts"), safe(readTracker(), "tracker"), safe(readCases(), "cases"), safe(readDidYouApply(), "prompts"), safe(readNotices(), "notices"),
   ]);
+  orSignIn(profile, accountPath());
   const t = ok<{ tracker: Tracked[]; count: number }>(tracker);
   const data: HomeData = {
     name: ok<{ profile: { fullName: string | null } | null }>(profile)?.profile?.fullName?.trim() || null,

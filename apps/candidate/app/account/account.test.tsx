@@ -3,14 +3,13 @@ import { renderToStaticMarkup as html } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type R = { ok: true; data: unknown } | { ok: false; status: number; code: string };
-const reads = vi.hoisted(() => ({ profile: undefined as unknown, saved: undefined as unknown, alerts: undefined as unknown, tracker: undefined as unknown, cases: undefined as unknown, path: null as string | null }));
+const reads = vi.hoisted(() => ({ profile: undefined as unknown, saved: undefined as unknown, alerts: undefined as unknown, tracker: undefined as unknown, cases: undefined as unknown }));
 vi.mock("../../lib/data", () => ({
   readProfile: async () => reads.profile, readSaved: async () => reads.saved, readAlerts: async () => reads.alerts, readTracker: async () => reads.tracker, readCases: async () => reads.cases,
   siteOrigin: () => "https://example.test",
 }));
 vi.mock("server-only", () => ({}));
-vi.mock("next/headers", () => ({ headers: async () => new Headers(reads.path ? { "x-own-path": reads.path } : {}) }));
-vi.mock("next/navigation", () => ({ redirect: (to: string) => { throw new Error(`redirect ${to}`); }, usePathname: () => "/account/saved" }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/account/saved" }));
 
 const ok = (data: unknown): R => ({ ok: true, data });
 beforeEach(() => {
@@ -19,23 +18,13 @@ beforeEach(() => {
   reads.alerts = ok({ alerts: [{}] });
   reads.tracker = ok({ tracker: [], count: 5 });
   reads.cases = ok({ cases: [] });
-  reads.path = null;
 });
 const render = async () => (await import("./layout")).default({ children: <p>page body</p> }).then((el) => html(el));
 
 describe("the account layout", () => {
-  it("sends a visitor to sign-in, back to the page they opened", async () => {
+  it("draws no frame around a visitor (the page itself sends them to sign-in, guard.ts)", async () => {
     reads.profile = { ok: false, status: 401, code: "NO_SESSION" };
-    reads.path = "/account/alerts?edit=31";
-    await expect(render()).rejects.toThrow("redirect /login?next=%2Faccount%2Falerts%3Fedit%3D31");
-  });
-  it("never trusts a hostile return address", async () => {
-    reads.profile = { ok: false, status: 401, code: "NO_SESSION" };
-    for (const bad of ["//evil.example", "/\\evil.example", "https://evil.example"]) {
-      reads.path = bad;
-      await expect(render(), bad).rejects.toThrow("redirect /login");
-      await expect(render(), bad).rejects.not.toThrow("next=");
-    }
+    expect(await render()).toBe("<p>page body</p>");
   });
   it("tells a suspended login so, with no nav", async () => {
     reads.profile = { ok: false, status: 403, code: "REFUSED" };

@@ -56,8 +56,8 @@ afterAll(async () => {
 let n = 0;
 const freshIp = () => `10.${((++n) >> 8) & 255}.${n & 255}.17`;
 const jsonH = { "content-type": "application/json", origin: BASE };
-const as = <T>(cookie: string | undefined, fn: () => Promise<T>, ownPath?: string): Promise<T> => {
-  state.headers = new Headers({ ...(cookie ? { cookie } : {}), "x-vercel-forwarded-for": freshIp(), ...(ownPath ? { "x-own-path": ownPath } : {}) });
+const as = <T>(cookie: string | undefined, fn: () => Promise<T>): Promise<T> => {
+  state.headers = new Headers({ ...(cookie ? { cookie } : {}), "x-vercel-forwarded-for": freshIp() });
   return fn();
 };
 const write = (route: Handler, cookie: string, body: unknown) => route(new Request(`${BASE}/api/candidate/x`, { method: "POST", headers: { ...jsonH, cookie, "x-vercel-forwarded-for": freshIp() }, body: JSON.stringify(body) }));
@@ -159,12 +159,19 @@ describe("seeded account", () => {
   });
 
   describe("security", () => {
-    it("signed out (no cookie, a garbage cookie): the layout sends the visitor to sign-in with the page they opened; hostile return addresses are dropped", async () => {
-      expect(await redirectsTo(() => as(undefined, () => Layout({ children: null }), "/account/alerts?edit=5"))).toBe("/login?next=%2Faccount%2Falerts%3Fedit%3D5");
-      expect(await redirectsTo(() => as("better-auth.session_token=garbage", () => Layout({ children: null }), "/account/saved"))).toBe("/login?next=%2Faccount%2Fsaved");
-      for (const bad of ["//evil.example", "/\\evil.example", "https://evil.example", "/account%2Fx"]) expect(await redirectsTo(() => as(undefined, () => Layout({ children: null }), bad)), bad).toBe("/login");
-      for (const k of ["saved", "alerts", "applications", "notices"] as const) expect(await text(as(undefined, () => P[k]())), k).toContain("We could not load"); // the page alone, with no layout, holds no row
-      expect(await text(as(undefined, () => P.home()))).not.toContain("Fake"); // the home page shows its empty parts, never a row
+    it("signed out (no cookie, a garbage cookie): every page goes to sign-in with its own address, the layout draws nothing, and a hostile ?edit= or ?show= never gets into the address", async () => {
+      for (const cookie of [undefined, "better-auth.session_token=garbage"]) {
+        for (const [k, at] of [["home", ""], ["saved", "/saved"], ["alerts", "/alerts"], ["applications", "/applications"], ["notices", "/notices"]] as const)
+          expect(await redirectsTo(() => as(cookie, () => P[k]())), k).toBe(`/login?next=${encodeURIComponent(`/account${at}`)}`);
+        expect(html(await as(cookie, () => Layout({ children: "BODY" })))).toBe("BODY");
+      }
+      const open = (k: "alerts" | "saved", q: Record<string, string>) => redirectsTo(() => as(undefined, () => P[k]({ searchParams: Promise.resolve(q) })));
+      expect(await open("alerts", { edit: "5" })).toBe("/login?next=%2Faccount%2Falerts%3Fedit%3D5");
+      expect(await open("saved", { show: "closed" })).toBe("/login?next=%2Faccount%2Fsaved%3Fshow%3Dclosed");
+      for (const bad of ["//evil.example", "/\\evil.example", "5&next=https://evil.example"]) {
+        expect(await open("alerts", { edit: bad }), bad).toBe("/login?next=%2Faccount%2Falerts");
+        expect(await open("saved", { show: bad }), bad).toBe("/login?next=%2Faccount%2Fsaved");
+      }
     });
     it("another candidate sees none of A's rows, and A's alert id in the address opens nothing for B", async () => {
       for (const k of ["home", "saved", "alerts", "applications", "notices"] as const) {

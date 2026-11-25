@@ -203,7 +203,7 @@ describe("emailed links land on our own pages (24 Nov 2026: a link without a lan
     const signed = await as(m.cookie, () => P.reset(searchOf({ token })));
     expect(signed.type.name).toBe("ResetFlow"); // opened in a browser that is already signed in: the token is kept
     expect(signed.props).toEqual({ token });
-    expect(await as(m.cookie, () => redirectsTo(() => P.reset(searchOf({}))))).toBe("/jobs"); // the bare address sends them to their account
+    expect(await as(m.cookie, () => redirectsTo(() => P.reset(searchOf({}))))).toBe("/account"); // the bare address sends them to their account
     expect((await post("reset-password", { token, newPassword: "Fake-new-password-2" })).status).toBe(200);
     expect((await post("sign-in/email", { email: m.email, password: "Fake-new-password-2" })).status).toBe(200);
     expect((await post("sign-in/email", { email: m.email, password: m.password })).status).toBe(401);
@@ -330,9 +330,9 @@ describe("the sign-up, sign-in, verify and reset pages (server code): render, re
     const m = await member("pg");
     for (const p of [P.signup, P.login]) {
       expect(await as(m.cookie, () => redirectsTo(() => p(searchOf({ next: "/jobs/staff-nurse-cork-4821?x=1" }))))).toBe("/jobs/staff-nurse-cork-4821?x=1");
-      expect(await as(m.cookie, () => redirectsTo(() => p(searchOf())))).toBe("/jobs");
-      for (const bad of ["//evil.example", "/\\evil.example", "https://evil.example", "javascript:alert(1)", "/%2F/evil.example", "/jobs/a\\b", "/login", "/api/auth/candidate/sign-out", `/${"a".repeat(1100)}`]) expect(await as(m.cookie, () => redirectsTo(() => p(searchOf({ next: bad })))), bad).toBe("/jobs");
-      expect(await as(m.cookie, () => redirectsTo(() => p(searchOf({ next: ["/jobs/a-1", "//evil.example"] }))))).toBe("/jobs");
+      expect(await as(m.cookie, () => redirectsTo(() => p(searchOf())))).toBe("/account");
+      for (const bad of ["//evil.example", "/\\evil.example", "https://evil.example", "javascript:alert(1)", "/%2F/evil.example", "/jobs/a\\b", "/login", "/api/auth/candidate/sign-out", `/${"a".repeat(1100)}`]) expect(await as(m.cookie, () => redirectsTo(() => p(searchOf({ next: bad })))), bad).toBe("/account");
+      expect(await as(m.cookie, () => redirectsTo(() => p(searchOf({ next: ["/jobs/a-1", "//evil.example"] }))))).toBe("/account");
     }
   });
   it("a suspended or deleted candidate, a forged cookie and a visitor are all signed out to these pages (the form, not a redirect)", async () => {
