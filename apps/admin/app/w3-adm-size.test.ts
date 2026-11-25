@@ -7,7 +7,7 @@ import { BUDGET, measure, overBudget } from "../../../packages/ui/src/size-budge
 
 const next = path.join(import.meta.dirname, "../.next");
 const built = existsSync(path.join(next, "build-manifest.json")) && existsSync(path.join(next, "server/app/name-merges/page_client-reference-manifest.js"));
-const ROUTES = ["name-merges", "content", "audit", "staff", "(auth)/sign-in"];
+const ROUTES = ["name-merges", "content", "audit", "staff", "(auth)/sign-in", "reports", "ban-list"]; // reports and ban-list: P24
 
 function pageHtml(route: string): string {
   const read = (f: string) => readFileSync(path.join(next, f), "utf8");

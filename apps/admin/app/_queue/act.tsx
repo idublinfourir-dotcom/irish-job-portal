@@ -14,7 +14,8 @@ export type Field =
   | (Base & { kind: "text" | "textarea"; maxLength: number; required?: boolean; optional?: boolean })
   | (Base & { kind: "number"; min: number; max: number })
   | (Base & { kind: "select"; options: readonly (readonly [string, string])[] })
-  | (Base & { kind: "check" });
+  | (Base & { kind: "check" })
+  | (Base & { kind: "datetime" }); // a day and time on the officer's own clock; the body carries it as ISO with the zone (the case routes' receivedAt)
 
 export type ActProps = {
   url: string; fixed: Record<string, unknown>; fields?: Field[]; label: string; variant?: ButtonVariant;
@@ -40,6 +41,7 @@ function FieldView({ f }: { f: Field }) {
   if (f.kind === "check") return <Checkbox name={f.name} label={f.label} help={f.help} />;
   if (f.kind === "select") return <Select name={f.name} label={f.label} help={f.help}>{f.options.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</Select>;
   if (f.kind === "textarea") return <Textarea name={f.name} label={f.label} help={f.help} maxLength={f.maxLength} required={f.required} rows={8} />;
+  if (f.kind === "datetime") return <Input name={f.name} label={f.label} help={f.help} type="datetime-local" required />;
   if (f.kind === "number") return <Input name={f.name} label={f.label} help={f.help} type="number" inputMode="numeric" min={f.min} max={f.max} step={1} required />;
   return <Input name={f.name} label={f.label} help={f.help} maxLength={f.maxLength} required={f.required} autoComplete="off" spellCheck={false} />;
 }
@@ -73,6 +75,7 @@ export function bodyOf(fixed: Record<string, unknown>, fields: Field[], data: Fo
     const v = data.get(f.name);
     if (f.kind === "check") body[f.name] = v !== null;
     else if (f.kind === "number") body[f.name] = Number(v);
+    else if (f.kind === "datetime") body[f.name] = typeof v === "string" && v !== "" && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : "";
     else if (typeof v === "string" && !((f.kind === "text" || f.kind === "textarea") && f.optional && v.trim() === "")) body[f.name] = f.kind === "textarea" ? v : v.trim();
   }
   return body;

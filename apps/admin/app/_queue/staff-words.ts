@@ -15,7 +15,7 @@ const WORDS: Record<string, string> = {
   bad_message_id: "The request was not valid. Reload the page and try again.", bad_floor_id: "The request was not valid. Reload the page and try again.",
   bad_user_id: "That is not a login id. Copy it again from where you found it.", bad_request_id: "The request was not valid. Reload the page and try again.",
   bad_organisation_id: "The request was not valid. Reload the page and try again.", bad_limit: "The member limit must be a whole number from 1 to 50.",
-  bad_text: "The file must be 1 to 1,000,000 characters.", bad_data: "The file was refused, so nothing was proposed.",
+  bad_text: "The text is empty, too long or has characters that cannot be saved. A reply, an appeal or a note holds up to 5,000 characters, a seed file up to 1,000,000.", bad_data: "The file was refused, so nothing was proposed.",
   not_claimed: "Claim this item first, then decide.",
   floor_not_pending: "This floor is no longer waiting for a check. Go back to the list.", floor_expired: "This floor has run out, so it cannot be confirmed. Reject it.",
   not_big_company: "This company is no longer on the big-company list, so its floor cannot be confirmed. Reject it.",
@@ -38,6 +38,19 @@ const WORDS: Record<string, string> = {
   not_open: "That request is no longer open. Reload the page.", too_early: "The 7 days have not passed yet.", owner_changed: "The owner changed since the request. Cancel it and record a new one.",
   member_gone: "That member left the company. Cancel the request.",
   scan_pending: "The copy is still being checked. Try again in a few minutes.", file_blocked: "The check found a problem, so the copy cannot be opened.",
+  // reports, cases, notes and evidence (P24)
+  not_trust_and_safety: "Only a trust and safety officer can do this.",
+  bad_id: "That report or case number is not valid. Go back to the list.", bad_kind: "That kind of case does not exist.", bad_summary: "The note to the employer must be 1 to 1,000 characters, with no control characters.",
+  bad_time: "Enter the day and time the reply or appeal arrived.", bad_outcome: "That decision does not fit this case.", bad_flag: "The request was not valid. Reload the page and try again.", bad_result: "The request was not valid. Reload the page and try again.",
+  already_hidden: "The job is hidden already.", job_not_live: "The job is not live, so there is nothing to hide.", not_a_job_report: "This report is about a company, not a job, so there is no job to hide.",
+  job_not_in_organisation: "That job does not belong to this company.", already_notified: "The employer was notified already.", not_notified: "Notify the employer first.",
+  reply_window_open: "The employer's 7 days to reply have not passed. Wait, or record the reply when it comes. Written requests for money can be banned at once with conclusive evidence.",
+  other_case_pending: "Another case against this company waits for a second officer. Finish that one first.", nothing_to_ban: "There is nothing to ban here: no company number, domain or address was found.", no_ban: "This case has no ban to lift.",
+  entered_reply: "You entered the reply, so another officer decides this case.", entered_appeal: "You entered the appeal, so another officer decides it.", decided_case: "You decided this case, so another officer decides the appeal.",
+  no_appeal_window: "This case has no appeal window.", already_appealed: "An appeal was entered already. There is one appeal per case.", no_appeal: "There is no appeal to decide.", appeal_decided: "The appeal is decided already.",
+  window_closed: "The appeal window has closed.", not_agency_ban: "Only an agency's instant-ban case is reported to the WRC.", already_marked: "This case is already ticked off as reported to the WRC.",
+  bad_file: "Choose one PDF, JPEG or PNG file.", empty_file: "That file is empty.", already_attached: "A file is attached already. It cannot be replaced.", file_too_large: "The file is over 4 MB.",
+  wrong_file_type: "Only a PDF, JPEG or PNG file can be attached.", file_active_content: "The file holds active content, so it was refused. Attach a plain copy.",
   files_unavailable: "Files cannot be opened right now. Try again in a few minutes.",
 };
 
