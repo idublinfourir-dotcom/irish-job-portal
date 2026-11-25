@@ -61,6 +61,17 @@ export const ADMIN_NAV: { title: string; links: AdminLink[] }[] = [
       { label: "Staff and roles", href: "/staff", icon: "lock", roles: ["administrator"] },
     ],
   },
+  {
+    title: "Figures and settings",
+    links: [
+      { label: "Figures", href: "/figures", icon: "clipboard" },
+      { label: "Settings", href: "/settings", icon: "lock", roles: ["administrator"] },
+      { label: "Legal texts", href: "/legal-texts", icon: "file", roles: ["content_editor", "administrator"] },
+      { label: "Data requests", href: "/data-requests", icon: "shield", roles: ["administrator"] },
+      { label: "Solicitors", href: "/solicitors", icon: "building", roles: ["services_case_handler", "administrator"] },
+      { label: "My data", href: "/me", icon: "users" },
+    ],
+  },
 ];
 
 

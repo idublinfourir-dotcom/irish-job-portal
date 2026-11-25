@@ -85,7 +85,7 @@ describe("P4: the staff sidebar read", () => {
   it("a login with no role has only the links every staff member may open", async () => {
     const s = (await as(cookies.norole, () => D.readSidebar()))!;
     expect(s.roles).toEqual([]);
-    expect(adminLinks(s.roles as AdminRole[]).flatMap((g) => g.links.map((l) => l.label))).toEqual(["Overview", "Rules data", "Audit log"]);
+    expect(adminLinks(s.roles as AdminRole[]).flatMap((g) => g.links.map((l) => l.label))).toEqual(["Overview", "Rules data", "Audit log", "Figures", "My data"]);
   });
   it("stays within the statement and time budget", async () => {
     await as(cookies.two, () => D.readSidebar());
@@ -123,6 +123,12 @@ const PAGE_READ: Record<string, () => Promise<unknown>> = {
   "Content editor": () => D.readContentPages(),
   "Audit log": () => D.readAudit(),
   "Staff and roles": () => D.readStaff(),
+  Figures: () => D.readSignupNoCounts(), // the block every staff member reads; the page's other blocks each check their own roles
+  Settings: () => D.readSettings(),
+  "Legal texts": () => D.readLegal(),
+  "Data requests": () => D.readDataRequests(),
+  Solicitors: () => D.readSolicitors(),
+  "My data": () => D.readMe(),
 };
 describe("P4: a sidebar link is shown exactly when the page's read lets the role in", () => {
   const links = ADMIN_NAV.flatMap((g) => g.links);
