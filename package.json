@@ -16,7 +16,7 @@
     "db:test:up": "npm run db:test:up -w @portal/db",
     "db:test:down": "npm run db:test:down -w @portal/db",
     "test": "vitest run",
-    "test:size": "vitest run apps/candidate/app/pages-w2-size.test.ts apps/candidate/app/pages-p17a-size.test.ts apps/candidate/app/pages-w3-p17b-size.test.ts apps/candidate/app/_content/route-budget.test.ts apps/portal/p13-size.test.ts packages/ui/src/size-budget.test.ts",
+    "test:size": "vitest run apps/candidate/app/pages-w2-size.test.ts apps/candidate/app/pages-p17a-size.test.ts apps/candidate/app/pages-w3-p17b-size.test.ts apps/candidate/app/pages-p17c-size.test.ts apps/portal/p17c-size.test.ts apps/candidate/app/_content/route-budget.test.ts apps/portal/p13-size.test.ts packages/ui/src/size-budget.test.ts",
     "test:perf": "vitest run --config packages/db/test/perf/vitest.config.ts --reporter=verbose",
     "test:mutation": "node packages/db/test/mutation/run.mjs",
     "check": "npm run typecheck && npm run lint && npm run lint:api && npm run test && npm run build && npm run test:size"

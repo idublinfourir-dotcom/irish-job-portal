@@ -9,6 +9,7 @@ import { redirect } from "next/navigation";
 import { ownPath, type PortalLogin } from "@portal/auth";
 import { agencyJobs } from "./agency-jobs";
 import { caseList } from "./cases";
+import { dataRequestInfo } from "./data-request";
 import { statsGet } from "./job-stats";
 import { companySearch, portalLogin } from "./company";
 import { freeEmail } from "./free-email";
@@ -41,6 +42,7 @@ export const readJobStats = read(statsGet, "/api/portal/job-stats"); // ?days=&j
 export const readTeam = read(teamGet, "/api/portal/team");
 export const readStatus = read(statusGet, "/api/portal/status");
 export const readCases = read(caseList, "/api/portal/cases"); // ?after=
+export const readDataRequest = (token: string) => read(dataRequestInfo, "/api/data-request")({ token }); // P17c: no sign-in; what the emailed link would do, changes nothing
 export const readNotices = read(noticesGet, "/api/portal/notices"); // ?after=
 export const readAgencyJobs = read(agencyJobs, "/api/portal/agency-jobs"); // ?after=
 

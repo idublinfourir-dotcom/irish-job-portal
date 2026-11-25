@@ -81,7 +81,11 @@ export function resultsUrl(site: string, a: AlertRow): string {
 /** The candidate's alert page opens this alert for editing (the page is built in step 16 P17; the id is the alert's own number). */
 export const editUrl = (site: string, a: AlertRow) => `${site}/account/alerts?edit=${encodeURIComponent(a.id)}`;
 
-const link = (site: string, token: string, scope: "one" | "all") => `${site}/api/alerts/unsubscribe?token=${encodeURIComponent(token)}&scope=${scope}`;
+const query = (token: string, scope: "one" | "all") => `token=${encodeURIComponent(token)}&scope=${scope}`;
+/** The page the email's Stop links open (the candidate site's /unsubscribe: it asks, then confirms). */
+const link = (site: string, token: string, scope: "one" | "all") => `${site}/unsubscribe?${query(token, scope)}`;
+/** The API address of the RFC 8058 List-Unsubscribe header: the mail provider's one-click POST goes here, not to the page. */
+const oneClick = (site: string, token: string) => `${site}/api/alerts/unsubscribe?${query(token, "all")}`;
 
 /** SITE_URL as an https origin (no path, no login in it), or null. */
 export function siteOrigin(v: string | undefined): string | null {
@@ -126,5 +130,5 @@ export function buildAlertEmail(candidate: string, alerts: RowAlert[], found: Ma
     button: shown.length === 1 ? { label: "See all new jobs", url: resultsUrl(site, first) } : { label: "See all jobs", url: `${site}/jobs` },
     footer: `You got this email because you set up a job alert on ${SITE_NAME}. Use the links above to change one alert, stop one, or stop all of them.`,
   });
-  return { ...m, headers: { "List-Unsubscribe": `<${all}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } };
+  return { ...m, headers: { "List-Unsubscribe": `<${oneClick(site, first.unsubscribe_token)}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } };
 }

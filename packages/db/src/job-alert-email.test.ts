@@ -79,14 +79,14 @@ describe("buildAlertEmail", () => {
     expect(m.html).toContain(`<a href="${SITE}/jobs/10"`);
     expect(m.html).toContain(">Cook 10</a>");
     expect(m.html).toContain("Acme, Cork, €40,000 to €50,000");
-    expect(m.html).toContain(`href="${SITE}/api/alerts/unsubscribe?token=${"T".repeat(40)}&amp;scope=one"`);
-    expect(m.html).toContain(`href="${SITE}/api/alerts/unsubscribe?token=${"T".repeat(40)}&amp;scope=all"`);
+    expect(m.html).toContain(`href="${SITE}/unsubscribe?token=${"T".repeat(40)}&amp;scope=one"`);
+    expect(m.html).toContain(`href="${SITE}/unsubscribe?token=${"T".repeat(40)}&amp;scope=all"`);
     expect(m.html).toContain(`href="${SITE}/jobs?county=Cork"`); // the main button: this alert's own results
     expect(m.text).toContain("Your alert: county Cork (daily)");
     expect(m.text).toContain(`- Cook 10, Acme, Cork, €40,000 to €50,000\n  ${SITE}/jobs/10`);
     expect(m.text).toContain(`- Cook 11, Acme, Cork, Public pay scale (Grade III)\n  ${SITE}/jobs/11`);
-    expect(m.text).toContain(`Stop this alert: ${SITE}/api/alerts/unsubscribe?token=${"T".repeat(40)}&scope=one`);
-    expect(m.text).toContain(`Stop all your job alerts: ${SITE}/api/alerts/unsubscribe?token=${"T".repeat(40)}&scope=all`);
+    expect(m.text).toContain(`Stop this alert: ${SITE}/unsubscribe?token=${"T".repeat(40)}&scope=one`);
+    expect(m.text).toContain(`Stop all your job alerts: ${SITE}/unsubscribe?token=${"T".repeat(40)}&scope=all`);
     expect(m.headers).toEqual({ "List-Unsubscribe": `<${SITE}/api/alerts/unsubscribe?token=${"T".repeat(40)}&scope=all>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" });
   });
   it("shows the badge (a pill in the HTML, words in the text) and the public pay scale label", () => {
