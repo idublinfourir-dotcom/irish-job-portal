@@ -3,10 +3,11 @@
 import type { BigName, Occupation, PastVersion, Pending, PayDealList, PayDealRow, PayScale, Version, Minimums } from "@portal/db";
 import { A, Notice, Pill, cx } from "@portal/ui";
 import { ageText } from "../_queue/age";
+import { OpenCopy } from "../_queue/open-copy";
 import { PostButton } from "../_queue/post-button";
 import { Head } from "../_queue/page-head";
 import { FlagForm, ListEditor, MinimumsEditor, PayDealForm } from "./actions";
-import { BODY_LABEL, changeLines, dayText, eur, EVIDENCE_LABEL, HISTORY_KINDS, KIND_LABEL, KIND_OF_TAB, minimumRows, pendingFor, TABS, type Tab } from "./text";
+import { BODY_LABEL, changeLines, dayText, eur, EVIDENCE_LABEL, HISTORY_KINDS, KIND_LABEL, KIND_OF_TAB, lastDay, minimumRows, pendingFor, TABS, type Tab } from "./text";
 
 export type Who = { id: string; roles: string[] };
 const canPropose = (w: Who) => w.roles.includes("rules_data_editor");
@@ -58,7 +59,7 @@ export function PendingList({ items, who, back, now }: { items: Pending[]; who: 
 function Upcoming({ kind, upcoming }: { kind: string; upcoming: Version[] }) {
   const u = upcoming.filter((v) => v.kind === kind);
   if (u.length === 0) return null;
-  return <Notice kind="info" title="A confirmed version has not started yet">{u.map((v) => `It starts on ${dayText(v.effectiveFrom)}.`).join(" ")} The figures below are the ones in force today.</Notice>;
+  return <Notice kind="info" title="A confirmed version has not started yet">{u.map((v) => `It starts on ${dayText(v.effectiveFrom)}.`).join(" ")} The figures below are the ones in force today. A change made from them starts before that day, and ends when that version starts.</Notice>;
 }
 
 export function MinimumsTable({ inForce, upcoming }: { inForce: Version | undefined; upcoming: Version[] }) {
@@ -138,6 +139,7 @@ export type RulesProps = {
 };
 export function Rules(p: RulesProps) {
   const mins = at(p.inForce, "minimums"), edit = canPropose(p.who);
+  const later = p.upcoming.filter((v) => v.kind === "minimums").sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? 1 : -1))[0]; // the last confirmed version still to come
   const kind = p.tab === "history" ? (p.history?.kind ?? "minimums") : p.tab === "quotas" ? "minimums" : KIND_OF_TAB[p.tab];
   const here = p.tab === "history" ? `/rules?tab=history&kind=${kind}` : `/rules?tab=${p.tab}`;
   const rows = (k: string) => ((at(p.inForce, k)?.data ?? []) as unknown as (Occupation | PayScale)[]);
@@ -146,7 +148,8 @@ export function Rules(p: RulesProps) {
       <header className="flex flex-wrap items-start justify-between gap-3">
         <Head title="Rules data">Every figure here is read from the database, none is written into the code. A change is proposed by a rules data editor and confirmed by a different administrator.</Head>
         <div className="flex flex-wrap gap-2">
-          {edit && mins && (p.tab === "minimums" || p.tab === "quotas") && <MinimumsEditor m={mins.data as Minimums} today={p.today} />}
+          {edit && mins && (p.tab === "minimums" || p.tab === "quotas") && <MinimumsEditor m={mins.data as Minimums} today={p.today} last={lastDay(p.upcoming, "minimums")} />}
+          {edit && later && (p.tab === "minimums" || p.tab === "quotas") && <MinimumsEditor m={later.data as Minimums} today={later.effectiveFrom} label={`Change the version of ${dayText(later.effectiveFrom)}`} />}
           {p.tab !== "history" && <A href={`/rules?tab=history&kind=${kind}`} className="inline-flex min-h-11 items-center rounded-pill border border-ink px-5 font-semibold no-underline">History</A>}
         </div>
       </header>
@@ -155,7 +158,7 @@ export function Rules(p: RulesProps) {
       {p.tab !== "history" && <Upcoming kind={kind} upcoming={p.upcoming} />}
       {p.tab === "minimums" && <MinimumsTable inForce={mins} upcoming={p.upcoming} />}
       {p.tab === "quotas" && <Quotas m={mins?.data as Minimums | undefined} />}
-      {(p.tab === "critical" || p.tab === "ineligible" || p.tab === "scales") && <ListEditor kind={kind as "critical_skills_list"} rows={rows(kind)} today={p.today} canEdit={edit} back={here} />}
+      {(p.tab === "critical" || p.tab === "ineligible" || p.tab === "scales") && <ListEditor kind={kind as "critical_skills_list"} rows={rows(kind)} today={p.today} last={lastDay(p.upcoming, kind)} canEdit={edit} back={here} />}
       {p.tab === "history" && p.history && <HistoryView {...p.history} />}
     </div>
   );
@@ -167,21 +170,22 @@ const evidenceCell = (r: PayDealRow) =>
     <span className="flex flex-col gap-0.5">
       <span>{EVIDENCE_LABEL[r.evidence.kind] ?? r.evidence.kind}</span>
       {r.evidence.link && <A href={r.evidence.link} rel="noopener noreferrer" className="underline">Link</A>}
-      {r.evidence.file && <A href={`/api/rules/evidence?file=${encodeURIComponent(r.evidence.file.id)}`} className="underline [overflow-wrap:anywhere]">{r.evidence.file.name}</A>}
+      {r.evidence.file && <><span className="[overflow-wrap:anywhere]">{r.evidence.file.name}</span><OpenCopy url={`/api/rules/evidence?file=${encodeURIComponent(r.evidence.file.id)}`} name={r.evidence.file.name} /></>}
     </span>
   );
 
-export type PayDealProps = { items: PayDealRow[]; versionId: string | null; data: PayDealList; selected: string | null; pending: Pending[]; who: Who; today: string; now: Date };
+export type PayDealProps = { items: PayDealRow[]; versionId: string | null; data: PayDealList; selected: string | null; pending: Pending[]; upcoming: Version[]; who: Who; today: string; now: Date };
 export function PayDeal(p: PayDealProps) {
-  const sel = p.items.find((r) => r.name === p.selected) ?? null, edit = canPropose(p.who), back = sel ? `/rules/pay-deal-employers?employer=${encodeURIComponent(sel.name)}` : "/rules/pay-deal-employers";
+  const sel = p.items.find((r) => r.name === p.selected) ?? null, edit = canPropose(p.who), back = sel ? `/rules/pay-deal-employers?employer=${encodeURIComponent(sel.name)}` : "/rules/pay-deal-employers", last = lastDay(p.upcoming, "public_pay_employers");
   return (
     <div className="flex flex-col gap-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <Head title="Rules data: pay-deal employers">A job at one of these employers passes the salary check and shows &quot;Public sector pay scale applies&quot;. Each entry needs evidence.</Head>
-        {edit && p.versionId !== null && <PayDealForm data={p.data} selected={null} today={p.today} back={back} />}
+        {edit && p.versionId !== null && <PayDealForm data={p.data} selected={null} today={p.today} last={last} back={back} />}
       </header>
       <RulesNav active="pay_deal" />
       <PendingList items={pendingFor(p.pending, ["public_pay_employers"])} who={p.who} back={back} now={p.now} />
+      <Upcoming kind="public_pay_employers" upcoming={p.upcoming} />
       {p.versionId === null && <Notice kind="info">No pay-deal list is in force yet.</Notice>}
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <div className="overflow-x-auto rounded-card border border-line bg-white">
@@ -212,7 +216,7 @@ export function PayDeal(p: PayDealProps) {
               <dt className="text-muted">Live jobs</dt><dd>{sel.liveJobs}</dd>
             </dl>
             {sel.bodyType === "section_39" && <Notice kind="warning" title="Open with DETE">Whether Section 39 and other voluntary bodies are covered is not confirmed. Add them only with recorded evidence of linked pay.</Notice>}
-            {edit ? <PayDealForm key={sel.name} data={p.data} selected={sel.name} today={p.today} back={back} /> : <p className="text-small text-muted">Only a rules data editor proposes a change.</p>}
+            {edit ? <PayDealForm key={sel.name} data={p.data} selected={sel.name} today={p.today} last={last} back={back} /> : <p className="text-small text-muted">Only a rules data editor proposes a change.</p>}
           </aside>
         )}
       </div>
@@ -221,7 +225,7 @@ export function PayDeal(p: PayDealProps) {
 }
 
 // ===== frame D06: big companies =====
-export type BigProps = { rows: BigName[]; pending: Pending[]; who: Who; today: string; now: Date; criticalSkills: number | null };
+export type BigProps = { rows: BigName[]; pending: Pending[]; upcoming: Version[]; who: Who; today: string; now: Date; criticalSkills: number | null };
 export function BigCompanies(p: BigProps) {
   const edit = canPropose(p.who);
   return (
@@ -230,7 +234,8 @@ export function BigCompanies(p: BigProps) {
       <RulesNav active="big" />
       <Notice kind="info" title="Only when the brand's own legal entity is the employer">Never agency contractors, never SMEs, never General permit jobs.</Notice>
       <PendingList items={pendingFor(p.pending, ["big_company_names", "big_company_flag"])} who={p.who} back="/rules/big-companies" now={p.now} />
-      <ListEditor kind="big_company_names" rows={p.rows} today={p.today} canEdit={edit} back="/rules/big-companies" />
+      <Upcoming kind="big_company_names" upcoming={p.upcoming} />
+      <ListEditor kind="big_company_names" rows={p.rows} today={p.today} last={lastDay(p.upcoming, "big_company_names")} canEdit={edit} back="/rules/big-companies" />
       {edit && <FlagForm back="/rules/big-companies" />}
     </div>
   );

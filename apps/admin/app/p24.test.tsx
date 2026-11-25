@@ -112,7 +112,7 @@ describe("a report", () => {
     expect(rpanel(report({ status: "job_hidden" }))).not.toMatch(/Hide the job/);
     expect(rpanel(report({ targetJobId: null, jobTitle: null }))).not.toMatch(/Hide the job/);
     const h = rpanel(report({ evidenceFile: true }));
-    expect(h).toContain('href="/api/trust-safety/evidence?reportId=91"'); expect(h).not.toMatch(/Attach the evidence file/);
+    expect(h).toContain('aria-label="Open the copy evidence file"'); expect(h).not.toMatch(/Attach the evidence file/);
   });
   it("a closed report has no action, no reporter, and a link to its case", () => {
     const h = rpanel(report({ status: "upheld", reporterCandidateUserId: null, decidedAt: "2026-11-24T12:00:00.000Z", caseId: "12" }));

@@ -5,7 +5,7 @@ import { renderToStaticMarkup as html } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { Actions, ActionsView, closeReasons, type Handlers, type Props, type ViewState } from "./[id]/actions";
 import { CaseView, Documents } from "./[id]/detail";
-import { OpenCopyView } from "./[id]/open-copy";
+import { OpenCopyView } from "../_queue/open-copy";
 import { DOC_CODES, MOVES, STATUSES, caseRef, holder, permitLabel, payerLabel, sideLabel, words, type CaseItem, type Doc, type Row } from "./text";
 import { Board, Services, Table, href, keep, isWho } from "./view";
 

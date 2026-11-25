@@ -8,6 +8,7 @@ import { Button, Input, Notice, Select, Textarea } from "@portal/ui";
 import { Failure } from "../_queue/failure";
 import { postJson } from "../_queue/post";
 import { CheckRow } from "../_queue/tabs";
+import { adminWords } from "../_queue/words-adm";
 import { CHECK_TITLE, checkText, COUNTIES, manualBody, verdict, type DryRun } from "./text";
 
 type Failed = { code: string; status: number } | null;
@@ -87,13 +88,13 @@ export function ManualForm({ occupations, hours, today, last }: { occupations: O
     const r = await postJson("/api/manual-jobs", { action: "create", ...b.body });
     setPending(false);
     if (!r.ok) return setFailed({ code: r.error, status: r.status });
-    setDone(r.body.status === "live" ? "Posted. It is live with the Critical Skills eligible badge." : `Saved as a draft, not listed (${String((r.body.reason as { code?: string } | null)?.code ?? "a check failed")}). Run the checks to see which one.`);
+    setDone(r.body.status === "live" ? "Posted. It is live with the Critical Skills eligible badge." : `Saved as a draft, not listed. ${adminWords((r.body.reason as { code?: string } | null)?.code ?? "", 400)}`);
     form.reset(); setCompany(null); setText(""); setDry(null);
     router.refresh();
   }
   return (
     <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-      <form onSubmit={(e: FormEvent<HTMLFormElement>) => { e.preventDefault(); void publish(e.currentTarget); }} className="flex flex-col gap-4 rounded-bento bg-sand p-5">
+      <form onChange={() => setDry(null)} onSubmit={(e: FormEvent<HTMLFormElement>) => { e.preventDefault(); void publish(e.currentTarget); }} className="flex flex-col gap-4 rounded-bento bg-sand p-5">
         <div className="flex flex-col gap-2">
           <Input label="Employer" name="employerSearch" icon="search" value={company ? company.displayName : text} onChange={(e) => { setCompany(null); setText(e.target.value); }} autoComplete="off" maxLength={100}
             help="Type at least 3 letters of the name, or the start of the CRO number." note={company ? `Selected: ${company.displayName} (company ${company.id})` : undefined} status={company ? "passed" : undefined} />

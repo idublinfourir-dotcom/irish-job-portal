@@ -7,7 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Button, Checkbox, CriticalSkillsBadge, Input, JobCard, Notice, Radio, Select, SponsorBadge, Textarea } from "@portal/ui";
 import { api } from "../(auth)/api";
 import { Authority } from "./authority";
-import { blockedCount, bodyOf, COUNTIES, emptyForm, eur, formFromJob, missing, money, payLine, payModes, socOf, type Check, type Form, type JobDetail, type PayMode } from "./model";
+import { blockedCount, bodyOf, COUNTIES, emptyForm, eur, formFromJob, missing, money, payLine, payModes, socOf, withOccupation, type Check, type Form, type JobDetail, type PayMode } from "./model";
 import { ChecksPanel, FirstTimeCard } from "./panels";
 import { saveMessage, savedWord } from "./words";
 
@@ -37,6 +37,7 @@ export function JobForm({ company, statement, occupations, rangeNote, grades, jo
   const [suggest, setSuggest] = useState<Occupation[]>([]);
   const [pending, setPending] = useState<"draft" | "live" | null>(null), [error, setError] = useState<string>(), [tried, setTried] = useState(false), [exceptionText, setExceptionText] = useState<string>();
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((p) => ({ ...p, [k]: v }));
+  const setOccupation = (v: string) => { setF((p) => withOccupation(p, v)); setExceptionText(undefined); };
 
   const miss = missing(f, ctx), isReady = Object.keys(miss).length === 0;
   const shown = (k: keyof typeof miss) => (tried ? miss[k] : undefined); // a field's error shows after the first try to publish
@@ -79,7 +80,8 @@ export function JobForm({ company, statement, occupations, rangeNote, grades, jo
   const low = money(f.salaryLow);
   const client = ctx.agency && f.employerIs === "client";
   const grade = grades.find((g) => g.code === f.grade);
-  const publishOff = pending !== null || (isReady && blocked > 0); // a form that is not complete stays clickable: the click shows what is missing
+  const posted = mode === "edit" && job !== undefined && job.status !== "draft"; // past draft: an edit of the text alone runs no rule (#226), so the route decides, not the checks panel
+  const publishOff = pending !== null || (!posted && isReady && blocked > 0); // a form that is not complete stays clickable: the click shows what is missing
 
   async function save(status: "draft" | "live") {
     setError(undefined);
@@ -107,7 +109,7 @@ export function JobForm({ company, statement, occupations, rangeNote, grades, jo
           <p className="mt-2 max-w-2xl text-muted">{company.tier > 0 && !ctx.agency ? `${company.name} is on the public pay-deal employer list, so you can choose a grade instead of typing a salary. ` : ""}Checks run while you type, so you see what blocks a post before you publish.</p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Button type="button" variant="outline" size="lg" disabled={pending !== null} onClick={() => void save("draft")}>{pending === "draft" ? "Saving" : "Save draft"}</Button>
+          {!posted && <Button type="button" variant="outline" size="lg" disabled={pending !== null} onClick={() => void save("draft")}>{pending === "draft" ? "Saving" : "Save draft"}</Button>}
           <Button href="#preview" variant="outline" size="lg">Preview</Button>
         </div>
       </header>
@@ -120,7 +122,7 @@ export function JobForm({ company, statement, occupations, rangeNote, grades, jo
             <Input label="Job title" value={f.title} maxLength={200} onChange={(e) => set("title", e.target.value)} error={shown("title")} autoComplete="off" />
             <div className="grid gap-4 sm:grid-cols-2">
               <Input
-                label="Occupation" list="occupation-list" value={f.occupation} onChange={(e) => set("occupation", e.target.value)} error={shown("occupation")} autoComplete="off" placeholder="Type the code or the name"
+                label="Occupation" list="occupation-list" value={f.occupation} onChange={(e) => setOccupation(e.target.value)} error={shown("occupation")} autoComplete="off" placeholder="Type the code or the name"
                 status={occ?.listStatus === "critical-skills" ? "passed" : undefined}
                 note={occ ? `SOC ${occ.code} ${occ.title} · ${occ.listStatus === "critical-skills" ? "on the Critical Skills list" : occ.listStatus === "ineligible" ? "on the Ineligible list: some roles have an exception you can confirm" : "on neither list"}` : undefined}
               />
@@ -131,7 +133,7 @@ export function JobForm({ company, statement, occupations, rangeNote, grades, jo
             <datalist id="occupation-list">{occupations.map((o) => <option key={o.code} value={`${o.code} ${o.title}`} />)}</datalist>
             {!hasOcc && suggest.length > 0 && (
               <p className="flex flex-wrap items-center gap-2 text-small" data-suggestions><span className="text-muted">Suggested:</span>
-                {suggest.map((s) => <Button key={s.code} type="button" variant="chip" onClick={() => set("occupation", `${s.code} ${s.title}`)}>{s.code} {s.title}</Button>)}
+                {suggest.map((s) => <Button key={s.code} type="button" variant="chip" onClick={() => setOccupation(`${s.code} ${s.title}`)}>{s.code} {s.title}</Button>)}
               </p>
             )}
             {tick && (
@@ -187,8 +189,8 @@ export function JobForm({ company, statement, occupations, rangeNote, grades, jo
                   <Radio name="employer-is" label="The client" checked={f.employerIs === "client"} onChange={() => set("employerIs", "client")} />
                 </fieldset>
                 {client && <Input label="Client company" value={f.clientName} maxLength={160} onChange={(e) => set("clientName", e.target.value)} error={shown("client")} />}
-                {client && jobId && <Authority jobId={jobId} />}
-                {client && !jobId && <p className="text-small">After you save the job you can add a copy of the client&apos;s written authority.</p>}
+                {client && jobId && job?.clientName && <Authority jobId={jobId} />}
+                {client && !(jobId && job?.clientName) && <p className="text-small">After you save the job you can add a copy of the client&apos;s written authority.</p>}
               </div>
             )}
           </Step>
@@ -209,14 +211,14 @@ export function JobForm({ company, statement, occupations, rangeNote, grades, jo
             </div>
             {client && f.statement && <Checkbox label="I have the client's written authority" checked={f.authority} onChange={(e) => set("authority", e.target.checked)} error={shown("authority")} />}
             <div className="flex flex-wrap items-center gap-4">
-              <Button type="submit" variant="dark" size="lg" disabled={publishOff}>{pending === "live" ? "Publishing" : mode === "edit" && job?.status !== "draft" ? "Save changes" : "Publish job"}</Button>
-              {isReady && blocked > 0 && <span className="text-small text-muted" data-blocked-hint>{`Fix ${blocked} blocked ${blocked === 1 ? "check" : "checks"} to publish.`}</span>}
+              <Button type="submit" variant="dark" size="lg" disabled={publishOff}>{pending === "live" ? (posted ? "Saving" : "Publishing") : posted ? "Save changes" : "Publish job"}</Button>
+              {isReady && blocked > 0 && <span className="text-small text-muted" data-blocked-hint>{posted ? "A change to the pay, the title or the role must pass the blocked checks. Other changes save as they are." : `Fix ${blocked} blocked ${blocked === 1 ? "check" : "checks"} to publish.`}</span>}
             </div>
           </section>
         </div>
 
         <aside className="flex flex-col gap-4 lg:sticky lg:top-4">
-          <ChecksPanel checks={checks} missing={Object.keys(miss).map((k) => LABEL[k] ?? k)} checking={checking} error={result && "error" in result ? result.error : undefined} />
+          <ChecksPanel checks={checks} missing={Object.keys(miss).map((k) => LABEL[k] ?? k)} checking={checking && isReady} error={result && "error" in result ? result.error : undefined} />
           <p className="text-small text-muted" id="preview">How it will look</p>
           <JobCard
             title={f.title.trim() || "Job title"} employer={company.name} place={f.county || "County"} salary={payLine(f, grade) || undefined}

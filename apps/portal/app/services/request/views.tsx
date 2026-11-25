@@ -8,11 +8,18 @@ import { fmtSize, permitFeeLabel, SERVICE_FEE } from "../model";
 import { ClosedNotice, type Notice as NoticeProps } from "../views";
 
 export type Occupation = { code: string; title: string };
-export type LiveJob = { id: string; title: string };
+export type LiveJob = { id: string; title: string; occupationCode: string | null };
 export type FreeCheck = { qualifies: boolean; reason: string; minimum: number | null; why: string; standingLine: string; rulesCheckedOn: string; registration: { status: string; line: string; body: { name: string; url: string } } | null } | null;
 export type Doc = { fileName: string; sizeBytes: number };
 type Submit = (e: FormEvent<HTMLFormElement>) => void;
 const money = (n: number) => `€${n.toLocaleString("en-IE")}`;
+
+/** Picking one of the company's jobs fills an empty job title and picks the job's occupation when the list has it. */
+function prefill(el: HTMLSelectElement, jobs: LiveJob[]) {
+  const job = jobs.find((j) => j.id === el.value), title = el.form?.elements.namedItem("title"), occ = el.form?.elements.namedItem("occupationCode");
+  if (job && title instanceof HTMLInputElement && title.value.trim() === "") title.value = job.title.slice(0, 120);
+  if (job && occ instanceof HTMLSelectElement && [...occ.options].some((o) => o.value === job.occupationCode)) occ.value = job.occupationCode!;
+}
 
 /** The cards beside the form and the result (frame C20's right column). `step` is the current stage of the case, 1 to 4. */
 export function Aside({ step = 1 }: { step?: number }) {
@@ -69,7 +76,7 @@ export function RequestView({ occupations, jobs, degree, onDegree, notice, error
             </Select>
           </Step>
           <Step n={2} title="The job offer">
-            <Select label="Job" name="jobId" defaultValue="" help="One of your company's live jobs, or none if the hire is not listed here.">
+            <Select label="Job" name="jobId" defaultValue="" onChange={(e) => prefill(e.currentTarget, jobs)} help="One of your company's live jobs, or none if the hire is not listed here.">
               <option value="">No job listed</option>
               {jobs.map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}
             </Select>

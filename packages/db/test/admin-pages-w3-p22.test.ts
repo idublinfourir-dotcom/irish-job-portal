@@ -242,7 +242,7 @@ describe("P25 manual posting", () => {
     expect(own).toMatch(/waits for a different administrator/); expect(own).toMatch(/You cannot confirm your own upload/); expect(own).toMatch(/>Withdraw</); expect(own).not.toMatch(/>Confirm</);
     await h.no(h.call(SPONSOR as never, "/", "ar_ad", { action: "confirm", requestId: up.json.requestId }), 409, "same_person");
     const other = await manual("admin2");
-    expect(other).toMatch(/Uploaded by Fake ar_ad/); expect(other).toMatch(/requestId=/); expect(other).toMatch(/>Confirm</); expect(other).toMatch(/>Refuse</); expect(other).not.toMatch(/>Withdraw</);
+    expect(other).toMatch(/Uploaded by Fake ar_ad/); expect(other).toMatch(/aria-label="Open the copy /); expect(other).toMatch(/>Confirm</); expect(other).toMatch(/>Refuse</); expect(other).not.toMatch(/>Withdraw</);
     expect(await manual(TS)).not.toMatch(/<button[^>]*>Confirm/); expect(await manual(AR)).not.toMatch(/<button[^>]*>Confirm/);
     await h.ok(h.call(SPONSOR as never, "/", "admin2", { action: "confirm", requestId: up.json.requestId }));
     const done = await manual("ar_ad"); expect(done).toMatch(/Sponsor confirmed/); expect(done).not.toMatch(/waits for a different administrator/);

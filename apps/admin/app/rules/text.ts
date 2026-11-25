@@ -48,6 +48,15 @@ export function minimumRows(inForce: Version | undefined, upcoming: Version[]): 
   }));
 }
 
+/**
+ * The last day a change made from today's figures can start: the day before the first confirmed version of its kind that waits. A version is a whole list, so a later start would
+ * put back today's figures over that version. Undefined when none waits.
+ */
+export const lastDay = (upcoming: Pick<Version, "kind" | "effectiveFrom">[], kind: string): string | undefined => {
+  const first = upcoming.filter((v) => v.kind === kind).map((v) => v.effectiveFrom).sort()[0];
+  return first && addDays(first, -1);
+};
+
 // ===== a change as lines of text (the proposal, the history) =====
 const brief = (v: unknown): string => {
   if (v === null || v === undefined) return "none";

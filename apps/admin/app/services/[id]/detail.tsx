@@ -4,7 +4,7 @@ import { A, Notice, Pill } from "@portal/ui";
 import { when } from "../../_queue/age";
 import { COPIES_NOTE, FEE_NOTE, FROM_LABEL, KEEP_NOTE, CLOSE_LABEL, OUTCOME_LABEL, caseRef, holder, payerLabel, permitLabel, sideLabel, statusLabel, type CaseItem, type Doc } from "../text";
 import { Actions, type Props } from "./actions";
-import { OpenCopy } from "./open-copy";
+import { OpenCopy } from "../../_queue/open-copy";
 
 const Row = ({ k, children }: { k: string; children: React.ReactNode }) => (
   <div className="grid gap-1 sm:grid-cols-[11rem_minmax(0,1fr)]"><dt className="text-muted">{k}</dt><dd className="[overflow-wrap:anywhere]">{children}</dd></div>
@@ -32,7 +32,7 @@ export function Documents({ caseId, state, asked }: { caseId: string; state: Doc
                   <td className="px-4 py-3 [overflow-wrap:anywhere]">{d.fileName ?? "Unnamed copy"}</td>
                   <td className="px-4 py-3 text-small">{FROM_LABEL[d.uploadedBy] ?? d.uploadedBy}</td>
                   <td className="px-4 py-3 text-small">{d.copyDeleted ? <Pill tone="neutral" className="min-h-[30px] px-3">Copy deleted</Pill> : <>Uploaded {when(d.uploadedAt)}</>}</td>
-                  <td className="px-4 py-3 text-right">{d.copyDeleted ? null : <OpenCopy caseId={caseId} docId={d.id} name={d.fileName ?? "copy"} />}</td>
+                  <td className="px-4 py-3 text-right">{d.copyDeleted ? null : <OpenCopy url={`/api/services/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(d.id)}`} name={d.fileName ?? "copy"} />}</td>
                 </tr>
               ))}
             </tbody>

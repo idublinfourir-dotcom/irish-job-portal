@@ -4,7 +4,7 @@ import type { PastVersion, Pending, PayDealRow, Version } from "@portal/db";
 import { renderToStaticMarkup as html } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { bigEntry, employerKey, minimumsData, occupationEntry, parseCodes, payDealEntry, scaleEntry, withEntry, without } from "./build";
-import { addDays, changeLines, CHANGE_LINES, dayText, historyKind, isoDay, minimumRows, pendingFor, tabOf } from "./text";
+import { addDays, changeLines, CHANGE_LINES, dayText, historyKind, isoDay, minimumRows, pendingFor, tabOf, lastDay } from "./text";
 import { BigCompanies, HistoryView, PayDeal, PendingList, Quotas, Rules, RulesNav, type Who } from "./view";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace() {}, refresh() {} }), usePathname: () => "/rules" }));
@@ -88,6 +88,14 @@ describe("/rules", () => {
     expect(p).toMatch(/has not started yet/); expect(p).toMatch(/It starts on 1 Jan 2027/); expect(p).toMatch(/€42,000/); expect(p).toMatch(/1 Jan 2027/);
     expect(p.indexOf("In force now")).toBeLessThan(p.indexOf("Next value"));
   });
+  it("while a confirmed version waits, a change made from today's figures must start before it, and the minimums editor can change that version itself", () => {
+    expect(lastDay([NEXT], "minimums")).toBe("2026-12-31"); expect(lastDay([NEXT], "pay_scales")).toBeUndefined(); expect(lastDay([], "minimums")).toBeUndefined();
+    expect(lastDay([{ ...NEXT, effectiveFrom: "2027-03-01" }, NEXT], "minimums")).toBe("2026-12-31"); // the first one to start
+    const p = page({ who: EDITOR, upcoming: [NEXT] });
+    expect(p).toMatch(/max="2026-12-31"/); expect(p).toMatch(/Up to 31 Dec 2026/); expect(p).toMatch(/Change the version of 1 Jan 2027/); expect(p).toMatch(/min="2027-01-01"/);
+    expect(page({ who: EDITOR })).not.toMatch(/ max="2026|Change the version of/);
+    const list = page({ tab: "critical", who: EDITOR, upcoming: [{ ...NEXT, kind: "critical_skills_list", data: [] }] }); expect(list).toMatch(/max="2026-12-31"/);
+  });
   it("only a rules data editor sees the forms", () => {
     expect(page({ who: EDITOR })).toMatch(/Add a future value/);
     expect(page({ who: ADMIN })).not.toMatch(/Add a future value/); // an administrator confirms; it does not stand in for the editor
@@ -149,11 +157,11 @@ describe("history", () => {
 describe("/rules/pay-deal-employers (frame D05)", () => {
   const row = (o: Partial<PayDealRow> = {}): PayDealRow => ({ name: "fake hospital group", tier: 2, note: null, bodyType: "section_38", evidence: { kind: "service_arrangement", link: null, file: { id: "0f8fad5b-d9cb-469f-a165-70867728950e.pdf", name: "arrangement.pdf" } }, addedOn: "2026-11-01", addedBy: "ed", addedByName: "Fake Editor", on: true, companies: 1, legalNames: 2, liveJobs: 4, ...o });
   const dp = (who: Who, items: PayDealRow[] = [row(), row({ name: "fake voluntary body", bodyType: "section_39", evidence: null, on: false, addedOn: null, addedByName: null })], selected: string | null = "fake hospital group") =>
-    html(<PayDeal items={items} versionId="9" data={{ "fake hospital group": { tier: 2 } }} selected={selected} pending={[]} who={who} today={TODAY} now={NOW} />);
+    html(<PayDeal items={items} versionId="9" data={{ "fake hospital group": { tier: 2 } }} selected={selected} pending={[]} upcoming={[]} who={who} today={TODAY} now={NOW} />);
   it("the list with type, evidence, day added, who added it and on or off; evidence missing and the Section 39 warning; the counts of the open one", () => {
     const p = dp(NOBODY); clean(p);
     expect(p).toMatch(/Section 38/); expect(p).toMatch(/Section 39/); expect(p).toMatch(/Evidence missing/); expect(p).toMatch(/>On</); expect(p).toMatch(/>Off</); expect(p).toMatch(/1 Nov 2026/); expect(p).toMatch(/Fake Editor/);
-    expect(p).toMatch(/href="\/api\/rules\/evidence\?file=0f8fad5b-d9cb-469f-a165-70867728950e\.pdf"/); expect(p).toMatch(/2 legal names/); expect(p).toMatch(/Live jobs<\/dt><dd>4/);
+    expect(p).toMatch(/aria-label="Open the copy arrangement\.pdf"/); expect(p).toMatch(/2 legal names/); expect(p).toMatch(/Live jobs<\/dt><dd>4/);
     expect(dp(NOBODY, [row({ bodyType: "section_39" })])).toMatch(/Open with DETE/); expect(p).not.toMatch(/Open with DETE/);
   });
   it("the forms are the rules data editor's only", () => {
@@ -161,17 +169,17 @@ describe("/rules/pay-deal-employers (frame D05)", () => {
     for (const w of [ADMIN, NOBODY]) { const p = dp(w); expect(p).not.toMatch(/Add employer/); expect(p).not.toMatch(/>Save</); }
   });
   it("no list in force and an unknown selection are states, not errors", () => {
-    expect(html(<PayDeal items={[]} versionId={null} data={{}} selected={null} pending={[]} who={EDITOR} today={TODAY} now={NOW} />)).toMatch(/No pay-deal list is in force yet/);
+    expect(html(<PayDeal items={[]} versionId={null} data={{}} selected={null} pending={[]} upcoming={[]} who={EDITOR} today={TODAY} now={NOW} />)).toMatch(/No pay-deal list is in force yet/);
     expect(dp(NOBODY, [row()], "nobody")).not.toMatch(/<aside/);
   });
   it("the proposals of the pay-deal list wait here, with who proposed them", () => {
-    const p = html(<PayDeal items={[row()]} versionId="9" data={{}} selected={null} pending={[pend({ kind: "public_pay_employers" } as never), pend({ requestId: "1", kind: "pay_scales" } as never)]} who={ADMIN} today={TODAY} now={NOW} />);
+    const p = html(<PayDeal items={[row()]} versionId="9" data={{}} selected={null} pending={[pend({ kind: "public_pay_employers" } as never), pend({ requestId: "1", kind: "pay_scales" } as never)]} upcoming={[]} who={ADMIN} today={TODAY} now={NOW} />);
     expect(p).toMatch(/Pay-deal employers/); expect(p.match(/Waiting for a different administrator/g)!.length).toBe(1); expect(p).not.toMatch(/Public pay scales<\/p>/);
   });
 });
 
 describe("/rules/big-companies (frame D06)", () => {
-  const big = (who: Who, rows = (IN_FORCE[4]!.data as never[])) => html(<BigCompanies rows={rows} pending={[]} who={who} today={TODAY} now={NOW} criticalSkills={41000} />);
+  const big = (who: Who, rows = (IN_FORCE[4]!.data as never[])) => html(<BigCompanies rows={rows} pending={[]} upcoming={[]} who={who} today={TODAY} now={NOW} criticalSkills={41000} />);
   it("the brands with their test, link and review day; the rule in a notice; the minimum read; no roles or domains column, no match percentage", () => {
     const p = big(NOBODY); clean(p);
     expect(p).toMatch(/fake brand/); expect(p).toMatch(/A well-known brand/); expect(p).toMatch(/1 Apr 2027/); expect(p).toMatch(/expected above €41,000/); expect(p).toMatch(/Never agency contractors, never SMEs, never General permit jobs/);
@@ -183,7 +191,7 @@ describe("/rules/big-companies (frame D06)", () => {
     expect(big(NOBODY, [])).toMatch(/Nothing is in force for this list yet/);
   });
   it("the flag proposals wait on this page", () => {
-    const p = html(<BigCompanies rows={[]} pending={[{ requestId: "5", kind: "big_company_flag", organisationId: "330", displayName: "Fake Co", proposedBy: "ed", proposedByName: "Fake Editor", createdAt: "2026-11-25 10:00:00+00" } as Pending]} who={ADMIN} today={TODAY} now={NOW} criticalSkills={null} />);
+    const p = html(<BigCompanies rows={[]} pending={[{ requestId: "5", kind: "big_company_flag", organisationId: "330", displayName: "Fake Co", proposedBy: "ed", proposedByName: "Fake Editor", createdAt: "2026-11-25 10:00:00+00" } as Pending]} upcoming={[]} who={ADMIN} today={TODAY} now={NOW} criticalSkills={null} />);
     expect(p).toMatch(/Flag Fake Co/); expect(p).toMatch(/expected above the minimum/);
   });
 });

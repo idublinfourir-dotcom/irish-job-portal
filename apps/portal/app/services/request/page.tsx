@@ -21,7 +21,7 @@ export default async function Page() {
   return (
     <RequestFlow
       occupations={(occupations.body.occupations as Occupation[]).map(({ code, title }) => ({ code, title }))}
-      jobs={(bodyOf<Job[]>(jobs, "jobs") ?? []).filter((j) => j.status === "live").map(({ id, title }) => ({ id, title }))}
+      jobs={(bodyOf<(Job & { occupationCode: string | null })[]>(jobs, "jobs") ?? []).filter((j) => j.status === "live").map(({ id, title, occupationCode }) => ({ id, title, occupationCode }))}
       notice={notice?.status === 200 ? noticeOf(notice.body) : null}
     />
   );

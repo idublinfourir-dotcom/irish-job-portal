@@ -281,13 +281,14 @@ components:
         effectiveFrom: { type: [string, 'null'], description: "B17: the day an update's rule starts; null for the other kinds.", example: '2027-01-01' }
     JobQueueItem:
       type: object
-      required: [id, queue, status, jobId, jobStatus, title, organisationId, company]
+      required: [id, queue, status, createdAt, jobId, jobStatus, title, organisationId, company]
       properties:
         id: { $ref: '#/components/schemas/Id' }
         queue: { type: string, enum: [scam_flag, post_strike_job_review, agency_client_check, licence_lapse_job] }
         status: { type: string }
         claimedBy: { type: [string, 'null'] }
         reason: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time, description: When the item was opened (how long the job has been held). }
         jobId: { $ref: '#/components/schemas/Id' }
         jobStatus: { type: string }
         source: { type: string, enum: [employer, agency] }
@@ -1960,7 +1961,7 @@ paths:
                       item: { $ref: '#/components/schemas/JobQueueItem' }
               example:
                 items:
-                  - { id: '2201', queue: agency_client_check, status: open, claimedBy: null, reason: client_not_found, jobId: '5501', jobStatus: in_review, source: agency, title: Staff Nurse, employerName: Example Recruitment Ltd, county: Dublin, occupationCode: '2231', permitType: critical_skills, salaryLow: 38000, salaryHigh: 45000, payGrade: null, badge: null, closesAt: '2026-12-31T23:59:59.000Z', organisationId: '312', company: Example Recruitment Ltd, companyStatus: verified, restricted: false, clientName: Example Hospital, clientCheck: not_found }
+                  - { id: '2201', queue: agency_client_check, status: open, claimedBy: null, reason: client_not_found, createdAt: '2026-11-24T09:12:00.000Z', jobId: '5501', jobStatus: in_review, source: agency, title: Staff Nurse, employerName: Example Recruitment Ltd, county: Dublin, occupationCode: '2231', permitType: critical_skills, salaryLow: 38000, salaryHigh: 45000, payGrade: null, badge: null, closesAt: '2026-12-31T23:59:59.000Z', organisationId: '312', company: Example Recruitment Ltd, companyStatus: verified, restricted: false, clientName: Example Hospital, clientCheck: not_found }
                 next: null
         '400':
           description: "`bad_query`: an unknown or repeated key. `bad_queue`: no `queue` (without `id`) or an unknown one. `bad_cursor`: a token this list did not make."

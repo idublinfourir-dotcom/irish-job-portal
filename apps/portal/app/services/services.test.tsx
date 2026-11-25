@@ -140,7 +140,7 @@ describe("one case", () => {
 describe("the request form", () => {
   const occ = [{ code: "2231", title: "Nurses" }];
   it("the form: the fields of the route, our fee and DETE's, the 30 day and copies wording, no who-is-asking step, no employer email, no save for later", () => {
-    const h = html(<RequestView occupations={occ} jobs={[{ id: "5", title: "Fake Cook" }]} degree="yes" notice={null} error="Nope." />);
+    const h = html(<RequestView occupations={occ} jobs={[{ id: "5", title: "Fake Cook", occupationCode: "2231" }]} degree="yes" notice={null} error="Nope." />);
     const t = h.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
     for (const w of ["New permit request", "Permit type", "Critical Skills Employment Permit", "Fake Cook", "Nurses", "Salary offered", "Month the degree was awarded", "Send request", "Copies only, never originals.", "30 days", "Paid by the employee or employer", "Nope."]) expect(t).toContain(w);
     for (const w of ["Who is asking", "Employer contact email", "Save for later", "I am the candidate"]) expect(t).not.toContain(w);

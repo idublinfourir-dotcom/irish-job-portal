@@ -15,5 +15,5 @@ export default async function Page() {
   const { me, rules } = r.value, now = new Date();
   const rows = (rules.inForce.find((v) => v.kind === "big_company_names")?.data ?? []) as BigName[];
   const mins = rules.inForce.find((v) => v.kind === "minimums")?.data as Minimums | undefined;
-  return <BigCompanies rows={rows} pending={rules.pending} who={{ id: me.id, roles: me.roles }} today={isoDay(now)} now={now} criticalSkills={mins?.criticalSkills ?? null} />;
+  return <BigCompanies rows={rows} pending={rules.pending} upcoming={rules.upcoming} who={{ id: me.id, roles: me.roles }} today={isoDay(now)} now={now} criticalSkills={mins?.criticalSkills ?? null} />;
 }

@@ -15,7 +15,7 @@ export function LegalTexts({ versions, pending, meId, roles }: { versions: Versi
     <div className="flex flex-col gap-6">
       <header>
         <h1 className="mb-1 text-[32px] leading-tight md:text-[34px]">Legal texts</h1>
-        <p className="text-muted">The terms and notices people agree to. A content editor proposes a new version; a different administrator publishes it. The real wording waits for the solicitor, so today these are placeholders.</p>
+        <p className="text-muted">The terms and notices people agree to. A content editor proposes a new version; a different administrator publishes it.</p>
       </header>
       {versions.length === 0 && pending.length === 0 && <Notice kind="info">No legal text has been published yet.</Notice>}
       {PURPOSES.map(([purpose, label]) => {

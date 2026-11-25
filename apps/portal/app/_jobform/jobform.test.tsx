@@ -11,7 +11,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push() {}, replace() {},
 import { JOB_FORM_LIVE } from "../_site/flags";
 import { AuthorityView } from "./authority";
 import { JobForm, type FormProps } from "./form";
-import { blockedCount, bodyOf, COUNTIES, emptyForm, formFromJob, missing, money, payLine, payModes, ready, reasonWord, rowOf, socOf, type Check, type Form, type JobDetail } from "./model";
+import { blockedCount, bodyOf, COUNTIES, emptyForm, formFromJob, missing, money, payLine, payModes, ready, reasonWord, rowOf, socOf, type Check, type Form, type JobDetail, withOccupation } from "./model";
 import { ChecksPanel } from "./panels";
 import { authorityMessage, loadMessage, savedWord, saveMessage } from "./words";
 
@@ -150,6 +150,11 @@ const props: FormProps = {
   rangeNote: "Pay depends on where you start on the scale.", grades: [{ code: "2135", title: "Fake Staff Nurse", firstEur: 38166, lastEur: 56592, note: null }], mode: "new",
 };
 describe("the form", () => {
+  it("an exception tick is cleared when the occupation changes, and kept while the same code is being typed", () => {
+    const f = { ...emptyForm(), occupation: "5434 Chefs", exception: true };
+    expect(withOccupation(f, "6145 Care workers").exception).toBe(false); expect(withOccupation(f, "").exception).toBe(false);
+    expect(withOccupation(f, "5434").exception).toBe(true); expect(withOccupation({ ...f, exception: false }, "5434").exception).toBe(false);
+  });
   it("an employer's blank form: five steps, the wording in force, no grade, no agency block, no Town or Eircode, no Launch B apply, no Hire or Applied words", () => {
     const s = html(<JobForm {...props} />);
     for (const t of ["The job", "Pay", "Contract and place", "Description and applying", "Sponsorship statement"]) expect(s).toContain(t);
@@ -167,11 +172,14 @@ describe("the form", () => {
     const job: JobDetail = { id: "9", status: "draft", badge: null, title: "Fake Draft Chef", description: "A fake kitchen needs a chef for evenings.", county: "Kerry", occupationCode: "5434", contractType: "permanent", contractMonths: null, salaryLow: 41000, salaryHigh: null, payGrade: null, healthInsuranceEur: null, weeklyHours: 39, ownPageUrl: "https://x.example.test/c", clientName: null, permitType: "critical_skills", exceptionConfirmed: false, statement: null };
     const edit = html(<JobForm {...props} mode="edit" job={job} />);
     expect(edit).toContain("Edit job"); expect(edit).toContain('value="Fake Draft Chef"'); expect(edit).toContain("Publish job"); expect(edit).toContain("SOC 5434 Chefs");
-    expect(html(<JobForm {...props} mode="edit" job={{ ...job, status: "live" }} />)).toContain("Save changes");
+    const live = html(<JobForm {...props} mode="edit" job={{ ...job, status: "live" }} />);
+    expect(live).toContain("Save changes"); expect(live).not.toContain("Save draft"); expect(edit).toContain("Save draft"); // a job past draft has no draft to save: that button would change the live job
     expect(html(<JobForm {...props} mode="repost" job={{ ...job, status: "closed" }} />)).toContain("Post this job again");
     const ag = { ...props, company: { ...props.company, kind: "agency" } };
     expect(html(<JobForm {...ag} mode="edit" job={{ ...job, clientName: "Fake Client Ltd" }} />)).toContain("written authority");
     expect(html(<JobForm {...ag} mode="new" />)).not.toContain("Copies of the client");
+    const unsaved = html(<JobForm {...ag} mode="edit" job={{ ...job, clientName: null }} />); // an agency job saved as its own has no copies to list yet
+    expect(unsaved).not.toContain("Copies of the client");
   });
   it("no statement wording published: the tick is off and the page says so; a first-time sponsor sees its card; a save shows its line", () => {
     const s = html(<JobForm {...props} statement={null} company={{ ...props.company, permitHistory: "first_time" }} saved="in_review" />);

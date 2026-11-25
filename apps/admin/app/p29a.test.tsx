@@ -84,14 +84,14 @@ describe("/contact", () => {
 
 describe("/employer-jobs", () => {
   const job = (o: Partial<Detail> = {}): Detail => ({
-    id: "5", queue: "agency_client_check", status: "open", claimedBy: null, reason: "client_not_found", jobId: "70", jobStatus: "in_review", source: "agency", title: "Fake Engineer", employerName: "Fake Agency",
+    id: "5", queue: "agency_client_check", status: "open", claimedBy: null, reason: "client_not_found", createdAt: new Date("2026-11-23T12:00:00Z"), jobId: "70", jobStatus: "in_review", source: "agency", title: "Fake Engineer", employerName: "Fake Agency",
     county: "Cork", occupationCode: "2134", permitType: "critical_skills", salaryLow: 60000, salaryHigh: null, payGrade: null, badge: null, closesAt: new Date("2026-12-20T00:00:00Z"), organisationId: "33",
     company: "Fake Agency Ltd", companyStatus: "verified", restricted: false, clientName: "Fake Client", clientCheck: "not_found", advertText: "Fake advert\nline", ...o,
   } as Detail);
   const doc = (o: Partial<AuthorityDocument> = {}): AuthorityDocument => ({ id: "3", fileName: "authority.pdf", contentType: "application/pdf", sizeBytes: 204800, uploadedAt: "2026-11-24 09:00:00+00", copyDeleted: false, ...o });
   const page = (o: { selected?: Detail | null; items?: JobQueueItem[]; queues?: ("scam_flag" | "post_strike_job_review" | "agency_client_check" | "licence_lapse_job")[]; queue?: "scam_flag" | "agency_client_check"; documents?: AuthorityDocument[] | null; missingId?: boolean; open?: boolean } = {}) =>
     html(<EmployerJobs queues={o.queues ?? ["post_strike_job_review", "agency_client_check", "licence_lapse_job"]} queue={o.queue ?? "agency_client_check"} items={o.items ?? [job()]} selected={o.selected ?? null} missingId={o.missingId} meId="me"
-      documents={o.documents ?? null} canOpenCompany={o.open ?? true} />);
+      documents={o.documents ?? null} canOpenCompany={o.open ?? true} now={new Date("2026-11-25T12:00:00Z")} />);
   it("tabs only for the queues given, the list, and an empty queue says what it holds", () => {
     const p = page();
     expect(p.match(/role="tab"/g)).toHaveLength(3); expect(p).not.toMatch(/Scam check/); expect(p).toMatch(/aria-selected="true"[^>]*>Agency client check/);
@@ -102,8 +102,7 @@ describe("/employer-jobs", () => {
   it("an item: facts, advert as text, the written authority (open link, deleted copy, none), the company link by role", () => {
     const p = page({ selected: job(), documents: [doc(), doc({ id: "4", copyDeleted: true })] });
     expect(p).toMatch(/Fake Client \(not found\)/); expect(p).toMatch(/€60,000 a year/); expect(p).toMatch(/20 Dec 2026/); expect(p).toMatch(/Fake advert/);
-    const link = p.match(/<a [^>]*href="\/api\/employer-jobs\/authority\?jobId=70&amp;docId=3"[^>]*>/)![0];
-    expect(link).toMatch(/target="_blank"/); expect(link).toMatch(/rel="noopener noreferrer"/);
+    expect(p).toMatch(/aria-label="Open the copy authority\.pdf"/); expect(p).not.toMatch(/scan_pending|file_blocked/); expect(p).toMatch(/Waiting<\/dt><dd>2 d/); // no raw code; how long it has been held
     expect(p).toMatch(/200 KB/); expect(p).toMatch(/The copy was deleted/); expect(p).toMatch(/href="\/companies\/33"/);
     expect(page({ selected: job(), documents: [] })).toMatch(/has not stored a copy/);
     expect(page({ selected: job(), documents: null })).not.toMatch(/aria-label="Written authority"/);

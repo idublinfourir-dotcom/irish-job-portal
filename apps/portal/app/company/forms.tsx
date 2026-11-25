@@ -7,7 +7,7 @@ import { Button, Dialog, Icon, Input, Notice, Select, Textarea } from "@portal/u
 import { send } from "../_account/client";
 import { COUNTIES, initials, LOGO_MAX_BYTES, say } from "../_account/messages";
 
-export type Profile = { name: string; description: string | null; website: string | null; county: string | null; descriptionMax: number; logoSrc: string | null };
+export type Profile = { isOwner?: boolean; name: string; description: string | null; website: string | null; county: string | null; descriptionMax: number; logoSrc: string | null };
 const LOGO_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
 /** The logo, and (owner) the button that uploads a new one the moment a file is chosen. */
@@ -59,7 +59,7 @@ export function ProfileView({ p, canEdit, error, saved, pending, logo, onSubmit,
       </div>
       {error && <Notice kind="error">{error}</Notice>}
       {saved && <Notice kind="success">Saved. This is what candidates see now.</Notice>}
-      {canEdit ? <Button type="submit" size="lg" disabled={pending} className="self-start">{pending ? "Saving" : "Save"}</Button> : <p className="text-small text-muted">Only the account owner can change the profile.</p>}
+      {canEdit ? <Button type="submit" size="lg" disabled={pending} className="self-start">{pending ? "Saving" : "Save"}</Button> : !p.isOwner && <p className="text-small text-muted">Only the account owner can change the profile.</p>}
     </form>
   );
 }

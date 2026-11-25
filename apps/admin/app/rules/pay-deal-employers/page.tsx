@@ -17,5 +17,5 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const { me, list, rules } = r.value, now = new Date();
   const data = (rules.inForce.find((v) => v.kind === "public_pay_employers")?.data ?? {}) as PayDealList; // the entries as the route reads them: a proposal sends them back as they are
   const selected = list.items.find((i) => i.name === employer)?.name ?? list.items[0]?.name ?? null;
-  return <PayDeal items={list.items} versionId={list.versionId} data={data} selected={selected} pending={rules.pending} who={{ id: me.id, roles: me.roles }} today={isoDay(now)} now={now} />;
+  return <PayDeal items={list.items} versionId={list.versionId} data={data} selected={selected} pending={rules.pending} upcoming={rules.upcoming} who={{ id: me.id, roles: me.roles }} today={isoDay(now)} now={now} />;
 }

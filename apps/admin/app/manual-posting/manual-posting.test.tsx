@@ -1,10 +1,9 @@
 // Manual posting (frame D10): the body the form sends, the checks panel's words, and the page for each role and state (react-dom/server: no browser, no network, no database).
 import type { ManualRow } from "@portal/db";
-import type { SponsorPending } from "@portal/db/staff-uploads";
 import { renderToStaticMarkup as html } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { ChecksPanel, CompanyList } from "./form";
-import { checkText, manualBody, verdict, type Check, type DryRun } from "./text";
+import { checkText, manualBody, verdict, type Check, type DryRun, type SponsorPending } from "./text";
 import { ManualPosting, type Who } from "./view";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace() {}, refresh() {} }), usePathname: () => "/manual-posting" }));
@@ -14,7 +13,7 @@ const clean = (t: string) => expect(t).not.toMatch(/[\u2013\u2014]|undefined|\[o
 const FIELDS = { title: "Fake Care Assistant", description: " Fake description of the job. ", county: "Limerick", occupationCode: "6145", weeklyHours: "39", closesOn: "2026-12-31", applyUrl: "https://example.test/apply" };
 const REVIEWER: Who = { id: "rev", roles: ["account_reviewer"] }, ADMIN: Who = { id: "adm", roles: ["administrator"] }, TS: Who = { id: "ts", roles: ["trust_and_safety"] };
 const row = (o: Partial<ManualRow> = {}): ManualRow => ({ id: "7", organisation_id: "3", display_name: "Fake Care Ltd", title: "Fake Care Assistant", status: "live", badge: "critical_skills_eligible", pass_route: "stated_pay", posted_by_staff_id: "rev", posted_at: "2026-11-24 09:00:00+00", closes_at: "2026-12-31 23:59:59+00", closed_at: null, reason: null, sponsor_request_id: null, ...o });
-const pending = (o: Partial<SponsorPending> = {}): SponsorPending => ({ requestId: "90", jobId: "7", title: "Fake Care Assistant", organisationId: "3", displayName: "Fake Care Ltd", fileName: "letter.pdf", contentType: "pdf", sizeBytes: 100, proposedBy: "rev", proposedByName: "Fake Reviewer", createdAt: "2026-11-25 09:00:00+00", ...o });
+const pending = (o: Partial<SponsorPending> = {}): SponsorPending => ({ requestId: "90", jobId: "7", fileName: "letter.pdf", proposedBy: "rev", proposedByName: "Fake Reviewer", ...o });
 const FORM = { occupations: [{ code: "6145", title: "Fake care roles" }], hours: 39, today: "2026-11-25", last: "2027-02-23" };
 const page = (who: Who, items: ManualRow[] = [row()], sponsor: SponsorPending[] = [], o: { form?: typeof FORM } = { form: FORM }) => html(<ManualPosting who={who} items={items} sponsor={sponsor} form={o.form} />);
 
@@ -87,9 +86,9 @@ describe("the page", () => {
     const up = page(REVIEWER); expect(up).toMatch(/Employer&#x27;s written confirmation|Employer's written confirmation/); expect(up).toMatch(/>Upload</);
     const waiting = row({ sponsor_request_id: "90" });
     const mine = page(REVIEWER, [waiting], [pending()]); expect(mine).toMatch(/waits for a different administrator/); expect(mine).toMatch(/You cannot confirm your own upload/); expect(mine).toMatch(/>Withdraw</); expect(mine).not.toMatch(/>Confirm</);
-    const adm = page(ADMIN, [waiting], [pending()], { form: undefined }); expect(adm).toMatch(/>Confirm</); expect(adm).toMatch(/>Refuse</); expect(adm).not.toMatch(/>Withdraw</); expect(adm).toMatch(/requestId=90/);
+    const adm = page(ADMIN, [waiting], [pending()], { form: undefined }); expect(adm).toMatch(/>Confirm</); expect(adm).toMatch(/>Refuse</); expect(adm).not.toMatch(/>Withdraw</); expect(adm).toMatch(/aria-label="Open the copy /);
     const same = page({ id: "rev", roles: ["account_reviewer", "administrator"] }, [waiting], [pending()]); expect(same).not.toMatch(/>Confirm</); // the proposer is never offered Confirm
-    const ts = page(TS, [waiting], [pending()], { form: undefined }); expect(ts).not.toMatch(/<button/);
+    const ts = page(TS, [waiting], [pending()], { form: undefined }); expect(ts).not.toMatch(/>(Confirm|Refuse|Withdraw|Upload)</); expect(ts).toMatch(/aria-label="Open the copy /); // trust and safety may read the file and decide nothing
     expect(page(REVIEWER, [row({ badge: "sponsor_confirmed" })])).not.toMatch(/>Upload</);
     expect(page(REVIEWER, [row({ status: "draft", badge: null })])).not.toMatch(/>Upload</);
   });

@@ -3,6 +3,7 @@
 import { A, EmptyState, Notice, Pager, Pill, cx } from "@portal/ui";
 import { Act } from "../_queue/act";
 import { ageText, when } from "../_queue/age";
+import { OpenCopy } from "../_queue/open-copy";
 import { CheckRow, CountTabs } from "../_queue/tabs";
 import { Evidence } from "./evidence";
 import { type CaseItem, type Counts, href, isTab, iso, kindText, outcomeText, PENDING_KIND, reasonText, type ReportItem, type Row, stateText, type Tab, TABS, timeline } from "./text";
@@ -52,6 +53,9 @@ const Text = ({ title, children }: { title: string; children: string }) => (
   <div><h3 className="mb-1 text-body font-semibold">{title}</h3><p className="whitespace-pre-line text-small [overflow-wrap:anywhere]">{children}</p></div>
 );
 
+/** The stored evidence file, opened through its route. */
+const FileLine = ({ url }: { url: string }) => <div className="flex flex-wrap items-center gap-3"><span className="text-small font-semibold">Evidence file</span><OpenCopy url={url} name="evidence file" /><span className="text-small text-muted">Opening it is written to the audit log.</span></div>;
+
 /** One report: what was said, the file, and the three steps (hide the job, clear, uphold which opens a case). The reporter is named here to staff only, never in a list or a notice. */
 export function ReportPanel({ r, label, here, now }: { r: ReportItem; label: string; here: string; now: Date }) {
   const live = r.status === "open" || r.status === "job_hidden";
@@ -66,7 +70,7 @@ export function ReportPanel({ r, label, here, now }: { r: ReportItem; label: str
       <p className="text-small text-muted">{who ? `Reported by ${who}. The reporter is shown on this page only, until the report is closed.` : "The reporter was cleared when the report closed."}</p>
       {r.evidenceText ? <Text title="Evidence">{r.evidenceText}</Text> : <p className="text-small text-muted">No evidence text.</p>}
       {r.evidenceFile
-        ? <p><a href={`/api/trust-safety/evidence?reportId=${r.id}`} target="_blank" rel="noopener" className="font-semibold text-deep-green underline">Open the evidence file</a> <span className="text-small text-muted">(opening it is written to the audit log)</span></p>
+        ? <FileLine url={`/api/trust-safety/evidence?reportId=${r.id}`} />
         : live && <Evidence query={`reportId=${r.id}`} here={here} />}
       <ul className="divide-y divide-line border-y border-line">
         <CheckRow ok title="Report opened">{when(r.createdText)}</CheckRow>
@@ -118,7 +122,7 @@ export function CasePanel({ c, label, reportLabel, meId, here, now }: { c: CaseI
       {c.appealText && <Text title={`The appeal${c.appealedAt ? `, received ${when(iso(c.appealedAt))}` : ""}`}>{c.appealText}</Text>}
       {c.wrcReported && <Notice kind="success">Reported to the WRC.</Notice>}
       {c.evidenceFile
-        ? <p><a href={`/api/trust-safety/evidence?caseId=${c.id}`} target="_blank" rel="noopener" className="font-semibold text-deep-green underline">Open the evidence file</a> <span className="text-small text-muted">(opening it is written to the audit log)</span></p>
+        ? <FileLine url={`/api/trust-safety/evidence?caseId=${c.id}`} />
         : (open || appealWaits || appealOpen) && <Evidence query={`caseId=${c.id}`} here={here} />}
 
       {waiting && (

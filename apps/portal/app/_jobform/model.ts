@@ -41,6 +41,8 @@ export function money(v: string): number | null | undefined {
 }
 /** The 4 digits at the start of what was typed in the occupation field ("2231" or "2231 Nurses"), or "". */
 export const socOf = (v: string) => /^([1-9][0-9]{3})(?:\D|$)/.exec(v.trim())?.[1] ?? "";
+/** The form with another occupation: an exception tick belongs to the role it was given for, so a change of code clears it. */
+export const withOccupation = (f: Form, v: string): Form => ({ ...f, occupation: v, exception: f.exception && socOf(v) === socOf(f.occupation) });
 const https = (v: string) => { try { const u = new URL(v.trim()); return u.protocol === "https:" && !u.username && !u.password && u.hostname.includes(".") && v.trim().length >= 10 && v.trim().length <= 500; } catch { return false; } };
 
 export type Ctx = { agency: boolean; tier: number };

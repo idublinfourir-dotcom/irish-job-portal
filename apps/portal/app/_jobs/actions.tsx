@@ -19,7 +19,7 @@ export function CloseView({ title, draft, canRenew, hire, onHire, error, pending
 }) {
   return (
     <div className="flex flex-col gap-4" aria-busy={pending || undefined}>
-      <p>{draft ? "This draft was never shown to anyone. Closing it removes it from your list." : "The job leaves search within 24 hours. Candidates who saved it or clicked to apply see \"This job has closed\"."}</p>
+      <p>{draft ? "This draft was never shown to anyone. Closing it removes it from your list." : !canRenew ? "This job is not in search now. A closed job cannot be opened again." : "The job leaves search within 24 hours. Candidates who saved it or clicked to apply see \"This job has closed\"."}</p>
       {!draft && (
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-2 font-semibold">Did you hire someone through us?</legend>
@@ -30,7 +30,7 @@ export function CloseView({ title, draft, canRenew, hire, onHire, error, pending
       )}
       {error && <Notice kind="error">{error}</Notice>}
       <div className="flex flex-wrap items-center justify-end gap-3">
-        <Button variant="filter-on" onClick={onKeep}>Keep it live</Button>
+        <Button variant="filter-on" onClick={onKeep}>{canRenew ? "Keep it live" : "Keep it"}</Button>
         {canRenew && <Button variant="outline" onClick={onRenew}>Renew for 30 days instead</Button>}
         <Button variant="dark" onClick={onClose} disabled={pending || (!draft && !hire)}>{pending ? "Closing" : "Close job"}</Button>
       </div>

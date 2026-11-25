@@ -2,14 +2,15 @@
 import type { AuthorityDocument, JobQueueItem } from "@portal/db";
 import { A, EmptyState, Notice, Pager, Pill, Tabs, cx } from "@portal/ui";
 import { Act } from "../_queue/act";
-import { when } from "../_queue/age";
+import { ageText, when } from "../_queue/age";
+import { OpenCopy } from "../_queue/open-copy";
 import { Head } from "../_queue/page-head";
 import { approveText, bytes, dayOf, queueLabel, QUEUE_NOTE, REJECT_REASONS, rejectText, salaryText, type Queue, QUEUES } from "./text";
 
 export type Detail = JobQueueItem & { advertText: string | null };
 export const href = (queue: Queue, id?: string, after?: string) => `/employer-jobs?${new URLSearchParams({ queue, ...(id ? { id } : {}), ...(after ? { after } : {}) })}`;
 
-export function List({ queue, items, selected, meId, next, prev }: { queue: Queue; items: JobQueueItem[]; selected?: string; meId: string; next?: string; prev?: string }) {
+export function List({ queue, items, selected, meId, now, next, prev }: { queue: Queue; items: JobQueueItem[]; selected?: string; meId: string; now: Date; next?: string; prev?: string }) {
   if (items.length === 0) return <EmptyState icon="briefcase" title="Nothing is held here">{QUEUE_NOTE[queue]}</EmptyState>;
   return (
     <div className="flex flex-col gap-3">
@@ -18,8 +19,9 @@ export function List({ queue, items, selected, meId, next, prev }: { queue: Queu
           <li key={i.id} className={cx("border-b border-line last:border-b-0", i.id === selected ? "bg-lilac" : "odd:bg-sand/60")}>
             <A href={href(queue, i.id)} aria-current={i.id === selected ? "true" : undefined} className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-3 no-underline">
               <span className="font-semibold [overflow-wrap:anywhere]">{i.title}</span>
+              <span className="text-right text-small" title="How long it has waited">{ageText(new Date(i.createdAt).toISOString(), now)}</span>
+              <span className="text-small text-muted [overflow-wrap:anywhere]">{i.company}</span>
               <span className="text-right">{i.status === "claimed" && <Pill tone="lilac" className="min-h-[30px] px-3 text-small">{i.claimedBy === meId ? "Yours" : "Claimed"}</Pill>}</span>
-              <span className="col-span-2 text-small text-muted [overflow-wrap:anywhere]">{i.company}</span>
             </A>
           </li>
         ))}
@@ -39,18 +41,18 @@ export function Authority({ jobId, documents }: { jobId: string; documents: Auth
             <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-small">
               <span className="[overflow-wrap:anywhere]">{d.fileName ?? "Unnamed file"} · {bytes(d.sizeBytes)} · stored {when(d.uploadedAt)}</span>
               {d.copyDeleted ? <span className="text-muted">The copy was deleted</span> : (
-                <A href={`/api/employer-jobs/authority?${new URLSearchParams({ jobId, docId: d.id })}`} target="_blank" rel="noopener noreferrer" className="font-semibold text-deep-green underline">Open the copy</A>
+                <OpenCopy url={`/api/employer-jobs/authority?${new URLSearchParams({ jobId, docId: d.id })}`} name={d.fileName ?? "unnamed file"} />
               )}
             </li>
           ))}
         </ul>
       )}
-      <p className="text-small text-muted">Opening a copy is written to the audit log. If the link shows scan_pending the copy is still being checked, and file_blocked means the check found a problem.</p>
+      <p className="text-small text-muted">Opening a copy is written to the audit log.</p>
     </section>
   );
 }
 
-export function DetailCard({ item, meId, documents, canOpenCompany, listHref }: { item: Detail; meId: string; documents: AuthorityDocument[] | null; canOpenCompany: boolean; listHref: string }) {
+export function DetailCard({ item, meId, documents, canOpenCompany, listHref, now }: { item: Detail; meId: string; documents: AuthorityDocument[] | null; canOpenCompany: boolean; listHref: string; now: Date }) {
   const mine = item.claimedBy === meId;
   const here = href(item.queue, item.id);
   const url = "/api/employer-jobs";
@@ -66,6 +68,7 @@ export function DetailCard({ item, meId, documents, canOpenCompany, listHref }: 
       {item.restricted && <Notice kind="warning">This company is under a strike restriction now.</Notice>}
       {item.reason && <p className="text-small [overflow-wrap:anywhere]">Held because: {item.reason.replaceAll("_", " ")}</p>}
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-small">
+        <dt className="text-muted">Waiting</dt><dd>{ageText(new Date(item.createdAt).toISOString(), now)}</dd>
         <dt className="text-muted">Employer</dt><dd className="[overflow-wrap:anywhere]">{item.employerName}</dd>
         <dt className="text-muted">Place</dt><dd>{item.county ?? "Not stated"}</dd>
         <dt className="text-muted">Occupation code</dt><dd>{item.occupationCode ?? "Not stated"}</dd>
@@ -100,8 +103,8 @@ export function DetailCard({ item, meId, documents, canOpenCompany, listHref }: 
   );
 }
 
-export function EmployerJobs({ queues, queue, items, selected, missingId, meId, documents, canOpenCompany, next, prev }: {
-  queues: Queue[]; queue: Queue; items: JobQueueItem[]; selected: Detail | null; missingId?: boolean; meId: string; documents: AuthorityDocument[] | null; canOpenCompany: boolean; next?: string; prev?: string;
+export function EmployerJobs({ queues, queue, items, selected, missingId, meId, documents, canOpenCompany, now, next, prev }: {
+  queues: Queue[]; queue: Queue; items: JobQueueItem[]; selected: Detail | null; missingId?: boolean; meId: string; documents: AuthorityDocument[] | null; canOpenCompany: boolean; now: Date; next?: string; prev?: string;
 }) {
   return (
     <div className="flex flex-col gap-6">
@@ -109,8 +112,8 @@ export function EmployerJobs({ queues, queue, items, selected, missingId, meId, 
       <Tabs label="Held job queues" items={QUEUES.filter(([k]) => queues.includes(k)).map(([k, label]) => ({ label, href: href(k), active: k === queue }))} />
       {missingId && <Notice kind="warning">That item is not in a queue you can open. Pick one from the list.</Notice>}
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_30rem]">
-        <List queue={queue} items={items} selected={selected?.id} meId={meId} next={next} prev={prev} />
-        {selected && <DetailCard item={selected} meId={meId} documents={documents} canOpenCompany={canOpenCompany} listHref={href(queue)} />}
+        <List queue={queue} items={items} selected={selected?.id} meId={meId} now={now} next={next} prev={prev} />
+        {selected && <DetailCard item={selected} meId={meId} documents={documents} canOpenCompany={canOpenCompany} listHref={href(queue)} now={now} />}
       </div>
     </div>
   );

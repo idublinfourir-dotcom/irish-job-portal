@@ -2,14 +2,14 @@
 // (trust and safety, administrator, read only), with Close for one's own live post and the two-person "Sponsor confirmed" step: the account reviewer uploads the employer's written
 // confirmation, a different administrator confirms or refuses it, and the proposer can only withdraw (the route refuses the same person confirming).
 import type { ManualRow } from "@portal/db";
-import type { SponsorPending } from "@portal/db/staff-uploads";
 import { A, CriticalSkillsBadge, Notice, Pill, SponsorBadge } from "@portal/ui";
 import { when } from "../_queue/age";
+import { OpenCopy } from "../_queue/open-copy";
 import { Head } from "../_queue/page-head";
 import { PostButton } from "../_queue/post-button";
 import { adminWords } from "../_queue/words-adm";
 import { ManualForm, SponsorUpload, type Occ } from "./form";
-import { statusLabel } from "./text";
+import { statusLabel, type SponsorPending } from "./text";
 
 export type Who = { id: string; roles: string[] };
 const BACK = "/manual-posting";
@@ -23,7 +23,8 @@ export function Sponsor({ row, pending, who }: { row: ManualRow; pending: Sponso
   const mine = pending.proposedBy === who.id;
   return (
     <div className="flex flex-col gap-2 rounded-card bg-lilac-soft p-3">
-      <p className="text-small"><span className="font-semibold">Sponsor confirmed waits for a different administrator.</span> Uploaded by {mine ? "you" : (pending.proposedByName ?? "a person")}: <A href={`${FILE}?requestId=${encodeURIComponent(pending.requestId)}`} className="underline [overflow-wrap:anywhere]">{pending.fileName}</A></p>
+      <p className="text-small"><span className="font-semibold">Sponsor confirmed waits for a different administrator.</span> Uploaded by {mine ? "you" : (pending.proposedByName ?? "a person")}: <span className="[overflow-wrap:anywhere]">{pending.fileName}</span></p>
+      <OpenCopy url={`${FILE}?requestId=${encodeURIComponent(pending.requestId)}`} name={pending.fileName} />
       {mine && <p className="text-small">You cannot confirm your own upload. You can withdraw it.</p>}
       <div className="flex flex-wrap gap-2">
         {admin && !mine && <PostButton url={FILE} body={{ action: "confirm", requestId: pending.requestId }} label="Confirm" back={BACK} confirm={{ title: "Confirm Sponsor confirmed?", text: `The post "${row.title}" shows Sponsor confirmed at once, on the employer's written confirmation.`, button: "Confirm" }} />}

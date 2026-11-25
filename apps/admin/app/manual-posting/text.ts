@@ -4,6 +4,9 @@ import { adminWords } from "../_queue/words-adm";
 
 export const COUNTIES = ["Carlow", "Cavan", "Clare", "Cork", "Donegal", "Dublin", "Galway", "Kerry", "Kildare", "Kilkenny", "Laois", "Leitrim", "Limerick", "Longford", "Louth", "Mayo", "Meath", "Monaghan", "Offaly", "Roscommon", "Sligo", "Tipperary", "Waterford", "Westmeath", "Wexford", "Wicklow"] as const;
 
+/** A "Sponsor confirmed" upload waiting on a post: the fields of the read (readSponsorConfirmations) the page shows. */
+export type SponsorPending = { requestId: string; jobId: string; fileName: string; proposedBy: string; proposedByName: string | null };
+
 export type Built = { ok: true; body: Record<string, unknown> } | { ok: false; error: string };
 const s = (f: FormData, k: string): string => String(f.get(k) ?? "").trim();
 const whole = (f: FormData, k: string): number | null | "bad" => (s(f, k) === "" ? null : /^\d{1,7}$/.test(s(f, k)) ? Number(s(f, k)) : "bad");

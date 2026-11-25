@@ -34,7 +34,7 @@ export function CompanyView({ c, isOwner, logoSrc, publicHref, members, invites 
       {isOwner && !canEdit && <Notice kind="warning" title="The profile cannot be changed now">This company is not open for changes. Open Account status to see where it stands.</Notice>}
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="flex flex-col gap-6">
-          <ProfileForm p={{ name: c.name, description: c.description, website: c.website, county: c.county, descriptionMax: c.descriptionMax, logoSrc }} canEdit={canEdit} />
+          <ProfileForm p={{ isOwner, name: c.name, description: c.description, website: c.website, county: c.county, descriptionMax: c.descriptionMax, logoSrc }} canEdit={canEdit} />
           <section aria-labelledby="records-h" className="rounded-bento bg-sand p-6 sm:p-8">
             <div className="flex flex-wrap items-baseline gap-x-3"><h2 id="records-h" className="text-[22px]">From the records</h2><p className="text-small text-muted">You cannot edit these</p></div>
             <dl className="mt-4">

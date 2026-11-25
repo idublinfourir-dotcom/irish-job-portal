@@ -44,7 +44,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Par
   const { me, queues, queue, list, selected, missingId, documents } = r.value;
   return (
     <EmployerJobs
-      queues={queues} queue={queue} items={list.items} selected={selected} missingId={missingId} meId={me.id} documents={documents} canOpenCompany={mayOpenCompany(me.roles)}
+      queues={queues} queue={queue} items={list.items} selected={selected} missingId={missingId} meId={me.id} documents={documents} canOpenCompany={mayOpenCompany(me.roles)} now={new Date()}
       next={list.next ? href(queue, undefined, list.next) : undefined} prev={after ? href(queue) : undefined}
     />
   );

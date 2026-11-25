@@ -1,6 +1,6 @@
 "use client";
 // The rules data forms (frames ND3, D05, D06): each proposes a whole new version of one kind to POST /api/rules (docs/openapi/admin.yaml). Nothing changes until a different
-// administrator confirms it; the route checks the role (rules data editor), the Origin, a sign-in from the last 10 minutes and every value again. The forms take no value from the
+// administrator confirms it; the route checks the role (rules data editor), the Origin and every value again. The forms take no value from the
 // page but what the page read: the version in force is the starting point and only what the editor changes is changed. The views take their state as props so a test renders them.
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
@@ -8,6 +8,7 @@ import type { BigName, Minimums, Occupation, PayDealEntry, PayDealList, PayScale
 import { A, Button, Checkbox, Dialog, Input, Notice, Select, Textarea } from "@portal/ui";
 import { Failure } from "../_queue/failure";
 import { postJson } from "../_queue/post";
+import { adminWords } from "../_queue/words-adm";
 import { bigEntry, employerKey, minimumsData, occupationEntry, payDealEntry, scaleEntry, withEntry, without, type Built } from "./build";
 import { BODY_LABEL, dayText, EVIDENCE_LABEL, KIND_LABEL, MIN_FIELD, TEST_LABEL } from "./text";
 
@@ -39,11 +40,13 @@ export function Outcome({ failed, sent, local, back }: { failed: Failed; sent: b
   );
 }
 
-export const DayField = ({ today }: { today: string }) => <Input label="Starts on" name="effectiveFrom" type="date" min={today} defaultValue={today} required help="Today or a later day." />;
+/** `last`: the last day allowed, when a confirmed version of this kind starts the day after (lastDay). */
+const dayHelp = (today: string, last?: string) => (last ? `Up to ${dayText(last)}: a confirmed version starts the day after.` : `${dayText(today)} or a later day.`);
+export const DayField = ({ today, last }: { today: string; last?: string }) => <Input label="Starts on" name="effectiveFrom" type="date" min={today} max={last} defaultValue={today} required help={dayHelp(today, last)} />;
 
 /** A button that opens a dialog with a form; the form's own fields come as children and `build` makes the version from them. */
-export function ProposeDialog({ label, title, today, back, variant = "primary", children, build, kind }: {
-  label: string; title: string; today: string; back: string; variant?: "primary" | "chip" | "dark"; children: ReactNode; kind: string; build: (f: FormData) => Built<unknown>;
+export function ProposeDialog({ label, title, today, last, back, variant = "primary", children, build, kind }: {
+  label: string; title: string; today: string; last?: string; back: string; variant?: "primary" | "chip" | "dark"; children: ReactNode; kind: string; build: (f: FormData) => Built<unknown>;
 }) {
   const p = useProposal();
   const [open, setOpen] = useState(false), [local, setLocal] = useState<string | null>(null);
@@ -63,7 +66,7 @@ export function ProposeDialog({ label, title, today, back, variant = "primary", 
         ) : (
           <form onSubmit={(e) => void onSubmit(e)} className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto">
             {children}
-            <DayField today={today} />
+            <DayField today={today} last={last} />
             <Outcome failed={p.failed} sent={false} local={local} back={back} />
             <div className="flex gap-2">
               <Button type="submit" disabled={p.pending}>{p.pending ? "Sending" : "Propose this change"}</Button>
@@ -93,9 +96,9 @@ export function MinimumsFields({ m }: { m: Minimums }) {
     </>
   );
 }
-export function MinimumsEditor({ m, today, label = "Add a future value" }: { m: Minimums; today: string; label?: string }) {
+export function MinimumsEditor({ m, today, last, label = "Add a future value" }: { m: Minimums; today: string; last?: string; label?: string }) {
   return (
-    <ProposeDialog label={label} title="New salary minimums" kind="minimums" today={today} back="/rules" build={minimumsData}>
+    <ProposeDialog label={label} title="New salary minimums" kind="minimums" today={today} last={last} back="/rules" build={minimumsData}>
       <MinimumsFields m={m} />
     </ProposeDialog>
   );
@@ -158,9 +161,9 @@ function buildEntry(kind: ListKind, f: FormData, rows: Row[], at: number | null)
 }
 const WORD: Record<ListKind, string> = { critical_skills_list: "occupation", ineligible_list: "occupation", pay_scales: "grade", big_company_names: "brand" };
 
-export type ListEditorProps = { kind: ListKind; rows: Row[]; today: string; canEdit: boolean; back: string };
+export type ListEditorProps = { kind: ListKind; rows: Row[]; today: string; last?: string; canEdit: boolean; back: string };
 /** A list with its Add, Edit and Remove: each one proposes the whole list with that one change, as the list was read. */
-export function ListEditor({ kind, rows, today, canEdit, back }: ListEditorProps) {
+export function ListEditor({ kind, rows, today, last, canEdit, back }: ListEditorProps) {
   const p = useProposal();
   const [at, setAt] = useState<number | null | "none">("none"), [removing, setRemoving] = useState<number | null>(null), [local, setLocal] = useState<string | null>(null);
   const [day, setDay] = useState(today);
@@ -209,7 +212,7 @@ export function ListEditor({ kind, rows, today, canEdit, back }: ListEditorProps
         ) : (
           <form onSubmit={(e) => void save(e)} className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto">
             <EntryFields kind={kind} row={at === "none" || at === null ? null : rows[at]!} />
-            <DayField today={today} />
+            <DayField today={today} last={last} />
             <Outcome failed={p.failed} sent={false} local={local} back={back} />
             <div className="flex gap-2"><Button type="submit" disabled={p.pending}>{p.pending ? "Sending" : "Propose this change"}</Button><Button type="button" variant="outline" onClick={() => setAt("none")}>Cancel</Button></div>
           </form>
@@ -221,9 +224,9 @@ export function ListEditor({ kind, rows, today, canEdit, back }: ListEditorProps
         ) : (
           <div className="flex flex-col gap-4">
             <p className="[overflow-wrap:anywhere]">{removing === null ? "" : String(cells(kind, rows[removing]!)[0])} is taken off the list from the day below, once a different administrator confirms.</p>
-            <Input label="Starts on" name="effectiveFrom" type="date" min={today} value={day} onChange={(e) => setDay(e.target.value)} required />
+            <Input label="Starts on" name="effectiveFrom" type="date" min={today} max={last} value={day} onChange={(e) => setDay(e.target.value)} required help={dayHelp(today, last)} />
             <Outcome failed={p.failed} sent={false} back={back} />
-            <div className="flex gap-2"><Button type="button" variant="danger" disabled={p.pending} onClick={() => void remove()}>Propose removing it</Button><Button type="button" variant="outline" onClick={() => setRemoving(null)}>Cancel</Button></div>
+            <div className="flex gap-2"><Button type="button" variant="danger" disabled={p.pending || day < today || (last !== undefined && day > last)} onClick={() => void remove()}>Propose removing it</Button><Button type="button" variant="outline" onClick={() => setRemoving(null)}>Cancel</Button></div>
           </div>
         )}
       </Dialog>
@@ -279,7 +282,7 @@ export function PayDealFields({ name, e }: { name: string | null; e: PayDealEntr
 }
 
 /** Add an employer, or save the selected one: the whole list goes up with that one entry changed. */
-export function PayDealForm({ data, selected, today, back }: { data: PayDealList; selected: string | null; today: string; back: string }) {
+export function PayDealForm({ data, selected, today, last, back }: { data: PayDealList; selected: string | null; today: string; last?: string; back: string }) {
   const p = useProposal();
   const [local, setLocal] = useState<string | null>(null), [open, setOpen] = useState(false), [busy, setBusy] = useState(false);
   const existing = selected === null ? null : (data[selected] ?? null);
@@ -293,7 +296,7 @@ export function PayDealForm({ data, selected, today, back }: { data: PayDealList
     const picked = f.get("evidenceFile");
     if (picked instanceof File && picked.size > 0) {
       const u = await uploadEvidence(picked);
-      if (!u.ok) { setBusy(false); return setLocal(`The file did not upload (${u.code || "no answer"}). Nothing was proposed.`); }
+      if (!u.ok) { setBusy(false); return setLocal(`${adminWords(u.code, u.status)} Nothing was proposed.`); }
       file = u.file;
     }
     setBusy(false);
@@ -304,7 +307,7 @@ export function PayDealForm({ data, selected, today, back }: { data: PayDealList
   const form = (
     <form onSubmit={(e) => void onSubmit(e)} className="flex flex-col gap-4">
       <PayDealFields name={selected} e={existing} />
-      <DayField today={today} />
+      <DayField today={today} last={last} />
       <Outcome failed={p.failed} sent={p.sent} local={local} back={back} />
       <div className="flex gap-2"><Button type="submit" disabled={p.pending || busy}>{busy || p.pending ? "Sending" : selected === null ? "Propose adding it" : "Save"}</Button></div>
     </form>

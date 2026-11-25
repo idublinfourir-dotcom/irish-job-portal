@@ -1,6 +1,6 @@
 // P18: the words and the presentational parts of the dashboard, jobs list, close and renew, report, notices and pay floors, rendered to HTML (react-dom/server) with fixture
 // props for every state. No database, no network. Every refusal code of every route these pages call is read from docs/openapi/portal.yaml and must have a plain sentence.
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup as html } from "react-dom/server";
 import { parse } from "yaml";
@@ -67,6 +67,15 @@ describe("words", () => {
   });
   it("unknown notice keys read as a general notice and known ones have words", () => {
     expect(noticeWord("zzz")[0]).toBe("You have a notice");
+    // every notice the code writes for a portal login has its own words (the keys are read from the migrations and packages/db; the decision, floor and second-row keys are made from codes)
+    const dir = (d: string) => readdirSync(new URL(d, import.meta.url)).filter((f) => /\.(sql|ts)$/.test(f) && !f.includes(".test.")).map((f) => readFileSync(new URL(d + f, import.meta.url), "utf8")).join("\n");
+    const code = (dir("../../../../packages/db/migrations/") + dir("../../../../packages/db/src/")).replace(/"\s*\+\s*"/g, "");
+    const keys = new Set([...code.matchAll(/into notification\s*\([^)]*portal_user_id[^)]*\)([\s\S]{0,300}?)'(?:account|rules|services_case)',\s*'([a-z_]+)'/g)].map((m) => m[2]!));
+    for (const k of ["account_approved", "account_needs_info", "account_rejected", "pay_floor_approved", "pay_floor_rejected", "owner_reassign_done"]) keys.add(k);
+    expect(keys.size).toBeGreaterThanOrEqual(17);
+    expect([...keys].filter((k) => noticeWord(k)[0] === "You have a notice")).toEqual([]);
+    expect(noticeWord("team_removed")[0]).toMatch(/^You were removed/); // the removed person gets it, not the team
+    expect(noticeWord("report_outcome").join(" ")).not.toMatch(/Account status/); // the reporter gets it; that page never shows a report
     for (const k of ["job_hidden", "strike", "pay_floor_approved", "account_approved", "job_expiry_reminder"]) { expect(noticeWord(k)[0]).not.toBe("You have a notice"); clean(noticeWord(k).join(" ")); }
   });
 });
@@ -171,6 +180,8 @@ describe("close, renew, report", () => {
     expect(live).toMatch(/disabled=""[^>]*>Close job|>Close job<\/button>/); expect(live).toContain("Renew for 30 days instead");
     const draft = html(<CloseView title="Fake" draft canRenew={false} />);
     expect(draft).not.toContain("Did you hire"); expect(draft).not.toContain("Renew for 30 days instead");
+    const held = html(<CloseView title="Fake" draft={false} canRenew={false} />); // under review or in review: not in search, and not live to keep
+    expect(held).not.toContain("Keep it live"); expect(held).not.toContain("leaves search"); expect(held).toContain("not in search now");
     expect(html(<CloseView title="Fake" draft={false} canRenew={false} error={closeMessage({ status: 409, code: "BAD_STATE" })} />)).toContain("cannot be closed in its current state");
   });
   it("renew: held with a code, and the exception tick (BA36)", () => {
