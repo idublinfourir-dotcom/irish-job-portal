@@ -106,7 +106,7 @@ const fx = {
   now: NOW, role: "account_owner", jobs: STATES, stats: [{ jobId: "1", day: "2026-11-24", views: 40, applyClicks: 4 }, { jobId: "1", day: "2026-11-20", views: 10, applyClicks: 1 }],
   status: { status: "verified", strikesLast12Months: 1, restrictedUntil: null, cases: [{ canReply: true, canAppeal: false }] },
   team: { myMembershipId: "1", members: [{ membershipId: "1", name: "Fake Person", email: "a@example.test", role: "account_owner", isSigner: true }, { membershipId: "2", name: null, email: "b@example.test", role: "viewer", isSigner: false }] },
-  teamOk: true, agency: [{ id: "77", title: "Fake Agency Job", agencyName: "Fake Recruit Ltd", status: "live", postedAt: "2026-11-18T09:30:00Z" }],
+  teamOk: true, agency: [{ id: "77", title: "Fake Agency Job", agencyId: "88", agencyName: "Fake Recruit Ltd", status: "live", postedAt: "2026-11-18T09:30:00Z" }],
 };
 describe("dashboard view", () => {
   it("owner: tiles, an ending job, real role names, agency list with both buttons, no Hire recorded or Applied", () => {

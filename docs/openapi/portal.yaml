@@ -1753,15 +1753,16 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [id, title, agencyName, status, postedAt]
+                      required: [id, title, agencyId, agencyName, status, postedAt]
                       properties:
                         id: { $ref: '#/components/schemas/Id' }
                         title: { type: string }
+                        agencyId: { $ref: '#/components/schemas/Id', description: "The agency's company id, for a report of the agency (POST /api/portal/report `companyId`)." }
                         agencyName: { type: string }
                         status: { type: string, enum: [live, under_review] }
                         postedAt: { $ref: '#/components/schemas/Timestamp' }
                   next: { oneOf: [{ $ref: '#/components/schemas/Cursor' }, { type: 'null' }] }
-              example: { jobs: [{ id: '5501', title: Staff Nurse, agencyName: Fake Recruit Ltd, status: live, postedAt: '2026-11-18T09:30:00.000Z' }], next: null }
+              example: { jobs: [{ id: '5501', title: Staff Nurse, agencyId: '88', agencyName: Fake Recruit Ltd, status: live, postedAt: '2026-11-18T09:30:00.000Z' }], next: null }
         '400': { description: "`BAD_REQUEST`: a bad `after` token or an unknown or repeated query key.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }

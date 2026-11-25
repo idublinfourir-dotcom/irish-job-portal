@@ -1,5 +1,5 @@
 // Frame NE2: the employer dashboard. Presentational: every value arrives as a prop from a read, so a test renders every state. The frame's applicant card, the
-// "New applicants" tile and the "Hire recorded" tile are Launch B or dropped (#287, L56); the third tile is "Apply clicks" (CF70). Photos are left out (frame NS6).
+// "New applicants" tile and the "Hire recorded" tile are later or dropped (#287, L56); the third tile is "Apply clicks" (CF70). Photos are left out (frame NS6).
 import type { ReactNode } from "react";
 import { A, Button, EmptyState, Icon, Notice, Pill } from "@portal/ui";
 import { JobActions, NotRecognisedButton, ReportButton } from "../_jobs/actions";
@@ -9,7 +9,7 @@ import { dateWord, daysLeft, daysWord, EXPIRING_DAYS, greeting, jobState, roleWo
 
 export type StatusPage = { status: string; strikesLast12Months: number; restrictedUntil: string | null; cases: { canReply: boolean; canAppeal: boolean }[] };
 export type Team = { myMembershipId: string; members: { membershipId: string; name: string | null; email: string; role: string; isSigner: boolean }[] };
-export type AgencyJob = { id: string; title: string; agencyName: string; status: string; postedAt: string };
+export type AgencyJob = { id: string; title: string; agencyId: string; agencyName: string; status: string; postedAt: string };
 
 const COMPANY_WORD: Record<string, string> = {
   verified: "Verified", verified_restricted: "Restricted", pending_review: "In review", needs_info: "Needs more information", suspended: "Suspended", closed: "Closed", rejected: "Not approved", banned: "Not active",
@@ -116,7 +116,7 @@ export function DashboardView({ now, role, jobs, stats, status, team, teamOk, ag
               {agency.map((a) => (
                 <li key={a.id} data-agency-job={a.id} className="flex flex-wrap items-center justify-between gap-3 rounded-card bg-sand p-4">
                   <span><span className="block font-semibold">{a.title}</span><span className="text-small text-muted">{a.agencyName} · {a.status === "live" ? "Live" : "Under review"} · posted {dateWord(a.postedAt)}</span></span>
-                  <span className="flex flex-wrap gap-2"><ReportButton kind="job" id={a.id} />{owner && <NotRecognisedButton id={a.id} />}</span>
+                  <span className="flex flex-wrap gap-2"><ReportButton kind="job" id={a.id} /><ReportButton kind="company" id={a.agencyId} label="Report the agency" />{owner && <NotRecognisedButton id={a.id} />}</span>
                 </li>
               ))}
             </ul>

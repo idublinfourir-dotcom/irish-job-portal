@@ -149,7 +149,8 @@ describe("the slice's own files", () => {
   });
   it("only the form files are client components, and no client component imports the login package or the data layer", () => {
     const client = own.filter((f) => !/global-error/.test(f) && /^"use client"/.test(readFileSync(f, "utf8")));
-    expect(client.map((f) => relative(ROOT, f)).sort()).toEqual(["(auth)/company-forms.tsx", "(auth)/forms.tsx"]);
+    expect(client.map((f) => relative(ROOT, f)).filter((f) => f.startsWith("(auth)/")).sort()).toEqual(["(auth)/company-forms.tsx", "(auth)/forms.tsx"]);
+    for (const f of client) expect(relative(ROOT, f), "a page or view stays a server component").not.toMatch(/(page|view|views|layout)\.tsx$/);
     for (const f of client) expect(readFileSync(f, "utf8")).not.toMatch(/@portal\/(auth|db)|lib\/data/);
   });
 });

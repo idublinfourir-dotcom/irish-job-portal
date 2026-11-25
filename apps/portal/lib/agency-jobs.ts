@@ -8,13 +8,13 @@ export const AGENCY_PAGE = 20;
 // Newest first on job_client_name_idx: at most a page per name of the company (a company has a few names), then the newest page of those.
 // The agency is any other company.
 export const AGENCY_JOBS =
-  "select j.id, j.title, j.status, j.posted_text, o.display_name as agency_name from organisation_name n cross join lateral (" +
+  "select j.id, j.title, j.status, j.posted_text, o.id::text as agency_id, o.display_name as agency_name from organisation_name n cross join lateral (" +
   "select j.id, j.title, j.status, j.posted_at, j.posted_at::text as posted_text, j.organisation_id from job j where j.permit_employer_name_id = n.id " +
   "and j.source = 'agency' and j.permit_employer_kind = 'client' and j.status in ('live','under_review') and j.organisation_id <> $1 " +
   `and ($2::timestamptz is null or (j.posted_at, j.id) < ($2::timestamptz, $3::bigint)) order by j.posted_at desc, j.id desc limit ${AGENCY_PAGE + 1}) j ` +
   `join organisation o on o.id = j.organisation_id where n.organisation_id = $1 order by j.posted_at desc, j.id desc limit ${AGENCY_PAGE + 1}`;
 
-type Row = { id: string; title: string; status: string; posted_text: string; agency_name: string };
+type Row = { id: string; title: string; status: string; posted_text: string; agency_id: string; agency_name: string };
 const encode = (r: Row) => Buffer.from(JSON.stringify({ t: r.posted_text, i: r.id })).toString("base64url");
 
 /** The query of the list: no parameter, or `after` (a token from the last page). Null for anything else. Pure. */
@@ -38,7 +38,7 @@ export async function agencyJobs(request: Request): Promise<Response> {
   const all = (await getPool().query<Row>(AGENCY_JOBS, [login.membership.organisationId, ...(q.after ?? [null, null])])).rows;
   const rows = all.slice(0, AGENCY_PAGE);
   return ok({
-    jobs: rows.map((r) => ({ id: r.id, title: r.title, agencyName: r.agency_name, status: r.status, postedAt: r.posted_text })),
+    jobs: rows.map((r) => ({ id: r.id, title: r.title, agencyId: r.agency_id, agencyName: r.agency_name, status: r.status, postedAt: r.posted_text })),
     next: all.length > AGENCY_PAGE ? encode(rows.at(-1)!) : null,
   });
 }

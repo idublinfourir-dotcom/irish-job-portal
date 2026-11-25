@@ -124,7 +124,7 @@ describe("the list", () => {
       expect(r.status).toBe(200);
       expect(r.json.jobs.map((j: { id: string }) => j.id)).toEqual([...mine].reverse());
       expect(r.json.jobs[0]).toMatchObject({ agencyName: "Fake Recruit", status: "live" });
-      expect(Object.keys(r.json.jobs[0]).sort()).toEqual(["agencyName", "id", "postedAt", "status", "title"]);
+      expect(Object.keys(r.json.jobs[0]).sort()).toEqual(["agencyId", "agencyName", "id", "postedAt", "status", "title"]);
       expect(r.json.next).toBeNull();
       expect(replyProblems(loadSpec("portal"), "GET", "/api/portal/agency-jobs", r.status, r.json)).toEqual([]);
     }
