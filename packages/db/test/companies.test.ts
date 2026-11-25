@@ -475,10 +475,11 @@ describe("performance", () => {
     try {
       const costs = await measurePages(client, [{ text: MANUAL_LIST_FIRST, values: [null] }, { text: MANUAL_LIST_AFTER, values: [null, "999999999"] }, OWNER_LIST_FIRST, { text: MERGE_PREVIEW, values: [[String(o), String(t.o)]] }]);
       // Measured 13 November 2026 with 4,025 jobs in one company and 25 manual posts: 52, 52, 15 and 182 pages (about 3 times each for the limits).
+      // 25 November 2026, after B72 (more fields a post): 128, 128, 47 and 187 alone, the list up to 152 beside the whole suite (planning reads more of the catalogue), so its limit is 200.
       // The manual list reads the partial index job_manual_idx, not the job table; the preview counts one company's jobs by job_organisation_idx, so it grows with that company.
       const [list, after, owners, preview] = costs as [typeof costs[0], typeof costs[0], typeof costs[0], typeof costs[0]];
-      assertPageBudget("manual list, first page", [list], 150);
-      assertPageBudget("manual list, a later page", [after], 150);
+      assertPageBudget("manual list, first page", [list], 200);
+      assertPageBudget("manual list, a later page", [after], 200);
       assertPageBudget("owner requests, first page", [owners], 60);
       assertPageBudget("merge preview of a company with 4,025 jobs", [preview], 450);
       expect(costs[0]!.scans).toContain("job_manual_idx");
