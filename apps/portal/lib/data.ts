@@ -14,7 +14,7 @@ import { companySearch, portalLogin } from "./company";
 import { freeEmail } from "./free-email";
 import { jobGet, jobList } from "./jobs";
 import { portalLegalRead } from "./legal";
-import { noticesGet } from "./notices";
+import { noticesGet, settingsGet } from "./notices";
 import { portalOrigin } from "./portal";
 import { profileGet } from "./profile";
 import { statusGet } from "./status";
@@ -42,6 +42,7 @@ export const readTeam = read(teamGet, "/api/portal/team");
 export const readStatus = read(statusGet, "/api/portal/status");
 export const readCases = read(caseList, "/api/portal/cases"); // ?after=
 export const readNotices = read(noticesGet, "/api/portal/notices"); // ?after=
+export const readNoticeSettings = read(settingsGet, "/api/portal/notices/settings"); // P21: my email switches
 export const readAgencyJobs = read(agencyJobs, "/api/portal/agency-jobs"); // ?after=
 
 /** The signed-in login with its company and role (the shell and every page's guard), or null when there is no usable session. */

@@ -20,6 +20,7 @@ export const PORTAL_NAV: { links: PortalLink[] }[] = [
       { label: "Company profile", href: "/company", icon: "building" },
       { label: "Team", href: "/team", icon: "users" },
       { label: "Account status", href: "/account-status", icon: "shield" },
+      { label: "Settings", href: "/settings", icon: "lock" },
       { label: "Help", href: "/help", icon: "help" },
     ],
   },
