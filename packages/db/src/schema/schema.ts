@@ -1824,7 +1824,7 @@ export const strikeNote = pgTable("strike_note", {
 			columns: [table.strikeId],
 			foreignColumns: [strike.id],
 			name: "strike_note_strike_id_fkey"
-		}),
+		}).onDelete("cascade"),
 	foreignKey({
 			columns: [table.authorStaffUserId],
 			foreignColumns: [staffUser.id],

@@ -192,6 +192,13 @@ describe("B69: a staff note on a case", () => {
     expect((await su.query("select 1 from audit_event where after::text like '%NOTE-SECRET%' or reason_text like '%NOTE-SECRET%'")).rowCount).toBe(0);
   });
 
+  it("goes with its case when the retention run deletes a decided case (0052 deletes the strike row)", async () => {
+    const co = await company();
+    const { caseId } = await ok("ts1", { action: "open", organisationId: co.org, caseKind: "false_claim", reasonCode: "false_sponsorship", noticeSummary: "A public summary." });
+    await ok("ts1", { action: "add_note", caseId, text: "a note on an old case" });
+    expect((await su.query("with d as (delete from strike where id = any($1::bigint[]) returning 1) select count(*)::int n from d", [[caseId]])).rows[0].n).toBe(1);
+    expect((await su.query("select 1 from strike_note where strike_id = $1", [caseId])).rowCount).toBe(0);
+  });
   it("refuses: no text, a long text, control characters, a case that does not exist, an unknown field, no Origin; and only a trust and safety officer writes one", async () => {
     const co = await company();
     const { caseId } = await ok("ts1", { action: "open", organisationId: co.org, caseKind: "false_claim", reasonCode: "false_sponsorship" });

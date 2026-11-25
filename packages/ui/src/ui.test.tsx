@@ -273,7 +273,7 @@ describe("portal shell", () => {
 describe("admin shell", () => {
   const links = (roles: readonly (typeof ADMIN_ROLES)[number][]) => [...html(<AdminShell roles={roles} name="Dara">x</AdminShell>).matchAll(/<a [^>]*>([\s\S]*?)<\/a>/g)].map((m) => m[1]!.replace(/<span data-count[\s\S]*?<\/span>/g, "").replace(/<[^>]*>/g, "").trim());
   it("says internal, staff only", () => expect(html(<AdminShell roles={[]} name="D">x</AdminShell>)).toContain("Internal, staff only"));
-  it("hides every link that needs a role for a member with none", () => expect(links([])).toEqual(["Skip to content", "Overview", "Rules data", "Audit log"]));
+  it("hides every link that needs a role for a member with none", () => expect(links([])).toEqual(["Skip to content", "Overview", "Rules data", "Audit log", "Figures", "My data"]));
   it("shows a link only to the role that may open it", () => {
     expect(links(["account_reviewer"])).toContain("Account reviews");
     expect(links(["account_reviewer"])).not.toContain("Fetched jobs");

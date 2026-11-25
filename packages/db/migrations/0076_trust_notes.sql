@@ -5,7 +5,7 @@ set role portal_owner;
 
 create table strike_note(
   id bigint generated always as identity primary key,
-  strike_id bigint not null references strike(id),
+  strike_id bigint not null references strike(id) on delete cascade, -- the retention run deletes a decided strike (0052); its notes go with it
   author_staff_user_id text not null references staff_user(id),
   body text not null check (length(body) between 1 and 5000),
   created_at timestamptz not null default now());
