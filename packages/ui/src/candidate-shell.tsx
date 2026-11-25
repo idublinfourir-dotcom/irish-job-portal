@@ -154,6 +154,20 @@ const FOOTER_GROUPS = [
 const EXT = { target: "_blank", rel: "noopener noreferrer", className: "underline underline-offset-2" } as const;
 
 /**
+ * The credit CC BY 4.0 asks every product that uses the data to show: the licence's own sentence (opendata.cro.ie/about, data.gov.ie/pages/opendatalicence), each source, the
+ * licence link, and that we changed the data. CRO: CC BY 4.0. DETE: the PSI licence (enterprise.gov.ie/en/re-use-of-public-service-info), which Circular 12/2016 made CC BY.
+ */
+export function PublicDataCredit() {
+  return (
+    <p data-slot="public-data-credit">
+      Contains Irish Public Sector Data licensed under a <A href="https://creativecommons.org/licenses/by/4.0/" {...EXT}>Creative Commons Attribution 4.0 International (CC BY 4.0) licence</A>.
+      {" "}Sources: <A href="https://enterprise.gov.ie/en/what-we-do/workplace-and-skills/employment-permits/statistics/" {...EXT}>Department of Enterprise, Tourism and Employment</A> (permits)
+      {" "}and <A href="https://opendata.cro.ie/dataset/companies" {...EXT}>Companies Registration Office</A> (company records), adapted by us.
+    </p>
+  );
+}
+
+/**
  * The dark footer with rounded top corners (frame N01). A page whose last block is a dark band marked data-join (the home page's join band)
  * runs straight into it: the footer then drops its gap and corners. `standingLine` and `rulesCheckedOn` come from the page's data, never typed here.
  */
@@ -186,8 +200,9 @@ export function SiteFooter({ standingLine, rulesCheckedOn }: { standingLine?: Re
       <div className="mx-auto max-w-page space-y-2 border-t border-white/15 px-5 py-6 sm:px-8 text-small text-white/60">
         {standingLine && <p data-slot="standing-line">{standingLine}</p>}
         {rulesCheckedOn && <p data-slot="rules-checked-on">Rules last checked on {rulesCheckedOn}</p>}
+        <PublicDataCredit />
         <p>
-          Place names from <A href="https://www.geonames.org/" {...EXT}>GeoNames</A>, licensed <A href="https://creativecommons.org/licenses/by/4.0/" {...EXT}>CC BY 4.0</A>
+          Place names adapted from <A href="https://www.geonames.org/" {...EXT}>GeoNames</A>, licensed <A href="https://creativecommons.org/licenses/by/4.0/" {...EXT}>CC BY 4.0</A>
         </p>
       </div>
     </footer>

@@ -215,6 +215,7 @@ describe("the pages", () => {
     expect(member).not.toContain('value="appeal"');
     expect(await open("help", o.cookie, { topic: "appeal" })).not.toContain('value="appeal"');
     expect(await open("help", o.cookie, { topic: "<script>" })).not.toContain("<script>");
+    for (const topic of ["name", "length", "constructor", "__proto__", "$$id"]) expect(await open("help", o.cookie, { topic }), topic).toMatch(/<option[^>]*value="general"[^>]*selected/);
     expect(await open("help", s.cookie)).toContain("Contact us");
   });
 });

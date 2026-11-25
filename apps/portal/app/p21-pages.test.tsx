@@ -13,7 +13,8 @@ import { CODE_TEXT, COUNTIES, day, needsReauth, say } from "./_account/messages"
 import { caseState, StatusView, type Case, type StatusPage } from "./account-status/view";
 import { CompanyView, type Company } from "./company/view";
 import { CloseView } from "./company/forms";
-import { ContactView, topicsFor } from "./help/forms";
+import { ContactView } from "./help/forms";
+import { topicsFor } from "./help/topics";
 import { HelpView } from "./help/view";
 import { SettingsView } from "./settings/view";
 import { TeamView, type Team } from "./team/forms";

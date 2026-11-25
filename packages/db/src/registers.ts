@@ -2,10 +2,6 @@
 // The same number and name rules are in SQL, in private.register_organisation and private.normalise_company_name (migration 0014);
 // test/registers.test.ts runs both on the same cases so the two cannot drift apart.
 
-/** The wording the CRO's CC BY 4.0 licence asks every product that uses the data to show (opendata.cro.ie/about). Site pages show it later. */
-export const CRO_ATTRIBUTION =
-  "Contains Irish Public Sector Data licensed under a Creative Commons Attribution 4.0 International (CC BY 4.0) licence. Source: Companies Registration Office, https://opendata.cro.ie/dataset/companies";
-
 /**
  * The CRO status texts we keep (#207), compared after trimming (the file has "Normal " with a trailing space on most rows).
  * Normal, and the three "about to leave" statuses, so a company in strike off, liquidation or examinership is still found and flagged.

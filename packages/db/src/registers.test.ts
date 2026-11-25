@@ -1,7 +1,7 @@
 // Unit: the number and name rules the register check uses (no database). The same cases run against the SQL function in test/registers.test.ts.
 import { describe, expect, it } from "vitest";
 import { NAME_CASES } from "../test/registers-helpers";
-import { CRO_ATTRIBUTION, guessCounty, isKeptStatus, normaliseCompanyName, normaliseCroNumber, normaliseLicenceNumber } from "./registers";
+import { guessCounty, isKeptStatus, normaliseCompanyName, normaliseCroNumber, normaliseLicenceNumber } from "./registers";
 
 describe("normaliseCompanyName", () => {
   it.each(NAME_CASES)("%s -> %s", (typed, key) => expect(normaliseCompanyName(typed)).toBe(key));
@@ -15,10 +15,9 @@ describe("guessCounty", () => {
   it.each([[["1 Main Street", "Town", "Co. Cork", ""], "Cork"], [["1 Main Street", "DUBLIN 2"], "Dublin"], [["Unit 5", "County Kerry"], "Kerry"], [["Cork Street", "Dublin 8", ""], "Dublin"],
     [["Cork Street", "Somewhere"], null], [["", "", "", ""], null], [["Londonderry"], "Derry"]])("%j -> %s", (lines, county) => expect(guessCounty(lines as string[])).toBe(county));
 });
-describe("statuses and attribution", () => {
+describe("statuses", () => {
   it("keeps Normal (with or without the trailing space) and the three leaving statuses, nothing else", () => {
     for (const s of ["Normal", "Normal ", " Strike Off Listed", "Liquidation", "Examinership"]) expect(isKeptStatus(s)).toBe(true);
     for (const s of ["Dissolved", "Liquidation (UK)", "Liquidation stayed", "Administration", "Struck Off", "Ceased", "normal", ""]) expect(isKeptStatus(s)).toBe(false);
   });
-  it("the attribution names the licence", () => expect(CRO_ATTRIBUTION).toContain("CC BY 4.0"));
 });
