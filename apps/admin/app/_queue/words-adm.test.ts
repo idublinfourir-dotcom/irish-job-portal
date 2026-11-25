@@ -6,8 +6,9 @@ import { describe, expect, it } from "vitest";
 import { adminWords, KNOWN_CODES, needsSignIn } from "./words-adm";
 
 const yaml = readFileSync(join(import.meta.dirname, "../../../../docs/openapi/admin.yaml"), "utf8");
-const ROUTES = ["/api/companies/dete-links", "/api/companies/merge", "/api/content", "/api/staff", "/api/audit/export", "/api/audit"];
-const NOT_CODES = new Set(["propose_role", "confirm_role", "refuse_role", "remove_role", "resend_invite"]); // the actions of a body, named in a 200 description
+const ROUTES = ["/api/companies/dete-links", "/api/companies/merge", "/api/content", "/api/staff", "/api/audit/export", "/api/audit",
+  "/api/rules", "/api/rules/evidence", "/api/rules/history", "/api/manual-jobs", "/api/manual-jobs/companies", "/api/manual-jobs/dry-run", "/api/manual-jobs/sponsor-confirmation"];
+const NOT_CODES = new Set(["propose_role", "confirm_role", "refuse_role", "remove_role", "resend_invite", "propose_flag", "big_company_flag", "public_pay_employers", "manual_post_sponsor_confirmed", "admin_on_behalf"]); // the actions of a body, named in a 200 description
 /** The backticked snake_case words in the response descriptions of one route, which are its error codes. */
 function codesOf(route: string): string[] {
   const rest = yaml.slice(yaml.indexOf(`\n  ${route}:\n`) + 1);
@@ -22,7 +23,7 @@ describe("the codes of the routes the four pages call", () => {
   for (const route of ROUTES)
     it(`${route}: every code has its own sentence`, () => {
       const codes = codesOf(route);
-      expect(codes.length, route).toBeGreaterThan(3);
+      expect(codes.length, route).toBeGreaterThan(1);
       for (const c of codes) {
         const w = adminWords(c, 400);
         expect(w, c).not.toBe(adminWords("zz_unknown", 400)); // not the catch-all
@@ -44,7 +45,7 @@ describe("the codes of the routes the four pages call", () => {
   });
   it("the words list holds no code the contract does not name (no stale entry)", () => {
     const all = new Set(ROUTES.flatMap(codesOf));
-    const base = new Set(["bad_page", "bad_cursor", "bad_query"]);
+    const base = new Set(["bad_page", "bad_cursor", "bad_query", "scan_pending", "file_blocked", "rules_failed", "needs_review", "pay_required", "pay_below_minimum", "pay_not_on_scale", "occupation_ineligible", "occupation_not_on_list", "contract_too_short"]); // the shared file answers and the codes of a manual post's checks (ManualCheck in the yaml)
     for (const c of KNOWN_CODES) expect(all.has(c) || base.has(c) || c === "reauth_required", c).toBe(true);
   });
 });

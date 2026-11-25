@@ -14,6 +14,7 @@ import {
   accuracySample, fetchedDecisions, listCandidateMerges, listCompanySeed, listDataRequests, listOverdue, listScheduledChecks, listSettings, myCounts, targetCounts,
 } from "@portal/db/staff-tools";
 import { listLegal } from "@portal/db/legal-texts";
+import { listSponsorConfirmations } from "@portal/db/staff-uploads";
 import { listCaseDocuments } from "@portal/db/staff-case-files";
 import { queueRules } from "./queue-rules";
 import { sidebarCounts } from "./sidebar";
@@ -59,6 +60,7 @@ export const readJobAuthority = asStaff(listJobAuthority); // (jobId) the copies
 export const readFloorChecks = asStaff(listFloorChecks);
 export const readFloorCheck = asStaff(getFloorCheck);
 export const readManualPosts = asStaff(listManualPosts);
+export const readSponsorConfirmations = asStaff(listSponsorConfirmations); // Q6: the "Sponsor confirmed" uploads waiting for an administrator
 export const readManualCompanies = asStaff(searchManualCompanies); // B72: (q) the employer picker of the manual post
 export const readReports = asStaff(listReports);
 export const readReport = asStaff(getReport);
