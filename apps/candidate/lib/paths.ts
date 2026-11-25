@@ -48,3 +48,6 @@ export const profilePath = () => "/account/profile";
 export const settingsPath = () => "/account/settings";
 export const casesPath = () => "/account/cases";
 export const casePath = (caseId: string) => `/account/cases/${encodeURIComponent(caseId)}`;
+/** Delete account (frame A10) and the page a deleted person lands on (outside /account: the session is gone). */
+export const settingsDeletePath = () => "/account/settings/delete";
+export const goodbyePath = () => "/account-deleted";

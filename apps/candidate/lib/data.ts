@@ -13,7 +13,7 @@ import { standingLine } from "@portal/rules";
 import { alertsGet } from "./alerts";
 import { dataAccessGet, jobGet, noticesGet, profileGet, promptsGet, savedList, securityGet, settingsGet, trackerGet } from "./account";
 import { caseList, caseRead, caseTimeline } from "./cases";
-import { signedInCandidate } from "./candidate";
+import { candidateAuth, signedInCandidate } from "./candidate";
 import { cvRead } from "./files";
 
 type Query = ConstructorParameters<typeof URLSearchParams>[0];
@@ -64,6 +64,11 @@ export const readAlerts = () => mine(alertsGet);
 export const readAlert = (id: string) => mine(alertsGet, { id }); // one alert for the edit form (/account/alerts?edit=<id>); 404 ALERT_NOT_FOUND for another candidate's
 export const readTracker = () => mine(trackerGet); // B31
 export const readNotices = (query?: Query) => mine(noticesGet, query); // B38: ?after=
+/** The signed-in candidate's email and whether it is confirmed (P17: the settings page shows it), or null when signed out. */
+export const readAccountEmail = async (): Promise<{ email: string; verified: boolean } | null> => {
+  const s = await candidateAuth().api.getSession({ headers: await headers() }).catch(() => null);
+  return s ? { email: s.user.email, verified: s.user.emailVerified === true } : null;
+};
 export const readSecurity = () => mine(securityGet); // B40: passwordChangedAt and signInMethods
 export const readDataAccess = () => mine(dataAccessGet); // B41: who viewed my data
 export const readDidYouApply = () => mine(promptsGet);
