@@ -20,6 +20,8 @@ const SENTENCE: Record<string, string> = {
   "organisation_domain.add": "added a company email domain",
   "data_request.close": "closed a data request",
 };
+/** The action codes with a sentence, for a filter list. */
+export const AUDIT_ACTIONS: string[] = Object.keys(SENTENCE);
 export const auditSentence = (action: string): string => SENTENCE[action] ?? action.replace(/[._]+/g, " ");
 
 const initial = (name: string | null) => (name ?? "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
