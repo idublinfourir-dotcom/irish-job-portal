@@ -16,6 +16,7 @@ import { freeEmail } from "./free-email";
 import { jobGet, jobList } from "./jobs";
 import { portalLegalRead } from "./legal";
 import { noticesGet } from "./notices";
+import { floorGet } from "./pay-floors";
 import { portalOrigin } from "./portal";
 import { profileGet } from "./profile";
 import { statusGet } from "./status";
@@ -44,6 +45,7 @@ export const readStatus = read(statusGet, "/api/portal/status");
 export const readCases = read(caseList, "/api/portal/cases"); // ?after=
 export const readDataRequest = (token: string) => read(dataRequestInfo, "/api/data-request")({ token }); // P17c: no sign-in; what the emailed link would do, changes nothing
 export const readNotices = read(noticesGet, "/api/portal/notices"); // ?after=
+export const readPayFloors = read(floorGet, "/api/portal/pay-floors"); // the company's pay floors and the wording to sign (DD33)
 export const readAgencyJobs = read(agencyJobs, "/api/portal/agency-jobs"); // ?after=
 
 /** The signed-in login with its company and role (the shell and every page's guard), or null when there is no usable session. */

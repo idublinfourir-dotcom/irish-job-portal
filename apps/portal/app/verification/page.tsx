@@ -2,13 +2,11 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Notice } from "@portal/ui";
 import { candidateHref, PORTAL_SIGN_IN, readLogin, readVerification } from "../../lib/data";
+import { JOB_FORM_LIVE } from "../_site/flags";
 import { meta } from "../_site/meta";
 import { VerificationView, type Verification } from "./view";
 
 export const metadata: Metadata = meta("Verification", "See how far the verification of your company has got, what we have checked so far and, when we ask for more, what to send us.");
-
-/** The "Draft a job" link opens /jobs/new, which P19 builds: set true there. */
-const JOB_FORM_LIVE = false as boolean;
 
 /** Frame E06. Signed out goes to sign-in; no company goes to the claim step; any member sees the state, only the owner sees the question and the answer box. */
 export default async function Page() {

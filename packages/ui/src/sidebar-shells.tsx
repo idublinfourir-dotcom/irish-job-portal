@@ -81,13 +81,13 @@ const BANNER: Record<string, { kind: "error" | "warning"; title: string; text: s
   verified_restricted: { kind: "warning", title: "This company account is restricted", text: "A new job is checked by our staff before it goes live. Open Account status for the reason." },
 };
 
-/** The bell: a count of unread notices (200 means 200 or more). A plain mark for now: the notice list page is built later, so it is not a link. */
+/** The bell: a link to the notice list (/notices, DD34) with a count of unread notices (200 means 200 or more). */
 function Bell({ unread }: { unread: number }) {
   return (
-    <span role="img" aria-label={unread ? `Notices, ${unread >= 200 ? "200 or more" : unread} unread` : "Notices, none unread"} className="relative grid size-11 place-items-center rounded-pill text-ink">
+    <A href="/notices" aria-label={unread ? `Notices, ${unread >= 200 ? "200 or more" : unread} unread` : "Notices, none unread"} className="relative grid size-11 place-items-center rounded-pill text-ink hover:bg-hover-light">
       <Icon name="bell" />
       {unread > 0 && <span data-unread className="absolute -right-1 top-0 grid min-w-5 place-items-center rounded-pill bg-deep-green px-1 text-caption font-semibold text-white">{unread >= 200 ? "200+" : unread}</span>}
-    </span>
+    </A>
   );
 }
 
