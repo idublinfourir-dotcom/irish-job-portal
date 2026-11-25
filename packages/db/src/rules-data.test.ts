@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import * as R from "@portal/rules";
 import { describe, expect, it } from "vitest";
-import { diffVersion } from "./rules-admin";
+import { diffVersion, hourlyOf } from "./rules-admin";
 import { BadRulesData, cleanData, type BigName, type Minimums } from "./rules-data";
 import { belowMinimum, main as runMain } from "./rules-run-cli.ts";
 import { brandList, main as seedMain, seedData } from "./rules-seed-cli.ts";
@@ -142,6 +142,31 @@ describe("the two commands' arguments", () => {
     expect(await runMain([], {}, (l) => lines.push(l))).toBe(2);
     expect(lines).toEqual(["usage: rules-seed-cli.ts (no arguments)", "DATABASE_URL_MIGRATE is not set (the owner's login, as for migrations)",
       "usage: rules-run-cli.ts (no arguments)", "RULES_ADMIN_DATABASE_URL is not set (the app_admin login)"]);
+  });
+});
+
+describe("pay-deal entries (B66)", () => {
+  const id = "0f8fad5b-d9cb-469f-a165-70867728950e.pdf";
+  const ev = (o: object = {}) => ({ kind: "service_arrangement", link: "https://example.test/a", file: { id, name: "a.pdf" }, ...o });
+  const e = (o: object = {}) => ({ tier: 2, note: "n", bodyType: "section_38", evidence: ev(), addedOn: "2026-11-25", addedBy: "staff_1", ...o });
+  it("keeps the checked fields, drops on: true (on is the default) and keeps on: false; an old entry (tier and note) is unchanged", () => {
+    expect(cleanData("public_pay_employers", { a: e({ on: true }), b: e({ on: false }), c: { tier: 1 } })).toEqual({ a: e(), b: e({ on: false }), c: { tier: 1 } });
+    expect(cleanData("public_pay_employers", { a: e({ evidence: ev({ file: null }) }) })).toEqual({ a: e({ evidence: ev({ file: null }) }) });
+  });
+  it("refuses unknown fields, body types and evidence kinds, a bad link, a file id that is a path or another prefix, no link and no file, and a list with every entry off", () => {
+    for (const x of [e({ extra: 1 }), e({ bodyType: "Section 38" }), e({ on: "no" }), e({ on: null }), e({ addedOn: "2026-02-30" }), e({ addedBy: "a b" }), e({ addedBy: 5 }), e({ evidence: null }),
+      e({ evidence: [] }), e({ evidence: ev({ kind: "hearsay" }) }), e({ evidence: ev({ link: "http://example.test/a" }) }), e({ evidence: ev({ link: "javascript:alert(1)" }) }),
+      e({ evidence: ev({ link: undefined }) }), e({ evidence: ev({ extra: 1 }) }), e({ evidence: ev({ link: null, file: null }) }),
+      ...["cv/" + id, "../" + id, id + ".html", id.replace(".pdf", ".exe"), id.toUpperCase(), "", 5].map((bad_) => e({ evidence: ev({ file: { id: bad_, name: "a.pdf" } }) })),
+      e({ evidence: ev({ file: { id, name: "a\u202e.pdf" } }) }), e({ evidence: ev({ file: { id, name: "x".repeat(201) } }) }), e({ evidence: ev({ file: { id } }) }),
+      e({ on: false })]) expect(bad("public_pay_employers", { a: x }), JSON.stringify(x)).toBe("bad");
+  });
+});
+
+describe("the hourly figure (B64)", () => {
+  it("is the yearly minimum over 52 weeks of the standard week, to the cent; the General figures only when the version has them", () => {
+    expect(hourlyOf({ ...M, general: 36605, generalLower: 32691, generalLowerCodes: ["6145"], generalQuotaFullCodes: [] })).toEqual({ criticalSkills: 20.17, graduate: 18.17, nonList: 33.98, general: 18.05, generalLower: 16.12 });
+    expect(hourlyOf({ ...M, standardWeekHours: 40 })).toEqual({ criticalSkills: 19.67, graduate: 17.72, nonList: 33.13 });
   });
 });
 

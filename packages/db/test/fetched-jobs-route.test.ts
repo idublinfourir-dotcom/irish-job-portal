@@ -13,7 +13,8 @@ vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 // Measured on 13 November 2026 (requireStaff is 2 statements): list = role check + page + stage counts (5 in all, 4 before 23 Nov 2026 step 16); claim = begin, acting staff, claim, commit (+2 = 6);
 // approve = begin, acting staff, lock, write, commit (+2 = 7). Medians over 9 warm calls through the route: 1.9 to 2.5 ms (list), 1.9 to 2.4 (claim), 3.5 to 4.8 (approve: the
 // rules chain runs); limits are about 4 times the slowest of three runs, with a floor for a busy laptop.
-const BUDGET = { list: 5, claim: 6, approve: 7, listMs: 12, claimMs: 12, approveMs: 20 };
+// approve is one more since B66 (25 November 2026): the rules are read fresh, never from the cache.
+const BUDGET = { list: 5, claim: 6, approve: 8, listMs: 12, claimMs: 12, approveMs: 20 };
 const PAY = "Join our team building fake things. The salary is €60,000 a year.";
 
 let db: TestDb, h: Awaited<ReturnType<typeof staffHarness>>, route: Route, su: pg.Pool;

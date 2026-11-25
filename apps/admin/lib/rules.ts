@@ -41,11 +41,12 @@ export function parseBody(text: string): Body {
 }
 
 const STATUS = new Map<string, number>(Object.entries({
-  bad_body: 400, bad_action: 400, bad_id: 400, bad_kind: 400, bad_date: 400, bad_data: 400, bad_query: 400,
+  bad_body: 400, bad_action: 400, bad_id: 400, bad_kind: 400, bad_date: 400, bad_data: 400, bad_query: 400, bad_cursor: 400, bad_file: 400, empty_file: 400,
   no_session: 401, not_active: 401,
-  bad_origin: 403, not_active_staff: 403, not_rules_editor: 403, not_administrator: 403, not_proposer: 403,
+  bad_origin: 403, not_active_staff: 403, not_rules_editor: 403, not_administrator: 403, not_proposer: 403, not_rules_viewer: 403,
   not_found: 404,
   date_in_past: 409, date_passed: 409, no_change: 409, decision_pending: 409, not_pending: 409, same_person: 409, already_big: 409, no_name_match: 409,
+  scan_pending: 409, file_blocked: 409, file_too_large: 413, wrong_file_type: 415, file_active_content: 422,
 }));
 
 /** A refusal as a short code and status (bad_data also says which entry); anything unknown is a plain 500 with the reason kept in the server log only. */

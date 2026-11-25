@@ -10,10 +10,10 @@ import { memoryStore, setFileStore, type MemoryStore } from "../src/file-store";
 import { DOCX, PDF } from "../src/file-fixture";
 
 // Statements counted on every pg.Client.query call and median of 9 warm calls, measured on 18 November 2026: search 5 (session 3, rate 1, the query),
-// check 5 (session 3, rate 1, the company; the rules are cached), suggest 3 (the session only), authority upload 6 (session 3, upload limit, the job, the insert), list 5 and link 5 (session 3, the job, the read). Times are about 4 times the
+// check 6 (session 3, rate 1, the company, the rules: read fresh since B66, 25 Nov 2026, so the check answers what the save will), suggest 3 (the session only), authority upload 6 (session 3, upload limit, the job, the insert), list 5 and link 5 (session 3, the job, the read). Times are about 4 times the
 // measured median with a floor for a busy laptop: search 2.8 ms, check 2.0 ms, suggest 1.4 ms. Pages: the search on 50,000 CRO rows and 20,000
 // names read 61 shared pages through the two trigram indexes (a sequential scan of cro_company alone is over 1,000); the budget is about 4 times that.
-const BUDGET = { search: 5, check: 5, suggest: 3, upload: 6, list: 5, link: 5, searchMs: 25, checkMs: 25, suggestMs: 15, searchPages: 250 };
+const BUDGET = { search: 5, check: 6, suggest: 3, upload: 6, list: 5, link: 5, searchMs: 25, checkMs: 25, suggestMs: 15, searchPages: 250 };
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });
 const secret = "trial-only-secret-trial-only-secret-32";

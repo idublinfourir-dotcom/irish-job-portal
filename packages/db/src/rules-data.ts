@@ -12,7 +12,15 @@ export type RulesKind = (typeof RULES_KINDS)[number];
 export type Occupation = RulesSnapshot["occupationLists"][number];
 /** One big-company name (#230): the test it passed, its link, the date read and the next review. The seed may leave the last three empty. */
 export type BigName = { name: string; test: "brand" | "250_staff" | "dete_steady_sponsor"; link: string | null; readOn: string | null; reviewOn: string | null };
-export type VersionData = Minimums | Occupation[] | Record<string, { tier: 1 | 2; note?: string }> | BigName[] | PayScale[];
+/** B66: one public pay-deal employer. `on` is kept only as false (an entry that is off stays on the list and never counts); `addedOn` and `addedBy` are set by the server. */
+export const BODY_TYPES = ["public_body", "section_38", "section_39"] as const;
+export const EVIDENCE_KINDS = ["service_arrangement", "published_pay_policy", "dete_rule_text", "other"] as const;
+export type PayDealEvidence = { kind: (typeof EVIDENCE_KINDS)[number]; link: string | null; file: { id: string; name: string } | null };
+export type PayDealEntry = { tier: 1 | 2; note?: string; bodyType?: (typeof BODY_TYPES)[number]; evidence?: PayDealEvidence; addedOn?: string; addedBy?: string; on?: false };
+export type PayDealList = Record<string, PayDealEntry>;
+export type VersionData = Minimums | Occupation[] | PayDealList | BigName[] | PayScale[];
+/** An uploaded evidence file's id, `<uuid>.<ext>`: its storage key is `rules/<id>`, so an id can never name another file in the store. */
+export const EVIDENCE_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|jpg|png)$/;
 
 /** Data that does not fit its kind. The message names the kind and the first problem. */
 export class BadRulesData extends Error {}
@@ -44,6 +52,16 @@ function list<T>(kind: string, v: unknown, one: (e: unknown, i: number) => T, ke
   const out = v.map(one), seen = new Set(out.map(key));
   if (seen.size !== out.length) fail(kind, "an entry appears twice");
   return out;
+}
+
+function evidence(kind: string, name: string, v: unknown): PayDealEvidence {
+  if (!isObject(v) || !keysAre(v, ["kind", "link", "file"])) fail(kind, `${name}: the evidence needs kind, link and file only`);
+  if (!(EVIDENCE_KINDS as readonly unknown[]).includes(v.kind)) fail(kind, `${name}: the evidence kind is not known`);
+  if (v.link !== null && !https(v.link)) fail(kind, `${name}: the evidence link is not an https address`);
+  const f = v.file;
+  if (f !== null && (!isObject(f) || !keysAre(f, ["id", "name"]) || typeof f.id !== "string" || !EVIDENCE_FILE.test(f.id) || !plain(f.name, 200))) fail(kind, `${name}: the evidence file is not an uploaded file`);
+  if (v.link === null && f === null) fail(kind, `${name}: the evidence needs a link or a file`);
+  return { kind: v.kind as PayDealEvidence["kind"], link: v.link as string | null, file: f === null ? null : { id: (f as { id: string }).id, name: (f as { name: string }).name } };
 }
 
 /** Checks one kind's data and returns it rebuilt from the checked fields only. Throws BadRulesData on anything else. */
@@ -83,13 +101,23 @@ export function cleanData(kind: RulesKind, v: unknown): VersionData {
     case "public_pay_employers": {
       if (!isObject(v) || Object.keys(v).length === 0) fail(kind, "the list is empty or not a list");
       if (Object.keys(v).length > MAX_ENTRIES) fail(kind, "too many entries");
-      const out: Record<string, { tier: 1 | 2; note?: string }> = {};
+      const out: PayDealList = {};
       for (const [name, e] of Object.entries(v)) {
         if (!plain(name, 200) || name !== name.trim() || name !== name.toLowerCase()) fail(kind, "a name is not trimmed lower-case text");
-        if (!isObject(e) || !keysAre(e, ["tier"], ["note"]) || (e.tier !== 1 && e.tier !== 2)) fail(kind, `${name}: needs tier 1 or 2 and at most a note`);
+        if (!isObject(e) || !keysAre(e, ["tier"], ["note", "bodyType", "evidence", "addedOn", "addedBy", "on"]) || (e.tier !== 1 && e.tier !== 2)) fail(kind, `${name}: needs tier 1 or 2 and known fields only`);
         if (e.note !== undefined && !plain(e.note, 500)) fail(kind, `${name}: the note is not plain text`);
-        out[name] = e.note === undefined ? { tier: e.tier } : { tier: e.tier, note: e.note as string };
+        if (e.bodyType !== undefined && !(BODY_TYPES as readonly unknown[]).includes(e.bodyType)) fail(kind, `${name}: the body type is not public_body, section_38 or section_39`);
+        if (e.addedOn !== undefined && !validDate(e.addedOn)) fail(kind, `${name}: addedOn is not a date`);
+        if (e.addedBy !== undefined && (typeof e.addedBy !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(e.addedBy))) fail(kind, `${name}: addedBy is not a staff id`);
+        if (e.on !== undefined && typeof e.on !== "boolean") fail(kind, `${name}: on is not true or false`);
+        out[name] = {
+          tier: e.tier, ...(e.note === undefined ? {} : { note: e.note as string }), ...(e.bodyType === undefined ? {} : { bodyType: e.bodyType as PayDealEntry["bodyType"] }),
+          ...(e.evidence === undefined ? {} : { evidence: evidence(kind, name, e.evidence) }), ...(e.addedOn === undefined ? {} : { addedOn: e.addedOn }),
+          ...(e.addedBy === undefined ? {} : { addedBy: e.addedBy as string }), ...(e.on === false ? { on: false as const } : {}),
+        };
       }
+      // an empty list would stop the fetch (checkSnapshot), as a list with no entry does
+      if (!Object.values(out).some((e) => e.on !== false)) fail(kind, "every entry is off");
       return out;
     }
     case "big_company_names":
@@ -129,6 +157,8 @@ export const IN_FORCE =
   "select distinct on (kind) kind, data, id::text as id, effective_from::text as effective_from from rules_version where effective_from <= $1::date " +
   "order by kind, effective_from desc, id desc";
 
+const PAY_DEALS = "select data from rules_version where kind = 'public_pay_employers' and effective_from <= $1::date order by effective_from desc, id desc limit 1";
+
 /**
  * The rules in force on `day` (YYYY-MM-DD). One query. Throws when a kind has no version, a list is empty or a minimum is missing or not positive,
  * so a run never goes on with half the rules. The pay scales (#269) are the one kind that may have no version yet: then `payScales` is left out.
@@ -148,11 +178,25 @@ export async function loadRules(db: Pick<pg.ClientBase, "query">, day: string): 
   return {
     minimums: get<Minimums>("minimums"),
     occupationLists: [...get<Occupation[]>("critical_skills_list"), ...get<Occupation[]>("ineligible_list")],
-    publicPayEmployers: get<Record<string, { tier: 1 | 2; note?: string }>>("public_pay_employers"),
+    // B66: an entry that is off is not in the snapshot at all, so no badge, posting check or fetch that reads the rules can count it; the shape is unchanged
+    publicPayEmployers: payDealsOn(get<PayDealList>("public_pay_employers")),
     bigCompanyNames: get<BigName[]>("big_company_names").map((e) => e.name),
     ...(by.has("pay_scales") ? { payScales: get<PayScale[]>("pay_scales") } : {}),
   };
 }
+
+const payDealsOn = (list: PayDealList): RulesSnapshot["publicPayEmployers"] => Object.fromEntries(Object.entries(list).filter(([, e]) => e.on !== false)
+  .map(([name, e]) => [name, e.note === undefined ? { tier: e.tier } : { tier: e.tier, note: e.note }]));
+
+/** The pay-deal employers that are on now, never the cached copy: the company page's label, so an entry switched off loses it at once (B66). One small row. */
+export async function freshPayDeals(db: Pick<pg.ClientBase, "query">): Promise<RulesSnapshot["publicPayEmployers"]> {
+  const r = (await db.query<{ data: unknown }>(PAY_DEALS, [new Date().toISOString().slice(0, 10)])).rows[0];
+  if (!r) throw new Error("rules: no public_pay_employers version is in force");
+  return payDealsOn(cleanData("public_pay_employers", r.data) as PayDealList);
+}
+
+/** The rules in force now (UTC day), never the cached copy: for the checks whose answer is saved (a post, an approval), so a change counts at once (B66). */
+export const freshRules = (db: Pick<pg.ClientBase, "query">): Promise<RulesSnapshot> => loadRules(db, new Date().toISOString().slice(0, 10));
 
 // ponytail: one cache per process, keyed by the UTC day and kept 5 minutes, so a confirmed version reaches the apps within 5 minutes without a deploy.
 const RULES_TTL_MS = 5 * 60_000;

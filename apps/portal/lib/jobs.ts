@@ -2,7 +2,7 @@
 // The acting login and its membership always come from the session, never the body. The rules package runs the same checks as on fetched
 // adverts, on the structured fields the employer typed; the database has the last word (job_guard, signer_check, job_org_live, the deferred
 // statement check). There is no row level security: every read and write here is filtered by the login's own company.
-import { getPool, getRules, listAnswer, validId } from "@portal/db";
+import { freshRules, getPool, getRules, listAnswer, validId } from "@portal/db";
 import { suggestCodes } from "@portal/matcher/rules";
 import { assess, chainRules, CONDITIONS, isSoc2010, minimumForHours, offScale, scamPhrase, socTitle, type RulesSnapshot } from "@portal/rules";
 import type pg from "pg";
@@ -333,7 +333,7 @@ export async function jobPost(request: Request): Promise<Response> {
     if (p.clientName && org.kind !== "agency") return no(400, "CLIENT_ONLY_FOR_AGENCIES");
     let v: Verdict = { ok: true, passRoute: "stated_pay", status: "live", sector: "other", stage: "", ticked: false };
     if (p.status === "live") {
-      v = await rulesFor(p, p.clientName ?? org.display_name, await getRules(c));
+      v = await rulesFor(p, p.clientName ?? org.display_name, await freshRules(c));
       if (!v.ok) return verdictReply(v);
     }
     const r = (await c.query(INSERT_JOB, [who.organisationId, org.kind === "agency" ? "agency" : "employer", p.title, org.display_name, p.county, v.sector, p.occupationCode,
@@ -378,7 +378,7 @@ export async function jobEdit(request: Request): Promise<Response> {
     let status: string = j.status, passRoute = j.pass_route, sector = j.sector, ticked: boolean | null = null;
     if (publish || (j.status !== "draft" && key) || fix) {
       if (!full) return no(400, "BAD_REQUEST"); // not reached: a publish carries every field and a job past draft was checked above
-      const v = await rulesFor(full, p.clientName ?? org.display_name, await getRules(c));
+      const v = await rulesFor(full, p.clientName ?? org.display_name, await freshRules(c));
       if (!v.ok) return verdictReply(v);
       if (publish) status = v.status;
       else if (v.status === "in_review" && j.status === "live") return no(409, "NEEDS_REVIEW"); // the guard keeps a live job live or closes it
@@ -429,7 +429,7 @@ export async function jobRenew(request: Request): Promise<Response> {
       weeklyHours: j.weekly_hours ?? 39, ownPageUrl: j.own_page_url, clientName: j.permit_employer_kind === "client" ? j.permit_employer_name : null,
       statement: j.signed ? { signerName: "", signerTitle: "", writtenAuthority: false } : null, // rulesFor asks only whether one is signed
       permitType: j.permit_type, exceptionConfirmed: body.exceptionConfirmed || j.ticked };
-    const v = await rulesFor(p, p.clientName ?? j.display_name, await getRules(c));
+    const v = await rulesFor(p, p.clientName ?? j.display_name, await freshRules(c));
     if (!v.ok && v.exception && !p.exceptionConfirmed) return verdictReply(v);
     const status = v.ok && v.status === "live" ? "live" : "under_review";
     const reason = status === "live" ? null : v.ok ? "NEEDS_REVIEW" : v.code;
@@ -486,7 +486,7 @@ export async function jobCheck(request: Request): Promise<Response> {
   const org = (await db.query(ORG, [who.organisationId])).rows[0] as { display_name: string; kind: string };
   if (p.clientName && org.kind !== "agency") return no(400, "CLIENT_ONLY_FOR_AGENCIES");
   if (p.clientName && p.statement && !p.statement.writtenAuthority) return no(400, "WRITTEN_AUTHORITY_REQUIRED");
-  const { checks, verdict: v } = await evaluate(p, p.clientName ?? org.display_name, await getRules(db), true);
+  const { checks, verdict: v } = await evaluate(p, p.clientName ?? org.display_name, await freshRules(db), true);
   let held = false;
   if (p.clientName) {
     const found = (await db.query(CLIENT_KNOWN, [p.clientName])).rows[0].found as boolean;

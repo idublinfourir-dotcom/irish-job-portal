@@ -2,7 +2,7 @@
 import { offScale, rulesV1 } from "@portal/rules";
 import { describe, expect, it } from "vitest";
 import { QueueRefused } from "./admin-queue";
-import { checkManualPost, manualVerdict, type ManualPost } from "./manual-posting";
+import { checkManualPost, manualChecks, manualVerdict, type ManualPost } from "./manual-posting";
 import { companyRefusal } from "./merges";
 
 const v1 = await rulesV1(); // version 1 of the rules (the seed), as the database holds it
@@ -77,6 +77,22 @@ describe("manualVerdict", () => {
     // the one rule both posts use: the edges of the scale count, a null grade or no stated pay is never off it
     expect([offScale(r, "2135", 38166, 56592), offScale(r, "2135", 38165, null), offScale(r, "2135", 40000, 56593), offScale(r, "2135", null, null), offScale(r, null, 1, 1), offScale(r, "x", 1, 1)])
       .toEqual([false, true, true, false, false, false]);
+  });
+});
+
+describe("manualChecks (B72)", () => {
+  const run = (x: object = {}, name = "Fake Co") => manualChecks(checkManualPost({ ...good, ...x }), name, v1);
+  it("lists every check with its facts, all passing", async () => {
+    const { verdict, checks } = await run();
+    expect(verdict.ok).toBe(true);
+    expect(checks.map((c) => [c.id, c.state])).toEqual([["occupation", "pass"], ["contract", "pass"], ["wording", "pass"], ["money", "pass"], ["pay", "pass"]]);
+    expect(checks.find((c) => c.id === "pay")!.detail).toEqual({ minimumEur: 40904, countedEur: 60000, healthInsuranceEur: 0, weeklyHours: 39, route: "stated_pay" });
+  });
+  it("goes on after a blocked check, and the verdict is the first refusal", async () => {
+    const { verdict, checks } = await run({ occupationCode: "4112", contractMonths: 12, salaryLow: 20000, salaryHigh: null, description: desc + " Candidates must pay a registration fee before the interview." });
+    expect(verdict).toEqual({ ok: false, code: "occupation_ineligible" });
+    expect(Object.fromEntries(checks.map((c) => [c.id, c.code ?? null]))).toMatchObject({ occupation: "occupation_ineligible", contract: "contract_too_short", money: "needs_review", pay: "pay_below_minimum" });
+    expect(checks.find((c) => c.id === "money")!.detail).toEqual({ phrase: "pay a registration fee" });
   });
 });
 

@@ -341,7 +341,7 @@ describe("manual-jobs route", () => {
 });
 
 // ===== performance: statements and time per request. requireStaff is 2 statements of each; measured on 13 November 2026: merge = begin-less single call (3), merge preview 4,
-// request 3, owner list 4, manual create = begin, role check, company, closing date, job, advert text, audit, commit (10), manual list 4. Times are medians of 9 warm calls:
+// request 3, owner list 4, manual create = begin, role check, company, closing date, rules (read fresh since B66, 25 Nov 2026), job, advert text, audit, commit (11), manual list 4. Times are medians of 9 warm calls:
 // merge 2.6 ms, owner list 2.5, manual create 3.5, manual list 1.7; the limits are about 4 times the slowest, with a floor for a busy laptop. Raise these only on purpose.
 async function counted<T>(fn: () => Promise<T>): Promise<[T, number]> {
   const q = pg.Client.prototype.query;
@@ -356,7 +356,7 @@ const median = async (fn: (i: number) => Promise<unknown>) => {
 };
 describe("performance", () => {
   it("each route stays inside its statement and time budget", async () => {
-    const BUDGET = { merge: 3, mergeGet: 4, owner: 3, ownerList: 4, manual: 10, manualList: 4, mergeMs: 20, manualMs: 25, listMs: 15 };
+    const BUDGET = { merge: 3, mergeGet: 4, owner: 3, ownerList: 4, manual: 11, manualList: 4, mergeMs: 20, manualMs: 25, listMs: 15 };
     const pairs = Array.from({ length: 12 }, async () => [await org(), await org()] as const);
     const ps = await Promise.all(pairs);
     const [, c1] = await counted(async () => okay(await doMerge("account_reviewer", ps[0]![0], ps[0]![1])));
