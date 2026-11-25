@@ -96,7 +96,7 @@ export { MAX_BODY as MAX_UPLOAD_BODY } from "./file-check";
 export type StoredDocument = { key: string; contentType: Kind; fileName: string; sizeBytes: number };
 
 /** Reads one uploaded file, stores it under `<prefix>/<uuid>.<ext>` and passes it to `save`; the stored file is removed when `save` throws. */
-export async function storeStaffDocument<T>(request: Request, prefix: "sponsor" | "evidence", save: (d: StoredDocument) => Promise<T>): Promise<T> {
+export async function storeStaffDocument<T>(request: Request, prefix: "sponsor" | "evidence" | "rules", save: (d: StoredDocument) => Promise<T>): Promise<T> {
   let f;
   try { f = await upload(request, ["pdf", "jpeg", "png"], "document"); } catch (e) {
     throw e instanceof Refuse ? new QueueRefused(e.code === "BAD_REQUEST" ? "bad_file" : e.code.toLowerCase()) : e;

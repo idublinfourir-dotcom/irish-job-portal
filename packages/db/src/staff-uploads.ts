@@ -8,6 +8,9 @@
 //      sponsor_confirmed. No signer: staff never sign for the employer. Refused (an administrator) or withdrawn (the proposer), the stored file is removed.
 //   Q7 evidence on a report or a strike case (trust_and_safety only, #91, #99): one stored file each, set only while empty and while the report is open
 //      or the case's appeal is not decided; it follows the row's retention (rules 21 to 23 return the key, 0052).
+//   B66 evidence for a pay-deal entry of the rules data (a rules data editor uploads; proposeRules puts the file on an entry, two people as any rules change): key
+//      `rules/<uuid>.<ext>`, its audit row holding the name. ponytail: a file no version names stays in the store (the business record rule keeps them); a sweep of
+//      rules/ ids no version or pending request names would clear them.
 // Opening any of these files answers the file itself through the admin route once the malware scan passed (files.ts staffFileView, S-Q6), with
 // one data_access audit row, as the written authority (job-queues.ts).
 import type pg from "pg";
@@ -16,8 +19,9 @@ import { keyKind } from "./file-check";
 import { staffFileView, storeStaffDocument } from "./files";
 import { fileStore } from "./file-store";
 import { MANUAL_VIEWERS } from "./manual-posting";
+import { EVIDENCE_FILE } from "./rules-data";
 import { validId } from "./search";
-import { endRequest, inTransaction, lockRequest, PENDING_OF, propose, SET_STATUS } from "./staff-tools";
+import { endRequest, inTransaction, lockRequest, propose, SET_STATUS } from "./staff-tools";
 import { AUDIT } from "./trust-safety";
 
 type Db = Pick<pg.Pool, "query" | "connect">;
@@ -71,13 +75,20 @@ export async function proposeSponsorConfirmation(db: Db, staff: string, jobId: u
   }));
 }
 
-export type SponsorPending = { requestId: string; jobId: string; fileName: string; contentType: string; sizeBytes: number; proposedBy: string; createdAt: string };
+export const SPONSOR_PENDING =
+  "select a.id::text as id, a.target_id, a.change, a.proposed_by_staff_user_id as proposed_by, u.name as proposed_by_name, a.created_at::text as created_at, j.title, o.id::text as org, o.display_name " +
+  "from approval_request a join job j on j.id = a.target_id::bigint join organisation o on o.id = j.organisation_id left join staff_user u on u.id = a.proposed_by_staff_user_id " +
+  "where a.kind = 'manual_post_sponsor_confirmed' and a.target_table = 'sponsorship_statement' and a.status = 'pending' order by a.id limit 200";
+export type SponsorPending = {
+  requestId: string; jobId: string; title: string; organisationId: string; displayName: string; fileName: string; contentType: string; sizeBytes: number;
+  proposedBy: string; proposedByName: string | null; createdAt: string;
+};
 /** The confirmations waiting for an administrator (the manual posting viewers: account reviewer, trust and safety, administrator). */
 export async function listSponsorConfirmations(db: Db, staff: string): Promise<{ pending: SponsorPending[] }> {
   return inTransaction(db, staff, MANUAL_VIEWERS, "not_manual_viewer", async (c) => {
-    const p = await c.query<{ id: string; target_id: string; change: Record<string, unknown>; proposed_by: string; created_at: string }>(PENDING_OF, [SPONSOR_KIND]);
-    return { pending: p.rows.map((x) => ({ requestId: x.id, jobId: x.target_id, fileName: String(x.change.fileName), contentType: String(x.change.contentType),
-      sizeBytes: Number(x.change.sizeBytes), proposedBy: x.proposed_by, createdAt: x.created_at })) };
+    const p = await c.query(SPONSOR_PENDING);
+    return { pending: p.rows.map((x) => ({ requestId: x.id, jobId: x.target_id, title: x.title, organisationId: x.org, displayName: x.display_name, fileName: String(x.change.fileName), contentType: String(x.change.contentType),
+      sizeBytes: Number(x.change.sizeBytes), proposedBy: x.proposed_by, proposedByName: x.proposed_by_name, createdAt: x.created_at })) };
   });
 }
 
@@ -160,6 +171,31 @@ export async function openEvidence(db: Db, staff: string, on: EvidenceOn, id: un
     if (!key) return null;
     const file = await viewOf(key, "evidence");
     await c.query(OPENED, [staff, "trust_and_safety", "trust_safety.evidence_open", on, id, "{}"]);
+    return file;
+  });
+}
+
+// ===== B66: evidence for a pay-deal entry (rules data) =====
+// 20c "Public pay-deal employer list": every staff role views it but the content editor.
+export const RULES_EVIDENCE_VIEWERS = ["account_reviewer", "fetched_job_reviewer", "rules_data_editor", "trust_and_safety", "services_case_handler", "administrator"] as const;
+
+/** A rules data editor uploads one evidence file (multipart, field `file`); its id then goes on an entry through proposeRules. The file codes. */
+export async function uploadRulesEvidence(db: Db, staff: string, request: Request): Promise<{ file: { id: string; name: string }; contentType: string; sizeBytes: number }> {
+  const editor = <T>(fn: (c: pg.PoolClient) => Promise<T>) => inTransaction(db, staff, ["rules_data_editor"], "not_rules_editor", fn);
+  await editor(async () => {}); // before the body is read
+  return storeStaffDocument(request, "rules", (d) => editor(async (c) => {
+    const id = d.key.slice("rules/".length);
+    await audit(c, staff, "rules.evidence_upload", "rules_evidence", id, { file_name: d.fileName, content_type: d.contentType, size_bytes: d.sizeBytes });
+    return { file: { id, name: d.fileName }, contentType: d.contentType, sizeBytes: d.sizeBytes };
+  }));
+}
+
+/** One evidence file, with its data_access audit row; null for an id that is not one (the id is the whole name under rules/, so it reaches no other file). scan_pending, file_blocked. */
+export async function openRulesEvidence(db: Db, staff: string, id: unknown): Promise<Response | null> {
+  return inTransaction(db, staff, RULES_EVIDENCE_VIEWERS, "not_rules_viewer", async (c, held) => {
+    if (typeof id !== "string" || !EVIDENCE_FILE.test(id)) return null;
+    const file = await viewOf(`rules/${id}`, "evidence");
+    await c.query(OPENED, [staff, RULES_EVIDENCE_VIEWERS.find((r) => held.includes(r)), "rules.evidence_open", "rules_evidence", id, "{}"]);
     return file;
   });
 }

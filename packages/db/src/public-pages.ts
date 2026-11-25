@@ -3,7 +3,7 @@
 // parameter and the column it filters is fixed in code, never taken from input.
 import type pg from "pg";
 import { checkEligibility, publicPayCandidatesOf, publicPayTier, registrationFor, standingLine, type Registration, type RulesSnapshot } from "@portal/rules";
-import { getRules } from "./rules-data";
+import { freshPayDeals, getRules } from "./rules-data";
 import { getContent, validSlug, type ContentPage } from "./content";
 import { FIRST_PERMIT_YEAR, PERMITS, summarisePermits, type Permits } from "./dete";
 import { BadSearchInput, COUNT_CAP, cursorOf, decodeCursor, employerLabels, KEYS, CAST, LIST, listCards, LIVE, PAGE_SIZE, pageSize, SOURCE, type ScopedRow, type CompanyLabel, type JobCard, type ListRow, type Sort } from "./search";
@@ -92,16 +92,16 @@ export async function getCompanyPage(db: Db, slug: string, opts: { after?: strin
   const o = (await db.query<OrgRow>(ORG, [slug])).rows[0];
   if (!o || HIDDEN_STATUSES.has(o.status)) return null;
   if (o.merged) return o.merged_slug ? { merged: o.merged_slug } : null;
-  const [names, permits, jobs, cut, rules] = await Promise.all([
+  const [names, permits, jobs, cut, payDeals] = await Promise.all([
     db.query<{ name: string; kind: string }>(NAMES, [o.id]),
     db.query<{ year: number; month: number | null; permits: number }>(PERMITS, [o.id]),
     scopedJobs(db, "company", o.id, opts.after, opts.limit, { slug: o.slug, logoUrl: o.logo_url }),
     db.query<{ year: number; month: number }>(CUT_OFF),
-    getRules(db),
+    freshPayDeals(db),
   ]);
   const summary = summarisePermits(permits.rows, opts.now);
   const byMonth = permits.rows.filter((r): r is { year: number; month: number; permits: number } => r.month !== null && r.year >= FIRST_PERMIT_YEAR && r.permits > 0).sort((a, b) => a.year - b.year || a.month - b.month);
-  const pay = publicPayCandidatesOf(rules);
+  const pay = publicPayCandidatesOf({ publicPayEmployers: payDeals });
   const publicPay = [o.display_name, ...names.rows.map((n) => n.name)].some((n) => publicPayTier(n, pay) > 0);
   return {
     id: o.id, slug: o.slug, name: o.display_name, kind: o.kind, website: o.website, logoUrl: o.logo_url, shortDescription: o.short_description, county: o.county,

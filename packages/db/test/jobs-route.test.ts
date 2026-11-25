@@ -18,7 +18,8 @@ import { fixtures } from "./fixtures";
 // An edit 10 (requirePortal 3, rate count 1, begin, the locked job with its advert text, the company, the update, the text, commit), the same with the
 // 0045 fix check (18 November 2026).
 // Times, median of 9 calls, measured warm: post 5 to 8 ms, list of 60 jobs 3 to 5 ms. Budgets are about 4 times that, with a floor for a busy laptop.
-const BUDGET = { post: 9, signed: 12, list: 4, renew: 8, edit: 10, postMs: 40, listMs: 25, renewMs: 40 };
+// Post, signed, renew and edit are each one more since B66 (25 November 2026): the rules are read fresh, never from the cache, because the answer is saved.
+const BUDGET = { post: 10, signed: 13, list: 4, renew: 9, edit: 11, postMs: 40, listMs: 25, renewMs: 40 };
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";

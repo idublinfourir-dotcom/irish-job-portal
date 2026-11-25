@@ -369,12 +369,14 @@ components:
         display_name: { type: string }
         title: { type: string }
         status: { type: string }
+        badge: { type: [string, 'null'], enum: [critical_skills_eligible, sponsor_confirmed, null], description: "The badge the post shows, or null for a draft.", example: critical_skills_eligible }
         pass_route: { type: [string, 'null'] }
         posted_by_staff_id: { type: [string, 'null'] }
         posted_at: { $ref: '#/components/schemas/DbTime' }
         closes_at: { type: string }
         closed_at: { type: [string, 'null'] }
         reason: { type: [string, 'null'] }
+        sponsor_request_id: { type: [string, 'null'], description: "The Sponsor confirmed request waiting for an administrator on this post, or null (#232, Q6).", example: '9001' }
     FloorCheck:
       type: object
       required: [floorId, itemId, createdAt, roleFamily, floorEur, organisationId, displayName]
@@ -398,7 +400,7 @@ components:
         proposedBy: { type: [string, 'null'] }
     RulesKind:
       type: string
-      description: 'public_pay_employers holds the HSE switch (#261): the entry "health service executive" (tier 1) gives every HSE name tier 1 while it is in force; a version without it turns the switch off. pay_scales (#269) is a list of grades, each {code (1 to 12 capital letters or digits, unique), title, firstEur, lastEur (whole euro, first not above last), sourceUrl (https), sourcePage, note?}; it may have no version yet, and an empty or broken one stops the rules loading.'
+      description: 'public_pay_employers holds the HSE switch (#261): the entry "health service executive" (tier 1) gives every HSE name tier 1 while it is in force; a version without it, or with it `on: false`, turns the switch off. Each public_pay_employers value is a `PayDealEntry` (B66). pay_scales (#269) is a list of grades, each {code (1 to 12 capital letters or digits, unique), title, firstEur, lastEur (whole euro, first not above last), sourceUrl (https), sourcePage, note?}; it may have no version yet, and an empty or broken one stops the rules loading.'
       enum: [minimums, critical_skills_list, ineligible_list, public_pay_employers, big_company_names, pay_scales]
     RulesChange:
       type: object
@@ -413,7 +415,54 @@ components:
         kind: { $ref: '#/components/schemas/RulesKind' }
         versionId: { $ref: '#/components/schemas/Id' }
         effectiveFrom: { $ref: '#/components/schemas/Date' }
-        data: { description: The whole version for its kind (see packages/db/src/rules-data.ts). }
+        data: { description: The whole version for its kind (see packages/db/src/rules-data.ts; for public_pay_employers a map of lower-case employer name to `PayDealEntry`). }
+        hourly:
+          type: object
+          description: "B64, the kind minimums only: each yearly minimum as euro an hour, to the cent, over 52 weeks of `standardWeekHours` (the General figures only when the version has them)."
+          additionalProperties: { type: number }
+          example: { criticalSkills: 20.17, graduate: 18.17, nonList: 33.98, general: 18.05, generalLower: 16.12 }
+    PayDealEvidence:
+      type: object
+      additionalProperties: false
+      required: [kind, link, file]
+      description: "B66: why an employer's pay follows a public sector pay deal. `link` and `file` may both be given; at least one is not null."
+      properties:
+        kind: { type: string, enum: [service_arrangement, published_pay_policy, dete_rule_text, other], description: What the evidence is., example: service_arrangement }
+        link: { type: [string, 'null'], description: "An https address of at most 500 characters, or null.", example: null }
+        file:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [id, name]
+          description: "A file from POST /api/rules/evidence, or null. In a `propose` the name is replaced with the name the file was uploaded with; a file never uploaded there is `bad_data`."
+          properties:
+            id: { type: string, pattern: '^[0-9a-f-]{36}\.(pdf|jpg|png)$', description: "The file's id, for GET /api/rules/evidence?file=.", example: 0f8fad5b-d9cb-469f-a165-70867728950e.pdf }
+            name: { type: string, maxLength: 200, description: "The file's name as uploaded (a label only).", example: service-arrangement-2026.pdf }
+    PayDealEntry:
+      type: object
+      additionalProperties: false
+      required: [tier]
+      description: "B66: one public pay-deal employer. A new or changed entry that is on needs `bodyType` and `evidence`; one saved before B66 may have neither until it is changed."
+      properties:
+        tier: { type: integer, enum: [1, 2], description: "1 for the HSE entry (matched by the HSE name test), 2 for a name matched exactly.", example: 2 }
+        note: { type: string, maxLength: 500, description: A staff note., example: Confirmed HSE consolidated scales apply to nursing grades. }
+        bodyType: { type: string, enum: [public_body, section_38, section_39], description: What kind of body it is., example: section_38 }
+        evidence: { $ref: '#/components/schemas/PayDealEvidence' }
+        addedOn: { type: string, format: date, description: "The day the entry was first proposed. Set by the server: whatever a `propose` sends is replaced.", example: '2026-11-25' }
+        addedBy: { type: string, description: "The staff id of who proposed it. Set by the server, as addedOn.", example: q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP }
+        on: { type: boolean, description: "false keeps the entry on the list but switched off: no badge, posting check or fetch counts it while that version is in force. Absent or true is on. At least one entry of a version is on.", example: false }
+    ManualCheck:
+      type: object
+      additionalProperties: false
+      required: [id, state, detail]
+      description: One check of a manual post.
+      properties:
+        id: { type: string, enum: [occupation, contract, wording, money, pay], description: "`wording` is the rules chain on the text; `money` is wording that asks the candidate for money.", example: pay }
+        state: { type: string, enum: [pass, blocked], description: A blocked check keeps the post a draft., example: pass }
+        code: { type: string, description: "Why it is blocked: occupation_ineligible, occupation_not_on_list, contract_too_short, rules_failed, needs_review, pay_required, pay_below_minimum or pay_not_on_scale.", example: pay_below_minimum }
+        detail:
+          type: object
+          description: "The facts: occupation {occupationCode, list (critical_skills, ineligible or null)}; contract {months, minimumMonths}; wording {stage}; money {phrase}; pay {minimumEur, countedEur, healthInsuranceEur, weeklyHours, route}."
+          additionalProperties: { type: [string, number, boolean, 'null'] }
     StaffRow:
       type: object
       required: [id, name, email, status, createdAt, roles]
@@ -2176,12 +2225,14 @@ paths:
       summary: List the staff manual posts
       description: >-
         The jobs staff posted by hand, newest first, 20 a page. The next page is asked for with `after` (the opaque `next` token of the
-        page before). `reason` says why a draft is not listed. An unknown or repeated query key is 400 `bad_query`.
+        page before); `mine=true` lists only the signed-in member's own posts. `reason` says why a draft is not listed; `badge` and
+        `sponsor_request_id` say where the post stands in the later two-person "Sponsor confirmed" step (#232). An unknown or repeated query key is 400 `bad_query`.
       security: [{ staffSession: [] }]
       x-roles: [account_reviewer, trust_and_safety, administrator]
       x-rate-limit: none
       parameters:
         - { name: after, in: query, required: false, description: "The `next` token of the page before.", schema: { $ref: '#/components/schemas/Cursor' } }
+        - { name: mine, in: query, required: false, description: "`true`: only one's own posts. Any other value is `bad_query`.", schema: { type: string, enum: ['true'] }, example: 'true' }
       responses:
         '200':
           description: One page.
@@ -2195,10 +2246,10 @@ paths:
                   next: { type: [string, 'null'] }
               example:
                 items:
-                  - { id: '7701', organisation_id: '310', display_name: Example Care Ltd, title: Senior Care Assistant, status: draft, pass_route: null, posted_by_staff_id: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', posted_at: '2026-11-18 09:30:00.123456+00', closes_at: '2026-12-31 23:59:59+00', closed_at: null, reason: pay_below_minimum }
+                  - { id: '7701', organisation_id: '310', display_name: Example Care Ltd, title: Senior Care Assistant, status: draft, badge: null, pass_route: null, posted_by_staff_id: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', posted_at: '2026-11-18 09:30:00.123456+00', closes_at: '2026-12-31 23:59:59+00', closed_at: null, reason: pay_below_minimum, sponsor_request_id: null }
                 next: null
         '400':
-          description: "`bad_cursor`: `after` is not a token of this list (a plain id, a changed token or another list's token). `bad_query`: an unknown or repeated query key (`before` included)."
+          description: "`bad_cursor`: `after` is not a token of this list (a plain id, a changed token or another list's token). `bad_query`: an unknown or repeated query key (`before` included), or `mine` not `true`."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_cursor } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
@@ -2291,6 +2342,138 @@ paths:
           description: "`company_not_postable`: not an employer or agency, merged, or rejected, closed, banned or suspended. `bad_state`: close of a post already closed or hidden."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: company_not_postable } } }
         '500': { $ref: '#/components/responses/ServerError' }
+  /api/manual-jobs/companies:
+    get:
+      operationId: searchManualCompanies
+      summary: Find a company to post a manual job for
+      description: >-
+        B72: the employer picker. At most 10 employers and agencies a post can be made for (not merged, rejected, closed, banned or suspended) whose display name, or any
+        legal or alias name, contains the text, or whose CRO number starts with it, by display name. `more` is true when there are others (type more). Company facts
+        only: no login, member or email. Staff do not create companies here (#287). Nothing is written.
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer]
+      x-rate-limit: none
+      parameters:
+        - { name: q, in: query, required: true, description: "3 to 100 characters after trimming, no control character.", schema: { type: string, minLength: 3, maxLength: 100 }, example: Fake Orchard }
+      responses:
+        '200':
+          description: The companies.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, more]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 10
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [id, displayName, kind, croNumber, status, county]
+                      properties:
+                        id: { $ref: '#/components/schemas/Id' }
+                        displayName: { type: string, description: "The company's display name.", example: Fake Orchard Foods Ltd }
+                        kind: { type: string, enum: [employer, agency], description: What the company is., example: employer }
+                        croNumber: { type: [string, 'null'], description: "The Companies Registration Office number, or null when none is stored.", example: '123456' }
+                        status: { type: string, description: "The company's status now.", example: verified }
+                        county: { type: [string, 'null'], description: "The company's county, or null.", example: Cork }
+                  more: { type: boolean, description: True when more than 10 companies match., example: false }
+              example: { items: [{ id: '1204', displayName: Fake Orchard Foods Ltd, kind: employer, croNumber: '123456', status: verified, county: Cork }], more: false }
+        '400':
+          description: "`bad_query`: no `q`, `q` repeated, under 3 or over 100 characters after trimming, a control character in it, or any other query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_account_reviewer`: no account_reviewer role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_account_reviewer } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/manual-jobs/dry-run:
+    post:
+      operationId: dryRunManualPost
+      summary: What posting this job by hand would do, nothing written
+      description: >-
+        B72: the body is the `create` body of POST /api/manual-jobs without `action`, with the same field rules. Answers what `create` would do with it now (live with the
+        badge, or a draft and why) and every check, the ones after a blocked one included. Never "Sponsor confirmed": that is the later two-person step on a live post
+        (/api/manual-jobs/sponsor-confirmation, #232). Not a hold: the rules may change before the real post. Never cached. The Origin header must be the admin app's origin.
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer]
+      x-rate-limit: none
+      x-body-cap: 30000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [organisationId, title, description, county, occupationCode, weeklyHours, closesOn, applyUrl]
+              properties:
+                organisationId: { $ref: '#/components/schemas/Id' }
+                title: { type: string, minLength: 2, maxLength: 200 }
+                description: { type: string, minLength: 20, maxLength: 10000 }
+                county: { type: string, enum: [Carlow, Cavan, Clare, Cork, Donegal, Dublin, Galway, Kerry, Kildare, Kilkenny, Laois, Leitrim, Limerick, Longford, Louth, Mayo, Meath, Monaghan, Offaly, Roscommon, Sligo, Tipperary, Waterford, Westmeath, Wexford, Wicklow] }
+                occupationCode: { type: string, pattern: '^[0-9]{4}$' }
+                contractMonths: { type: [integer, 'null'], minimum: 1, maximum: 600 }
+                salaryLow: { type: [integer, 'null'], minimum: 1, maximum: 1000000 }
+                salaryHigh: { type: [integer, 'null'], minimum: 1, maximum: 1000000 }
+                payGrade: { type: [string, 'null'], minLength: 1, maxLength: 100 }
+                healthInsuranceEur: { type: [integer, 'null'], minimum: 0, maximum: 50000 }
+                weeklyHours: { type: integer, minimum: 1, maximum: 60 }
+                closesOn: { $ref: '#/components/schemas/Date' }
+                applyUrl: { type: string, format: uri, minLength: 10, maxLength: 500 }
+            example: { organisationId: '310', title: Software Engineer, description: We are hiring a software engineer in Dublin., county: Dublin, occupationCode: '2136', contractMonths: null, salaryLow: 50000, salaryHigh: 60000, weeklyHours: 39, closesOn: '2026-12-31', applyUrl: 'https://careers.example.ie/jobs/1' }
+      responses:
+        '200':
+          description: What the post would be, and every check in order.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status, badge, passRoute, reason, closesAt, checks]
+                properties:
+                  status: { type: string, enum: [live, draft], description: Whether the post would be listed., example: live }
+                  badge: { type: [string, 'null'], enum: [critical_skills_eligible, null], description: "The badge it would get, or null for a draft.", example: critical_skills_eligible }
+                  passRoute: { type: [string, 'null'], enum: [stated_pay, public_pay, null], description: "How the pay passed, or null for a draft.", example: stated_pay }
+                  reason:
+                    type: [object, 'null']
+                    description: "Why it would be a draft (the code of the first refusal, and the chain's stage when it stopped there), or null."
+                    properties:
+                      code: { type: string, example: pay_below_minimum }
+                      stage: { type: string, example: 6 wording }
+                  closesAt: { type: string, format: date-time, description: "When the post would close: the end of closesOn, Irish time.", example: '2026-12-31T23:59:59.000Z' }
+                  checks: { type: array, minItems: 5, maxItems: 5, items: { $ref: '#/components/schemas/ManualCheck' } }
+              example:
+                status: draft
+                badge: null
+                passRoute: null
+                reason: { code: pay_below_minimum }
+                closesAt: '2026-12-31T23:59:59.000Z'
+                checks:
+                  - { id: occupation, state: pass, detail: { occupationCode: '2136', list: critical_skills } }
+                  - { id: contract, state: pass, detail: { months: null, minimumMonths: 24 } }
+                  - { id: wording, state: pass, detail: { stage: PASS (salary stated) } }
+                  - { id: money, state: pass, detail: { phrase: null } }
+                  - { id: pay, state: blocked, code: pay_below_minimum, detail: { minimumEur: 40904, countedEur: 30000, healthInsuranceEur: 0, weeklyHours: 39, route: null } }
+        '400':
+          description: >-
+            `bad_body`: not one JSON object, an unknown field (`action` included), or over 30,000 characters. `bad_query`: any query key. The field codes of `create`:
+            `bad_organisation_id`, `bad_title`, `bad_apply_url`, `bad_description`, `bad_county`, `bad_occupation_code`, `bad_contract_months`, `bad_salary`,
+            `bad_pay_grade`, `bad_health_insurance`, `bad_weekly_hours`, `bad_closes_on`, `bad_closing_date`.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_salary } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_account_reviewer`: no account_reviewer role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_account_reviewer } } }
+        '404':
+          description: "`company_not_found`: no such company."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: company_not_found } } }
+        '409':
+          description: "`company_not_postable`: not an employer or agency, merged, or rejected, closed, banned or suspended."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: company_not_postable } } }
+        '500': { $ref: '#/components/responses/ServerError' }
   /api/manual-jobs/sponsor-confirmation:
     get:
       operationId: listSponsorConfirmations
@@ -2325,16 +2508,20 @@ paths:
                     items:
                       type: object
                       additionalProperties: false
-                      required: [requestId, jobId, fileName, contentType, sizeBytes, proposedBy, createdAt]
+                      required: [requestId, jobId, title, organisationId, displayName, fileName, contentType, sizeBytes, proposedBy, proposedByName, createdAt]
                       properties:
                         requestId: { $ref: '#/components/schemas/Id' }
                         jobId: { $ref: '#/components/schemas/Id' }
+                        title: { type: string, description: "The post's job title.", example: Fake Staff Nurse }
+                        organisationId: { $ref: '#/components/schemas/Id' }
+                        displayName: { type: string, description: "The company's display name.", example: Example Care Ltd }
+                        proposedByName: { type: [string, 'null'], description: "The name of the staff member who uploaded it (never their email).", example: Fake Reviewer }
                         fileName: { type: string }
                         contentType: { type: string, enum: [pdf, jpeg, png] }
                         sizeBytes: { type: integer }
                         proposedBy: { $ref: '#/components/schemas/LoginId' }
                         createdAt: { $ref: '#/components/schemas/DbTime' }
-              example: { pending: [{ requestId: '9001', jobId: '5501', fileName: sponsor-letter.pdf, contentType: pdf, sizeBytes: 182044, proposedBy: made-up-staff-id, createdAt: '2026-11-19 10:00:00.123456+00' }] }
+              example: { pending: [{ requestId: '9001', jobId: '5501', title: Fake Staff Nurse, organisationId: '310', displayName: Example Care Ltd, proposedByName: Fake Reviewer, fileName: sponsor-letter.pdf, contentType: pdf, sizeBytes: 182044, proposedBy: made-up-staff-id, createdAt: '2026-11-19 10:00:00.123456+00' }] }
             application/pdf: { schema: { type: string, format: binary }, example: '(the file bytes, at most 4,194,304)' }
             image/jpeg: { schema: { type: string, format: binary } }
             image/png: { schema: { type: string, format: binary } }
@@ -2569,12 +2756,13 @@ paths:
                         organisationId: { $ref: '#/components/schemas/Id' }
                         displayName: { type: [string, 'null'] }
                         proposedBy: { type: string }
+                        proposedByName: { type: string, description: "The proposer's name (never their email).", example: Fake Editor }
                         createdAt: { type: string }
                         change: { $ref: '#/components/schemas/RulesChange' }
               example:
                 inForce: [{ kind: minimums, versionId: '3', effectiveFrom: '2026-01-01', data: { criticalSkills: 40000 } }]
                 upcoming: []
-                pending: [{ requestId: '90', kind: big_company_flag, organisationId: '330', displayName: Example Global Ltd, proposedBy: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', createdAt: '2026-11-18 09:30:00.123456+00' }]
+                pending: [{ requestId: '90', kind: big_company_flag, organisationId: '330', displayName: Example Global Ltd, proposedBy: 'q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP', proposedByName: Fake Editor, createdAt: '2026-11-18 09:30:00.123456+00' }]
         '400':
           description: "`bad_query`: any query key (this GET takes none)."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
@@ -2588,7 +2776,9 @@ paths:
       summary: Propose, confirm, refuse or withdraw a rules change
       description: >-
         `propose` (rules_data_editor): a whole new version of one kind, in force from `effectiveFrom` (today or later); `data` is checked
-        for its kind (packages/db/src/rules-data.ts), and a new or changed big-company name needs its link, date read and next review date.
+        for its kind (packages/db/src/rules-data.ts), and a new or changed big-company name needs its link, date read and next review date. `public_pay_employers` (B66): each value is a
+        `PayDealEntry`; a new or changed entry that is on needs its body type and evidence (#67), its date added and added by are the server's,
+        an evidence file must come from POST /api/rules/evidence, and at least one entry stays on. Switching an entry off is `on: false`.
         One pending proposal per kind. `propose_flag` (rules_data_editor): set the big-company flag on one company, refused unless one of
         its names matches a big-company name in force. `confirm` and `refuse` (an administrator who did not propose): confirm writes the
         version or sets the flag in the same transaction; confirming new minimums queues one email and portal notice per company with a
@@ -2659,6 +2849,215 @@ paths:
         '409':
           description: "`date_in_past`: effectiveFrom before today. `no_change`: the data equals the version in force. `decision_pending`: a proposal for this kind or company waits already. `already_big`: the company has the flag. `no_name_match`: none of the company's names is a big-company name in force. `not_pending`: the request is not pending. `same_person`: the proposer confirming or refusing. `date_passed`: confirm after the proposed date."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: no_change } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/rules/evidence:
+    get:
+      operationId: openRulesEvidence
+      summary: Open the evidence file of a pay-deal entry
+      description: >-
+        B66: the file itself (inline, the type from the stored kind, nosniff, no-store), only once the malware scan passed, and one `data_access` audit row
+        (`rules.evidence_open`, the file id, the role in force). The id is the whole name of a rules evidence file, so it reaches no other stored file.
+      security: [{ staffSession: [] }]
+      x-roles: [account_reviewer, fetched_job_reviewer, rules_data_editor, trust_and_safety, services_case_handler, administrator]
+      x-rate-limit: none
+      parameters:
+        - { name: file, in: query, required: true, description: "The file's id, from an entry's evidence.", schema: { type: string }, example: 0f8fad5b-d9cb-469f-a165-70867728950e.pdf }
+      responses:
+        '200':
+          description: The file.
+          headers:
+            Content-Type: { schema: { type: string, enum: [application/pdf, image/jpeg, image/png] }, description: "From the stored kind, never the uploader's." }
+            Content-Disposition: { schema: { type: string }, example: "inline; filename*=UTF-8''evidence.pdf" }
+            X-Content-Type-Options: { schema: { type: string, const: nosniff } }
+            Cache-Control: { schema: { type: string, const: no-store } }
+            Content-Security-Policy: { schema: { type: string, const: "frame-ancestors 'self'" } }
+          content:
+            application/pdf: { schema: { type: string, format: binary }, example: '(the file bytes, at most 4,194,304)' }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+        '400':
+          description: "`bad_query`: an unknown or repeated query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active. `not_rules_viewer`: none of the six roles (a content editor, or no role)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_rules_viewer } } }
+        '404':
+          description: "`not_found`: no such file (also no `file`, or one that is not a rules evidence id)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_found } } }
+        '409': { $ref: '#/components/responses/StaffFileRefused' }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503':
+          description: "`files_unavailable`: file storage is not set up. No audit row is written."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: files_unavailable } } }
+    post:
+      operationId: uploadRulesEvidence
+      summary: Upload an evidence file for a pay-deal entry
+      description: >-
+        B66: `multipart/form-data` with exactly one field `file` (PDF, JPEG or PNG, found from the bytes; at most 4,194,304 bytes). The answer's `file` goes on an entry's
+        `evidence.file` in a `propose` of public_pay_employers on /api/rules; nothing changes until a second person confirms that. Order: Origin, the `Content-Length`
+        cap (before the session), the session, the role (before the body is read), then the file. A row write that fails removes the stored file.
+      security: [{ staffSession: [] }]
+      x-roles: [rules_data_editor]
+      x-rate-limit: none
+      x-body-cap: 4210688 bytes (4 MiB file plus 16 KiB of multipart wrapping), counted while reading
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, additionalProperties: false, required: [file], properties: { file: { type: string, format: binary } } }
+      responses:
+        '200':
+          description: The stored file's id and name.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ok, file, contentType, sizeBytes]
+                properties:
+                  ok: { const: true }
+                  file:
+                    type: object
+                    additionalProperties: false
+                    required: [id, name]
+                    properties:
+                      id: { type: string, description: The id to put on an entry., example: 0f8fad5b-d9cb-469f-a165-70867728950e.pdf }
+                      name: { type: string, description: The cleaned file name., example: service-arrangement-2026.pdf }
+                  contentType: { type: string, enum: [pdf, jpeg, png], description: The kind found from the bytes., example: pdf }
+                  sizeBytes: { type: integer, description: The stored size., example: 182044 }
+              example: { ok: true, file: { id: 0f8fad5b-d9cb-469f-a165-70867728950e.pdf, name: service-arrangement-2026.pdf }, contentType: pdf, sizeBytes: 182044 }
+        '400':
+          description: "`bad_query`: any query key. `bad_file`: not exactly one `file` field. `empty_file`: the file has no bytes."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_file } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`bad_origin`: not the admin site's Origin. `not_active_staff`: the login is not active. `not_rules_editor`: no rules_data_editor role."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_rules_editor } } }
+        '413':
+          description: "`file_too_large`: over the cap by header or while reading."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: file_too_large } } }
+        '415':
+          description: "`wrong_file_type`: the bytes are not a PDF, JPEG or PNG, or the file does not decode (as the sponsor confirmation upload)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: wrong_file_type } } }
+        '422':
+          description: "`file_active_content`: a PDF that carries active content, is encrypted, or hides objects the check cannot read."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: file_active_content } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503':
+          description: "`files_unavailable`: file storage is not set up. Nothing is written."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: files_unavailable } } }
+  /api/rules/history:
+    get:
+      operationId: listRulesHistory
+      summary: List the past versions of one rules kind
+      description: >-
+        B64: the versions of one kind that have started, newest first, 10 a page; the first is the one in force. Each has its dates, who proposed and confirmed it, and its change
+        against the version before it (the first version's change is every entry added), so a figure or an entry at any date can be read from the changes. The next
+        page is asked for with `after` (the opaque `next` token of the page before). Any active staff member. Confirmed versions still to come are in GET /api/rules.
+      security: [{ staffSession: [] }]
+      x-roles: [any active staff member]
+      x-rate-limit: none
+      parameters:
+        - { name: kind, in: query, required: true, description: The rules kind., schema: { $ref: '#/components/schemas/RulesKind' }, example: minimums }
+        - { name: after, in: query, required: false, description: "The `next` token of the page before.", schema: { $ref: '#/components/schemas/Cursor' } }
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [kind, items, next]
+                properties:
+                  kind: { $ref: '#/components/schemas/RulesKind' }
+                  items:
+                    type: array
+                    maxItems: 10
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [versionId, effectiveFrom, until, inForce, seeded, proposedBy, proposedByName, confirmedByName, confirmedAt, change]
+                      properties:
+                        versionId: { $ref: '#/components/schemas/Id' }
+                        effectiveFrom: { $ref: '#/components/schemas/Date' }
+                        until: { type: [string, 'null'], description: "The day the next version started (the same day when it was replaced on its first day), or null for the one in force.", example: '2026-11-25' }
+                        inForce: { type: boolean, description: True for the version in force today., example: false }
+                        seeded: { type: boolean, description: "True for the owner's first version (nobody proposed or confirmed it).", example: false }
+                        proposedBy: { type: [string, 'null'], description: "The proposer's staff id, or null for the first version.", example: q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP }
+                        proposedByName: { type: [string, 'null'], description: "The proposer's name, or null.", example: Fake Editor }
+                        confirmedByName: { type: [string, 'null'], description: "The name of the administrator who confirmed, or null.", example: Fake Administrator }
+                        confirmedAt: { type: [string, 'null'], description: "When it was confirmed (database time text), or null.", example: '2026-11-18 09:30:00.123456+00' }
+                        change: { $ref: '#/components/schemas/RulesChange' }
+                  next: { type: [string, 'null'], description: "The token of the next page, or null on the last.", example: null }
+              example:
+                kind: minimums
+                items:
+                  - { versionId: '3', effectiveFrom: '2026-03-01', until: null, inForce: true, seeded: false, proposedBy: q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP, proposedByName: Fake Editor, confirmedByName: Fake Administrator, confirmedAt: '2026-02-18 09:30:00.123456+00', change: { added: {}, removed: {}, changed: { criticalSkills: { before: 38000, after: 40904 } } } }
+                next: null
+        '400':
+          description: "`bad_kind`: no kind or not a rules kind. `bad_cursor`: `after` is not a token of this list. `bad_query`: an unknown or repeated query key."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_kind } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_active_staff } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /api/rules/pay-deal-employers:
+    get:
+      operationId: listPayDealEmployers
+      summary: List the public pay-deal employers in force
+      description: >-
+        B66: every entry of the public_pay_employers version in force, on and off, by name, with its body type, evidence, date added, added by and the counts of its companies
+        (matched by display name or any name row, as the badge matches them; the HSE entry by the HSE name test), their legal names and their live jobs. Add, change and
+        switch off are a `propose` of the whole list on /api/rules (two people). Any active staff member. It takes no query key.
+      security: [{ staffSession: [] }]
+      x-roles: [any active staff member]
+      x-rate-limit: none
+      responses:
+        '200':
+          description: The entries; versionId and effectiveFrom are null and items empty when no version is in force.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [versionId, effectiveFrom, items]
+                properties:
+                  versionId: { type: [string, 'null'], description: "The version in force, or null.", example: '9' }
+                  effectiveFrom: { type: [string, 'null'], description: "Its first day, or null.", example: '2026-11-25' }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [name, tier, note, bodyType, evidence, addedOn, addedBy, addedByName, on, companies, legalNames, liveJobs]
+                      properties:
+                        name: { type: string, description: "The employer name, lower case (the entry's key).", example: northquay hospital group }
+                        tier: { type: integer, enum: [1, 2], description: "1 for the HSE entry, 2 for a name matched exactly.", example: 2 }
+                        note: { type: [string, 'null'], description: "The staff note, or null.", example: null }
+                        bodyType: { type: [string, 'null'], enum: [public_body, section_38, section_39, null], description: "What kind of body it is, or null when none is recorded yet.", example: section_38 }
+                        evidence: { oneOf: [{ $ref: '#/components/schemas/PayDealEvidence' }, { type: 'null' }], description: "The evidence, or null (show \"Evidence missing\")." }
+                        addedOn: { type: [string, 'null'], description: "The day it was first proposed, or null for an entry of the owner's first version.", example: '2026-11-25' }
+                        addedBy: { type: [string, 'null'], description: "The staff id of who proposed it, or null.", example: q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP }
+                        addedByName: { type: [string, 'null'], description: "Their name (never their email), or null.", example: Fake Editor }
+                        on: { type: boolean, description: "False when switched off: it counts for nothing.", example: true }
+                        companies: { type: integer, description: The companies on the site it matches., example: 1 }
+                        legalNames: { type: integer, description: Those companies' linked legal names., example: 2 }
+                        liveJobs: { type: integer, description: Those companies' live jobs., example: 4 }
+              example:
+                versionId: '9'
+                effectiveFrom: '2026-11-25'
+                items:
+                  - { name: northquay hospital group, tier: 2, note: null, bodyType: section_38, evidence: { kind: service_arrangement, link: null, file: { id: 0f8fad5b-d9cb-469f-a165-70867728950e.pdf, name: service-arrangement-2026.pdf } }, addedOn: '2026-11-25', addedBy: q8Hn2LxV0aB7cD9eF1gH3iJ5kL7mN9oP, addedByName: Fake Editor, on: true, companies: 1, legalNames: 2, liveJobs: 4 }
+        '400':
+          description: "`bad_query`: any query key (this GET takes none)."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_query } } }
+        '401': { $ref: '#/components/responses/NoStaffSession' }
+        '403':
+          description: "`not_active_staff`: the login is not active."
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_active_staff } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/staff:
     get:
