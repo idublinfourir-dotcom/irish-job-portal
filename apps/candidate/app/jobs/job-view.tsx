@@ -7,7 +7,8 @@ import { A, Breadcrumb, CriticalSkillsBadge, Icon, Pill, SponsorBadge, type Icon
 import { companyPath, staticPath } from "../../lib/paths";
 import { TileCard, type CardJob } from "./card";
 import { DegreeBox } from "./degree-box";
-import { criticalSkillsResult, generalResult, type DegreeChoice, type DegreeResult } from "./degree";
+import { HSE_ENTRY, publicPayTier, type PublicPayCandidates } from "@portal/rules";
+import { criticalSkillsResult, generalResult, type DegreeChoice, type DegreeResult, type Pay } from "./degree";
 import { JobActions, ReportJob, SaveButton } from "./client";
 import { ago, capFirst, contractText, euro, permitFeeLabel } from "./format";
 import { Hl, Join, Logo, PhotoBlock, wrap } from "./parts";
@@ -40,8 +41,10 @@ const Note = ({ icon, children }: { icon: IconName; children: ReactNode }) => (
 );
 
 /** How the stated pay stands against the minimum of this job: for a Critical Skills job the one of the chosen degree, else the General one. */
+const HSE_ONLY: PublicPayCandidates = new Map([[HSE_ENTRY, 1]]);
+const payOf = (job: JobPage): Pay => ({ passRoute: job.passRoute, salaryLow: job.salaryLow, salaryHigh: job.salaryHigh, hse: publicPayTier(job.employerName, HSE_ONLY) === 1 });
 export function resultOf(job: JobPage, degree: DegreeChoice): DegreeResult | null {
-  const pay = { passRoute: job.passRoute, salaryLow: job.salaryLow, salaryHigh: job.salaryHigh };
+  const pay = payOf(job);
   return job.permitType === "critical_skills" ? criticalSkillsResult(degree, job.minimums, pay) : generalResult(job.minimums, job.occupationCode, pay);
 }
 
@@ -55,7 +58,7 @@ export function PayCard({ job, result }: { job: JobPage; result: DegreeResult | 
     state = "public_pay";
     head = "Public sector pay scale applies";
     sub = job.payScale ? `Pay scale for this grade: ${euro(job.payScale.firstEur)} to ${euro(job.payScale.lastEur)}` : job.payGrade ? `Pay grade: ${job.payGrade}` : null;
-    chip = <Pill tone="lilac">Salary minimum does not apply</Pill>;
+    chip = result?.kind === "public_pay" ? <Pill tone="lilac">Salary minimum does not apply</Pill> : null;
   } else if (stated) {
     state = job.salaryRangeCrosses ? "range_crosses" : "stated";
     head = <>{job.salaryLine} a year</>;
@@ -289,7 +292,7 @@ export function JobView({ job, now, path, signedIn, saved, stage, degree, prompt
               jobId={job.id} title={job.title} applyUrl={applyUrl} signedIn={signedIn} saved={saved} stage={stage} prompt={prompt} path={path}
               unavailable={onSiteOff ? "Applying for this job is not open yet." : "The employer has not given a page to apply on."}
             />
-            {cs && <div className="order-4 lg:order-none"><DegreeBox minimums={m} pay={{ passRoute: job.passRoute, salaryLow: job.salaryLow, salaryHigh: job.salaryHigh }} initial={degree} /></div>}
+            {cs && <div className="order-4 lg:order-none"><DegreeBox minimums={m} pay={payOf(job)} initial={degree} /></div>}
             <div className="order-6 lg:order-none"><Snapshot job={job} /></div>
             <A href={staticPath("permit-services")!} className="order-7 flex items-start justify-between gap-4 rounded-bento bg-ink p-6 text-white no-underline lg:order-none">
               <span>

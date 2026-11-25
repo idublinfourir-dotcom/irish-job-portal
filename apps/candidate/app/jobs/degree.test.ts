@@ -25,8 +25,15 @@ describe("degree box", () => {
     expect(standing(pay(null, 50000), 40904)).toBe("clears"); // "up to"
     expect(standing(pay(null, null), 40904)).toBe("unstated");
   });
-  it("answers no minimum for every choice on a public pay scale", () => {
-    for (const c of ["relevant", "last_12_months", "none"] as const) expect(criticalSkillsResult(c, MINIMUMS, pay(null, null, "public_pay"))).toEqual({ kind: "public_pay" });
+  it("answers no minimum on a public pay scale with the relevant degree, at any employer", () => {
+    for (const hse of [true, false]) for (const c of ["relevant", "last_12_months"] as const) expect(criticalSkillsResult(c, MINIMUMS, { ...pay(null, null, "public_pay"), hse })).toEqual({ kind: "public_pay" });
+  });
+  it("without one (#67, #300): the HSE keeps its pay scale and says the degree is needed, any other public body gets the higher minimum", () => {
+    for (const p of [pay(null, null, "public_pay"), pay(32540, 32540, "public_pay")]) expect(criticalSkillsResult("none", MINIMUMS, { ...p, hse: true })).toEqual({ kind: "public_pay", needsDegree: true });
+    expect(criticalSkillsResult("none", MINIMUMS, pay(null, null, "public_pay"))).toEqual({ kind: "minimum", minimum: 68911, standing: "unstated", basis: null });
+    expect(criticalSkillsResult("none", MINIMUMS, pay(32540, 32540, "public_pay"))).toMatchObject({ minimum: 68911, standing: "below" });
+    expect(criticalSkillsResult("none", { ...MINIMUMS, nonList: null }, pay(null, null, "public_pay"))).toEqual({ kind: "route_closed" });
+    expect(criticalSkillsResult("none", MINIMUMS, { ...pay(50000), hse: true })).toMatchObject({ minimum: 68911, standing: "below" }); // an HSE job on stated pay is like any other
   });
   it("explains an unstated salary through the big-company list or a pay floor", () => {
     expect(criticalSkillsResult("relevant", MINIMUMS, pay(null, null, "big_company"))).toMatchObject({ standing: "unstated", basis: "big_company" });

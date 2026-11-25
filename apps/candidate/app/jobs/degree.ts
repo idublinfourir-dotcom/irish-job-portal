@@ -10,11 +10,12 @@ export type Minimums = {
   criticalSkills: number; graduate: number; graduateMonths: number; nonList: number | null; minContractMonths: number; standardWeekHours: number;
   general: number | null; generalLower: number | null; generalLowerCodes: string[] | null;
 };
-export type Pay = { passRoute: string | null; salaryLow: number | null; salaryHigh: number | null };
+/** `hse`: the employer is the HSE itself (its own name, `publicPayTier`). */
+export type Pay = { passRoute: string | null; salaryLow: number | null; salaryHigh: number | null; hse?: boolean };
 /** How the stated pay stands against a minimum. `depends`: the range starts below it and ends at or above it. `unstated`: no pay in the advert. */
 export type Standing = "clears" | "depends" | "below" | "unstated";
 export type DegreeResult =
-  | { kind: "public_pay" } // no salary minimum applies: the job follows a public sector pay scale
+  | { kind: "public_pay"; needsDegree?: true } // no salary minimum applies: the job follows a public sector pay scale. needsDegree: the candidate said they have no relevant degree
   | { kind: "route_closed" } // no minimum is published for this case (the route without a degree is off)
   | { kind: "minimum"; minimum: number; standing: Standing; basis: "big_company" | "pay_floor" | null };
 
@@ -32,7 +33,10 @@ function against(pay: Pay, minimum: number): DegreeResult {
 }
 /** A Critical Skills job: the minimum for the candidate's degree. */
 export function criticalSkillsResult(choice: DegreeChoice, m: Minimums, pay: Pay): DegreeResult {
-  if (pay.passRoute === "public_pay") return { kind: "public_pay" };
+  // #67, #300: the public pay route needs the relevant degree, so without one the higher minimum is what is left. The HSE keeps its pay scale line and says the degree is needed:
+  // its clinical jobs cannot be done without one, and most of its scales never reach that minimum, so a figure there would only mislead.
+  if (pay.passRoute === "public_pay" && choice !== "none") return { kind: "public_pay" };
+  if (pay.passRoute === "public_pay" && pay.hse) return { kind: "public_pay", needsDegree: true };
   const minimum = choice === "relevant" ? m.criticalSkills : choice === "last_12_months" ? m.graduate : m.nonList;
   return minimum === null ? { kind: "route_closed" } : against(pay, minimum);
 }
