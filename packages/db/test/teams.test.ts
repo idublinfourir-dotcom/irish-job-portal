@@ -145,9 +145,7 @@ describe("invite then accept", () => {
   beforeAll(async () => { c = await company(); ivy = await login(c.domain); });
   it("the owner invites by email; the email goes to the fake sender with a link; only the token's hash is stored; one audit row of codes", async () => {
     await list(c.owner.cookie); // warm
-    const t = performance.now();
-    const [r, stmts] = await counted(() => invite(c, ` ${ivy.email.toUpperCase()} `, "poster", true));
-    expect(performance.now() - t).toBeLessThan(BUDGET.inviteMs * 3); // one call; the median budget is in the budgets test
+    const [r, stmts] = await counted(() => invite(c, ` ${ivy.email.toUpperCase()} `, "poster", true)); // its time: the budgets test below (a retry of this test would meet its own invite)
     expect(stmts, `${stmts} statements`).toBeLessThanOrEqual(BUDGET.invite);
     expect(r.status, r.text).toBe(200);
     membershipId = r.json!.membershipId;

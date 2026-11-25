@@ -209,15 +209,20 @@ describe("claiming an existing sponsor (20b path 1, #20, #37)", () => {
   });
   it("a company-domain email gives verified, no review item, and the login becomes owner and signer, within budget", async () => {
     await requirePortal(auth(), new Headers({ cookie: boss.cookie })); // warm
-    const t = performance.now();
     const [r, n] = await counted(() => company("claim", { organisationId: acme }, { cookie: boss.cookie }));
-    expect(performance.now() - t).toBeLessThan(BUDGET.claimMs);
     expect(n, `${n} statements`).toBeLessThanOrEqual(BUDGET.claim);
     expect([r.status, r.json]).toEqual([200, { organisationId: acme, status: "verified" }]);
     expect(await orgRow(acme)).toEqual({ status: "verified", signup_path: "dete_claim", claimed: true, verified: true });
     expect(await reviews(acme)).toBe(0);
     const me = await requirePortal(auth(), new Headers({ cookie: boss.cookie }));
     expect(me.membership).toMatchObject({ organisationId: Number(acme), role: "account_owner", isSigner: true, organisationStatus: "verified", organisationKind: "employer" });
+  });
+  it("claiming stays inside its time budget", async () => {
+    // a company and a login of its own each time: a late clock number is tried again (vitest.config.ts), and a company can be claimed once
+    const org = await newOrg({ status: "unclaimed" }), who = await login(`speed${Date.now()}`);
+    const t = performance.now();
+    expect((await company("claim", { organisationId: org }, { cookie: who.cookie })).status).toBe(200);
+    expect(performance.now() - t).toBeLessThan(BUDGET.claimMs);
   });
   it("any other email gives pending_review and exactly one account_review item", async () => {
     const other = await newOrg({ status: "unclaimed" });

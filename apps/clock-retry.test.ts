@@ -10,6 +10,8 @@ describe("clock retry", () => {
     "expected 15.125807999999779 to be less than or equal to 15",
     "attachMs: expected 29.571925000000192 to be less than 20",
     "expected 3158.641448 to be less than 3000",
+    "expected 101.37 to be less than or equal to 100", // a time of EXPLAIN
+    "expected 101.4 to be less than 100",
   ])("tries again: %s", (m) => expect(condition.test(m)).toBe(true));
   it.each([
     "expected 14 to be less than or equal to 13", // a statement or row count
@@ -17,6 +19,8 @@ describe("clock retry", () => {
     "promise resolved \"Result{}\" instead of rejecting",
     "expected 0.5 to be greater than 4.5",
     "expected 3.75 to be less than 4.5", // a ratio, not a clock
+    "expected 101.37 to be less than 100.5",
+    "expected 101.37 to be greater than 100",
     "expected [ 1, 2 ] to deeply equal [ 1 ]",
     "expected 40 to be less than 30",
     "Test timed out in 60000ms.",
