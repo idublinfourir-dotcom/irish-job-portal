@@ -375,7 +375,7 @@ describe("P28 staff and roles", () => {
     await h.ok(call(STAFF, "admin2", { action: "disable", staffId: h.staff.admin2 }));
     const p = await staffView(ROLE("administrator"));
     expect(p).toMatch(/last active administrator cannot lose the role or be disabled/);
-    expect(p).toMatch(/<button[^>]*disabled[^>]*>Remove Administrator/);
+    expect(p).toMatch(/<button[^>]*disabled[^>]*>Remove<span class="sr-only"> Administrator/);
     await h.no(call(STAFF, ROLE("administrator"), { action: "remove_role", staffId: h.staff.only_administrator, role: "administrator" }), 409, "last_administrator");
     await h.no(call(STAFF, ROLE("administrator"), { action: "disable", staffId: h.staff.only_administrator }), 409, "last_administrator");
     await h.no(call(STAFF, ROLE("administrator"), { action: "enable", staffId: h.staff.admin2 }), 409, "holds_roles");

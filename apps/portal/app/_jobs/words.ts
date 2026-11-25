@@ -179,8 +179,6 @@ export function floorMessage(a: Answer): string {
   return common(a) ?? SERVER;
 }
 export const needsSignIn = (a: Answer) => a.status === 403 && a.code === "REAUTH_REQUIRED";
-/** A sign-in address that returns to `path` (a constant path of ours). */
-export const signInTo = (path: string) => `/sign-in?next=${encodeURIComponent(path)}`;
 
 /** POST /api/portal/notices (DD34): 200; 400; 401; 403; 413; 429. */
 export function noticeMessage(a: Answer): string {

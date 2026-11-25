@@ -11,6 +11,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ replace() {}, refresh() 
 import { DashboardView } from "../dashboard/view";
 import { JobsView } from "../jobs/view";
 import { NoticesView } from "../notices/view";
+import { SignView } from "../pay-floors/forms";
 import { PayFloorsView } from "../pay-floors/view";
 import { CloseView, RenewView, ReportView } from "./actions";
 import {
@@ -224,5 +225,9 @@ describe("pay floors view", () => {
     expect(s).not.toContain('name="roleFamily"'); expect(s).not.toContain(">Withdraw<"); expect(s).toContain("not sign them");
     expect(html(<PayFloorsView canSign text={null} floors={[]} />)).toMatch(/No wording is published yet.*No pay floors yet/s);
     expect(html(<PayFloorsView canSign text={null} />)).toContain("We cannot show your pay floors now");
+    // a sign-in older than 10 minutes: a button that ends the session, never a link to the sign-in page (that page sends a signed-in person straight back, so signing could never work)
+    const again = html(<SignView textId="1" error={{ message: "For your security, sign in again to sign a pay floor.", again: true }} />);
+    expect(again).toMatch(/<button[^>]*>Sign in again<\/button>/); expect(again).not.toContain("/sign-in");
+    expect(html(<SignView textId="1" error={{ message: "Not now.", again: false }} />)).not.toContain("Sign in again");
   });
 });

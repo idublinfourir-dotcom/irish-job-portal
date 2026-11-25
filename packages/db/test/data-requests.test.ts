@@ -57,7 +57,7 @@ const sendConfirm = async (itemId: string, purpose: "export" | "erase", who = "a
 async function mailed(): Promise<{ to: string; subject: string; site: string; token: string }[]> {
   const sent: { to: string; subject: string; site: string; token: string }[] = [];
   await sendPending(db.pool("app_admin"), async (to, subject, text) => {
-    const m = /(https:\/\/[^/\s]+)\/api\/data-request\?token=([A-Za-z0-9_-]{43})/.exec(text);
+    const m = /(https:\/\/[^/\s]+)\/data-request\?token=([A-Za-z0-9_-]{43})/.exec(text);
     sent.push({ to, subject, site: m?.[1] ?? "", token: m?.[2] ?? "" });
   }, 200, () => {}, SITE.candidate, SITE.portal);
   return sent;

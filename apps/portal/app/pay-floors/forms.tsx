@@ -1,14 +1,15 @@
 "use client";
-// DD33: sign a pay floor and withdraw one (POST /api/portal/pay-floors). A session older than 10 minutes answers REAUTH_REQUIRED: the page sends the person to the sign-in page
-// and back here (DD10, CF129), never a password box of its own.
+// DD33: sign a pay floor and withdraw one (POST /api/portal/pay-floors). A session older than 10 minutes answers REAUTH_REQUIRED: the button ends the session and opens the sign-in page,
+// which comes back here (DD10, CF129; a signed-in visit to that page would be sent straight back). Never a password box of its own.
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { A, Button, Checkbox, Input, Notice } from "@portal/ui";
+import { Button, Checkbox, Input, Notice } from "@portal/ui";
 import { api } from "../(auth)/api";
-import { floorMessage, needsSignIn, signInTo } from "../_jobs/words";
+import { reauth } from "../_account/client";
+import { floorMessage, needsSignIn } from "../_jobs/words";
 
 type Failed = { message: string; again: boolean };
-export function SignView({ error, pending, onSubmit, textId }: { error?: Failed; pending?: boolean; onSubmit?: (f: FormData) => void; textId: string | null }) {
+export function SignView({ error, pending, onSubmit, onAgain, textId }: { error?: Failed; pending?: boolean; onSubmit?: (f: FormData) => void; onAgain?: () => void; textId: string | null }) {
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSubmit?.(new FormData(e.currentTarget)); }} className="flex flex-col gap-4" aria-busy={pending || undefined}>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -16,7 +17,7 @@ export function SignView({ error, pending, onSubmit, textId }: { error?: Failed;
         <Input label="Pay floor in euro a year" name="floorEur" inputMode="numeric" pattern="[0-9]{1,7}" maxLength={7} required help="A whole number. You pay at least this for the role for 12 months." />
       </div>
       <Checkbox name="agree" label="I have read the wording above and I sign it for my company" required />
-      {error && <Notice kind={error.again ? "warning" : "error"}>{error.message}{error.again && <span className="mt-2 block"><A href={signInTo("/pay-floors")} className="font-semibold underline">Sign in again</A></span>}</Notice>}
+      {error && <Notice kind={error.again ? "warning" : "error"}>{error.message}{error.again && <span className="mt-3 block"><Button type="button" variant="dark" onClick={onAgain}>Sign in again</Button></span>}</Notice>}
       <Button type="submit" variant="dark" disabled={pending || !textId} className="self-start">{pending ? "Signing" : "Sign the pay floor"}</Button>
     </form>
   );
@@ -32,7 +33,7 @@ export function SignFloor({ textId }: { textId: string | null }) {
     const a = { status: r.status, code: r.code };
     if (r.status === 200) router.refresh(); else setError({ message: floorMessage(a), again: needsSignIn(a) });
   }
-  return <SignView error={error} pending={pending} onSubmit={submit} textId={textId} />;
+  return <SignView error={error} pending={pending} onSubmit={submit} onAgain={() => void reauth("/pay-floors")} textId={textId} />;
 }
 
 export function Withdraw({ id }: { id: string }) {
