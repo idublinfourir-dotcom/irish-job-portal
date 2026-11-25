@@ -9,7 +9,7 @@ export function ResultText({ r, label = "Minimum that applies to you" }: { r: De
       <>
         <p className="text-small">Result</p>
         <p className="font-heading text-[20px] font-semibold leading-snug">No salary minimum applies to this job</p>
-        <p className="flex items-center gap-1.5 text-small"><Icon name="check" size={16} />This job follows a public sector pay scale.</p>
+        <p className="flex items-center gap-1.5 text-small"><Icon name={r.needsDegree ? "info" : "check"} size={16} className="shrink-0" />This job follows a public sector pay scale.{r.needsDegree && " It needs a relevant degree."}</p>
       </>
     );
   if (r.kind === "route_closed")

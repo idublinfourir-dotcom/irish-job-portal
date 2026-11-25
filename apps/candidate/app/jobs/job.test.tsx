@@ -77,6 +77,19 @@ describe("salary states (C08)", () => {
     const h = view({ job: job({ passRoute: "public_pay", salaryLow: null, salaryHigh: null, salaryLine: "Grade 5", payGrade: "Grade 5", badge: null, payScale: { code: "5", title: "Grade 5", firstEur: 38166, lastEur: 56592, line: "Pay scale for this grade: EUR 38,166 to 56,592" } }) });
     for (const t of ["Public sector pay scale applies", "Pay scale for this grade: €38,166 to €56,592", "Salary minimum does not apply"]) expect(h).toContain(t);
   });
+  it.each([
+    ["HSE Dublin and North East", ["Salary minimum does not apply", "No salary minimum applies to this job", "It needs a relevant degree."], ["Salary is not stated, so we cannot say"]],
+    ["Beaumont Hospital", ["€68,911 a year", "Salary is not stated, so we cannot say if it clears the minimum."], ["Salary minimum does not apply", "No salary minimum applies"]],
+    ["Acme HSE Contractors", ["€68,911 a year"], ["Salary minimum does not apply", "No salary minimum applies"]],
+  ])("a public pay job at %s, seen without a relevant degree (#300); with one it says only that no minimum applies", (employerName, has, hasNot) => {
+    const pub = job({ employerName, passRoute: "public_pay", salaryLow: null, salaryHigh: null, salaryLine: null, payGrade: null });
+    const none = view({ job: pub, degree: "none" }), withDegree = view({ job: pub });
+    expect(none).toContain("Public sector pay scale applies");
+    for (const t of has) expect(none).toContain(t);
+    for (const t of hasNot) expect(none).not.toContain(t);
+    expect(withDegree).toContain("No salary minimum applies to this job");
+    expect(withDegree).not.toContain("It needs a relevant degree.");
+  });
   it("big company, pay floor and not stated", () => {
     const none = { salaryLow: null, salaryHigh: null, salaryLine: null, badge: null };
     expect(view({ job: job({ ...none, passRoute: "big_company" }) })).toContain("This employer is on our list of large companies");
