@@ -1,7 +1,7 @@
 // The fetch stops on bad rules (#229): the rules in force are read from the database and checked before any board or model request, and nothing is saved.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BIG_COMPANY_NAMES_V1, MINIMUMS_V1, rulesV1 } from "@portal/rules";
-import { CLOSE_STALE } from "../src";
+import { BIG_COMPANY_NAMES_V1, HSE_ENTRY, MINIMUMS_V1, rulesV1 } from "@portal/rules";
+import { CLOSE_PUBLIC_PAY, CLOSE_STALE } from "../src";
 import { main } from "./main";
 
 const DATA = new URL("../data/", import.meta.url).pathname;
@@ -30,7 +30,7 @@ function setUp(rows: Rows) {
     query: vi.fn(async (text: string) => {
       sql.push(text);
       if (/rules_version/.test(text)) return { rows };
-      if (text === CLOSE_STALE) return { rows: [{ n: 0 }] };
+      if (text === CLOSE_STALE || text === CLOSE_PUBLIC_PAY) return { rows: [{ n: 0 }] };
       throw new Error("no other query expected");
     }),
     end: vi.fn(async () => {}),
@@ -66,6 +66,13 @@ describe("the fetch refuses to start on bad rules", () => {
     // W1c: after every board, the stale-board close runs once, as the last statement
     expect(sql.filter((q) => q === CLOSE_STALE)).toHaveLength(1);
     expect(sql.at(-1)).toBe(CLOSE_STALE);
+    expect(sql).not.toContain(CLOSE_PUBLIC_PAY); // the HSE switch is on
+  });
+  it("the HSE switch off (#261): the live jobs on the public pay route close first, once, before any board", async () => {
+    const { deps, sql } = setUp(today().map((r) => (r.kind === "public_pay_employers" ? { ...r, data: Object.fromEntries(Object.entries(r.data as object).filter(([k]) => k !== HSE_ENTRY)) } : r)));
+    await main(deps as never);
+    expect(sql.filter((q) => q === CLOSE_PUBLIC_PAY)).toHaveLength(1);
+    expect(sql.filter((q) => !/rules_version/.test(q))[0]).toBe(CLOSE_PUBLIC_PAY);
   });
 });
 

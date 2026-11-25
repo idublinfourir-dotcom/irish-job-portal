@@ -36,6 +36,12 @@ export const CLOSE_STALE =
   "t as (delete from job_text where job_id in (select id from c) returning 1), " +
   "g as (update fetched_advert set gone_at = $1 where id in (select fetched_advert_id from c) and gone_at is null returning 1) " +
   "select count(*)::int as n from c";
+// #261: the HSE switch is off, so no live job may rest on the public pay route. They close, their text goes, and their adverts lose the hash, so the next read assesses them
+// as any employer's. ponytail: switched on again, an advert comes back when its text changes, as after any rules change.
+export const CLOSE_PUBLIC_PAY =
+  "with c as (update job set status = 'closed', close_reason = 'recheck_failed', search_vector = null where source = 'fetched' and status = 'live' and pass_route = 'public_pay' " +
+  "returning id, fetched_advert_id), t as (delete from job_text where job_id in (select id from c)), " +
+  "a as (update fetched_advert set content_hash = null where id in (select fetched_advert_id from c)) select count(*)::int as n from c";
 const FAIL =
   "with run as (update fetch_run set finished_at = $2, error = $3 where id = $1 returning 1) update job_source set last_error = $3 where id = $4";
 const INSERT_ADVERT =
@@ -107,6 +113,11 @@ export async function finishBoard(db: Db, run: BoardRun, now: Date, seen: readon
 /** Closes the live jobs of every board with no good fetch for `days` (default STALE_BOARD_DAYS) before `now`. Returns how many closed. */
 export async function closeStale(db: Db, now: Date, days = STALE_BOARD_DAYS): Promise<number> {
   return Number((await db.query<{ n: number }>(CLOSE_STALE, [now, days])).rows[0]?.n ?? 0);
+}
+
+/** Closes every live fetched job on the public pay route (the HSE switch is off). Returns how many closed. */
+export async function closePublicPay(db: Db): Promise<number> {
+  return Number((await db.query<{ n: number }>(CLOSE_PUBLIC_PAY)).rows[0]?.n ?? 0);
 }
 
 /** A fetch that failed: the run row and the source row say why. `last_ok_at` stays. Message cut to 300 code points. */

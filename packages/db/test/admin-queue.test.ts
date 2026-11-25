@@ -3,7 +3,7 @@
 // Fake names, fake adverts and fake staff only. No network: the matcher is the staff member's code.
 import { readFileSync } from "node:fs";
 import type pg from "pg";
-import { CHAIN_RULES_V1, cleanEmployerName } from "@portal/rules";
+import { CHAIN_RULES_V1, cleanEmployerName, HSE_ENTRY } from "@portal/rules";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { approve, claim, getItem, listQueue, QueueRefused, reject, release, type RulesData } from "../src/admin-queue";
 import { getJob, PAGE_SIZE } from "../src/search";
@@ -286,6 +286,22 @@ describe("approve", () => {
       expect((await jobRow(c.job)).status).toBe("in_review");
       expect(await audits(c.job)).toEqual([]);
     }
+  });
+
+  it("the HSE (#299): an approval goes live on the pay scale route, as the fetcher's plan does; the switch off, a look-alike name and a Section 38 name are refused", async () => {
+    const on = { ...RULES, chain: { ...RULES.chain, publicPayCandidates: new Map([...RULES.chain.publicPayCandidates, [HSE_ENTRY, 1 as const]]) } };
+    const off = { ...RULES, chain: { ...RULES.chain, publicPayCandidates: new Map([...RULES.chain.publicPayCandidates].filter(([k]) => k !== HSE_ENTRY)) } };
+    const named = async (employer: string) => {
+      const c = await claimed({ title: "Staff Nurse", text: "Join our ward. Permanent full time." });
+      await su("update job set employer_name = $2 where id = $1", [c.job, employer]);
+      return c;
+    };
+    const go = (c: Awaited<ReturnType<typeof named>>, r: RulesData) => refusal(approve(admin(), c.staff, c.item, { occupationCode: "2231" }, r));
+    const c = await named("HSE Mid West");
+    expect(await go(c, off)).toBe("rules_failed: 8 no salary, not a big company");
+    expect(await go(c, on)).toBe("accepted");
+    expect(await jobRow(c.job)).toMatchObject({ status: "live", badge: "critical_skills_eligible", pass_route: "public_pay", salary_low: null });
+    for (const name of ["Acme HSE Contractors", "Beaumont Hospital"]) expect([name, await go(await named(name), on)]).toEqual([name, "rules_failed: 8 no salary, not a big company"]);
   });
 
   it("contractConfirmed clears only the contract stages, and staff pay stands in for pay the text does not state", async () => {

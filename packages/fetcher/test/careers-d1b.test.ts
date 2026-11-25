@@ -47,7 +47,7 @@ describe("D1-B boards on the real database", () => {
     const c = counting(db.pool("app_fetcher"));
     const { by } = await run(undefined, c.db);
     expect(Object.fromEntries(Object.entries(by).map(([b, r]) => [b, [r.ok, r.seen]]))).toEqual({ rezoomo: [true, 3], hsedne: [true, 16], dawnmeats: [true, 18], microsoft: [true, 10], qualcomm: [true, 10] });
-    expect(await saved("rezoomo")).toEqual(["sitemap:rezoomo:100118 live", "sitemap:rezoomo:105422 live", "sitemap:rezoomo:68522 in_review"]); // 100118: Bray (G1); 68522: no contract
+    expect(await saved("rezoomo")).toEqual(["sitemap:rezoomo:100118 live", "sitemap:rezoomo:105422 live", "sitemap:rezoomo:68522 -"]); // 100118: Bray (G1); 68522: no contract, so doubt and no job (#298)
     expect((await saved("hsedne")).map((x) => x.split(" ")[0])).toEqual(["sitemap:hsedne:5359"]);
     expect(await saved("microsoft")).toHaveLength(10);
     const [j] = await su("select j.title, j.employer_name, j.county, j.salary_low, j.salary_high from job j join fetched_advert f on f.id = j.fetched_advert_id where f.external_id = 'sitemap:rezoomo:105422'");

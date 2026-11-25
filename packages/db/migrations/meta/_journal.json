@@ -498,6 +498,13 @@
       "when": 1794300076000,
       "tag": "0076_trust_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1794300077000,
+      "tag": "0077_no_badge_on_doubt",
+      "breakpoints": true
     }
   ]
 }

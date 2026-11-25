@@ -122,6 +122,12 @@ function bucketOf(stage: Stage, tier: 0 | 1 | 2): Bucket {
   return "rejected";
 }
 
+/**
+ * The pass route a fetched job of this bucket goes live with, and the one list of what carries the badge: the fetcher's plan, the staff approval, the second opinion and
+ * the gate all read it. The HSE shows on its pay scale (#261, #299); the Section 38 names (public_s38) stay off until the exemption is confirmed in writing (#80).
+ */
+export const PASS_ROUTE: Partial<Record<Bucket, "stated_pay" | "big_company" | "public_pay">> = { stated_pay: "stated_pay", big_company: "big_company", public_hse: "public_pay" };
+
 // An advert no rule ran on: every field empty, as the Python leaves a key out.
 const blank = (): Assessment => ({
   stage: "0 advert too long (admin queue)",

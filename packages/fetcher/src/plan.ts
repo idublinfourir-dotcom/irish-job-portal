@@ -1,5 +1,5 @@
 // Turns one assessment into the rows to write. Pure: no database, no clock, no network. Design: step5/L8-DESIGN.md 3.7.
-import type { Assessment } from "@portal/rules";
+import { PASS_ROUTE, type Assessment } from "@portal/rules";
 import type { RawAdvert } from "@portal/sources";
 import { countyOf } from "./county";
 import type { AdvertRow, Change, JobRow, Known, MatchResult, Plan } from "./types";
@@ -24,7 +24,9 @@ function usableLink(raw: string): string | null {
 }
 
 export function planAdvert(advert: RawAdvert, a: Assessment, m: MatchResult | null): Plan {
-  if (m?.failure?.kind === "model error") return { action: "defer", why: m.failure.why };
+  // No answer, or one that cannot be used, is not a no: the advert comes back next run (#298).
+  // ponytail: asked again every run with no cap; add one if failed answers ever eat the model's daily requests.
+  if (m?.failure) return { action: "defer", why: m.failure.why };
 
   const link = usableLink(advert.url);
   const row = (result: AdvertRow["result"], stage: string): AdvertRow => ({
@@ -40,21 +42,12 @@ export function planAdvert(advert: RawAdvert, a: Assessment, m: MatchResult | nu
   });
   const reject = (stage: string): Plan => ({ action: "reject", advert: row("rejected", stage) });
 
-  // The chain says queue, but a queued advert needs a job row and its text, and this one broke the limits that guard both.
-  if (a.stage === "0 advert too long (admin queue)") return reject(a.stage);
-
-  const passRoute = a.bucket === "stated_pay" || a.bucket === "big_company" ? a.bucket : null;
-  let result: AdvertRow["result"];
-  if (passRoute) result = "passed";
-  else if (a.bucket === "queue" || a.bucket === "public_hse" || a.bucket === "public_s38") result = "queued";
-  else return reject(a.stage); // rejected, no_salary: the chain's own reason is kept, with or without a link
+  // #298, #299: what carries the badge goes live, everything else is refused, the chain's "admin queue" stages too, with their own words kept. Nobody is asked.
+  const passRoute = PASS_ROUTE[a.bucket];
+  if (!passRoute) return reject(a.stage); // with or without a link
   // Only a job needs a link (own_page_url), and the site shows it, so nothing but http and https is ever stored there.
   if (!link) return reject("0 no advert link");
-  let stage: string = a.stage;
-  if (result === "passed" && a.scamFlag) {
-    result = "queued";
-    stage = "0 scam wording (admin queue)";
-  }
+  if (a.scamFlag) return reject("0 scam wording (admin queue)");
 
   const job: JobRow = {
     title: cut(advert.title, 300),
@@ -64,11 +57,11 @@ export function planAdvert(advert: RawAdvert, a: Assessment, m: MatchResult | nu
     occupationCode: a.occupationCode,
     salaryLow: euros(a.salaryLow),
     salaryHigh: euros(a.salaryHigh),
-    passRoute: result === "passed" ? passRoute : null,
-    status: result === "passed" ? "live" : "in_review",
+    passRoute,
+    status: "live", // ponytail: the store can still write a waiting job ("in_review", "queued"), no plan asks for one; take it out when the staff queue page goes
     ownPageUrl: link,
   };
-  return { action: "job", advert: row(result, stage), job, text: clean(advert.description) };
+  return { action: "job", advert: row("passed", a.stage), job, text: clean(advert.description) };
 }
 
 /** The close reasons the fetcher may undo. Any other reason on a closed job means staff closed it. */
@@ -89,6 +82,6 @@ export function stateOf(k: Known, hash: string): "same" | "held" | "settle" | "a
 export function changeOf(k: Known, p: Exclude<Plan, { action: "defer" }>): Change {
   if (k.jobId === null) return p.action === "job" ? "insert" : "advert";
   if (k.status === "live") return p.action === "reject" ? "close" : "update";
-  // closed by the fetcher: it comes back only if it passes. A queued or rejected advert leaves it closed (design 4.3 finding 5).
+  // closed by the fetcher: it comes back only if it passes. A rejected advert leaves it closed (design 4.3 finding 5).
   return p.action === "job" && p.job.status === "live" ? "reopen" : "advert";
 }

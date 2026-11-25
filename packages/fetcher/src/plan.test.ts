@@ -32,10 +32,9 @@ describe("planAdvert, one test per step of design 3.7", () => {
     const m = match({ failure: { kind: "model error", why: "timeout" } });
     expect(planAdvert(advert(), asm(), m)).toEqual({ action: "defer", why: "timeout" });
   });
-  it("1. a bad answer does not defer: the advert is stored as the chain decided", () => {
+  it("1. a bad answer is not a no (#298): it defers too, whatever the chain says, so the model is asked again next run", () => {
     const m = match({ failure: { kind: "bad answer", why: "junk" } });
-    const p = jobOf(planAdvert(advert(), asm({ stage: "5 unsure occupation (admin queue)", bucket: "queue" }), m));
-    expect(p.advert.result).toBe("queued");
+    for (const a of [asm(), asm({ stage: "5 unsure occupation (admin queue)", bucket: "queue" })]) expect(planAdvert(advert(), a, m)).toEqual({ action: "defer", why: "junk" });
   });
   it("2. too long: rejected, title cut to 300 code points, no text kept", () => {
     const a = advert({ title: "T".repeat(5000), description: "d".repeat(40000) });
@@ -56,17 +55,21 @@ describe("planAdvert, one test per step of design 3.7", () => {
   it("3. an http link is kept", () => {
     expect(jobOf(planAdvert(advert({ url: "http://example.com/a" }), asm(), null)).job.ownPageUrl).toBe("http://example.com/a");
   });
-  it.each<[Stage, Bucket, "passed" | "queued" | "rejected", "live" | "in_review" | null, "stated_pay" | "big_company" | null]>([
+  it.each<[Stage, Bucket, "passed" | "rejected", "live" | null, "stated_pay" | "big_company" | "public_pay" | null]>([
     ["PASS (salary stated)", "stated_pay", "passed", "live", "stated_pay"],
     ["8 range crosses €40,904 (no rule yet)", "stated_pay", "passed", "live", "stated_pay"],
     ["PASS (big-company rule)", "big_company", "passed", "live", "big_company"],
-    ["8 salary below €40,904", "public_hse", "queued", "in_review", null],
-    ["8 no salary, not a big company", "public_s38", "queued", "in_review", null],
-    ["3 unsure Irish employer (admin queue)", "queue", "queued", "in_review", null],
-    ["5 unsure occupation (admin queue)", "queue", "queued", "in_review", null],
-    ["7 contract unclear (admin queue)", "queue", "queued", "in_review", null],
-    ["7 doctor grade, contract unconfirmed (admin queue, #95)", "queue", "queued", "in_review", null],
-    ["7 permanent or specified purpose (admin queue, #95)", "queue", "queued", "in_review", null],
+    // #299: the HSE goes live on its pay scale, whatever pay is stated (#67); the Section 38 names stay off (#80)
+    ["8 salary below €40,904", "public_hse", "passed", "live", "public_pay"],
+    ["8 no salary, not a big company", "public_hse", "passed", "live", "public_pay"],
+    ["8 no salary, not a big company", "public_s38", "rejected", null, null],
+    ["8 salary below €40,904", "public_s38", "rejected", null, null],
+    // #298: doubt means no badge, and no person is asked
+    ["3 unsure Irish employer (admin queue)", "queue", "rejected", null, null],
+    ["5 unsure occupation (admin queue)", "queue", "rejected", null, null],
+    ["7 contract unclear (admin queue)", "queue", "rejected", null, null],
+    ["7 doctor grade, contract unconfirmed (admin queue, #95)", "queue", "rejected", null, null],
+    ["7 permanent or specified purpose (admin queue, #95)", "queue", "rejected", null, null],
     ["0 test posting", "rejected", "rejected", null, null],
     ["3 not in Ireland", "rejected", "rejected", null, null],
     ["3 not an Irish job: staffing agency", "rejected", "rejected", null, null],
@@ -82,13 +85,19 @@ describe("planAdvert, one test per step of design 3.7", () => {
     const j = jobOf(p);
     expect([j.advert.result, j.advert.stage, j.job.status, j.job.passRoute]).toEqual([result, stage, status, route]);
   });
-  it("5. scam wording on a pass queues it with its own stage and no pass route", () => {
-    const p = jobOf(planAdvert(advert(), asm({ scamFlag: true }), null));
-    expect([p.advert.result, p.advert.stage, p.job.status, p.job.passRoute]).toEqual(["queued", "0 scam wording (admin queue)", "in_review", null]);
+  it.each<[Stage, Bucket]>([["PASS (salary stated)", "stated_pay"], ["PASS (big-company rule)", "big_company"], ["8 no salary, not a big company", "public_hse"]])("5. scam wording on a pass refuses it with its own stage, and keeps no text: %s (%s)", (stage, bucket) => {
+    const p = planAdvert(advert({ description: "You must pay a registration fee." }), asm({ scamFlag: true, stage, bucket }), null);
+    expect(rejectOf(p)).toMatchObject({ result: "rejected", stage: "0 scam wording (admin queue)" });
+    expect(JSON.stringify(p)).not.toContain("registration fee");
   });
-  it("5. scam wording on a rejected or already queued advert changes nothing", () => {
-    expect(rejectOf(planAdvert(advert(), asm({ scamFlag: true, stage: "3 not in Ireland", bucket: "rejected" }), null)).stage).toBe("3 not in Ireland");
-    expect(jobOf(planAdvert(advert(), asm({ scamFlag: true, stage: "7 contract unclear (admin queue)", bucket: "queue" }), null)).advert.stage).toBe("7 contract unclear (admin queue)");
+  it("5. scam wording on a refused or doubtful advert changes nothing", () => {
+    for (const [stage, bucket] of [["3 not in Ireland", "rejected"], ["7 contract unclear (admin queue)", "queue"]] as [Stage, Bucket][])
+      expect(rejectOf(planAdvert(advert(), asm({ scamFlag: true, stage, bucket }), null)).stage).toBe(stage);
+  });
+  it("5. a doubtful advert keeps the rules' words and the model on its row, and no text", () => {
+    const p = planAdvert(advert(), asm({ stage: "5 unsure occupation (admin queue)", bucket: "queue", irishReason: "employer known in Ireland" }), match({ quote: "the matched words", modelId: "m-1" }));
+    expect(rejectOf(p)).toMatchObject({ reason: "employer known in Ireland", quotedEvidence: "the matched words", matcherModel: "m-1" });
+    expect(p).not.toHaveProperty("text");
   });
   it("6. fields: reason, evidence, model, euros, county, text, ids", () => {
     const m = match({ quote: "the matched words", modelId: "m-1" });

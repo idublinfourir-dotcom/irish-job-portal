@@ -33,6 +33,8 @@ type Changes = Record<string, { cause: string; fields: Record<string, unknown> }
 function causeOf(field: string, ts: unknown, py: unknown, employer: string): string | null {
   // NEW BEHAVIOUR (11 November 2026, #150, #151, commit 9bd3b88): the big-company list adds names the Python's 42 brands do not have.
   if (field === "brand" && ts === true && py === false && !isBigCompany(employer, BIG_COMPANY_BRANDS) && isBigCompany(employer, BIG_COMPANY_LIST_150)) return "#150, #151";
+  // NEW BEHAVIOUR (25 November 2026, #299): a name that only holds the word "hse" is not the HSE any more.
+  if (field === "tier" && ts === 0 && py === 1) return "#299";
   return null;
 }
 

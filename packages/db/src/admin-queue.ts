@@ -2,7 +2,7 @@
 // Every action takes the acting staff member's id (#167): it must be an active staff_user holding the
 // fetched_job_reviewer role (#193), and it is set as app.staff_user_id for the transaction, as the database's guards expect. Every statement is a constant with parameters. Only the claimer decides, under row locks.
 import type pg from "pg";
-import { assess, type Assessment, type ChainData, type StaffInput } from "@portal/rules";
+import { assess, PASS_ROUTE, type Assessment, type ChainData, type StaffInput } from "@portal/rules";
 import { isTime, PAGE_SIZE, validId } from "./search";
 
 type Db = Pick<pg.Pool, "query" | "connect">;
@@ -295,8 +295,8 @@ export async function reassess(r: Pick<Locked, "title" | "employer_name" | "coun
     { ...chain, matcher: async () => ({ occupationCode: code, onCriticalSkillsList: onList, confidence: "high" }) },
     staff,
   );
-  // The same test as planAdvert (packages/fetcher/src/plan.ts): only these two buckets go live, and never with scam wording.
-  const passed = a.bucket === "stated_pay" || a.bucket === "big_company" ? a.bucket : null;
+  // The same test as planAdvert (packages/fetcher/src/plan.ts): only a bucket with a pass route goes live, and never with scam wording.
+  const passed = PASS_ROUTE[a.bucket] ?? null;
   return { a, route: a.scamFlag ? null : passed, stage: passed && a.scamFlag ? "0 scam wording (admin queue)" : a.stage };
 }
 
