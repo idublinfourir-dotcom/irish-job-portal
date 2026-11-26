@@ -1,6 +1,6 @@
 // The loop of design section 3.1: boards a few at a time, adverts one at a time. Never throws for one bad advert or one bad board.
 import { applySecondOpinion, SHOWN, type BatchResult } from "@portal/matcher";
-import { assess, type Assessment } from "@portal/rules";
+import { assess, listCheck, type Assessment } from "@portal/rules";
 import { PACE, RATE_LIMITED, realSleep, type RawAdvert } from "@portal/sources";
 import { isDue, hashAdvert } from "./hash";
 import { planAdvert, stateOf } from "./plan";
@@ -9,7 +9,9 @@ import type { BoardReport, BoardTask, Deps, MatchResult } from "./types";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-async function runBoard(deps: Deps, task: BoardTask, plan: typeof planAdvert, budget: { left: number }): Promise<BoardReport> {
+type Allowed = ReturnType<typeof listCheck>;
+
+async function runBoard(deps: Deps, task: BoardTask, plan: typeof planAdvert, budget: { left: number }, allowed: Allowed): Promise<BoardReport> {
   const { db, now, log = () => {} } = deps;
   const report: BoardReport = { kind: task.kind, board: task.board, ok: false, error: null, seen: 0, passed: 0, queued: 0, rejected: 0, changed: 0, closed: 0, unsaved: [] };
   let run: BoardRun;
@@ -64,7 +66,7 @@ async function runBoard(deps: Deps, task: BoardTask, plan: typeof planAdvert, bu
       continue;
     }
     try {
-      const item = await prepare(deps, run, advert);
+      const item = await prepare(deps, run, advert, allowed);
       if (item === "same") continue;
       items.push(item);
     } catch (e) {
@@ -103,7 +105,7 @@ async function runBoard(deps: Deps, task: BoardTask, plan: typeof planAdvert, bu
 type Saved = "passed" | "queued" | "rejected" | "unsaved" | "same" | "changed" | "closed";
 type Item = { advert: RawAdvert; assessment: Assessment; m: MatchResult | null; hash: string };
 
-async function prepare(deps: Deps, run: BoardRun, advert: RawAdvert): Promise<Item | "same"> {
+async function prepare(deps: Deps, run: BoardRun, advert: RawAdvert, allowed: Allowed): Promise<Item | "same"> {
   const hash = hashAdvert(advert);
   const k = run.rows.get(advert.id);
   if (k) {
@@ -124,6 +126,9 @@ async function prepare(deps: Deps, run: BoardRun, advert: RawAdvert): Promise<It
       return box.last.match;
     },
   });
+  // #305: a badge whose occupation code the lists in force do not allow is refused here, before the model is asked (the title rules say "on the list" in their own text)
+  if (SHOWN.has(assessment.bucket) && !allowed(assessment.occupationCode, assessment.salaryLow))
+    return { advert, assessment: { ...assessment, stage: "6 not on Critical Skills list", bucket: "rejected" }, m: box.last, hash };
   return { advert, assessment, m: box.last, hash };
 }
 
@@ -187,11 +192,12 @@ async function save(deps: Deps, run: BoardRun, plan: typeof planAdvert, { advert
 export async function runBoards(deps: Deps, plan: typeof planAdvert = planAdvert): Promise<BoardReport[]> {
   const reports: BoardReport[] = new Array(deps.boards.length);
   const budget = { left: deps.maxModelRequests }; // shared by every board of the run
+  const allowed = listCheck(deps.chain);
   const pooled = deps.boards.flatMap((t, i) => (t.serial ? [] : [i]));
   const serial = deps.boards.flatMap((t, i) => (t.serial ? [i] : []));
   let next = 0;
   const worker = async () => {
-    for (let i = next++; i < pooled.length; i = next++) reports[pooled[i]!] = await runBoard(deps, deps.boards[pooled[i]!]!, plan, budget);
+    for (let i = next++; i < pooled.length; i = next++) reports[pooled[i]!] = await runBoard(deps, deps.boards[pooled[i]!]!, plan, budget, allowed);
   };
   // One lane for the serial boards, a pause apart. After PACE.giveUpAfter boards in a row gave up on 429/503, the rest are failed without a request.
   const lane = async () => {
@@ -202,7 +208,7 @@ export async function runBoards(deps: Deps, plan: typeof planAdvert = planAdvert
       const stop = limited >= PACE.giveUpAfter;
       if (n && !stop) await sleep(PACE.serialBoardGapMs);
       const skipped = { ...task, fetch: async () => { throw new Error(`skipped after repeated 429: ${limited} ${task.kind} boards in a row were refused`); } };
-      reports[i] = await runBoard(deps, stop ? skipped : task, plan, budget);
+      reports[i] = await runBoard(deps, stop ? skipped : task, plan, budget, allowed);
       limited = RATE_LIMITED.test(reports[i].error ?? "") ? limited + 1 : stop ? limited : 0;
     }
   };

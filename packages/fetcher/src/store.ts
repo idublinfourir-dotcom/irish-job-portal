@@ -1,7 +1,7 @@
 // The database writes of the fetcher. Design: step5/L8-DESIGN.md section 3. Every statement is a constant string with
 // parameters; no value is ever put into SQL text (test/store.security.test.ts reads this file to check it).
 // Connected as app_fetcher: no network call while a transaction is open, no `set` without `local`, no advisory locks.
-import { payRoute, type PayRules } from "@portal/rules";
+import { listCheck, payRoute, type ListRules, type PayRules } from "@portal/rules";
 import type pg from "pg";
 import { changeOf } from "./plan";
 import type { AdvertRow, Change, Db, JobRow, Known, Plan } from "./types";
@@ -38,7 +38,7 @@ export const CLOSE_STALE =
   "g as (update fetched_advert set gone_at = $1 where id in (select fetched_advert_id from c) and gone_at is null returning 1) " +
   "select count(*)::int as n from c";
 // #93: the live fetched jobs, as the recheck reads them.
-const LIVE_JOBS = "select id::text as id, employer_name, salary_low, salary_high, pass_route from job where source = 'fetched' and status = 'live'";
+const LIVE_JOBS = "select id::text as id, employer_name, occupation_code, salary_low, salary_high, pass_route from job where source = 'fetched' and status = 'live'";
 // $1 the jobs whose route changed, $2 the route each has now (null: none). With none it closes, its text goes, and its advert loses the hash, so the next read writes why.
 export const RECHECK =
   "with x as (select * from unnest($1::bigint[], $2::text[]) as x(id, route)), " +
@@ -91,7 +91,7 @@ export const CLOSE_RECHECK =
 const clean = <T extends string | null>(v: T): T => (v === null ? v : (v.replace(/\u0000/g, "") as T));
 const cut = (v: string, n: number) => [...clean(v)].slice(0, n).join("");
 
-type LiveJob = { id: string; employer_name: string; salary_low: number | null; salary_high: number | null; pass_route: string | null };
+type LiveJob = { id: string; employer_name: string; occupation_code: string | null; salary_low: number | null; salary_high: number | null; pass_route: string | null };
 export type BoardRun = { sourceId: number; runId: number; rows: Map<string, Known> };
 
 /** 3.1 steps 1 to 3: the source row, a new run row, and every advert row saved for the board (3.8). Three statements. */
@@ -124,11 +124,15 @@ export async function closeStale(db: Db, now: Date, days = STALE_BOARD_DAYS): Pr
 
 /**
  * #93: works out every live fetched job's pay route again from its stored employer and pay under the rules in force, so a raised minimum, a name off the big-company
- * list or the HSE switch off (#261) counts this night though the advert's text is the same. No model is asked: its word is on the occupation, not the pay.
- * ponytail: pay and employer only. A changed occupation list, non-list minimum or contract length, and any loosened rule, reach a job when its advert changes.
+ * list or the HSE switch off (#261) counts this night though the advert's text is the same. #305: its stored occupation code must also pass the list check
+ * (`listCheck`), so a code taken off the Critical Skills list closes its jobs this night too. No model is asked.
+ * ponytail: pay, employer and the code's list. A contract length, a title taken off inside a code, and any loosened rule, reach a job when its advert changes.
  */
-export async function recheckLive(db: Db, rules: PayRules): Promise<{ closed: number; moved: number }> {
-  const jobs = (await db.query<LiveJob>(LIVE_JOBS)).rows.map((j) => ({ ...j, now: payRoute(j.employer_name, j.salary_low, j.salary_high, rules) ?? null }));
+export async function recheckLive(db: Db, rules: PayRules & ListRules): Promise<{ closed: number; moved: number }> {
+  const allowed = listCheck(rules);
+  const jobs = (await db.query<LiveJob>(LIVE_JOBS)).rows.map((j) => ({
+    ...j, now: allowed(j.occupation_code, j.salary_low) ? payRoute(j.employer_name, j.salary_low, j.salary_high, rules) ?? null : null,
+  }));
   const changed = jobs.filter((j) => j.now === null || j.now !== j.pass_route);
   if (!changed.length) return { closed: 0, moved: 0 };
   return (await db.query<{ closed: number; moved: number }>(RECHECK, [changed.map((j) => j.id), changed.map((j) => j.now)])).rows[0]!;

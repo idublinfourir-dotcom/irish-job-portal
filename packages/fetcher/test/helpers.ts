@@ -4,9 +4,12 @@ import { CHAIN_RULES_V1 } from "@portal/rules";
 import type { Fetch, RawAdvert } from "@portal/sources";
 import { sites } from "../../sources/src/careers/testkit";
 import type { TestDb } from "../../db/test/db";
+import lists from "../data/occupation-lists.json";
 import { atsTasks, runBoards, type BoardsFile, type BoardTask, type Db, type Deps, type Plan } from "../src";
 
 export const NOW = new Date("2026-11-10T12:00:00Z");
+/** The lists the fetch reads, version 1 (the file). */
+export const LISTS_V1: readonly { code: string; list: string }[] = lists;
 
 export const advert = (id: string, over: Partial<RawAdvert> = {}): RawAdvert => ({
   id: `fake:b:${id}`, source: "fake", board: "b", employer: "Acme Ltd", title: "Software Engineer", location: "Dublin, Ireland",
@@ -35,7 +38,7 @@ export const matcher: Deps["matcher"] = async () => ({ match: { occupationCode: 
 /** A model that is never asked: tests with no badge job. A call fails the test. */
 export const noModel: Deps["checkBatch"] = async () => { throw new Error("the model was asked, but no test expected a request"); };
 export const deps = (db: Db, boards: BoardTask[], over: Partial<Deps> = {}): Deps => ({
-  db, now: () => NOW, chain: { deteNames: new Set(), publicPayCandidates: new Map(), ...CHAIN_RULES_V1 }, matcher, checkBatch: noModel, maxModelRequests: 100, boards, ...over,
+  db, now: () => NOW, chain: { deteNames: new Set(), publicPayCandidates: new Map(), ...CHAIN_RULES_V1, occupationLists: LISTS_V1 }, matcher, checkBatch: noModel, maxModelRequests: 100, boards, ...over,
 });
 
 /** Wraps a Db and records every statement, on the pool and on each checked-out client. */

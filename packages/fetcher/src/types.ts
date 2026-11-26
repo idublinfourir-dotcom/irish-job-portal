@@ -1,6 +1,6 @@
 // Shared types of the fetcher. Design: step5/L8-DESIGN.md section 2.
 import type pg from "pg";
-import type { ChainData } from "@portal/rules";
+import type { ChainData, ListRules } from "@portal/rules";
 import type { BoardFetch } from "@portal/sources";
 import type { BatchResult, OccupationMatch } from "@portal/matcher";
 
@@ -23,7 +23,7 @@ export type BoardTask = {
 export type Deps = {
   db: Db;
   now: () => Date;
-  chain: Omit<ChainData, "matcher">;
+  chain: Omit<ChainData, "matcher"> & Pick<ListRules, "occupationLists">; // the lists in force for the list check (#305)
   matcher: FetcherMatcher;
   /** The AI second opinion (one request for up to `batchSize` badge adverts). A badge is saved only when this agrees. */
   checkBatch: (adverts: { title: string; description: string }[]) => Promise<BatchResult[]>;
