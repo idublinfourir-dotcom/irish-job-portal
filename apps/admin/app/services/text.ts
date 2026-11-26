@@ -29,10 +29,11 @@ export const caseRef = (id: string) => `PS-${id.padStart(4, "0")}`;
 export const OUTCOME_LABEL: Record<string, string> = { granted: "Permit granted", refused: "Permit refused" };
 export const CLOSE_LABEL: Record<string, string> = { decided: "Decided", employer_not_engaged: "Employer did not engage", no_reply: "No reply", referred_to_solicitor: "Referred to a solicitor", withdrawn: "Withdrawn by the requester" };
 
-/** The codes staff may ask for (the route's fixed list, admin.yaml actOnServicesCase: documents). Placeholder labels, as the database's list. */
+/** The codes staff may ask for (the route's fixed list, admin.yaml actOnServicesCase: documents). The same list as packages/db's CASE_DOCUMENT_CODES. */
 export const DOC_CODES: readonly [string, string][] = [
   ["passport_copy", "Passport copy"], ["offer_letter", "Job offer letter"], ["contract", "Employment contract"], ["degree", "Degree or qualification"],
   ["registration", "Professional registration"], ["payslip", "Recent payslip"], ["cv", "CV"], ["other", "Other document"],
+  ["passport_photo", "Passport-type photo"], ["immigration_stamp", "Current immigration stamp and visa"], ["previous_permits", "Previous permits or visas in Ireland"], ["idaei_support_letter", "IDA Ireland or Enterprise Ireland support letter"], ["revenue_statement", "Employer Revenue statement (last 3 months)"], ["lmnt_advert_evidence", "Labour Market Needs Test adverts (Jobs Ireland and one other)"], ["aws_permission_letter", "Atypical Working Scheme letter (nurses)"], ["hgv_licence", "CE or C1E driving licence (HGV drivers)"],
 ];
 
 export type Row = { id: string; status: string; createdAt: string; permitType: string | null; payer: string | null; hrContactConsent: boolean; assignedStaffUserId: string | null; side: string | null };
