@@ -137,7 +137,7 @@ function Hero({ d }: { d: HomeData }) {
           </span>
         </h1>
         <p className="max-w-[40rem] text-body text-muted lg:text-lead">
-          Jobs in Ireland for people who need an employment permit. Every listing has passed Ireland&apos;s permit rules, or the employer has confirmed sponsorship.
+          Jobs in Ireland for people who need an employment permit. Every listing has passed our check against Ireland&apos;s permit rules, or the employer has confirmed sponsorship.
         </p>
         <form action={jobsPath} method="get" role="search" className="flex max-w-[42.5rem] flex-col gap-2 rounded-bento bg-sand p-2 sm:flex-row sm:items-center sm:rounded-pill sm:bg-white sm:pl-6 sm:shadow-pop">
           <label className="flex flex-1 items-center gap-3 rounded-pill bg-white px-4 sm:px-0">
@@ -196,7 +196,7 @@ function Bento({ m }: { m: Sec<Minimums> }) {
       <div className="col-span-2 hidden gap-4 rounded-bento bg-deep-green p-6 text-white sm:flex lg:col-span-1">
         <Photo name="rules-card" eager="sm" className="hidden h-[14.4rem] w-[10.6rem] shrink-0 rounded-t-pill rounded-b-bento bg-white sm:block" />
         <div className="flex flex-col items-start gap-3 py-2">
-          <h2 className="text-[1.25rem] leading-tight text-white xl:text-2xl">Every listing passes the permit rules first.</h2>
+          <h2 className="text-[1.25rem] leading-tight text-white xl:text-2xl">Every listing is checked against the permit rules first.</h2>
           <p className="text-white/85">Two badges say who makes each claim: the employer, or our rule check.</p>
           <A href="#badges" aria-label="How the two badges work" className="mt-auto"><Go tone="ink" icon="arrow" /></A>
         </div>
@@ -216,7 +216,7 @@ function Bento({ m }: { m: Sec<Minimums> }) {
             <A href={checkerPath} aria-label="Open the eligibility checker"><Go tone="green" className="size-9" /></A>
           </div>
           <p data-count className="mt-auto font-heading text-[2rem] font-semibold leading-none sm:text-[3.75rem]">{eur(m.data.criticalSkills)}</p>
-          <p className="mt-2 text-small text-muted sm:mt-3 sm:text-base">Critical Skills minimum with a relevant degree. We check every job against it.</p>
+          <p className="mt-2 text-small text-muted sm:mt-3 sm:text-base">Critical Skills minimum with a relevant degree. We check jobs against it.</p>
         </div>
       )}
     </div>

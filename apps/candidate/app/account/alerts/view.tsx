@@ -52,7 +52,7 @@ export function AlertsView({ alerts, occupations, edit, now }: { alerts: AlertRo
   return (
     <>
       <Head title="Job alerts" line="We email you when a new job matches. Every email has a one-click unsubscribe." action={<Button href="#new-alert" variant="dark" size="lg"><span aria-hidden="true">+</span> New alert</Button>} />
-      {alerts.some((a) => a.pauseReason === "stamp_4") && <div className="mb-4"><Notice kind="info" title="Your alerts are paused">Your profile says you hold a Stamp 4, so you no longer need a permit and we have paused them. Change your stamp in <A href="/account/profile" className="underline">your profile</A> if that is not right.</Notice></div>}
+      {alerts.some((a) => a.pauseReason === "stamp_4") && <div className="mb-4"><Notice kind="info" title="Your alerts are paused">Your profile says you hold a Stamp 4, so you generally do not need a permit and we have paused them. Change your stamp in <A href="/account/profile" className="underline">your profile</A> if that is not right.</Notice></div>}
       {edit === "missing" && <div className="mb-4"><Notice kind="warning" title="That alert no longer exists">It may have been deleted. Your other alerts are below.</Notice></div>}
       {full && <div className="mb-4"><Notice kind="warning" title={`You have ${ALERT_LIMIT} alerts, the most we allow`}>Delete one to make a new one.</Notice></div>}
       {alerts.length === 0 ? <div className="mb-6"><EmptyState icon="bell" title="No alerts yet">Make one below and we email you when a job matches.</EmptyState></div> : (

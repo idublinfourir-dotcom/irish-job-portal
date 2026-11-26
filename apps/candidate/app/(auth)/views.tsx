@@ -85,7 +85,7 @@ export function SignupView({ answer, google, error, pending, employersHref, next
           <img src={SIGNUP_PHOTO.src} width={SIGNUP_PHOTO.width} height={SIGNUP_PHOTO.height} alt={SIGNUP_PHOTO.alt} loading="eager" className="absolute inset-0 h-full w-full rounded-bento object-cover" />
           <div className="relative flex flex-col gap-3 rounded-bento bg-white p-8">
             <p className="font-heading text-[2.5rem] font-semibold leading-[1.25] tracking-tight">See <Hl c="peach">every job</Hl> a permit can <Hl c="green">cover</Hl></p>
-            <p className="text-small text-muted">Every listing passed the permit rules, or the employer confirmed sponsorship.</p>
+            <p className="text-small text-muted">Every listing passed our permit rule check, or the employer confirmed sponsorship.</p>
           </div>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
