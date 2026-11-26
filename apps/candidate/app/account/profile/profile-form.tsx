@@ -159,7 +159,7 @@ export function ProfileForm({ signUpName = "", profile, cv: first, mins, bodies,
           {state.kind === "saved" && <span role="status" className="inline-flex items-center gap-1.5 rounded-pill bg-critical-skills px-3 py-1.5 text-small font-semibold text-pressed-dark"><Icon name="check" size={16} />Saved</span>}
         </div>
         {state.kind === "saved" && state.stamp4 && (
-          <Notice kind="info" title="Your stamp means you no longer need a permit">We paused your job alerts. You can <a className="font-semibold underline" href={settingsDeletePath()}>delete your account</a> if you do not want to keep it.</Notice>
+          <Notice kind="info" title="With this stamp you generally do not need a permit">We paused your job alerts. You can <a className="font-semibold underline" href={settingsDeletePath()}>delete your account</a> if you do not want to keep it.</Notice>
         )}
         {state.kind === "error" && (state.reauth ? <ReauthNotice text={state.text!} back="/account/profile" /> : <Notice kind="error">{state.text}</Notice>)}
       </form>

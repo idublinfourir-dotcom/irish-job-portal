@@ -122,7 +122,7 @@ describe("the profile page", () => {
     expect(h).not.toContain("alerts");
     const stamp4 = await call(PROFILE.PUT, "PUT", "/api/candidate/profile", m.cookie, { fullName: "Fake Nurse", locationKind: "ireland", currentStamp: "4" });
     expect(await stamp4.json()).toMatchObject({ deletionOffered: true });
-    expect(text(await render(m.cookie, P.profile))).toContain("Your stamp means you no longer need a permit");
+    expect(text(await render(m.cookie, P.profile))).toContain("With this stamp you generally do not need a permit");
   });
   it("a profile that does not exist yet still renders (first visit)", async () => {
     const m = await member("empty");

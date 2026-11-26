@@ -32,7 +32,7 @@ export default async function Page() {
       <h1 className="text-[2.4rem] leading-[1.25] sm:text-[3.5rem] xl:text-[4rem]">Your <Hl c="lilac">profile</Hl></h1>
       <p className="text-muted">Add what you want us to know. It helps us show jobs that fit and decide which minimum pay applies to you. Nothing here is shown to an employer.</p>
       {stamp4 && (
-        <Notice kind="info" title="Your stamp means you no longer need a permit">
+        <Notice kind="info" title="With this stamp you generally do not need a permit">
           Your job alerts stay paused while your profile says Stamp 4. If that changes, change it here and turn them on in <A href="/account/alerts" className="font-semibold underline">Job alerts</A>. You can also <A href={settingsDeletePath()} className="font-semibold underline">delete your account</A>.
         </Notice>
       )}
