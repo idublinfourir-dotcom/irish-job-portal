@@ -170,13 +170,12 @@ describe("settings: the two-person rule through the real route, read on the page
 describe("legal texts: propose, confirm and refuse through the real route, read on the page", () => {
   const propose = (who: string, version: string, body: string) => call(LEGAL, who, { action: "propose", purpose: "privacy_notice", version, body });
   it("a content editor proposes; the editor sees Withdraw, an administrator sees Confirm and publish; the editor's own confirm is refused; admin1 publishes it", async () => {
-    const body = "PLACEHOLDER <script>alert(1)</script> & more\nline two";
+    const body = "PLACEHOLDER \"x\" & 3 < 4 more\nline two"; // B16: a tag is refused on propose (legal-texts.test.ts); escaping is still shown here
     const r = await h.ok(propose(ROLE("content_editor"), "p29b-1", body));
     const editor = await render(ROLE("content_editor"), legal);
     expect(editor).toMatch(/Withdraw my proposal/);
     expect(editor).not.toMatch(/Publish it|Confirm and publish/);
-    expect(editor).toContain("PLACEHOLDER &lt;script&gt;alert(1)&lt;/script&gt; &amp; more");
-    expect(editor).not.toContain("<script>alert");
+    expect(editor).toContain("PLACEHOLDER &quot;x&quot; &amp; 3 &lt; 4 more");
     const admin = await render("admin1", legal);
     expect(admin).toMatch(/Confirm and publish/);
     expect(admin).not.toMatch(/Propose this version/); // an administrator is not a content editor

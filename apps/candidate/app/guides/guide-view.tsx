@@ -37,7 +37,7 @@ export function GuideView({ guide: g, signedIn }: { guide: GuideData; signedIn: 
                 </span>
               )}
             />
-            <Body text={g.body} className="mt-6 max-w-[46rem] text-lead text-muted" />
+            <Body text={g.body} toc className="mt-6 max-w-[46rem] text-lead text-muted" />
           </div>
           <aside aria-labelledby="own-case" className="mt-8 flex flex-col gap-4 rounded-bento bg-ink p-6 text-white lg:sticky lg:top-6 lg:mt-[7.5rem]">
             <h2 id="own-case" className="text-[1.25rem] text-white">Check your own case</h2>

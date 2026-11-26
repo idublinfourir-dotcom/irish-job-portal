@@ -5,6 +5,7 @@
 import type pg from "pg";
 import { isSoc2010 } from "@portal/rules";
 import { QueueRefused } from "./admin-queue";
+import { bodyProblem } from "./body-format";
 import { HELP_CATEGORIES, UPDATE_CATEGORIES, validSlug } from "./content";
 import { isTime, validId } from "./search";
 import { requireRole } from "./staff-admin";
@@ -25,8 +26,9 @@ export const PUBLISHER: Record<Kind, "content_editor" | "rules_data_editor"> = {
 
 const ctrl = /[\p{Cc}\p{Cf}]/u;
 const title = (v: unknown) => typeof v === "string" && v.trim().length > 0 && v.length <= MAX_TITLE && !ctrl.test(v);
-// the body keeps its line breaks and tabs, and nothing else invisible
-const body = (v: unknown) => typeof v === "string" && v.trim().length > 0 && v.length <= MAX_BODY_CHARS && !ctrl.test(v.replace(/[\n\r\t]/g, ""));
+// the body keeps its line breaks and tabs, and nothing else invisible, and follows the body format (B16, #303)
+const body = (v: unknown) =>
+  typeof v === "string" && v.trim().length > 0 && v.length <= MAX_BODY_CHARS && !ctrl.test(v.replace(/[\n\r\t]/g, "")) && bodyProblem(v) === null;
 function sourceUrl(v: unknown): boolean {
   if (typeof v !== "string" || v.length > MAX_SOURCE_URL || ctrl.test(v)) return false;
   try {

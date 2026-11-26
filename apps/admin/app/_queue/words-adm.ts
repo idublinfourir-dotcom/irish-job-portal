@@ -35,7 +35,7 @@ const WORDS: Record<string, string> = {
   bad_kind: "That kind of page does not exist.",
   bad_slug: "The address part needs lower-case letters, digits and hyphens (an occupation page uses its SOC 2010 code).",
   bad_title: "The title must be 1 to 200 characters.",
-  bad_body_text: "The text must be 1 to 50,000 characters, with line breaks and tabs only as controls.",
+  bad_body_text: "The text must be 1 to 50,000 characters, with line breaks and tabs only as controls, in the body format: no HTML, no \"# \" heading, links to https or a path on the site, every table row the same width.",
   bad_source_url: "The source link must be an http or https address of up to 500 characters.",
   bad_checked_on: "The checked-on day must be a real day that is not in the future.",
   bad_category: "That type does not fit this kind of page.",

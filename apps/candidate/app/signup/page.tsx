@@ -7,8 +7,10 @@ import { SignupFlow } from "../(auth)/forms";
 import { authMeta, SIGNUP_META } from "../(auth)/meta";
 import { checkedNext } from "../(auth)/next-path";
 import { afterSignInPath } from "../../lib/paths";
+import { siteRobots } from "../../lib/seo";
 
-export const generateMetadata = (): Metadata => authMeta(...SIGNUP_META);
+// IDX1 (#304): the one sign-in page search engines may list at launch; it follows the site's switch (SITE_INDEXABLE), the other four stay noindex.
+export const generateMetadata = (): Metadata => authMeta(...SIGNUP_META, { robots: siteRobots() });
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ next?: string | string[] }> }) {
   const next = checkedNext((await searchParams).next);

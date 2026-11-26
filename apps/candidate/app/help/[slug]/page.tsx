@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { readHelp, readSignedIn } from "../../../lib/data";
 import { helpPath } from "../../../lib/paths";
-import { paragraphs } from "../../_content/body";
+import { firstParagraph } from "../../_content/body";
 import { meta } from "../../_content/meta";
 import { Problem, type Failed } from "../../_content/problem";
 import { HelpPageView, type HelpPageData } from "../help-page-view";
@@ -18,7 +18,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const r = await load(slug);
   if (!r.ok) return { title: "Help page not found" };
   const p = r.data as HelpPageData;
-  return meta(p.title, paragraphs(p.body)[0] ?? `${p.title}: help from the Irish Work Permit team.`, helpPath(p.slug));
+  return meta(p.title, firstParagraph(p.body) ?? `${p.title}: help from the Irish Work Permit team.`, helpPath(p.slug));
 }
 
 export default async function Page({ params }: Props) {

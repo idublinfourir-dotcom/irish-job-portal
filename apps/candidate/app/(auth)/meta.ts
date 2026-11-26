@@ -1,5 +1,5 @@
 // The title and description of the five sign-in pages (frame 01's SEO spec: title 60 or fewer plus the site name, description 120 to 160 characters). All are
-// noindex whatever the site's indexing switch says: a sign-in page is not a search result.
+// noindex whatever the site's indexing switch says: a sign-in page is not a search result. The sign-up page overrides it (IDX1, #304).
 import type { Metadata } from "next";
 import { pageDescription, pageTitle } from "../../lib/seo";
 

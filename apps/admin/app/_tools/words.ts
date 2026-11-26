@@ -25,7 +25,7 @@ const WORDS: Record<string, string> = {
   bad_solicitor_id: "The request was not valid. Reload the page and try again.",
   bad_purpose: "Pick one of the listed texts.",
   bad_version: "The version label is 1 to 64 characters: lower-case letters, digits, dots, dashes and underscores, starting with a letter or digit.",
-  bad_body_text: "The text is empty, over 100,000 characters, or has a hidden character. Plain text only.",
+  bad_body_text: "The text is empty, over 100,000 characters, has a hidden character, or breaks the body format: no HTML, no \"# \" heading, links to https or a path on the site, every table row the same width.",
   bad_firm: "The firm name must be 1 to 200 characters.",
   bad_contact: "The contact must be 1 to 300 characters.",
   nothing_to_change: "Change the firm or the contact first.",

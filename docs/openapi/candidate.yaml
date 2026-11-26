@@ -1184,8 +1184,8 @@ paths:
       summary: A published guide by slug
       description: |
         B15. One guide by slug, from the published guides only: a draft or withdrawn guide, another kind's slug, an unknown or malformed slug
-        (not lowercase letters, digits and hyphens, at most 100) is 404 `NOT_FOUND`. The body is stored as staff typed it (plain text today;
-        the body format, Q2, is not decided).
+        (not lowercase letters, digits and hyphens, at most 100) is 404 `NOT_FOUND`. The body is stored as staff typed it, in the body format of B16
+        (#303, limited Markdown: `##`/`###` headings, `- ` and `1. ` lists, tables, `> ` callouts, **bold**, links to https or a site path; no HTML).
       security: [{}, { candidateSession: [] }]
       x-roles: [anyone]
       x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
@@ -1204,7 +1204,7 @@ paths:
                   kind: { const: guide }
                   slug: { type: string }
                   title: { type: string }
-                  body: { type: string, description: "Plain text as staff typed it; the body format (Q2) is not decided." }
+                  body: { type: string, description: "As staff typed it, in the body format of B16 (#303, limited Markdown, no HTML); the client must render it as text, never as HTML." }
                   sourceUrl: { type: [string, 'null'] }
                   checkedOn: { type: [string, 'null'] }
                   publishedAt: { $ref: '#/components/schemas/Timestamp' }
@@ -1273,7 +1273,7 @@ paths:
                   kind: { const: notice }
                   slug: { type: string }
                   title: { type: string }
-                  body: { type: string, description: "Plain text as staff typed it; the body format (Q2) is not decided." }
+                  body: { type: string, description: "As staff typed it, in the body format of B16 (#303, limited Markdown, no HTML); the client must render it as text, never as HTML." }
                   sourceUrl: { type: [string, 'null'] }
                   checkedOn: { type: [string, 'null'] }
                   publishedAt: { $ref: '#/components/schemas/Timestamp' }
@@ -1441,7 +1441,7 @@ paths:
                 properties:
                   purpose: { type: string, enum: [signup_terms, privacy_notice, cookie_policy, employer_acceptable_use, data_retention] }
                   version: { type: string }
-                  body: { type: string, description: Plain text; line breaks are kept. }
+                  body: { type: string, description: "In the body format of B16 (#303, limited Markdown, no HTML; texts saved before it are plain text, which the format shows as paragraphs); line breaks are kept." }
                   publishedAt: { type: string, description: 'The database time, as "2026-11-19 09:30:00.123456+00".' }
               example: { purpose: privacy_notice, version: placeholder-2026-11-19, body: PLACEHOLDER TEXT., publishedAt: '2026-11-19 09:30:00.123456+00' }
         '400':

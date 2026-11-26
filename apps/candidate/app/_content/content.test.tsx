@@ -4,7 +4,7 @@ import { renderToStaticMarkup as html } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { descriptionProblem, titleProblem } from "../../lib/seo";
 import { reportCompany, sendContact } from "./api";
-import { Body, paragraphs } from "./body";
+import { Body, firstParagraph } from "./body";
 import { dayText, dublinDay } from "./dates";
 import { Accent } from "./head";
 import { LEGAL_PAGES, LegalView, isDraft, publishedDay } from "./legal";
@@ -15,11 +15,37 @@ import { TRAIL_MAX, cursorOf, pagerLinks, parseTrail } from "./trail";
 
 vi.mock("server-only", () => ({}));
 
-describe("the plain body (Q2 is open)", () => {
-  it("shows paragraphs and keeps single line breaks", () => {
-    expect(paragraphs("One.\r\n\r\nTwo\nlines.\n\n\n  \nThree")).toEqual(["One.", "Two\nlines.", "Three"]);
-    const h = html(<Body text={"A\n\nB"} />);
-    expect(h.match(/<p /g)).toHaveLength(2);
+describe("the body format (B16, #303)", () => {
+  it("shows paragraphs and keeps single line breaks; the description is the first paragraph as plain text", () => {
+    const h = html(<Body text={"One.\r\n\r\nTwo\nlines.\n\n\n  \nThree"} />);
+    expect(h.match(/<p /g)).toHaveLength(3);
+    expect(h).toContain("Two<br/>lines.");
+    expect(firstParagraph("## Why\n\nIt is **free** [here](/jobs).\nAgain.")).toBe("It is free here. Again.");
+    expect(firstParagraph("## Only a heading")).toBeUndefined();
+  });
+  it("shows headings with ids, lists, a table, a callout, bold and links; guides list two or more sections under \"On this page\"", () => {
+    const text = "## Who needs one\n\n- EEA **no**\n- Others: [DETE](https://enterprise.gov.ie/x)\n\n1. First\n2. Second\n\n## Pay\n\n### Pay\n\n| Permit | Minimum |\n| --- | --- |\n| Critical Skills | €40,904 |\n\n> Check the [official page](/guides/working-in-ireland).\n> Rules change.";
+    const h = html(<Body text={text} toc />);
+    expect(h).toContain('<nav aria-label="On this page"');
+    expect(h).toContain('href="#who-needs-one"');
+    expect(h).toContain('<h2 id="who-needs-one"');
+    expect(h).toContain('<h3 id="pay-2"'); // the same words twice get two ids
+    expect(h).toMatch(/<ul class="[^"]*list-disc[^"]*"><li>EEA <strong[^>]*>no<\/strong><\/li>/);
+    expect(h).toMatch(/<a [^>]*href="https:\/\/enterprise.gov.ie\/x"[^>]*rel="noopener noreferrer"|<a [^>]*rel="noopener noreferrer"[^>]*href="https:\/\/enterprise.gov.ie\/x"/);
+    expect(h.match(/<li>/g)).toHaveLength(6); // 2 bullets, 2 numbered, 2 under "On this page"
+    expect(h).toContain("<th scope=\"col\"");
+    expect(h).toContain("€40,904</td>");
+    expect(h).toMatch(/<div role="note"[^>]*>Check the <a [^>]*href="\/guides\/working-in-ireland"[^>]*>official page<\/a>\.<br\/>Rules change\.<\/div>/);
+    expect(html(<Body text={text} />)).not.toContain("On this page");
+    expect(html(<Body text={"## One\n\nText."} toc />)).not.toContain("On this page");
+  });
+  it("security: a link that is not https or a site path is only text, and so is a table with no rule line", () => {
+    for (const href of ["javascript:alert(1)", "//evil.example", "http://plain.example", "data:text/html,x", "mailto:a@b.c"]) {
+      const h = html(<Body text={`[click](${href})`} />);
+      expect(h, href).not.toContain("<a ");
+      expect(h, href).toContain(`[click](${href.replace("&", "&amp;")})`);
+    }
+    expect(html(<Body text={"| a | b |\n| c | d |"} />)).not.toContain("<table");
   });
   it("never turns text into markup, so a script in staff text is only text", () => {
     const h = html(<Body text={'<script>alert(1)</script> <img src=x onerror=alert(1)>'} />);

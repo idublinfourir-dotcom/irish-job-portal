@@ -6,7 +6,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const ALLOWED = new Set(["VISITOR_JOBS", "PAGE_SIZE", "UPDATES_PAGE", "SITEMAP_URLS"]);
+// constants, and the body format's pure parser (B16: reads no database, `_content/body.tsx`)
+const ALLOWED = new Set(["VISITOR_JOBS", "PAGE_SIZE", "UPDATES_PAGE", "SITEMAP_URLS", "parseBody", "firstParagraph"]);
 const ROOT = join(import.meta.dirname, "../../..");
 
 /** Every bad import in one file's text: a short line per problem. */
