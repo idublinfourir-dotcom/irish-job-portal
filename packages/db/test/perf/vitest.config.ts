@@ -9,7 +9,8 @@ export default defineConfig({
     root,
     projects: [
       { test: { name: "perf-unit", root, include: ["*.unit.ts"] } },
-      { test: { name: "perf", root, include: ["*.perf.ts"], globalSetup: ["../global-setup.ts"], fileParallelism: false } },
+      // TL1: the perf sessions commit like Supabase and CI (synchronous), so vacuum, the visibility map and the plans behave as there; node-postgres reads PGOPTIONS.
+      { test: { name: "perf", root, include: ["*.perf.ts"], globalSetup: ["../global-setup.ts"], fileParallelism: false, env: { PGOPTIONS: "-c synchronous_commit=on" } } },
     ],
   },
 });
