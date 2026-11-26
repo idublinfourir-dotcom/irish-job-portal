@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./tokens.css": "./src/tokens.css",
-    "./kit": "./src/kit.tsx"
+    "./kit": "./src/kit.tsx",
+    "./motion.css": "./src/motion.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

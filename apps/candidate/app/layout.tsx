@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { DM_Sans, Outfit } from "next/font/google";
-import { CandidateShell, SITE_NAME } from "@portal/ui";
+import { CandidateShell, Motion, SITE_NAME } from "@portal/ui";
 import { readSiteFrame, siteOrigin } from "../lib/data";
 import { jsonLd, organizationLd, siteRobots, websiteLd } from "../lib/seo";
 import "./globals.css";
@@ -29,6 +29,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <CandidateShell signedIn={signedIn} standingLine={standingLine ?? undefined}>
           {children}
         </CandidateShell>
+        <Motion />
       </body>
     </html>
   );

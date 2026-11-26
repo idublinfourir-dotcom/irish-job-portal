@@ -15,7 +15,7 @@ export function OccupationTile({ job, now, signedIn, saved, path }: { job: CardJ
   const place = [job.county, contract && `Fixed term, ${contract}`].filter(Boolean).join(" · ");
   const when = whenLine(job, now);
   return (
-    <article data-job-card={job.id} className="flex min-w-0 flex-col gap-3 rounded-bento bg-sand p-5 sm:p-6">
+    <article data-lift data-job-card={job.id} className="flex min-w-0 flex-col gap-3 rounded-bento bg-sand p-5 sm:p-6">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <Logo name={job.employerName} url={job.employerLogoUrl} className="size-12" />

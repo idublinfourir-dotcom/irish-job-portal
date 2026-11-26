@@ -4,6 +4,7 @@ import { Button } from "./button";
 import { cx, SITE_NAME, SITE_WORDMARK } from "./cx";
 import { Icon } from "./icons";
 import { SignOut } from "./sign-out";
+import { NavPill } from "./nav-pill";
 
 /**
  * The companies directory (frame C13) waits for B25 and B26 (the directory read), so its link is hidden in all three places it appears (the header, the phone menu, the footer) from this
@@ -63,13 +64,13 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
       <div className="mx-auto flex max-w-[75rem] items-center justify-between gap-3 rounded-card bg-linear-to-b from-white to-hover-light py-2 pl-5 pr-2 shadow-pop sm:pl-6">
         <Wordmark />
         <nav aria-label="Main" className="hidden flex-1 items-center lg:flex">
-          <div className="flex flex-1 items-center justify-center gap-1">
+          <NavPill className="flex flex-1 items-center justify-center gap-1">
             {items.map((i) => (
               <A key={i.href} href={i.href} className={i.href === "/" ? link.replace("inline-flex", "hidden xl:inline-flex") : link}>
                 {i.label}
               </A>
             ))}
-          </div>
+          </NavPill>
           {signedIn ? (
             <div className="flex items-center gap-2">
               <A href="/account/notices" aria-label="Notices" className="grid size-11 place-items-center rounded-pill bg-white text-ink hover:bg-hover-light">

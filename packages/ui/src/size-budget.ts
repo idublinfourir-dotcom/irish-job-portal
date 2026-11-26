@@ -13,7 +13,10 @@ import { gzipSync } from "node:zlib";
 // is unchanged: first-load JS 248 KB for the home page, about 259 KB for /jobs and /jobs/[job] (measured on their own branch).
 // Re-measured 24 Nov 2026 with wave 2 (P9 to P16, 14 more candidate pages in the one sheet): 67.8 KB raw, 12.8 KB gzip (portal 38.8 KB raw, admin 39.5 KB).
 // CSS budget about 10 percent over, as before; measure again when the wave 3 pages are merged. The JS budget is unchanged (248 to 251 KB).
-export const BUDGET = { jsGzipBytes: 275_000, cssGzipBytes: 14_100, cssRawBytes: 74_500 };
+// Re-measured 26 Nov 2026 with FM1 (page motion: the button ring, card lift, header pill, sidebar slide-in, reveals, preloader and scroll-to-top CSS):
+// candidate 75.4 KB raw, 14.6 KB gzip (portal 10.3 KB, admin 10.1 KB gzip); JS 250.8 KB home first load. The engineer: "raise the css budget if needed".
+// CSS budget about 10 percent over, as before; the JS budget is unchanged.
+export const BUDGET = { jsGzipBytes: 275_000, cssGzipBytes: 16_000, cssRawBytes: 83_000 };
 
 const gz = (b: Buffer) => gzipSync(b).length;
 
