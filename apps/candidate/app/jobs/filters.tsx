@@ -2,14 +2,16 @@
 // without script and the address holds the search. On a phone the panel is the bottom sheet of frame M03, opened by a checkbox and a label (CSS only); from 768 px it is the side panel.
 import type { ReactNode } from "react";
 import { A, Button, CriticalSkillsBadge, Icon, SponsorBadge, cx } from "@portal/ui";
-import { COUNTIES, SECTORS, SORTS, activeFilters, capFirst, euro, queryOf, searchHref, type FilterKey, type SearchState } from "./format";
+import { COUNTIES, SECTORS, SORTS, activeFilters, capFirst, euro, queryOf, jobCount, searchHref, type FilterKey, type SearchState, type SectorCounts } from "./format";
 
 export const FORM_ID = "jobs-search";
 export const POSTED = [["", "Any time"], ["1", "Last 24 hours"], ["3", "Last 3 days"], ["7", "Last 7 days"], ["30", "Last 30 days"]] as const;
 
 const INPUT = "h-[54px] w-full rounded-pill pl-12 text-body bg-ink-hover text-white placeholder:text-white/60 max-md:border max-md:border-line max-md:bg-white max-md:text-ink max-md:placeholder:text-faint";
 
-type Counts = { sector: string; jobs: number }[] | undefined;
+type Counts = SectorCounts | undefined;
+/** A sector's number in the panel, the bar and the pills (the rule of every job count). */
+const inSector = (counts: Counts, s: string) => counts && jobCount({ n: counts.find((c) => c.sector === s)?.jobs ?? 0, more: false });
 // The visitor's bar (frame N02): a white bar with a shadow from 1024 px, fields apart by a thin line; below that the phone rows.
 const INPUT_V = "h-[54px] lg:h-[52px] w-full rounded-pill border border-line bg-white pl-12 text-body text-ink placeholder:text-faint lg:rounded-none lg:border-0 lg:bg-transparent lg:pl-11";
 const ICON_V = "pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-muted lg:left-4";
@@ -24,7 +26,7 @@ export function SearchBar({ state, visitor, sectorCounts }: { state: SearchState
     </>
   );
   if (visitor) {
-    const n = (s: string) => (sectorCounts ? ` (${sectorCounts.find((c) => c.sector === s)?.jobs ?? 0})` : "");
+    const n = (s: string) => (sectorCounts ? ` (${inSector(sectorCounts, s)})` : "");
     return (
       <form id={FORM_ID} method="get" action="/jobs" role="search" aria-label="Search jobs" className="grid grid-cols-2 gap-2 lg:flex lg:items-center lg:gap-0 lg:rounded-pill lg:bg-white lg:p-2.5 lg:shadow-pop">
         {hidden}
@@ -117,7 +119,7 @@ export function FilterPills({ state, sectorCounts }: { state: SearchState; secto
       </PillMenu>
       <PillMenu set={!!sector} label={`Sector: ${sector ? capFirst(sector) : "any"}`}>
         <Choice href={to("sector")} on={!sector}>Any sector</Choice>
-        {SECTORS.map((s) => <Choice key={s} href={to("sector", s)} on={sector === s}>{capFirst(s)}{sectorCounts && <span className="text-muted">{sectorCounts.find((c) => c.sector === s)?.jobs ?? 0}</span>}</Choice>)}
+        {SECTORS.map((s) => <Choice key={s} href={to("sector", s)} on={sector === s}>{capFirst(s)}{sectorCounts && <span className="text-muted">{inSector(sectorCounts, s)}</span>}</Choice>)}
       </PillMenu>
       <PillMenu set={!!county} label={`County: ${county ?? "any"}`}>
         <Choice href={to("county")} on={!county}>Any county</Choice>
@@ -146,7 +148,7 @@ export function FilterPills({ state, sectorCounts }: { state: SearchState; secto
 }
 
 /** A radio or checkbox row with the kit's green tick; `count` is printed at the end (the sector counts). */
-function Opt({ type, name, value, checked, children, count }: { type: "radio" | "checkbox"; name: string; value: string; checked: boolean; children: ReactNode; count?: number }) {
+function Opt({ type, name, value, checked, children, count }: { type: "radio" | "checkbox"; name: string; value: string; checked: boolean; children: ReactNode; count?: string }) {
   return (
     <label className="group flex min-h-10 cursor-pointer items-center gap-3 text-[15px]">
       <input form={FORM_ID} type={type} name={name} value={value} defaultChecked={checked} className="peer sr-only" />
@@ -169,7 +171,7 @@ const Group = ({ title, children }: { title: string; children: ReactNode }) => (
 export function FilterPanel({ state, sectorCounts, sheet }: { state: SearchState; sectorCounts?: Counts; sheet?: boolean }) {
   const f = state.filters;
   const n = activeFilters(f);
-  const count = (s: string) => (sectorCounts ? (sectorCounts.find((c) => c.sector === s)?.jobs ?? 0) : undefined);
+  const count = (s: string) => inSector(sectorCounts, s);
   return (
     <div>
       <input type="checkbox" id="filters-open" aria-label="Show the filters" className="peer sr-only" />

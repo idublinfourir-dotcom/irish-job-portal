@@ -34,7 +34,9 @@ if (import.meta.main) {
   let code: number;
   try {
     const ci = process.env.GITHUB_ACTIONS ? ["--reporter=github-actions"] : [];
-    code = vitest([...process.argv.slice(2), "--reporter=default", ...ci, "--reporter=./test-run.ts"]);
+    // TL1: on the laptop, half the cores (6 of 12; Vitest's own default is all but one), so the timing budgets are not read under a load of 20. CI keeps its default.
+    const cap = process.env.GITHUB_ACTIONS || process.argv.some((a) => a.startsWith("--maxWorkers")) ? [] : ["--maxWorkers=50%"];
+    code = vitest([...process.argv.slice(2), ...cap, "--reporter=default", ...ci, "--reporter=./test-run.ts"]);
     const files = code !== 0 && existsSync(list) ? readFileSync(list, "utf8").split("\n").filter(Boolean) : [];
     if (files.length) {
       console.log(`\nOnly wall-clock numbers were late, in ${files.length} file(s). Once more, on their own:\n${files.join("\n")}`);

@@ -8,25 +8,26 @@ export type Job = {
   closedAt: string | null; closeReason: string | null; hireAnswer: string | null; reason: string | null; reviewCode: string | null; exceptionConfirmed: boolean; clientCheck: boolean;
 };
 
-/** What a job is to its owner: the database status refined by why it closed. */
-export type JobState = "draft" | "in_review" | "live" | "under_review" | "hidden" | "expired" | "closed" | "removed";
-export const jobState = (j: Pick<Job, "status" | "closeReason">): JobState => {
+/** What a job is to its owner: the database status refined by why it closed. `ended`: past its end date, so no visitor sees it or counts it, and not closed by the daily run yet (it can still be renewed). */
+export type JobState = "draft" | "in_review" | "live" | "ended" | "under_review" | "hidden" | "expired" | "closed" | "removed";
+export const jobState = (j: Pick<Job, "status" | "closeReason" | "closesAt">, now: number): JobState => {
+  if (j.status === "live" && j.closesAt && Date.parse(j.closesAt) <= now) return "ended";
   if (j.status !== "closed") return (["draft", "in_review", "live", "under_review", "hidden"].includes(j.status) ? j.status : "closed") as JobState;
   return j.closeReason === "expired" || j.closeReason === "under_review_expired" ? "expired" : j.closeReason === "removed" ? "removed" : "closed";
 };
 
 export const STATE_WORD: Record<JobState, string> = {
-  draft: "Draft", in_review: "In review", live: "Live", under_review: "Under review", hidden: "Hidden", expired: "Expired", closed: "Closed", removed: "Removed",
+  draft: "Draft", in_review: "In review", live: "Live", ended: "Ended", under_review: "Under review", hidden: "Hidden", expired: "Expired", closed: "Closed", removed: "Removed",
 };
 
 /** The jobs list tabs (DD9: In review and Closed have their own). */
 export const TABS = [
   ["all", "All", null], ["live", "Live", ["live"]], ["in_review", "In review", ["in_review"]], ["under_review", "Under review", ["under_review"]],
-  ["expired", "Expired", ["expired"]], ["closed", "Closed", ["closed"]], ["removed", "Removed", ["hidden", "removed"]], ["draft", "Drafts", ["draft"]],
+  ["expired", "Expired", ["ended", "expired"]], ["closed", "Closed", ["closed"]], ["removed", "Removed", ["hidden", "removed"]], ["draft", "Drafts", ["draft"]],
 ] as const satisfies readonly (readonly [string, string, readonly JobState[] | null])[];
 export type TabKey = (typeof TABS)[number][0];
 export const tabKey = (v: unknown): TabKey => (TABS.find((t) => t[0] === v)?.[0] ?? "all");
-export const inTab = (key: TabKey, j: Job) => { const s = TABS.find((t) => t[0] === key)![2] as readonly JobState[] | null; return !s || s.includes(jobState(j)); };
+export const inTab = (key: TabKey, j: Job, now: number) => { const s = TABS.find((t) => t[0] === key)![2] as readonly JobState[] | null; return !s || s.includes(jobState(j, now)); };
 
 /** The rules code that held a job, in words (the codes of POST /api/portal/jobs and /renew). */
 export const REVIEW_WORD: Record<string, string> = {
@@ -45,8 +46,8 @@ export const REVIEW_WORD: Record<string, string> = {
 export const reviewWord = (code: string | null) => (code ? REVIEW_WORD[code] ?? "It did not pass the rules in force." : null);
 
 /** The sentence under a held, hidden or closed job (frame E08's orange card), from the list's `reason` and `reviewCode`. `when` is a date already formatted. */
-export function holdWord(j: Job, when: string | null): string | null {
-  const s = jobState(j);
+export function holdWord(j: Job, when: string | null, now: number): string | null {
+  const s = jobState(j, now);
   if (s === "in_review") return j.reason === "restricted_company" ? "Your company account is restricted, so our team checks each new job before it goes live." : "Our team is checking this job before it goes live.";
   if (s === "under_review") {
     if (j.reason === "pay_check") return "A new salary minimum took effect and this job is now below it. It is hidden from search until you edit the salary, and closes on its end date.";
@@ -54,6 +55,7 @@ export function holdWord(j: Job, when: string | null): string | null {
   }
   if (s === "hidden") return j.reason === "organisation_suspended" ? "Hidden while your company account is suspended." : j.reason === "report" ? "Removed from search after a report. Open Account status to see why." : "Hidden by our team. Open Account status for the reason.";
   if (s === "removed") return "Removed by our team. Open Account status to see why.";
+  if (s === "ended") return `Ended${when ? ` on ${when}` : ""}, so nobody sees it in search. Renew it to show it again.`;
   if (s === "expired") return `Ended${when ? ` on ${when}` : ""}.`;
   if (s === "closed") return j.closeReason === "abandoned" ? "Closed as a draft." : `Closed by you${when ? ` on ${when}` : ""}.`;
   return null;
@@ -75,7 +77,7 @@ export const greeting = (now: number) => { const h = Number(HOUR.format(now)); r
 
 /** The expiry cell of a job row. */
 export function expiryWord(j: Job, now: number): string {
-  const s = jobState(j);
+  const s = jobState(j, now);
   if (s === "live") { const n = daysLeft(j.closesAt, now); return n === null ? "" : daysWord(n); }
   if (s === "under_review") return j.reason === "pay_check" ? "Edit the salary" : "Edit the job";
   if (s === "in_review") return "Waiting for our team";

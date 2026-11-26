@@ -58,7 +58,12 @@ describe("home page, normal state", () => {
   });
   it("shows the sign-in box and blurred placeholder rows from the count and the flag", () => {
     expect(h).toContain("data-sign-in-for-more");
-    expect(h).toContain("There are 40 live jobs.");
+    expect(h).toContain("There are 14 live jobs."); // the sector tiles' own total, not the list's capped count (40 here)
+    expect(html(<HomeView data={full({ tab: "IT" })} />)).toContain("There are 9 live jobs.");
+    expect(html(<HomeView data={full({ sectors: fail })} />)).toContain("There are 40 live jobs."); // the tiles' read failed: what the list counted
+    const many = html(<HomeView data={full({ sectors: { ok: true, data: [{ sector: "health", jobs: 97 }, { sector: "IT", jobs: 253 }, { sector: "pharma and science", jobs: 110 }] } })} />);
+    for (const t of ["There are 460 live jobs.", "97 live jobs", "250+ live jobs", "110 live jobs"]) expect(many, t).toContain(t); // #301
+    expect(many).not.toContain("253");
     expect(h.match(/data-placeholder/g)).toHaveLength(3);
   });
   it("shows the sector tiles in DETE's order with our live counts, and sector tabs biggest first", () => {
@@ -177,7 +182,7 @@ describe("helpers and metadata", () => {
     expect(featured(all).map((o) => o.code)).toEqual(["2231", "2136"]);
   });
   it("formats", () => {
-    expect([shortDate("2026-01-05"), shortDate("junk"), eur(40904), sectorLabel("health"), sectorLabel("IT"), jobsIn(1), jobsIn(2)]).toEqual(["5 Jan 2026", "junk", "€40,904", "Health", "IT", "1 live job", "2 live jobs"]);
+    expect([shortDate("2026-01-05"), shortDate("junk"), eur(40904), sectorLabel("health"), sectorLabel("IT"), jobsIn({ n: 1, more: false }), jobsIn({ n: 253, more: false })]).toEqual(["5 Jan 2026", "junk", "€40,904", "Health", "IT", "1 live job", "250+ live jobs"]);
   });
   it("sets a title of 60 characters or fewer plus the brand, and a description of 120 to 160", () => {
     const m = generateMetadata();

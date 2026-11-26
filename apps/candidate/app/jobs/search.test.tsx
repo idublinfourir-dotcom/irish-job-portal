@@ -19,8 +19,19 @@ describe("visitor", () => {
     expect(h).not.toContain("Save Staff Nurse"); // saving needs an account
     expect(h).not.toContain("Report Staff Nurse");
   });
-  it("prints 200+ when the count is capped", () => {
+  it("prints 200+ when the count is capped and the sector counts could not be read", () => {
     expect(view({ list: ok({ count: { n: 200, more: true } }) })).toContain("200+ jobs");
+  });
+  it("#301: one number on the page: the heading, the sign-in box and the filters round the same way, and a later page keeps it", () => {
+    const sectorCounts = [{ sector: "IT", jobs: 253 }, { sector: "health", jobs: 97 }, { sector: "pharma and science", jobs: 110 }];
+    const all = view({ sectorCounts, list: ok({ count: { n: 200, more: true }, signInForMore: true }) });
+    for (const t of ["460 jobs", "You can see 1 of 460", "IT (250+)", "Health (97)", "Pharma and science (110)"]) expect(all, t).toContain(t);
+    const it = view({ sectorCounts, state: parseSearch({ sector: "IT" }), list: ok({ count: { n: 200, more: true }, signInForMore: true }) });
+    for (const t of ["250+ jobs", "You can see 1 of 250+", "IT (250+)"]) expect(it, t).toContain(t);
+    for (const h of [all, it]) { expect(h).not.toContain("200+"); expect(h).not.toContain("253"); }
+    const signedIn = { signedIn: true, sectorCounts, state: parseSearch({ sector: "IT", after: "x" }) };
+    expect(view({ ...signedIn, list: ok({ count: null }) })).toContain("250+ jobs"); // a later page: the list read does not count
+    expect(view({ ...signedIn, list: ok({ count: null }) })).toMatch(/>250\+</); // the panel and the pills
   });
   it("words a visitor's request for a later page", () => {
     const h = view({ list: { ok: false, status: 401, code: "SIGN_IN_FOR_MORE" } });

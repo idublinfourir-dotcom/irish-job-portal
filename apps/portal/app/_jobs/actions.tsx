@@ -64,7 +64,7 @@ export function JobActions({ id, title, state, banner }: { id: string; title: st
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(null), [hire, setHire] = useState<string>(), [error, setError] = useState<string>(), [pending, setPending] = useState(false);
   const [held, setHeld] = useState<string>(), [exception, setException] = useState<string>(), [ticked, setTicked] = useState(false);
-  const live = state === "live", draft = state === "draft";
+  const live = state === "live" || state === "ended", draft = state === "draft"; // an ended job is still live in the database until the daily run, so it renews and closes as one
   const done = () => { setMode(null); setHeld(undefined); setException(undefined); setTicked(false); setError(undefined); router.refresh(); };
   const open = (m: Mode) => { setError(undefined); setMode(m); };
   async function close() {

@@ -103,10 +103,10 @@ components:
       enum: [Carlow, Cavan, Clare, Cork, Donegal, Dublin, Galway, Kerry, Kildare, Kilkenny, Laois, Leitrim, Limerick, Longford, Louth, Mayo, Meath, Monaghan, Offaly, Roscommon, Sligo, Tipperary, Waterford, Westmeath, Wexford, Wicklow]
     Count:
       type: [object, 'null']
-      description: The capped count of matching jobs, first page only (null on later pages). `n` stops at 200; `more` true means over 200.
+      description: The count of matching jobs, first page only (null on later pages). On the job list `n` stops at 200 and `more` true means over 200. On a company or an occupation page `n` is exact and `more` is always false.
       required: [n, more]
       properties:
-        n: { type: integer, minimum: 0, maximum: 200 }
+        n: { type: integer, minimum: 0 }
         more: { type: boolean }
     JobCard:
       type: object

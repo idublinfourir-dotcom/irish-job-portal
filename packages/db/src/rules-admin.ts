@@ -139,7 +139,7 @@ export const PAY_DEAL_COUNTS =
   "m as (select e.entry, n.org from unnest($1::text[]) e(entry) join n on lower(btrim(n.name)) = e.entry " +
   "union select 'health service executive', n.org from n where 'health service executive' = any($1::text[]) and n.name ~* '\\mhse\\M|health service executive') " +
   "select m.entry, count(*)::int as companies, sum((select count(*) from organisation_name x where x.organisation_id = m.org and x.kind = 'legal'))::int as legal_names, " +
-  "sum((select count(*) from job j where j.organisation_id = m.org and j.status = 'live'))::int as live_jobs from m group by m.entry";
+  "sum((select count(*) from job j where j.organisation_id = m.org and j.status = 'live' and j.closes_at > now()))::int as live_jobs from m group by m.entry";
 const STAFF_NAMES = "select id, name from staff_user where id = any($1::text[])";
 export type PayDealRow = {
   name: string; tier: 1 | 2; note: string | null; bodyType: string | null; evidence: PayDealEntry["evidence"] | null; addedOn: string | null; addedBy: string | null;

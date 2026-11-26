@@ -8,7 +8,7 @@ import { QueueRefused } from "./admin-queue";
 import { parseSeed, seedRows, type SeedResult, type SeedRow } from "./company-seed";
 import { DETE_LINK_VIEWERS, deteLinkSuggestions } from "./dete-links";
 import { fileStore } from "./file-store";
-import { validId } from "./search";
+import { LIVE, validId } from "./search";
 import { staffCounts, type StaffCounts } from "./staff-counts";
 import { requireRole, STAFF_ROLE_LIST, staffRoles } from "./staff-admin";
 import { AUDIT } from "./trust-safety";
@@ -406,7 +406,7 @@ export const SAMPLE_SIZE = 100;
 export const SAMPLE_MAKE =
   "insert into review_item(queue, reason, detail) select 'scheduled_check', 'hand_check_100', jsonb_build_object('key', 'hand_check_100:' || " +
   "to_char(now() at time zone 'Europe/Dublin', 'YYYY-MM'), 'role', 'fetched_job_reviewer', 'jobIds', (select jsonb_agg(id::text) from " +
-  `(select id from job where status = 'live' order by random() limit ${SAMPLE_SIZE}) s)) where exists (select 1 from job where status = 'live') ` +
+  `(select id from job where ${LIVE} order by random() limit ${SAMPLE_SIZE}) s)) where exists (select 1 from job where ${LIVE}) ` +
   "on conflict ((detail->>'key')) where queue = 'scheduled_check' do update set detail = review_item.detail || jsonb_build_object('jobIds', excluded.detail->'jobIds') " +
   "where not review_item.detail ? 'jobIds'";
 // The jobs as they are now, in the sample's order, with what a hand checker needs; approvedByYou: this member approved it in the queue (20c section 3:
@@ -477,7 +477,7 @@ export const TARGET_COUNTS =
   "(select count(*)::int from tracker_entry where origin = 'did_you_apply_yes') as yes_applied, " +
   "(select count(*)::int from tracker_entry where origin = 'mark_applied') as mark_applied, " +
   "(select count(*)::int from job where hire_answer = 'yes') as hires, (select count(*)::int from application where status = 'hired') as hired_on_site, " +
-  "(select count(*)::int from job where status = 'live') as live_jobs, (select count(*)::int from report where created_at > now() - interval '30 days') as reports_30d";
+  `(select count(*)::int from job where ${LIVE}) as live_jobs, (select count(*)::int from report where created_at > now() - interval '30 days') as reports_30d`;
 export type TargetCounts = {
   weeklyActiveCandidates: number; yesIApplied: number; markApplied: number; hires: number; hiredOnSite: number; liveJobs: number; reports30Days: number;
   /** Reports of the last 30 days per 1,000 live jobs now; null with no live job. */

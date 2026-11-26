@@ -5,7 +5,7 @@ import { JOB_FORM_LIVE } from "../_site/flags";
 import { JobActions } from "./actions";
 import { dateWord, expiryWord, holdWord, jobState, notes, rateWord, STATE_WORD, type Job, type JobState, type StatRow } from "./words";
 
-const TONE: Record<JobState, PillTone> = { live: "green", under_review: "peach", in_review: "lilac", draft: "outline", expired: "neutral", closed: "neutral", hidden: "white", removed: "white" };
+const TONE: Record<JobState, PillTone> = { live: "green", under_review: "peach", in_review: "lilac", draft: "outline", ended: "neutral", expired: "neutral", closed: "neutral", hidden: "white", removed: "white" };
 const PERMIT: Record<string, string> = { general: "General permit", critical_skills: "Critical Skills permit" };
 const th = "px-4 py-3 text-left text-small font-semibold";
 const td = "px-4 py-3 align-middle";
@@ -28,8 +28,8 @@ export function JobsTable({ jobs, totals, now, canPost, detail, selected, select
         </thead>
         <tbody>
           {jobs.map((j) => {
-            const state = jobState(j), t = totals.get(j.id);
-            const hold = detail ? holdWord(j, dateWord(j.closedAt ?? j.closesAt)) : null;
+            const state = jobState(j, now), t = totals.get(j.id);
+            const hold = detail ? holdWord(j, dateWord(j.closedAt ?? j.closesAt), now) : null;
             return (
               <tr key={j.id} data-job={j.id} data-state={state} className={`border-t border-line ${selected === j.id ? "bg-lilac-soft" : ""}`}>
                 <td className={`${td} max-w-[18rem]`}>

@@ -1,8 +1,29 @@
 // Unit: the pure helpers (no database, no network, no browser).
 import { describe, expect, it } from "vitest";
-import { activeFilters, ago, contractText, euro, euroText, initials, jobDescription, jobTitleText, loginHref, parseSearch, queryOf, readQuery, searchDescription, searchHeading, searchHref, searchTitle } from "./format";
+import { activeFilters, ago, contractText, euro, euroText, initials, jobCount, jobDescription, jobTitleText, loginHref, parseSearch, queryOf, readQuery, searchCount, searchDescription, searchHeading, searchHref, searchTitle } from "./format";
 import { pageTitle } from "../../lib/seo";
 import { NOW } from "./test-fixtures";
+
+describe("job counts (#301)", () => {
+  it("is exact below 100, then the ten below with a plus; an exact ten has no plus", () => {
+    const want: [number, string][] = [[0, "0"], [1, "1"], [9, "9"], [97, "97"], [99, "99"], [100, "100"], [101, "100+"], [109, "100+"], [110, "110"], [140, "140"], [245, "240+"], [250, "250"], [253, "250+"], [999, "990+"], [1000, "1,000"], [1253, "1,250+"], [12_345, "12,340+"]];
+    for (const [n, text] of want) expect(jobCount({ n, more: false }), String(n)).toBe(text);
+  });
+  it("says plus when the read stopped counting, at any size", () => {
+    expect([jobCount({ n: 200, more: true }), jobCount({ n: 253, more: true }), jobCount({ n: 40, more: true })]).toEqual(["200+", "250+", "40+"]);
+  });
+  it("counts a search from its sector counts: all of them, or the one in the filter; the list's own count only when they are missing", () => {
+    const sectors = [{ sector: "IT", jobs: 253 }, { sector: "health", jobs: 97 }, { sector: "care", jobs: 0 }], capped = { n: 200, more: true };
+    expect(searchCount(sectors, undefined, capped)).toEqual({ n: 350, more: false });
+    expect(searchCount(sectors, null, null)).toEqual({ n: 350, more: false });
+    expect(searchCount(sectors, "", capped)).toEqual({ n: 350, more: false }); // "Any sector" of the form
+    expect(searchCount(sectors, "IT", capped)).toEqual({ n: 253, more: false });
+    expect(searchCount(sectors, "care", capped)).toEqual({ n: 0, more: false });
+    expect(searchCount(sectors, "'; drop table job; --", capped)).toEqual({ n: 0, more: false }); // an unknown sector is nobody's (the list read answers 400 for it)
+    expect(searchCount(undefined, "IT", capped)).toEqual(capped);
+    expect(searchCount(undefined, "IT", null)).toBeNull();
+  });
+});
 
 describe("money and dates", () => {
   it("prints euros and turns the read's EUR into the sign", () => {

@@ -6,7 +6,7 @@ import { checkEligibility, publicPayCandidatesOf, publicPayTier, registrationFor
 import { freshPayDeals, getRules } from "./rules-data";
 import { getContent, validSlug, type ContentPage } from "./content";
 import { FIRST_PERMIT_YEAR, PERMITS, summarisePermits, type Permits } from "./dete";
-import { BadSearchInput, COUNT_CAP, cursorOf, decodeCursor, employerLabels, KEYS, CAST, LIST, listCards, LIVE, PAGE_SIZE, pageSize, SOURCE, type ScopedRow, type CompanyLabel, type JobCard, type ListRow, type Sort } from "./search";
+import { BadSearchInput, cursorOf, decodeCursor, employerLabels, KEYS, CAST, LIST, listCards, LIVE, PAGE_SIZE, pageSize, SOURCE, type ScopedRow, type CompanyLabel, type JobCard, type ListRow, type Sort } from "./search";
 
 type Db = Pick<pg.Pool, "query">;
 
@@ -32,8 +32,8 @@ export function scopedQuery(scope: JobsScope, value: string, after?: string, siz
     values: [value, !c.quotaFull, ...c.keys, c.id],
   };
 }
-export const scopedCount = (scope: JobsScope) =>
-  `select count(*)::int as n from (select 1 from job where job.status = 'live' and job.closes_at > now() and ${SCOPES[scope].where} limit ${COUNT_CAP + 1}) c`;
+/** Counted to the end, not to COUNT_CAP: the page prints the ten below (#301), which the search it links to prints too. ponytail: one index range; a cap again when one code or company has tens of thousands. */
+export const scopedCount = (scope: JobsScope) => `select count(*)::int as n from job where ${LIVE} and ${SCOPES[scope].where}`;
 
 // The page's employers (slug and logo for the cards) in one statement on the primary key, only for the distinct ids of the page; a company page knows its own.
 export const PAGE_EMPLOYERS = "select id::text, slug, logo_url from organisation where id = any($1::bigint[])";
@@ -44,7 +44,6 @@ export async function scopedJobs(db: Db, scope: JobsScope, value: string, after?
   const rows = list.rows;
   const shown = rows.slice(0, size);
   const last = shown.at(-1);
-  const n = count?.rows[0]!.n ?? 0;
   const owners = new Map<string, { slug: string; logo_url: string | null }>();
   if (!company && shown.length) for (const o of (await db.query<{ id: string; slug: string; logo_url: string | null }>(PAGE_EMPLOYERS, [[...new Set(shown.map((r) => r.organisation_id))]])).rows) owners.set(o.id, o);
   const withEmployer = ({ organisation_id: orgId, ...r }: ScopedRow): ListRow => {
@@ -54,7 +53,7 @@ export async function scopedJobs(db: Db, scope: JobsScope, value: string, after?
   return {
     jobs: await listCards(db, shown.map(withEmployer)),
     next: rows.length > size && last ? cursorOf(SCOPES[scope].sort, last) : null,
-    count: count ? { n: Math.min(n, COUNT_CAP), more: n > COUNT_CAP } : null,
+    count: count ? { n: count.rows[0]!.n, more: false } : null,
   };
 }
 
