@@ -9,3 +9,4 @@ export * from "./candidate-shell";
 export * from "./nav-links";
 export * from "./sidebar-shells";
 export * from "./link";
+export * from "./motion";

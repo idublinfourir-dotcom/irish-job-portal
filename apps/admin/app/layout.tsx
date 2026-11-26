@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { DM_Sans, Outfit } from "next/font/google";
-import { ADMIN_ROLES, AdminShell, SITE_NAME, type AdminRole } from "@portal/ui";
+import { ADMIN_ROLES, AdminShell, Motion, SITE_NAME, type AdminRole } from "@portal/ui";
 import { readSidebar } from "../lib/data";
 import "./globals.css";
 
@@ -34,6 +34,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             {children}
           </main>
         )}
+        <Motion />
       </body>
     </html>
   );

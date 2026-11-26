@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@portal/ui/tokens.css";
+@import "@portal/ui/motion.css";
 @source "../../../packages/ui/src";
 
 /* the landing's dark closing band runs the full page width (w-screen), which counts the scrollbar: clip, never scroll sideways */
