@@ -2,7 +2,8 @@
 // every state to HTML (react-dom/server); the state and the requests live in forms.tsx. Nothing here reads a database.
 import type { FormEvent, MouseEvent, ReactNode } from "react";
 import { A, Button, Checkbox, CriticalSkillsBadge, Icon, Input, Notice, SponsorBadge } from "@portal/ui";
-import { Dot, Hl, PhotoBlock } from "../jobs/parts";
+import { Dot, Hl } from "../jobs/parts";
+import { SIGNUP_PHOTO } from "./photos";
 import { AuthFrame, Side } from "./auth-frame";
 import { PASSWORD_MAX, PASSWORD_MIN } from "./messages";
 
@@ -80,7 +81,8 @@ export function SignupView({ answer, google, error, pending, employersHref, next
       </form>
       <div className="hidden flex-col gap-4 lg:flex" data-aside>
         <div className="relative flex min-h-[560px] flex-1 flex-col justify-end p-5">
-          <PhotoBlock className="absolute inset-0" />
+          {/* eslint-disable-next-line @next/next/no-img-element -- self-hosted, hashed by the build */}
+          <img src={SIGNUP_PHOTO.src} width={SIGNUP_PHOTO.width} height={SIGNUP_PHOTO.height} alt={SIGNUP_PHOTO.alt} loading="eager" className="absolute inset-0 h-full w-full rounded-bento object-cover" />
           <div className="relative flex flex-col gap-3 rounded-bento bg-white p-8">
             <p className="font-heading text-[2.5rem] font-semibold leading-[1.25] tracking-tight">See <Hl c="peach">every job</Hl> a permit can <Hl c="green">cover</Hl></p>
             <p className="text-small text-muted">Every listing passed the permit rules, or the employer confirmed sponsorship.</p>
