@@ -82,8 +82,8 @@ const everything = async () => [await count("select 1 from candidate_user"), awa
 const person = (n: string, extra: Partial<Profile> = {}): Profile => ({ sub: `google-sub-${n}`, email: `fake.g.${n}@example.test`, name: `Fake ${n}`, email_verified: true, ...extra });
 
 /** The whole Google round trip: start (with additionalData), then the callback Google would send the browser back to. */
-async function viaGoogle(p: Profile, o: { additionalData?: unknown; query?: string; tamper?: (state: string) => string; noCookie?: boolean } = {}) {
-  const start = await call("sign-in/social", { provider: "google", callbackURL: "/welcome", ...("additionalData" in o ? { additionalData: o.additionalData } : { additionalData: answers }) });
+async function viaGoogle(p: Profile, o: { additionalData?: unknown; query?: string; tamper?: (state: string) => string; noCookie?: boolean; extra?: object } = {}) {
+  const start = await call("sign-in/social", { provider: "google", callbackURL: "/welcome", ...("additionalData" in o ? { additionalData: o.additionalData } : { additionalData: answers }), ...o.extra });
   expect(start.status, start.text).toBe(200);
   const url = new URL(start.json!.url);
   const state = o.tamper ? o.tamper(url.searchParams.get("state")!) : url.searchParams.get("state")!;
@@ -199,6 +199,12 @@ describe("Google sign-up refused: no account, no consent row, no session, no coo
   };
   it("no additionalData at all, an empty one, and answers sent only in the callback address", async () => {
     await refused("none", { additionalData: undefined }, "SIGNUP_ANSWERS_REFUSED");
+    // The sign-in page starts Google with no answers and errorCallbackURL /login?error=google (apps/candidate/app/(auth)/forms.tsx):
+    // the browser lands on /login with both codes, which the page turns into its "no account yet" line (login/page.tsx, 26 Nov 2026).
+    const fromLogin = await viaGoogle(person("from-login"), { additionalData: undefined, extra: { errorCallbackURL: "/login?error=google" } });
+    const landed = new URL(fromLogin.callback.location ?? "", BASE);
+    expect([landed.pathname, landed.searchParams.getAll("error")]).toEqual(["/login", ["google", "SIGNUP_ANSWERS_REFUSED"]]);
+    expect(await users(person("from-login").email)).toBe(0);
     await refused("empty", { additionalData: {} }, "SIGNUP_ANSWERS_REFUSED");
     await refused("late", { additionalData: undefined, query: "&needsPermit=true&over18=true&acceptsTerms=true" }, "SIGNUP_ANSWERS_REFUSED");
   });

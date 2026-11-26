@@ -311,6 +311,16 @@ describe("the pages (server components): redirects, the checked return address, 
     expect(e.props.notice).toMatch(/Google sign-in did not finish/);
     expect(e.props.notice).not.toContain("<script>");
   });
+  it("a Google address with no account (the callback adds SIGNUP_ANSWERS_REFUSED to ?error=google) is told to create an account first, never shown the code", async () => {
+    for (const error of [["google", "SIGNUP_ANSWERS_REFUSED"], "SIGNUP_ANSWERS_REFUSED"]) {
+      const n = (await LoginPage(search({ error }))).props.notice;
+      expect(n).toMatch(/has no account yet\. Create a free account first/);
+      expect(n).not.toContain("SIGNUP_ANSWERS_REFUSED");
+    }
+    for (const error of [["google", "<script>alert(1)</script>"], ["google", "signup_answers_refused"], ["google", "SIGNUP_ANSWERS_REFUSED_X"]]) {
+      expect((await LoginPage(search({ error }))).props.notice, String(error)).toMatch(/Google sign-in did not finish/);
+    }
+  });
   it("/verify: verified, an error (which wins over verified, as the library adds it to the same address), and the bare address", async () => {
     const verified = await VerifyPage(search({ verified: "1", next: "/jobs/a-1" }));
     expect(verified.props).toMatchObject({ signedIn: false, loginHref: "/login?next=%2Fjobs%2Fa-1", continueHref: "/jobs/a-1" });
