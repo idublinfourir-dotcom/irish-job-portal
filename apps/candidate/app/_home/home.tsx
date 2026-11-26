@@ -206,7 +206,7 @@ function Bento({ m }: { m: Sec<Minimums> }) {
           <Pill tone="white" className="font-medium">DETE, {DETE.short}</Pill>
           <A href="#permits" aria-label="Where permits go"><Go tone="ink" className="size-9" /></A>
         </div>
-        <p className="mt-auto font-heading text-[2rem] font-semibold leading-none sm:text-[3.75rem]">{pct(health.share)}</p>
+        <p data-count className="mt-auto font-heading text-[2rem] font-semibold leading-none sm:text-[3.75rem]">{pct(health.share)}</p>
         <p className="mt-2 text-small sm:mt-3 sm:text-base">of permits go to health and social work, the first sector we cover.</p>
       </div>
       {m.ok && (
@@ -215,7 +215,7 @@ function Bento({ m }: { m: Sec<Minimums> }) {
             <Pill tone="white">From the rules table</Pill>
             <A href={checkerPath} aria-label="Open the eligibility checker"><Go tone="green" className="size-9" /></A>
           </div>
-          <p className="mt-auto font-heading text-[2rem] font-semibold leading-none sm:text-[3.75rem]">{eur(m.data.criticalSkills)}</p>
+          <p data-count className="mt-auto font-heading text-[2rem] font-semibold leading-none sm:text-[3.75rem]">{eur(m.data.criticalSkills)}</p>
           <p className="mt-2 text-small text-muted sm:mt-3 sm:text-base">Critical Skills minimum with a relevant degree. We check every job against it.</p>
         </div>
       )}
@@ -338,7 +338,7 @@ const JOB_ORDER = [0, 1, 2, 3, 0, 1]; // the frame's order: green, sun, lavender
 function JobTile({ c, i }: { c: JobCard; i: number }) {
   const dark = JOB_ORDER[i % JOB_ORDER.length] === 0;
   return (
-    <article data-job-card className={`relative flex h-full min-h-[19.2rem] flex-col gap-3 rounded-bento p-6 ${JOB_FILL[JOB_ORDER[i % JOB_ORDER.length]!]}`}>
+    <article data-job-card data-lift className={`relative flex h-full min-h-[19.2rem] flex-col gap-3 rounded-bento p-6 ${JOB_FILL[JOB_ORDER[i % JOB_ORDER.length]!]}`}>
       <div className="flex items-start justify-between gap-3">
         <Pill tone="white" className="font-medium">{c.county ?? "Ireland"}</Pill>
         <Logo job={c} />
@@ -452,7 +452,7 @@ function Steps() {
     <Section id="steps" title={<>From <Hl c="peach">search</Hl> <Dot /> to <Hl c="green">permit</Hl><br />in four steps</>} intro="Our permit services are paid by the employer or agency, never by you.">
       <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {STEPS.map(([t, text, fill], i) => (
-          <li key={t} className={`flex min-h-[18.7rem] flex-col justify-between gap-8 rounded-bento p-7 ${fill}`}>
+          <li key={t} data-lift className={`flex min-h-[18.7rem] flex-col justify-between gap-8 rounded-bento p-7 ${fill}`}>
             <p className={`font-heading text-[3.4rem] font-semibold leading-none ${i === 3 ? "text-peach" : ""}`}>{String(i + 1).padStart(2, "0")}</p>
             <div>
               <h3 className="text-[1.2rem] leading-tight">{t}</h3>
@@ -495,7 +495,7 @@ function Minimums({ m }: { m: Sec<Minimums> }) {
         {options.map(([label, permit, n], i) => (
           <div key={label} className={`mt-1 hidden rounded-3xl bg-peach p-5 ${show[i]}`}>
             <p className="text-small">Minimum that applies to you: {permit}</p>
-            <p className="font-heading text-[1.9rem] font-semibold">{eur(n)} a year</p>
+            <p data-count className="font-heading text-[1.9rem] font-semibold">{eur(n)} a year</p>
             <p className="flex items-center gap-2 text-small font-medium"><Icon name="check" size={16} />From the rules table, checked on {shortDate(d.rulesCheckedOn)}</p>
           </div>
         ))}
@@ -525,8 +525,8 @@ function Permits() {
             <span style={{ width: `${rest}%` }} className="rounded-pill bg-white/15" />
           </div>
           <div className="mt-6 grid grid-cols-2 gap-4 border-t border-white/15 pt-5">
-            <p><strong className="block font-heading text-2xl">{pct(top[0]!.share)}</strong><span className="text-small text-white/75">go to Health, the top sector</span></p>
-            <p><strong className="block font-heading text-2xl">{pct(topFiveShare)}</strong><span className="text-small text-white/75">land in just five sectors</span></p>
+            <p><strong data-count className="block font-heading text-2xl">{pct(top[0]!.share)}</strong><span className="text-small text-white/75">go to Health, the top sector</span></p>
+            <p><strong data-count className="block font-heading text-2xl">{pct(topFiveShare)}</strong><span className="text-small text-white/75">land in just five sectors</span></p>
           </div>
         </div>
         <div className="rounded-bento bg-sand p-8">
@@ -666,7 +666,7 @@ function Guides({ d }: { d: HomeData }) {
       <ul className="grid gap-4 md:grid-cols-3">
         {items.map((it, i) => (
           <li key={it.key}>
-            <article className="relative flex h-full flex-col rounded-bento bg-sand p-3 pb-6">
+            <article data-lift className="relative flex h-full flex-col rounded-bento bg-sand p-3 pb-6">
               <div className="relative">
                 <Photo name={`guide-${(i % 3) + 1}`} className="h-[13rem] w-full rounded-card" />
                 <Pill tone="white" className="absolute left-3 top-3 font-medium">{it.kind}</Pill>

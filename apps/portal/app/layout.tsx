@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { DM_Sans, Outfit } from "next/font/google";
-import { PortalShell, SITE_NAME, type PortalRole } from "@portal/ui";
+import { Motion, PortalShell, SITE_NAME, type PortalRole } from "@portal/ui";
 import { readShell } from "../lib/data";
 import "./globals.css";
 
@@ -36,6 +36,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             {children}
           </main>
         )}
+        <Motion />
       </body>
     </html>
   );

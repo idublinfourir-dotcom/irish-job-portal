@@ -1,0 +1,24 @@
+/* Page motion (FM1). JS adds data-rv to blocks that start below the fold and removes it as they enter; nothing is hidden in the server HTML. */
+[data-rv] { opacity: 0; }
+.mo-pre { position: fixed; inset: 0; z-index: 2147483000; display: grid; place-items: center; background: var(--color-cream); }
+.mo-mk { position: relative; transform-origin: 0 0; will-change: transform; user-select: none; pointer-events: none; }
+.mo-mk, .mo-mk * { color: var(--color-deep-green) !important; text-decoration: none; }
+.mo-base { opacity: 0.12; }
+.mo-fill { position: absolute; inset: 0; mask-repeat: repeat-x; -webkit-mask-repeat: repeat-x; mask-size: 60px 200px; -webkit-mask-size: 60px 200px; }
+.mo-stt { all: unset; box-sizing: border-box; position: fixed; right: 32px; bottom: 64px; z-index: 9998; width: 48px; height: 48px; cursor: pointer; border-radius: 50%;
+  visibility: hidden; opacity: 0; transform: translateY(12px); pointer-events: none;
+  transition: opacity 0.3s cubic-bezier(0.23, 1, 0.32, 1), transform 0.3s cubic-bezier(0.23, 1, 0.32, 1), visibility 0s 0.3s; }
+.mo-stt[data-on] { visibility: visible; opacity: 1; transform: none; pointer-events: auto; transition-delay: 0s; }
+.mo-stt:focus-visible { outline: 2px solid var(--color-ink); outline-offset: 3px; }
+.mo-ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.mo-trk { stroke: rgb(20 20 43 / 0.14); }
+.mo-bar { stroke: var(--color-deep-green); }
+.mo-in { position: absolute; inset: 4px; display: grid; place-items: center; border-radius: 50%; background: var(--color-ink); transition: background 0.2s; }
+.mo-in svg { width: 18px; height: 18px; stroke: var(--color-mint-on-dark); transition: transform 0.3s cubic-bezier(0.34, 1.6, 0.64, 1); }
+.mo-stt:active .mo-in { transform: scale(0.94); }
+@media (hover: hover) and (pointer: fine) {
+  .mo-stt:hover .mo-in { background: var(--color-ink-hover); }
+  .mo-stt:hover .mo-in svg { transform: translateY(-2px); stroke: #fff; }
+}
+@media (max-width: 600px) { .mo-stt { right: 16px; bottom: 72px; } }
+@media (prefers-reduced-motion: reduce) { .mo-stt, .mo-stt * { transition: none !important; } }
