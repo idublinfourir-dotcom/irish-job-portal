@@ -57,3 +57,12 @@ Needs the candidate app on `http://localhost:3000`, a database with the migratio
 4. Sign in again with the same call but no `additionalData`: you get a session and no new `consent_record` row.
 5. Refusal: sign out, use a second Google test account and call without `additionalData`: you land on `/api/auth/candidate/error?error=SIGNUP_ANSWERS_REFUSED` and no rows appear.
 6. Start the app without `GOOGLE_CLIENT_SECRET`: the same call answers 404 "provider not found".
+
+## Live check of the public pages (G5, by hand before launch, never in `npm run check`)
+
+`node packages/db/src/live-check-cli.ts [report.md]` reads the rendered public pages of `www`, `employers` and `admin.irishworkpermit.ie` the way a visitor gets them and exits 1 when a page is not 200 (the style kit, a made-up path and absent `robots.txt`/`sitemap.xml` must be 404), a link, image, form or meta address holds localhost, 127.0.0.1, example.com, vercel.app, `.invalid`, staging or plain `http://`, a canonical is off the page's own site, or the visible text has placeholder words ("PLACEHOLDER", "Not published yet", "coming soon", "lorem", "No updates here yet") or raw Markdown. It prints the Markdown report (or only its total line when a file is given). It is expected to fail until the legal texts are published.
+
+- It sends each site's Vercel bypass secret from `~/.config/portal/vercel-bypass-candidate`, `vercel-bypass-portal` and `vercel-bypass` as `x-vercel-protection-bypass`, and never prints it.
+- GET only, one request per 1.1 s, at most 120 requests; it follows redirects on the same origin only and reports the rest. It never opens a job page (`/jobs/<job>`, each render writes a view row); it counts those links. Every read still writes a rate-limit row (`packages/db/src/public-read.ts`).
+- A page reached through a redirect is judged under the address that redirected. Job markup (JSON-LD) is "not checked" here; it is tested in `packages/db/test/job-pages.test.ts`.
+- `LIVE_CHECK_SITES` (a JSON list of `{origin, secretFile, paths, notFound}`) points it at other sites, such as a preview deployment; only loopback sites (the tests) may set a faster `LIVE_CHECK_PACE_MS`.
