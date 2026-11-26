@@ -6,6 +6,7 @@
 // The public read of the text in force is in public-read.ts (legalRead, portalLegalRead).
 import type pg from "pg";
 import { QueueRefused } from "./admin-queue";
+import { bodyProblem } from "./body-format";
 import { requireRole } from "./staff-admin";
 import { endRequest, inTransaction, lockRequest, PENDING_OF, propose, SET_STATUS } from "./staff-tools";
 import { AUDIT } from "./trust-safety";
@@ -23,9 +24,9 @@ const ctrl = /[\p{Cc}\p{Cf}]/u; // control characters and format characters (bid
 
 export const isLegalPurpose = (p: unknown): p is LegalPurpose => typeof p === "string" && (LEGAL_PURPOSES as readonly string[]).includes(p);
 export const validVersion = (v: unknown): v is string => typeof v === "string" && VERSION.test(v);
-/** Plain text: not blank, at most MAX_LEGAL_BODY characters, line breaks and tabs kept and nothing else invisible. */
+/** Not blank, at most MAX_LEGAL_BODY characters, line breaks and tabs kept and nothing else invisible, in the body format (B16, #303). */
 export const validLegalBody = (v: unknown): v is string =>
-  typeof v === "string" && v.trim().length > 0 && v.length <= MAX_LEGAL_BODY && !ctrl.test(v.replace(/[\n\r\t]/g, ""));
+  typeof v === "string" && v.trim().length > 0 && v.length <= MAX_LEGAL_BODY && !ctrl.test(v.replace(/[\n\r\t]/g, "")) && bodyProblem(v) === null;
 
 const audit = (c: Q, staff: string, action: string, id: string, after: object, second: string | null = null) =>
   c.query(AUDIT, [staff, `legal_text.${action}`, "consent_text", id, JSON.stringify(after), null, second, null]);

@@ -1909,7 +1909,7 @@ paths:
         '400':
           description: >-
             `bad_body`: not one JSON object, an unknown or missing field, or over 110,000 characters. `bad_action`: unknown action.
-            `bad_id`, `bad_kind`, `bad_slug`, `bad_title`, `bad_body_text`, `bad_source_url`, `bad_checked_on`, `bad_category`, `bad_effective_from`: a field of the wrong type or
+            `bad_id`, `bad_kind`, `bad_slug`, `bad_title`, `bad_body_text` (also a body that breaks the body format of B16), `bad_source_url`, `bad_checked_on`, `bad_category`, `bad_effective_from`: a field of the wrong type or
             outside its rules. `nothing_to_change`: an edit with no field.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_slug } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
@@ -4884,7 +4884,7 @@ paths:
                   publishedAt: { $ref: '#/components/schemas/DbTime' }
               example: { ok: true, requestId: '131' }
         '400':
-          description: "`bad_body`: not one JSON object, an unknown or missing field, or over 400,000 characters. `bad_action`: unknown action. `bad_purpose`: not one of the three purposes. `bad_version`: not a label of the shape above. `bad_body_text`: blank, too long, or holds a control or format character. `bad_request_id`: not an id."
+          description: "`bad_body`: not one JSON object, an unknown or missing field, or over 400,000 characters. `bad_action`: unknown action. `bad_purpose`: not one of the three purposes. `bad_version`: not a label of the shape above. `bad_body_text`: blank, too long, holds a control or format character, or breaks the body format (B16: HTML, a `# ` heading, a link that is not https or a site path, a table with uneven rows). `bad_request_id`: not an id."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_body_text } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':

@@ -167,7 +167,8 @@ describe("hostile input", () => {
       await no(call(who, { action: "propose", purpose, version: "v9", body: "x" }), 400, "bad_purpose");
     for (const version of ["", "V1", "-v1", ".v", "v 1", "v1\n", "../v", "v/1", "x".repeat(65), "v1‮", 1, null, {}])
       await no(call(who, { action: "propose", purpose: "privacy_notice", version, body: "x" }), 400, "bad_version");
-    for (const body of ["", "   \n\t ", "a\u0000b", "a\u0007b", "a‮b", "a⁦b", "a​b", "a‏b", "a﻿b", "x".repeat(MAX_LEGAL_BODY + 1), 5, null, ["x"], { t: "x" }])
+    for (const body of ["", "   \n\t ", "a\u0000b", "a\u0007b", "a‮b", "a⁦b", "a​b", "a‏b", "a﻿b", "x".repeat(MAX_LEGAL_BODY + 1), 5, null, ["x"], { t: "x" },
+      "<b>x</b>", "# Privacy", "[x](javascript:alert(1))", "| a | b |\n| 1 | 2 |"]) // the last four: the body format (B16)
       await no(call(who, { action: "propose", purpose: "privacy_notice", version: "v9", body }), 400, "bad_body_text");
     await no(call(who, { action: "propose", purpose: "privacy_notice", version: "v9", body: "x", extra: 1 }), 400, "bad_body");
     await no(call(who, { action: "publish", purpose: "privacy_notice", version: "v9", body: "x" }), 400, "bad_action");

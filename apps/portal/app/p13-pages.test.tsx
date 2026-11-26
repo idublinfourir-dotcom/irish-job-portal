@@ -15,6 +15,14 @@ const ROOT = import.meta.dirname;
 const files = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(join(dir, e.name)) : [join(dir, e.name)]));
 
 describe("the landing (NE1)", () => {
+  it("IDX1 (#304): its robots follow SITE_INDEXABLE on this project; every other page keeps the layout's noindex", async () => {
+    vi.doMock("../lib/data", () => ({ candidateHref: () => "", homeFor: () => "/", readLogin: async () => null }));
+    const { generateMetadata } = await import("./page");
+    vi.stubEnv("SITE_INDEXABLE", "1");
+    try { expect(generateMetadata().robots).toEqual({ index: true, follow: true }); } finally { vi.unstubAllEnvs(); }
+    expect(generateMetadata().robots).toEqual({ index: false, follow: false });
+    expect(readFileSync(join(__dirname, "layout.tsx"), "utf8")).toContain("robots: { index: false, follow: false }");
+  });
   const page = html(<Landing candidates="https://c.example/" rules="https://c.example/employer-acceptable-use" help="https://c.example/help" />);
   const text = page.replace(/<[^>]+>/g, " ");
   it("has one H1, the three sign-up paths, the claim section and the sign-up buttons", () => {

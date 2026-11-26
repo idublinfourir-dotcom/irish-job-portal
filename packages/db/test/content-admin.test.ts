@@ -267,11 +267,19 @@ describe("hostile requests", () => {
     for (const bad of [5, null, "", "0", "01", "-1", "1.5", "1e3", "1 or 1=1", "12345678901234567890", ["1"]]) for (const a of ["edit", "publish", "withdraw"]) await no(call("ce1", { action: a, id: bad, title: "x" }), 400, a === "edit" ? "bad_id" : "bad_body");
     expect((await row(id)).status).toBe("draft");
   });
-  it("stores hostile text as plain text", async () => {
-    const t = `x'); drop table content_page; -- <script>alert(1)</script>`;
-    const id = (await ok(call("ce1", draft({ title: t, body: t })))).id;
-    expect(await row(id)).toMatchObject({ title: t, body: t });
-    expect((await su.query("select count(*)::int n from content_page")).rows[0].n).toBeGreaterThan(0);
+  it("stores hostile text as plain text; a body with HTML or a link the format refuses (B16) is not saved, on create or edit", async () => {
+    const t = `x'); drop table content_page; -- <script>alert(1)</script>`, sql = `x'); drop table content_page; -- 2 < 3`;
+    const id = (await ok(call("ce1", draft({ title: t, body: sql })))).id;
+    expect(await row(id)).toMatchObject({ title: t, body: sql });
+    const before = (await su.query("select count(*)::int n from content_page")).rows[0].n;
+    for (const body of [t, "<b>x</b>", "a </p>", "<!-- x -->", "# Title", "[x](javascript:alert(1))", "[x](//evil.example)", "[x](http://a.ie)", "| a | b |\n| 1 | 2 |"]) {
+      await no(call("ce1", draft({ body })), 400, "bad_body_text");
+      await no(call("ce1", { action: "edit", id, body }), 400, "bad_body_text");
+    }
+    expect((await su.query("select count(*)::int n from content_page")).rows[0].n).toBe(before);
+    expect(await row(id)).toMatchObject({ body: sql });
+    const md = "## Who\n\n- **EEA**: no permit\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n> See [DETE](https://enterprise.gov.ie/en/) and [jobs](/jobs).";
+    expect(await row((await ok(call("ce1", draft({ body: md })))).id)).toMatchObject({ body: md });
   });
 });
 

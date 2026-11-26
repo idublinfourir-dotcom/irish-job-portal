@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 import { readGuide, readSignedIn } from "../../../lib/data";
 import { guidePath } from "../../../lib/paths";
 import { meta } from "../../_content/meta";
-import { paragraphs } from "../../_content/body";
+import { firstParagraph } from "../../_content/body";
 import { Problem, type Failed } from "../../_content/problem";
 import { GuideView, type GuideData } from "../guide-view";
 
@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const r = await load(slug);
   if (!r.ok) return { title: "Guide not found" };
   const g = r.data as GuideData;
-  return meta(g.title, paragraphs(g.body)[0] ?? `${g.title}: a plain-English guide to Irish employment permits.`, guidePath(g.slug));
+  return meta(g.title, firstParagraph(g.body) ?? `${g.title}: a plain-English guide to Irish employment permits.`, guidePath(g.slug));
 }
 
 export default async function Page({ params }: Props) {

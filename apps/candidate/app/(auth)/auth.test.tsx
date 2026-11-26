@@ -257,7 +257,7 @@ describe("the return address (?next=) is only ever one of our own paths", () => 
 });
 
 describe("titles and descriptions (frame 01 SEO spec)", () => {
-  it("each page has a title of 60 characters or fewer, a description of 120 to 160, and is noindex whatever the site setting", () => {
+  it("each page has a title of 60 characters or fewer, a description of 120 to 160, and is noindex whatever the site setting (sign-up overrides it, IDX1)", () => {
     for (const [title, description] of [SIGNUP_META, LOGIN_META, VERIFY_META, RESET_META]) {
       expect(titleProblem(title)).toBeNull();
       expect(descriptionProblem(description)).toBeNull();
@@ -266,6 +266,15 @@ describe("titles and descriptions (frame 01 SEO spec)", () => {
       expect(m.robots).toEqual({ index: false, follow: false });
       clean(`${m.title} ${m.description}`);
     }
+  });
+  it("IDX1 (#304): the sign-up page follows the site's index switch; sign-in, verify and reset stay noindex with it on", async () => {
+    const pages = await Promise.all(["../signup/page", "../login/page", "../verify/page", "../reset/page"].map((p) => import(p) as Promise<{ generateMetadata: () => { robots?: unknown } }>));
+    const robots = () => pages.map((p) => p.generateMetadata().robots);
+    const off = { index: false, follow: false };
+    vi.stubEnv("SITE_INDEXABLE", "1");
+    try { expect(robots()).toEqual([{ index: true, follow: true }, off, off, off]); } finally { vi.unstubAllEnvs(); }
+    vi.stubEnv("SITE_INDEXABLE", "");
+    try { expect(robots()).toEqual([off, off, off, off]); } finally { vi.unstubAllEnvs(); }
   });
   it("the reset page also sends no referrer (its address holds a token)", async () => {
     const { generateMetadata } = await import("../reset/page");
