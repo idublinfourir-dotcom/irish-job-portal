@@ -14,12 +14,12 @@ export function JobsView({ now, role, jobs, stats, tab: tabValue, from, pick, sa
   const canPost = role !== "viewer";
   const tab = tabKey(tabValue);
   const all = jobs ?? [];
-  const shown = all.filter((j) => inTab(tab, j));
+  const shown = all.filter((j) => inTab(tab, j, now));
   const start = Math.floor(offset(from, Math.max(0, shown.length - 1)) / PAGE) * PAGE;
   const rows = shown.slice(start, start + PAGE);
   const sums = totals(stats ?? []);
-  const isHeld = (j: Job) => ["in_review", "under_review", "hidden"].includes(jobState(j));
-  const sel = all.find((j) => j.id === pick) ?? rows.find((j) => jobState(j) === "live") ?? rows[0] ?? all[0];
+  const isHeld = (j: Job) => ["in_review", "under_review", "hidden"].includes(jobState(j, now));
+  const sel = all.find((j) => j.id === pick) ?? rows.find((j) => jobState(j, now) === "live") ?? rows[0] ?? all[0];
   const held = sel && isHeld(sel) ? sel : all.find(isHeld); // the card beside the stats: the picked job if it is held, else the first held job
   return (
     <div className="mx-auto flex max-w-page flex-col gap-6">
@@ -30,7 +30,7 @@ export function JobsView({ now, role, jobs, stats, tab: tabValue, from, pick, sa
       {saved && SAVED.includes(saved) && <Notice kind="success">{savedWord(saved, saved === "draft")}</Notice>}
       {!jobs ? <Notice kind="error" title="We cannot show your jobs now">Reload the page in a minute.</Notice> : (
         <>
-          <Tabs label="Jobs by state" items={TABS.map(([key, label]) => ({ label, count: countWord(all.filter((j) => inTab(key, j)).length), href: href(key), active: key === tab }))} />
+          <Tabs label="Jobs by state" items={TABS.map(([key, label]) => ({ label, count: countWord(all.filter((j) => inTab(key, j, now)).length), href: href(key), active: key === tab }))} />
           {rows.length === 0 ? (
             <EmptyState icon="briefcase" title={all.length === 0 ? "No jobs yet" : "No jobs in this tab"} action={all.length === 0 && canPost && JOB_FORM_LIVE ? <Button href="/jobs/new">Post a job</Button> : undefined}>
               {all.length === 0 ? (canPost ? "A job you post shows here with its views and apply clicks." : "Jobs your team posts show here.") : "Pick another tab to see the rest."}
@@ -44,10 +44,10 @@ export function JobsView({ now, role, jobs, stats, tab: tabValue, from, pick, sa
               <StatsCard title={sel.title} rows={(stats ?? []).filter((r) => r.jobId === sel.id)} now={now} />
               {held && (
                 <section aria-labelledby="held-h" data-card="held" className="flex flex-col gap-3 rounded-bento bg-peach p-6">
-                  <h2 id="held-h" className="flex items-start gap-3 text-xl"><Icon name="warning" size={22} />{held.title} is {STATE_WORD[jobState(held)].toLowerCase()}</h2>
-                  <p>{holdWord(held, dateWord(held.closedAt ?? held.closesAt))}</p>
-                  {canPost && JOB_FORM_LIVE && jobState(held) === "under_review" && <Button href={`/jobs/${held.id}/edit`} variant="dark" className="self-start">Edit the job</Button>}
-                  {(jobState(held) === "hidden" || jobState(held) === "removed") && <Button href="/account-status" variant="dark" className="self-start">See why</Button>}
+                  <h2 id="held-h" className="flex items-start gap-3 text-xl"><Icon name="warning" size={22} />{held.title} is {STATE_WORD[jobState(held, now)].toLowerCase()}</h2>
+                  <p>{holdWord(held, dateWord(held.closedAt ?? held.closesAt), now)}</p>
+                  {canPost && JOB_FORM_LIVE && jobState(held, now) === "under_review" && <Button href={`/jobs/${held.id}/edit`} variant="dark" className="self-start">Edit the job</Button>}
+                  {(jobState(held, now) === "hidden" || jobState(held, now) === "removed") && <Button href="/account-status" variant="dark" className="self-start">See why</Button>}
                 </section>
               )}
             </div>

@@ -1,10 +1,10 @@
 // The visitor limit inside a list of jobs (decision #85, BA52): blurred empty rows, then the dark box. The rows hold no real job, only shapes.
 import { Button, Icon } from "@portal/ui";
-import { loginHref } from "../jobs/format";
+import { jobCount, loginHref, type Count } from "../jobs/format";
 
 const ROW = "flex h-28 items-center gap-4 rounded-bento bg-sand p-5";
 
-export function SignInMore({ shown, count, path }: { shown: number; count: { n: number; more: boolean } | null; path: string }) {
+export function SignInMore({ shown, count, path }: { shown: number; count: Count | null; path: string }) {
   const hidden = Math.min(2, Math.max(0, (count?.n ?? shown + 2) - shown)) || 2;
   return (
     <div data-sign-in-for-more className="flex flex-col">
@@ -22,7 +22,7 @@ export function SignInMore({ shown, count, path }: { shown: number; count: { n: 
           <span aria-hidden="true" className="hidden size-12 shrink-0 place-items-center rounded-pill bg-deep-green sm:grid"><Icon name="lock" size={20} /></span>
           <div>
             <h2 id="more" className="text-[18px] leading-snug text-white">Want to see more jobs? Sign in or create a free account.</h2>
-            <p className="text-small text-white/75">You can see {shown}{count ? ` of ${count.more ? `${count.n}+` : count.n}` : ""}. Free for candidates.</p>
+            <p className="text-small text-white/75">You can see {shown}{count ? ` of ${jobCount(count)}` : ""}. Free for candidates.</p>
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">

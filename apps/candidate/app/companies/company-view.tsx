@@ -6,7 +6,7 @@ import { Breadcrumb, Icon, Pager, Pill } from "@portal/ui";
 import { SignInMore } from "../_content/limit";
 import { Mark, SectionTitle, wrap } from "../_content/head";
 import { ResultCard, type CardJob } from "../jobs/card";
-import { initials } from "../jobs/format";
+import { initials, jobCount } from "../jobs/format";
 import { Join, PhotoBlock } from "../jobs/parts";
 import { MONTH_NAMES, PermitChart, monthSeries, plural, shortMonth, yearBars } from "./chart";
 import { ReportCompany } from "./report-company";
@@ -131,7 +131,7 @@ export const companyCrumbs = (c: { name: string }) => [{ label: "Home", href: "/
 
 export function CompanyView({ company: c, now, signedIn, savedIds, path, prevHref, nextHref }: CompanyProps): ReactNode {
   const n = c.jobs.count;
-  const total = n ? (n.more ? `${n.n}+` : String(n.n)) : String(c.jobs.jobs.length);
+  const total = jobCount(n ?? { n: c.jobs.jobs.length, more: false });
   const permits = c.permits;
   return (
     <>

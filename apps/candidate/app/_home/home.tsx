@@ -8,6 +8,7 @@ import { A, Button, CriticalSkillsBadge, EmptyState, Icon, Notice, Pill, SITE_WO
 import { companyPath, guidePath, jobPath, occupationJobsPath, occupationPagePath, staticPath, updatePath } from "../../lib/paths";
 import { COUNTIES } from "./counties";
 import { DETE_FIGURES as DETE, NUM, pct, topFiveShare } from "./dete";
+import { jobCount, searchCount, type Count } from "../jobs/format";
 import { eur, jobsIn, sectorLabel, shortDate } from "./format";
 import { employersHref } from "./meta";
 import { photoSrc } from "./photos";
@@ -270,7 +271,7 @@ function Sectors({ s }: { s: Sec<SectorCount[]> }) {
                 <span className="rounded-pill bg-white/90 px-3 py-1 text-ink lg:rounded-none lg:bg-transparent lg:p-0 lg:text-inherit">
                   <span className={`block text-small font-medium leading-tight lg:font-heading lg:font-semibold ${i === 0 ? "lg:text-[1.9rem]" : "lg:text-[1.4rem]"}`}>{x.short}<span className="lg:hidden"> · {pct(x.share)}</span></span>
                   <span className="hidden text-small opacity-85 lg:block">{pct(x.share)} of Irish permits{i === 0 ? " · nurses, doctors, care" : ""}</span>
-                  <span className="hidden text-small font-semibold lg:block">{n > 0 ? jobsIn(n) : "No live jobs yet"}</span>
+                  <span className="hidden text-small font-semibold lg:block">{n > 0 ? jobsIn({ n, more: false }) : "No live jobs yet"}</span>
                 </span>
                 {i === 0 && <Go tone="green" className="hidden lg:grid" />}
               </span>
@@ -284,7 +285,7 @@ function Sectors({ s }: { s: Sec<SectorCount[]> }) {
             {more.map((x) => (
               <li key={x.sector}>
                 <A href={`${jobsPath}?sector=${encodeURIComponent(x.sector)}`} className="inline-flex min-h-9 items-center rounded-pill bg-white/90 px-3 text-small font-medium text-ink no-underline">
-                  {sectorLabel(x.sector)} · {x.jobs}
+                  {sectorLabel(x.sector)} · {jobCount({ n: x.jobs, more: false })}
                 </A>
               </li>
             ))}
@@ -326,7 +327,7 @@ function Latest({ d }: { d: HomeData }) {
           <p className="text-small text-muted">Sort by <strong className="text-ink">Newest</strong></p>
         </div>
       </div>
-      {!d.jobs.ok ? <Unavailable r={d.jobs} /> : <JobsGrid j={d.jobs.data} />}
+      {!d.jobs.ok ? <Unavailable r={d.jobs} /> : <JobsGrid j={d.jobs.data} count={searchCount(d.sectors.ok ? d.sectors.data : undefined, d.tab, d.jobs.data.count)} />}
     </>
   );
 }
@@ -365,9 +366,9 @@ function JobTile({ c, i }: { c: JobCard; i: number }) {
   );
 }
 
-function JobsGrid({ j }: { j: Jobs }) {
+function JobsGrid({ j, count }: { j: Jobs; count: Count | null }) {
   if (!j.jobs.length) return <EmptyState title="No jobs here yet">Try another sector, or look at every job.</EmptyState>;
-  const hidden = j.signInForMore ? Math.min(3, Math.max(0, (j.count?.n ?? JOBS_LIMIT + 3) - j.jobs.length)) : 0;
+  const hidden = j.signInForMore ? Math.min(3, Math.max(0, (count?.n ?? JOBS_LIMIT + 3) - j.jobs.length)) : 0;
   const box = j.signInForMore && (
     <div data-sign-in-for-more className={`flex flex-col gap-4 rounded-[2rem] bg-ink p-5 text-white sm:flex-row sm:items-center sm:justify-between ${hidden ? "absolute inset-x-0 top-6 z-[1] mx-auto max-w-[56rem]" : "mx-auto mt-6 max-w-[56rem]"}`}>
       <div className="flex items-center gap-4">
@@ -375,7 +376,7 @@ function JobsGrid({ j }: { j: Jobs }) {
         <div>
           <p className="font-heading text-lg font-semibold leading-snug">Want to see more jobs? Sign in or create a free account.</p>
           <p className="text-small text-white/75">
-            {j.count ? `There ${j.count.n === 1 ? "is" : "are"} ${j.count.n}${j.count.more ? " or more" : ""} live ${j.count.n === 1 ? "job" : "jobs"}. ` : ""}Free for candidates. One question about your permit.
+            {count ? `There ${count.n === 1 ? "is" : "are"} ${jobsIn(count)}. ` : ""}Free for candidates. One question about your permit.
           </p>
         </div>
       </div>

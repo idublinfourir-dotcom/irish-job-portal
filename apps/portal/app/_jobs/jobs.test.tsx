@@ -23,6 +23,7 @@ const NOW = Date.parse("2026-11-25T10:00:00Z");
 const base: Job = { id: "1", title: "Fake Role", status: "live", permitType: "general", applicationRoute: "own_page", hasOwnPage: true, county: "Cork", postedAt: "2026-11-10T09:00:00Z", closesAt: "2026-12-10T09:00:00Z", closedAt: null, closeReason: null, hireAnswer: null, reason: null, reviewCode: null, exceptionConfirmed: false, clientCheck: false };
 const j = (o: Partial<Job> = {}): Job => ({ ...base, ...o });
 const STATES: Job[] = [
+  j({ id: "10", title: "Fake Ended", closesAt: "2026-11-25T09:59:59Z" }),
   j({ id: "1", title: "Fake Live" }), j({ id: "2", title: "Fake Draft", status: "draft" }), j({ id: "3", title: "Fake In Review", status: "in_review", reason: "staff_check" }),
   j({ id: "4", title: "Fake Under Review", status: "under_review", reason: "pay_check" }), j({ id: "5", title: "Fake Renewal Check", status: "under_review", reason: "renewal_check", reviewCode: "PAY_BELOW_MINIMUM" }),
   j({ id: "6", title: "Fake Hidden", status: "hidden", reason: "report" }), j({ id: "7", title: "Fake Expired", status: "closed", closeReason: "expired", closedAt: "2026-11-02T00:00:00Z" }),
@@ -33,14 +34,23 @@ const clean = (s: string) => expect(s).not.toMatch(/[\u2013\u2014]|undefined|\[o
 describe("words", () => {
   it("every job state has a word, a tab, an expiry cell and a hold sentence that is never a raw code", () => {
     for (const x of STATES) {
-      const s = jobState(x);
+      const s = jobState(x, NOW);
       expect(STATE_WORD[s]).toBeTruthy();
-      expect(TABS.some(([key]) => key !== "all" && inTab(key, x)), x.title).toBe(true);
-      clean(expiryWord(x, NOW)); const h = holdWord(x, "2 Nov 2026"); if (h) clean(h);
+      expect(TABS.some(([key]) => key !== "all" && inTab(key, x, NOW)), x.title).toBe(true);
+      clean(expiryWord(x, NOW)); const h = holdWord(x, "2 Nov 2026", NOW); if (h) clean(h);
     }
-    expect(jobState(j({ status: "closed", closeReason: "under_review_expired" }))).toBe("expired");
-    expect(holdWord(STATES[4]!, null)).toMatch(/below the minimum/);
-    expect(holdWord(j({ status: "in_review", reason: "restricted_company" }), null)).toMatch(/restricted/);
+    expect(jobState(j({ status: "closed", closeReason: "under_review_expired" }), NOW)).toBe("expired");
+    expect(holdWord(STATES.find((x) => x.id === "5")!, null, NOW)).toMatch(/below the minimum/);
+    expect(holdWord(j({ status: "in_review", reason: "restricted_company" }), null, NOW)).toMatch(/restricted/);
+  });
+  it("G5: a job past its end date is ended, not live (no visitor sees or counts it): the Expired tab, with Renew; at the very end date too", () => {
+    const at = (closesAt: string | null, o: Partial<Job> = {}) => jobState(j({ closesAt, ...o }), NOW);
+    expect([at("2026-11-25T10:00:01Z"), at("2026-11-25T10:00:00Z"), at("2026-11-24T10:00:00Z"), at(null), at("infinity")]).toEqual(["live", "ended", "ended", "live", "live"]);
+    expect(at("2026-11-24T10:00:00Z", { status: "under_review" })).toBe("under_review"); // only a live job ends this way
+    const ended = STATES.find((x) => x.id === "10")!;
+    expect([inTab("live", ended, NOW), inTab("expired", ended, NOW)]).toEqual([false, true]);
+    expect(holdWord(ended, "25 Nov 2026", NOW)).toBe("Ended on 25 Nov 2026, so nobody sees it in search. Renew it to show it again.");
+    expect(expiryWord(ended, NOW)).toBe("25 Nov 2026");
   });
   it("BA33: every review code of the yaml has its own words", () => {
     const y = parse(readFileSync(join(import.meta.dirname, "../../../../docs/openapi/portal.yaml"), "utf8"));
@@ -50,8 +60,8 @@ describe("words", () => {
   });
   it("one count rule: a count at the route's cap reads 200+, tabs filter by the same function", () => {
     expect(countWord(5)).toBe("5"); expect(countWord(200)).toBe("200+");
-    expect(inTab("all", STATES[0]!)).toBe(true);
-    expect(STATES.filter((x) => inTab("removed", x)).map((x) => x.id)).toEqual(["6", "9"]);
+    expect(inTab("all", STATES[0]!, NOW)).toBe(true);
+    expect(STATES.filter((x) => inTab("removed", x, NOW)).map((x) => x.id)).toEqual(["6", "9"]);
     expect(tabKey("nonsense")).toBe("all"); expect(tabKey(["live"])).toBe("all");
   });
   it("days, rates, sums and role names", () => {
@@ -149,7 +159,7 @@ describe("jobs view", () => {
   it("tabs with counts by one rule, hold sentences, stats card with Apply clicks", () => {
     const s = html(<JobsView now={NOW} role="account_owner" jobs={STATES} stats={fx.stats} />);
     const tabs = s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-    for (const t of ["All 9", "Live 1", "In review 1", "Under review 2", "Expired 1", "Closed 1", "Removed 2", "Drafts 1"]) expect(tabs, t).toContain(t);
+    for (const t of ["All 10", "Live 1", "In review 1", "Under review 2", "Expired 2", "Closed 1", "Removed 2", "Drafts 1"]) expect(tabs, t).toContain(t);
     expect(s).toContain("Apply clicks"); expect(s).toContain("Click rate"); expect(s).toContain("Fake Live stats"); expect(s).toContain("Last 30 days");
     expect(s).not.toMatch(/>Applied<|page 2/i);
   });

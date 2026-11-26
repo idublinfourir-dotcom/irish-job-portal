@@ -22,6 +22,17 @@ export function ago(d: Date | string | null | undefined, now: Date): string | nu
 export const initials = (name: string) => name.split(/\s+/).filter((w) => /^\p{L}/u.test(w)).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
 /** A fixed-term contract's length, or null when the job does not state one (we never say "permanent" on a guess). */
 export const contractText = (months: number | null) => (months === null ? null : months % 12 === 0 ? `${months / 12} ${months === 12 ? "year" : "years"}` : `${months} months`);
+/** A number of jobs, as the reads give it. `more`: the read stopped counting at n. */
+export type Count = { n: number; more: boolean };
+/** #301: a number of jobs as a visitor reads it, the same on every page: exact below 100, from 100 the ten below with a plus (253 is "250+"), an exact ten as it is. */
+export function jobCount({ n, more }: Count): string {
+  const shown = n < 100 ? n : Math.floor(n / 10) * 10;
+  return `${new Intl.NumberFormat("en-IE").format(shown)}${more || n > shown ? "+" : ""}`;
+}
+export type SectorCounts = readonly { sector: string; jobs: number }[];
+/** How many jobs a search has: exact, from its sector counts (which leave the sector filter out), else what the list read counted (it stops at 200, #125). */
+export const searchCount = (sectors: SectorCounts | undefined, sector: string | null | undefined, list: Count | null): Count | null =>
+  sectors ? { n: sectors.reduce((n, c) => (!sector || c.sector === sector ? n + c.jobs : n), 0), more: false } : list;
 export const capFirst = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 
 // ===== the search query =====

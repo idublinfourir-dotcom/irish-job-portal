@@ -47,7 +47,7 @@ beforeAll(async () => {
        select 1 + (g % ${ORGS}), 'admin_manual', (select id from job_source limit 1), 'Perf job ' || g, 'Perf Co', 'it',
               case when abs(hashtext('a' || g)) % 4 = 0 then '2136' else (1000 + abs(hashtext('b' || g)) % ${CODES})::text end, 'critical_skills', 'critical_skills_eligible', 'live', now() + interval '20 days', 'https://example.test/a',
               to_tsvector('english', 'cook'), g % 97 = 0, now() - (g || ' minutes')::interval, abs(hashtext('c' || g)) % 50 from generate_series(1, ${JOBS}) g`);
-    await k.query("update job set organisation_id = 7 where organisation_id in (8, 9)"); // company 7 is a big one: 300 live jobs, so the count runs to its cap of 200
+    await k.query("update job set organisation_id = 7 where organisation_id in (8, 9)"); // company 7 is a big one: 300 live jobs, all of them counted (#301: no cap)
     await k.query(
       `insert into content_page(kind, slug, title, body, source_url, checked_on, status, published_at, category, effective_from)
        select 'update', 'upd-' || g, 'Update ' || g, repeat('Fake update text. ', 20), 'https://enterprise.gov.ie/', '2026-11-01', case when g % 10 = 0 then 'withdrawn' else 'published' end, now() - (g || ' hours')::interval,
@@ -60,7 +60,17 @@ beforeAll(async () => {
   } finally {
     await k.end();
   }
-  await db.pool("portal_owner").query("vacuum (analyze)"); // as the page gate: the visibility map is set, so the count reads the index alone
+  // as the page gate: the visibility map is set, so the counts read the index alone. Vacuum marks a page all-visible only once the commits of
+  // its rows are flushed (pruneheap.c, PostgreSQL 17), and any asynchronous commit near them delays that until the WAL writer runs. The local
+  // test server commits asynchronously (test-db.sh); the perf sessions do not (vitest.config.ts, TL1), but autovacuum's still do. Measured
+  // before TL1: 103 of 1,489 pages in 4 of 6 runs, then the rare code's count read the heap (280 pages). So vacuum again until every page is.
+  const owner = db.pool("portal_owner");
+  await owner.query("vacuum (analyze)");
+  for (let i = 0; (await owner.query("select relallvisible < relpages as short from pg_class where oid = 'job'::regclass")).rows[0].short; i++) {
+    if (i === 5) throw new Error("the visibility map of job is still not set after 5 vacuums");
+    await new Promise((r) => setTimeout(r, 200));
+    await owner.query("vacuum job");
+  }
 });
 afterAll(() => db.drop());
 

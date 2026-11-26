@@ -9,7 +9,7 @@ import { SignInMore } from "../_content/limit";
 import { occupationJobsPath } from "../../lib/paths";
 import { shortDate } from "../_home/format";
 import type { CardJob } from "../jobs/card";
-import { contractText, euro } from "../jobs/format";
+import { contractText, euro, jobCount, type Count } from "../jobs/format";
 import { Join } from "../jobs/parts";
 import { OccupationTile } from "./tile";
 
@@ -18,7 +18,7 @@ export type OccupationData = {
   entries: { list: string; title: string }[];
   listStatus: "critical-skills" | "ineligible";
   minimums: { withDegree: number; recentGraduate: number; graduateMonths: number; withoutDegreeOrNotListed: number | null; minContractMonths: number; basedOnWeekHours: number } | null;
-  jobs: { jobs: CardJob[]; count: { n: number; more: boolean } | null; signInForMore: boolean };
+  jobs: { jobs: CardJob[]; count: Count | null; signInForMore: boolean };
   quota: "none" | "full";
   text: { title: string; body: string; sourceUrl: string | null; checkedOn: string | null } | null;
   rulesCheckedOn: string;
@@ -33,11 +33,10 @@ export const titleOf = (o: Pick<OccupationData, "entries">, name?: string | null
 export const occupationCrumbs = (title: string) => [{ label: "Home", href: "/" }, { label: title }];
 /** The title of the page: "<name> visa sponsorship jobs in Ireland" (frame C14). */
 export const headingOf = (title: string) => `${title} visa sponsorship jobs in Ireland`;
-const countText = (n: { n: number; more: boolean } | null, fallback: number) => (n ? (n.more ? `${n.n}+` : String(n.n)) : String(fallback));
 
 function Hero({ o, title, signedIn }: { o: OccupationData; title: string; signedIn: boolean }) {
   const listed = o.listStatus === "critical-skills";
-  const n = countText(o.jobs.count, o.jobs.jobs.length);
+  const n = jobCount(o.jobs.count ?? { n: o.jobs.jobs.length, more: false });
   const [a, b] = [`${title} `, " jobs in Ireland"];
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">

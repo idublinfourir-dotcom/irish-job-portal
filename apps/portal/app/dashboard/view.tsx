@@ -32,7 +32,7 @@ function Tile({ n, label, tone, icon, dot = "bg-white text-ink" }: { n: ReactNod
 }
 
 /** Jobs that need attention first on the dashboard (live, held, then the rest); the sort keeps the list's newest-first order inside a group. */
-const rank = (j: Job) => (jobState(j) === "live" ? 0 : ["under_review", "in_review", "draft"].includes(jobState(j)) ? 1 : 2);
+const rank = (j: Job, now: number) => (jobState(j, now) === "live" ? 0 : ["ended", "under_review", "in_review", "draft"].includes(jobState(j, now)) ? 1 : 2);
 const Unavailable = ({ what }: { what: string }) => <Notice kind="warning" title={`${what} cannot be shown now`}>Reload the page in a minute.</Notice>;
 
 export function DashboardView({ now, role, jobs, stats, status, team, teamOk, agency }: {
@@ -40,8 +40,8 @@ export function DashboardView({ now, role, jobs, stats, status, team, teamOk, ag
 }) {
   const canPost = role !== "viewer", owner = role === "account_owner";
   const sums = totals(stats ?? []);
-  const live = (jobs ?? []).filter((j) => jobState(j) === "live");
-  const held = (jobs ?? []).filter((j) => ["in_review", "under_review"].includes(jobState(j))).length;
+  const live = (jobs ?? []).filter((j) => jobState(j, now) === "live");
+  const held = (jobs ?? []).filter((j) => ["in_review", "under_review"].includes(jobState(j, now))).length;
   const views = [...sums.values()].reduce((n, t) => n + t.views, 0), clicks = [...sums.values()].reduce((n, t) => n + t.clicks, 0);
   const ending = live.map((j) => ({ j, n: daysLeft(j.closesAt, now) })).filter((x): x is { j: Job; n: number } => x.n !== null && x.n <= EXPIRING_DAYS).sort((a, b) => a.n - b.n)[0];
   const me = team?.members.find((m) => m.membershipId === team.myMembershipId)?.name?.split(/\s+/)[0];
@@ -79,7 +79,7 @@ export function DashboardView({ now, role, jobs, stats, status, team, teamOk, ag
         <div className="flex items-center justify-between gap-3"><h2 id="jobs-h" className="text-xl">Your jobs</h2><A href="/jobs" className={link}>All jobs <Icon name="arrow" size={16} /></A></div>
         {!jobs ? <Unavailable what="The jobs list" /> : jobs.length === 0 ? (
           <EmptyState icon="briefcase" title="No jobs yet" action={canPost && JOB_FORM_LIVE ? <Button href="/jobs/new">Post a job</Button> : undefined}>{canPost ? "A job you post shows here with its views and apply clicks." : "Jobs your team posts show here."}</EmptyState>
-        ) : <JobsTable jobs={[...jobs].sort((a, b) => rank(a) - rank(b)).slice(0, 5)} totals={sums} now={now} canPost={canPost} />}
+        ) : <JobsTable jobs={[...jobs].sort((a, b) => rank(a, now) - rank(b, now)).slice(0, 5)} totals={sums} now={now} canPost={canPost} />}
       </section>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-3">

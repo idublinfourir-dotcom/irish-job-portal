@@ -6,15 +6,15 @@ import { shortDate } from "../_home/format";
 import { AlertBuilder } from "./client";
 import { ResultCard, TileCard, VisitorCard, type CardJob } from "./card";
 import { FilterPanel, FilterPills, SearchBar, POSTED } from "./filters";
-import { COUNTIES, SECTORS, SORTS, capFirst, contractText, euro, headingParts, loginHref, permitFeeLabel, searchHref, type FilterKey, type Filters, type SearchState } from "./format";
+import { COUNTIES, SECTORS, SORTS, capFirst, contractText, euro, headingParts, jobCount, loginHref, permitFeeLabel, searchCount, searchHref, type Count, type FilterKey, type Filters, type SearchState, type SectorCounts } from "./format";
 import { Dot, Hl, Join, wrap } from "./parts";
 
 export type ListRead =
-  | { ok: true; jobs: CardJob[]; next: string | null; previous: string | null; count: { n: number; more: boolean } | null; signInForMore: boolean }
+  | { ok: true; jobs: CardJob[]; next: string | null; previous: string | null; count: Count | null; signInForMore: boolean }
   | { ok: false; status: number; code: string; retryAfter?: number };
 export type SearchProps = {
   state: SearchState; now: Date; list: ListRead; signedIn: boolean; savedIds: string[];
-  sectorCounts?: { sector: string; jobs: number }[]; occupationTitle?: string | null; newest?: CardJob[];
+  sectorCounts?: SectorCounts; occupationTitle?: string | null; newest?: CardJob[];
   /** The permit minimums in force (B5), for the visitor's "Permit rules" card; null when the read failed. */
   minimums?: RuleMinimums | null;
 };
@@ -73,7 +73,7 @@ function Problem({ list, state }: { list: Extract<ListRead, { ok: false }>; stat
 
 const PLACEHOLDER = "flex h-28 items-center gap-4 rounded-bento bg-sand p-5";
 /** The visitor limit (N02): blurred empty rows, then the dark box. The rows hold no real job, only shapes. */
-function SignInBox({ shown, count, path }: { shown: number; count: { n: number; more: boolean } | null; path: string }) {
+function SignInBox({ shown, count, path }: { shown: number; count: Count | null; path: string }) {
   const hidden = Math.min(2, Math.max(0, (count?.n ?? shown + 2) - shown)) || 2;
   return (
     <div data-sign-in-for-more className="flex flex-col">
@@ -91,7 +91,7 @@ function SignInBox({ shown, count, path }: { shown: number; count: { n: number; 
           <span aria-hidden="true" className="hidden size-12 shrink-0 place-items-center rounded-pill bg-deep-green sm:grid"><Icon name="lock" size={20} /></span>
           <div>
             <h2 id="more" className="text-[18px] leading-snug text-white">Want to see more jobs? Sign in or create a free account.</h2>
-            <p className="text-small text-white/75">You can see {shown}{count ? ` of ${count.more ? `${count.n}+` : count.n}` : ""}. Free for candidates.</p>
+            <p className="text-small text-white/75">You can see {shown}{count ? ` of ${jobCount(count)}` : ""}. Free for candidates.</p>
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -167,7 +167,8 @@ export function SearchView(p: SearchProps) {
   const { state, list } = p;
   const f = state.filters;
   const visitor = !p.signedIn; // a visitor gets frame N02 from 1024 px and the phone layout below; a signed-in candidate frame C04
-  const count = list.ok && list.count ? (list.count.more ? `${list.count.n}+` : String(list.count.n)) : null;
+  const total = list.ok ? searchCount(p.sectorCounts, f.sector, list.count) : null;
+  const count = total && jobCount(total);
   const saved = new Set(p.savedIds);
   const path = searchHref(state);
   const none = list.ok && list.jobs.length === 0;
@@ -249,7 +250,7 @@ export function SearchView(p: SearchProps) {
             )}
             {!list.ok && <Problem list={list} state={state} />}
             {list.ok && list.jobs.map((j) => (visitor ? <VisitorCard key={j.id} job={j} now={p.now} path={path} /> : <ResultCard key={j.id} job={j} now={p.now} signedIn={p.signedIn} saved={saved.has(j.id)} path={path} />))}
-            {list.ok && list.signInForMore && !none && <SignInBox shown={list.jobs.length} count={list.count} path={path} />}
+            {list.ok && list.signInForMore && !none && <SignInBox shown={list.jobs.length} count={total} path={path} />}
             {list.ok && p.signedIn && (list.next || list.previous) && (
               <Pager prevHref={list.previous ? searchHref(state, { before: list.previous }) : undefined} nextHref={list.next ? searchHref(state, { after: list.next }) : undefined} />
             )}
