@@ -20,6 +20,10 @@ describe("guide covers", () => {
     expect(coverFor("a-guide")).toBe(coverFor("a-guide"));
     expect(new Set(["a", "bb", "ccc", "dddd", "eeeee", "ffffff"].map((s) => coverFor(s).src)).size).toBeGreaterThan(1);
   });
+  it("gives each live guide its own cover", () => {
+    const live = ["critical-skills-employment-permit", "general-employment-permit", "working-in-ireland"];
+    expect(new Set(live.map((s) => coverFor(s).src)).size).toBe(live.length);
+  });
   it("keeps every cover file under 200 KB (performance budget)", () => {
     const dir = path.join(import.meta.dirname, "photos");
     const files = readdirSync(dir);
