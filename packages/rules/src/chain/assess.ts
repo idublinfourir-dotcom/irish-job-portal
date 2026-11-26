@@ -137,6 +137,21 @@ export function payRoute(employer: string, low: number | null, high: number | nu
   return PASS_ROUTE[bucketOf(stage, publicPayTier(employer, rules.publicPayCandidates))];
 }
 
+/** What the list check reads from the rules in force (#305). */
+export type ListRules = { minimums: Pick<Minimums, "nonList" | "nonListRoute">; occupationLists: readonly { code: string; list: string }[] };
+/**
+ * #305: may a fetched job with this occupation code and lowest stated pay carry the badge under the lists in force? Yes when the code is on the Critical Skills list,
+ * or the pay is at least the any-role minimum (while that route is open) and the code is not Ineligible (2229 is on both: listed wins, as in eligibility.ts). The
+ * fetcher asks it for new adverts and for its live jobs, because the title rules say "on the list" in their own text.
+ * ponytail: a code that is not four digits (the mixed "212x/213x", none) is not checked; a title taken off inside a code, or moved to another code, is not seen.
+ */
+export function listCheck(rules: ListRules): (code: string | null, low: number | null) => boolean {
+  const listed = new Set<string>(), ineligible = new Set<string>();
+  for (const e of rules.occupationLists) (e.list === "critical-skills" ? listed : ineligible).add(e.code);
+  const { nonList, nonListRoute } = rules.minimums;
+  return (code, low) => code === null || !/^\d{4}$/.test(code) || listed.has(code) || (nonListRoute && low !== null && low >= nonList && !ineligible.has(code));
+}
+
 // An advert no rule ran on: every field empty, as the Python leaves a key out.
 const blank = (): Assessment => ({
   stage: "0 advert too long (admin queue)",

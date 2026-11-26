@@ -91,8 +91,10 @@ export function checkSnapshot(s: RulesSnapshot): RulesSnapshot {
 export const publicPayCandidatesOf = (s: Pick<RulesSnapshot, "publicPayEmployers">): PublicPayCandidates =>
   new Map(Object.entries(s.publicPayEmployers).map(([k, v]) => [k, v.tier]));
 
-/** What the rules chain takes from the snapshot (ChainData without the DETE names and the matcher). */
-export const chainRules = (s: RulesSnapshot) => ({ minimums: s.minimums, bigCompanyNames: s.bigCompanyNames, publicPayCandidates: publicPayCandidatesOf(s) });
+/** What the rules chain takes from the snapshot (ChainData without the DETE names and the matcher), and the lists the fetcher's list check reads (#305). */
+export const chainRules = (s: RulesSnapshot) => ({
+  minimums: s.minimums, bigCompanyNames: s.bigCompanyNames, publicPayCandidates: publicPayCandidatesOf(s), occupationLists: s.occupationLists,
+});
 
 /** Version 1 of what the chain takes from the snapshot besides the public pay candidates (the gate, the parity runs and tests). */
 export const CHAIN_RULES_V1 = { minimums: MINIMUMS_V1, bigCompanyNames: BIG_COMPANY_NAMES_V1 } as const;

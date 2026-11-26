@@ -1,6 +1,6 @@
 // Unit tests for the decision chain. Made-up text only; the matcher is a fake the test controls.
 import { describe, expect, it, vi } from "vitest";
-import { assess, monthsText, PASS_ROUTE, payRoute, type AdvertInput, type ChainData, type ChainMatcher } from "./assess";
+import { assess, listCheck, monthsText, PASS_ROUTE, payRoute, type AdvertInput, type ChainData, type ChainMatcher } from "./assess";
 import { cleanEmployerName, HSE_ENTRY } from "../employers";
 import { CHAIN_RULES_V1 } from "../snapshot";
 
@@ -390,5 +390,26 @@ describe("payRoute: the pay step alone (#93)", () => {
         routes.add(PASS_ROUTE[a.bucket]);
       }
     expect([...routes].sort()).toEqual(["big_company", "public_pay", "stated_pay", undefined].filter((r) => r !== "public_pay" || over.publicPayCandidates!.has(HSE_ENTRY)).filter((r) => r !== "big_company" || !over.bigCompanyNames).sort());
+  });
+});
+
+describe("listCheck: the job's own code against the lists in force (#305)", () => {
+  const LISTS = [{ code: "2136", list: "critical-skills" }, { code: "2229", list: "critical-skills" }, { code: "2229", list: "ineligible" }, { code: "4112", list: "ineligible" }];
+  const nonList = CHAIN_RULES_V1.minimums.nonList;
+  const check = (over: Partial<{ nonListRoute: boolean }> = {}, lists = LISTS) => listCheck({ minimums: { ...CHAIN_RULES_V1.minimums, ...over }, occupationLists: lists });
+  it.each<[string, string | null, number | null, boolean]>([
+    ["on the Critical Skills list, no pay", "2136", null, true],
+    ["on both lists: the Critical Skills entry wins, as in eligibility.ts", "2229", null, true],
+    ["on neither list, no pay", "2135", null, false],
+    ["on neither list, one euro under the any-role minimum", "2135", nonList - 1, false],
+    ["on neither list, exactly the any-role minimum", "2135", nonList, true],
+    ["Ineligible, at twice the any-role minimum", "4112", nonList * 2, false],
+    ["the mixed code is not checked (named limit)", "212x/213x", null, true],
+    ["no code is not checked", null, null, true],
+    ["text that is not four digits is not checked", "2135'; drop table job; --", null, true],
+  ])("%s", (_n, code, low, want) => expect(check()(code, low)).toBe(want));
+  it("with the any-role route closed only the Critical Skills list counts; an empty list refuses every four-digit code", () => {
+    expect([check({ nonListRoute: false })("2135", nonList * 2), check({ nonListRoute: false })("2136", null)]).toEqual([false, true]);
+    expect([check({}, [])("2136", null), check({}, [])("2136", nonList)]).toEqual([false, true]);
   });
 });
