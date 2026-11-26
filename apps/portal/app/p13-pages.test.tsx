@@ -39,8 +39,9 @@ describe("the landing (NE1)", () => {
     expect(text).not.toMatch(/\d{2,3}%|26,629|33,362|36,605|36,000|permits issued|\(sample\)|Harbourline|Example Recruitment|aoife/i);
     expect(text).not.toMatch(/Launch B|Candidate search|Sample|Permitly/);
   });
-  it("shows no photo and no stock image, and no dangerous HTML", () => {
-    expect(page).not.toMatch(/<img|background-image|dangerouslySetInnerHTML/);
+  it("shows the self-hosted hero photo with alt text, no outside image and no dangerous HTML", () => {
+    expect(page).not.toMatch(/background-image|dangerouslySetInnerHTML|<img[^>]*src="http/);
+    expect(page).toMatch(/<img src="[^"]*employer-hero[^"]*\.webp" width="1000" height="940" alt="[^"]+"/);
     expect(page).toMatch(/data-photo-block/);
   });
   it("hides the candidate-site links when their address is not set", () => {
