@@ -26,7 +26,7 @@ function Sidebar({ brand, chip, groups, counts = {}, current, dark, top, footer,
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
       <A href="#main" className="sr-only focus:not-sr-only focus:p-3">Skip to content</A>
-      <aside className={cx("relative m-3 overflow-hidden rounded-bento md:sticky md:top-3 md:h-[calc(100vh-1.5rem)] md:shrink-0 md:self-start md:overflow-y-auto", dark ? "bg-ink text-white md:w-[17.2rem]" : "bg-sand md:w-[14.8rem]")}>
+      <aside data-slide-in className={cx("relative m-3 overflow-hidden rounded-bento md:sticky md:top-3 md:h-[calc(100vh-1.5rem)] md:shrink-0 md:self-start md:overflow-y-auto", dark ? "bg-ink text-white md:w-[17.2rem]" : "bg-sand md:w-[14.8rem]")}>
         {dark && <span aria-hidden="true" data-ring className="pointer-events-none absolute -right-14 bottom-32 hidden size-44 rounded-pill border-[1.1rem] border-deep-green md:block" />}
         <div className="px-4 pb-2 pt-5">
           {brand}

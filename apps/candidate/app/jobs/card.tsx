@@ -62,7 +62,7 @@ export function ResultCard({ job, now, signedIn, saved, path }: { job: CardJob; 
   const where = [job.county, contract && `Fixed term, ${contract}`].filter(Boolean).join(" · ");
   const when = whenLine(job, now);
   return (
-    <article data-job-card={job.id} className="flex flex-col gap-4 rounded-bento bg-sand p-4 sm:p-5 xl:flex-row xl:items-center xl:gap-6">
+    <article data-lift data-job-card={job.id} className="flex flex-col gap-4 rounded-bento bg-sand p-4 sm:p-5 xl:flex-row xl:items-center xl:gap-6">
       <div className="flex min-w-0 flex-1 items-start gap-4">
         <Logo name={job.employerName} url={job.employerLogoUrl} className="size-12 xl:size-14" />
         <div className="flex min-w-0 flex-col gap-1.5">
@@ -113,7 +113,7 @@ export function VisitorCard({ job, now, path }: { job: CardJob; now: Date; path:
   const place = placeOf(job);
   const when = whenLine(job, now);
   return (
-    <article data-job-card={job.id} className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-bento bg-sand p-4 sm:p-5 xl:flex-nowrap xl:gap-x-5">
+    <article data-lift data-job-card={job.id} className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-bento bg-sand p-4 sm:p-5 xl:flex-nowrap xl:gap-x-5">
       <Logo name={job.employerName} url={job.employerLogoUrl} className="size-12 xl:size-14" />
       <div className="flex min-w-0 flex-1 basis-56 flex-col gap-1.5">
         <Badges job={job}>{place && <Pill tone="outline" className="min-h-0 px-3 py-[5px] text-[13px]">{place}</Pill>}</Badges>
@@ -144,7 +144,7 @@ export function TileCard({ job, dark }: { job: CardJob; dark?: boolean }) {
   const pay = payOf(job);
   const place = placeOf(job);
   return (
-    <article data-job-card={job.id} data-tile={dark ? "dark" : "light"} className={cx("relative flex min-w-0 flex-col gap-3 rounded-bento p-5", dark ? "bg-ink text-white" : "bg-sand")}>
+    <article data-lift data-job-card={job.id} data-tile={dark ? "dark" : "light"} className={cx("relative flex min-w-0 flex-col gap-3 rounded-bento p-5", dark ? "bg-ink text-white" : "bg-sand")}>
       <div className="flex items-start justify-between gap-3">
         {place ? <Pill tone={dark ? "lilac" : "outline"} className="min-h-0 px-3 py-[5px] text-[13px]">{place}</Pill> : <span />}
         <Logo name={job.employerName} url={job.employerLogoUrl} className="size-12" />
