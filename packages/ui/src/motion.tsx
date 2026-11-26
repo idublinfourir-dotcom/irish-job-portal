@@ -105,7 +105,8 @@ export function mountMotion(btn: HTMLButtonElement | null): () => void {
       mk.className = "mo-mk";
       const copy = (cls: string) => {
         const c = real.cloneNode(true) as HTMLElement;
-        c.removeAttribute("href"); c.removeAttribute("aria-label"); c.setAttribute("aria-hidden", "true"); c.className += ` ${cls}`; // keep the logo's own font classes c.style.display = "block";
+        c.removeAttribute("href"); c.removeAttribute("aria-label"); c.setAttribute("aria-hidden", "true"); c.className += ` ${cls}`; // keep the logo's own font classes
+        c.style.display = "block";
         return c;
       };
       const base = copy("mo-base"), fill = copy("mo-fill");

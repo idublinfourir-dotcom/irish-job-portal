@@ -29,7 +29,7 @@ describe("act: the button and its answers", () => {
   const h = { onSubmit() {}, onConfirm() {}, onCancel() {} };
   const v = (o: Partial<ActState> = {}, q: Partial<ActProps> = {}) => html(<ActView p={{ ...p, ...q }} s={{ ...s, ...o }} h={h} />);
   it("shows the button, a confirm dialog with its text, a locked button while pending, an error and a done note", () => {
-    expect(v()).toMatch(/<button[^>]*type="submit"[^>]*>Claim this message/);
+    expect(v()).toMatch(/<button[^>]*type="submit"[^>]*>(?:<span[^>]*data-btn-ring[^>]*><\/span>)?Claim this message/);
     expect(v({ asking: true })).toMatch(/Sure\?/);
     expect(v({ pending: true })).toMatch(/<button[^>]*disabled[^>]*>Claim this message/);
     expect(v({ error: { code: "not_claimer", text: "Another reviewer holds this item." } })).toMatch(/Another reviewer holds this item\./);
