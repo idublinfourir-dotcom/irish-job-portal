@@ -110,6 +110,12 @@ const HOSTILE: [string, string][] = [
   ["1 MB of 'placement '", "placement ".repeat(MB / 10)],
   ["1 MB of 'intern' with no spaces", "intern".repeat(MB / 6)],
   ["odd Unicode around the new wording", "\u0130\u0131 must\u00a0be\u00a0eligible to work in Ireland \u202f\u200b\n \u2022 right\u00a0to work in ireland\n".repeat(5000)],
+  // GF1 (26 Nov 2026): the "cannot assist with visa" wording, near matches repeated to 1 MB.
+  ["1 MB of 'cannot '", "cannot ".repeat(MB / 7)],
+  ["1 MB of 'cannot hesitate '", "cannot hesitate ".repeat(MB / 16)],
+  ["1 MB of 'not assist with '", "not assist with ".repeat(MB / 16)],
+  ["'cannot' then 1 MB of 'assist '", "cannot " + "assist ".repeat(MB / 7)],
+  ["1 MB of 'no a b c help '", "no a b c help ".repeat(MB / 14)],
   ["empty text", ""],
 ];
 
@@ -126,6 +132,7 @@ describe("security: hostile text neither throws nor hangs", () => {
     expect(readSalary(pad, "\u20ac80,000/yr").low).toBe(80000);
     expect(noSponsorshipPhrase("", pad + "\nmust be eligible to work in Ireland")).not.toBeNull();
     expect(noSponsorshipPhrase("", pad + "\n Right to work in Ireland.")).not.toBeNull();
+    expect(noSponsorshipPhrase("", pad + "our clients cannot assist with any visa sponsorship")).not.toBeNull();
     expect(readContract("E (12 month FTC)", "", pad, 24).result).toBe("short");
     expect(readContract("E", "", pad + " dedicated placement", 24).result).toBe("ok"); // past the first 6,000 characters
   });

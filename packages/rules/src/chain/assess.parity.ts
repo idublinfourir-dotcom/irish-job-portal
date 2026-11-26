@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { expect, test } from "vitest";
 import { rulesMatcher } from "../../../matcher/src/rules";
+import { narrowed } from "../../../matcher/src/rules/occupation";
 import { cleanEmployerName, HSE_ENTRY } from "../employers";
 import { CHAIN_RULES_V1 } from "../snapshot";
 import { assess, type AdvertInput } from "./assess";
@@ -23,7 +24,7 @@ type Changes = Record<string, { cause: string; fields: Record<string, unknown> }
  *
  * `causeOf` names the deliberate changes behind one advert's changed fields (the chain's values in `ts`), or null when none explains them.
  */
-function causeOf(ts: Record<string, unknown>, py: Ref, source: string): string | null {
+function causeOf(ts: Record<string, unknown>, py: Ref, source: string, title: string): string | null {
   const stopped = (stage: string) => ts.stage === stage && py.run_stage !== stage;
   const short = ts.contract === "short" && py.contract === "ok";
   const causes: [string, boolean][] = [
@@ -44,6 +45,10 @@ function causeOf(ts: Record<string, unknown>, py: Ref, source: string): string |
     ["#150, #151", source === "linkedin" && ts.irish_reason === "employer known in Ireland"],
     // NEW BEHAVIOUR (18 November 2026, #257): the Python has no care or hospitality sector; for those codes it said "other".
     ["#257", py.sector === "other" && (ts.sector === "care" || ts.sector === "hospitality")],
+    // NEW BEHAVIOUR (26 November 2026, GF1): "cannot assist with any visa sponsorship" is no sponsorship.
+    ["GF1 wording", stopped("4 says no sponsorship") && /assist|help|facilitate/i.test(ts.reason as string)],
+    // NEW BEHAVIOUR (26 November 2026, GF1): the 2421 and 2424 title narrowing in the matcher's occupation.ts.
+    ["GF1 occupation", "soc" in ts && narrowed(String(py.soc), ` ${title.toLowerCase()} `)?.occupationCode === ts.soc],
   ];
   const named = [...new Set(causes.filter(([, hit]) => hit).map(([label]) => label))];
   return named.length > 0 ? named.join("; ") : null;
@@ -110,7 +115,7 @@ test("the TypeScript chain matches the Python on every saved advert", async () =
     ];
     const changed = Object.fromEntries(pairs.filter(([, ts, py]) => ts !== py).map(([field, ts]) => [field, ts]));
     if (write && Object.keys(changed).length > 0) {
-      const cause = causeOf(changed, py, s.source);
+      const cause = causeOf(changed, py, s.source, s.title ?? "");
       if (cause) changes[py.id] = { cause, fields: changed };
     }
     const over = changes[py.id]?.fields ?? {};

@@ -233,8 +233,38 @@ describe("known quirks (behaviour kept from the Python, see 15-job-check-test.md
     expect(occupation("Highway Construction Manger", "")).toEqual(NONE);
   });
 
-  it("known quirk: 'Customer Risk Manager' reads as a financial risk manager (2424, on the list)", () => {
-    expect(occupation("Customer Risk Manager", "")).toEqual(m("2424", "yes", "high"));
+  it("GF1: 'Customer Risk Manager' is not risk analytics (was 2424, on the list, in the Python)", () => {
+    expect(occupation("Customer Risk Manager", "")).toEqual(NONE);
+  });
+
+  // GF1 (26 November 2026): the narrowing of 2421 and 2424, and the titles of the same words that keep the Python's answer.
+  it.each([
+    ["Health and Safety Auditor, AWS Health and Safety", m("3567", "no", "medium")],
+    ["EHS Auditor", m("3567", "no", "medium")],
+    ["H&S Audit Lead", m("3567", "no", "medium")],
+    ["Fund Accounting (Alternatives) Associate 2", m("4129", "no", "medium")],
+    ["Senior Manager, Financial Planning & Analysis", NONE],
+    ["FP&A Analyst", NONE],
+    ["Financial Analyst, FP & A", NONE],
+  ])("GF1 narrows %j", (title, want) => {
+    expect(occupation(title, "")).toEqual(want);
+  });
+
+  it.each([
+    ["QA Auditor III", m("2421", "yes", "high")], // the reviewer kept the badge (quality, not safety)
+    ["Internal Auditor", m("2421", "yes", "high")],
+    ["Construction Safety Auditor", m("2421", "yes", "high")], // construction safety officers are not Ineligible; the Python's answer stands
+    ["Fund Accounting Manager", m("2421", "yes", "high")], // the reviewer kept the badge
+    ["Fund Accounting Associate, ACCA qualified", m("2421", "yes", "high")],
+    ["Senior Risk Manager - Offshore Energy", m("2424", "yes", "high")], // the reviewer kept the badge
+    ["Risk Analyst - Construction (Aviation)", m("2424", "yes", "high")],
+    ["Regional Financial Analyst", m("2424", "yes", "high")], // named limit: a plain financial analyst title stays 2424
+  ])("GF1 keeps %j", (title, want) => {
+    expect(occupation(title, "")).toEqual(want);
+  });
+
+  it("GF1: an employer typing a narrowed title is offered the narrowed code first, then the Python's", () => {
+    expect(suggestCodes("Fund Accounting Associate")).toEqual(["4129", "2421"]);
   });
 
   it("known quirk: 'Environmental Program Manager' reads as an IT project manager when the text has IT words", () => {
@@ -330,6 +360,9 @@ describe("hostile input", () => {
     ["script and HTML tags", "<script>alert(1)</script><b>Nurse</b>", "<img src=x onerror=alert(1)><script>software</script>"],
     ["mixed scripts and odd Unicode", "مهندس 中文 😀 ́́ ‮ Engineer", "ไทย ‮ ﻿ \u0000 \ud800 python"],
     ["null bytes", "Nurse\u0000", "\u0000".repeat(10_000)],
+    ["1 MB title of 'fund accounting associate '", "fund accounting associate ".repeat(MB / 26), ""],
+    ["1 MB title of 'health and safety auditor '", "health and safety auditor ".repeat(MB / 26), ""],
+    ["1 MB title of 'fp & a risk analyst '", "fp & a risk analyst ".repeat(MB / 20), ""],
     ["empty strings", "", ""],
     ["lone surrogates", "𐀀\ud800 Engineer", "\udfff".repeat(5000)],
   ];

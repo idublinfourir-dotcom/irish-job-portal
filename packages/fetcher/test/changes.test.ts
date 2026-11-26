@@ -2,10 +2,11 @@
 // Every scenario is two or three runBoards calls with a fake board whose answer changes between calls. Plans are written by hand
 // (helpers.plan) except where a test says it uses the real chain. No network, no real board.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { rulesMatcher } from "@portal/matcher";
 import type { RawAdvert } from "@portal/sources";
 import { createTestDb, type TestDb } from "../../db/test/db";
-import { finishBoard, planAdvert, runBoards, saveKnown, startBoard, type BoardReport, type BoardTask, type Known } from "../src";
-import { advert, counting, deps, NOW, plan } from "./helpers";
+import { finishBoard, planAdvert, runBoards, saveKnown, startBoard, type BoardReport, type BoardTask, type Deps, type Known } from "../src";
+import { advert, counting, deps, fakeModel, NOW, plan } from "./helpers";
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 
@@ -35,9 +36,9 @@ function world(employer?: string) {
         return { seen: all.map((a) => a.id), adverts: all.filter((a) => !known.has(a.id)) };
       } };
     },
-    async go(over: { real?: boolean; db?: ReturnType<typeof counting>["db"] } = {}): Promise<BoardReport> {
+    async go(over: { real?: boolean; db?: ReturnType<typeof counting>["db"]; matcher?: Deps["matcher"]; checkBatch?: Deps["checkBatch"] } = {}): Promise<BoardReport> {
       const modeOf = (a: RawAdvert) => [...w.ads].find(([, x]) => x.id === a.id) && w.modes.get([...w.ads].find(([, x]) => x.id === a.id)![0])!;
-      const [r] = await runBoards(deps(over.db ?? db.pool("app_fetcher"), [w.task], { now: () => new Date(NOW.getTime() + ++day * 86_400_000) }), over.real ? planAdvert : (a) => plan(a, modeOf(a)!));
+      const [r] = await runBoards(deps(over.db ?? db.pool("app_fetcher"), [w.task], { now: () => new Date(NOW.getTime() + ++day * 86_400_000), ...(over.matcher ? { matcher: over.matcher } : {}), ...(over.checkBatch ? { checkBatch: over.checkBatch } : {}) }), over.real ? planAdvert : (a) => plan(a, modeOf(a)!));
       return r!;
     },
     id: (id: string) => `fake:b:${b}-${id}`,
@@ -602,5 +603,28 @@ describe("performance: 1,000 known adverts, 50 changed, 50 gone", () => {
     expect(await count("job", `fetched_advert_id in (select id from fetched_advert where job_source_id=(select id from job_source where board='${w.b}')) and status='live'`)).toBe(250);
   });
 });
+// GF1 (26 November 2026): the three fixes from the reviewer's hand check, through the real chain, the matcher the daily run uses
+// (run/main.ts) and the real database as app_fetcher.
+describe("GF1: wrong badges the hand check found", () => {
+  const rules: Deps["matcher"] = async (title, description) => ({ match: await rulesMatcher(title, description), quote: null, modelId: "rules", failure: null });
+  const run = (w: ReturnType<typeof world>) => w.go({ real: true, matcher: rules, checkBatch: fakeModel().checkBatch }); // the model backs every badge it is shown
+  it("a live big-company job whose advert becomes a fund accounting associate closes; a safety auditor and a 'cannot assist with any visa sponsorship' advert get no job", async () => {
+    const w = world("Amazon");
+    w.put("j", "passed", { title: "Software Engineer" });
+    w.put("q", "passed", { title: "QA Auditor III" });
+    expect(await run(w)).toMatchObject({ unsaved: [] });
+    expect(await row(w.id("j"))).toMatchObject({ status: "live", pass_route: "big_company" });
+    expect(await row(w.id("q"))).toMatchObject({ status: "live", pass_route: "big_company" }); // the reviewer kept this badge
+    w.put("j", "passed", { title: "Fund Accounting (Alternatives) Associate 2" });
+    w.put("s", "passed", { title: "Health and Safety Auditor, AWS Health and Safety" });
+    w.put("v", "passed", { title: "Software Engineer", description: "Build fake things. ***Please note our clients cannot assist with any visa sponsorship***" });
+    expect(await run(w)).toMatchObject({ closed: 1, unsaved: [] });
+    expect(await row(w.id("j"))).toMatchObject({ status: "closed", close_reason: "recheck_failed", advert_text: null, result: "rejected", stage: "6 not on Critical Skills list" });
+    expect(await row(w.id("s"))).toMatchObject({ job_id: null, result: "rejected", stage: "6 not on Critical Skills list" });
+    expect(await row(w.id("v"))).toMatchObject({ job_id: null, result: "rejected", stage: "4 says no sponsorship" });
+    expect(await row(w.id("q"))).toMatchObject({ status: "live" });
+  });
+});
+
 // 198 ms alone; the first cut's tests ran about 4 times slower inside the full suite, so about 0.8 s there. The limit leaves room for three times that.
 const PERF_MS = 5_000;

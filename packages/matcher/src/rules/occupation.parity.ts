@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { occupation } from "./occupation";
+import { narrowed, occupation } from "./occupation";
 import { pyRegex } from "./pyRegex";
 
 const dir = process.env.PORTAL_PRIVATE_DATA;
@@ -15,11 +15,19 @@ const read = (name: string) => {
 };
 
 type Ref = { code: string; cs: string; conf: string };
+const changed: string[] = [];
 const differences = (inputs: { id?: string; title: string; description?: string }[], refs: Ref[]) => {
   const out: string[] = [];
   inputs.forEach((a, i) => {
     const got = occupation(a.title, a.description ?? "");
     const want = refs[i] as Ref;
+    // NEW BEHAVIOUR (26 November 2026, GF1): a 2421 or 2424 match the narrowing in occupation.ts changes on purpose. Exempt only
+    // when that narrowing of the Python's own code gives exactly the TypeScript's answer.
+    const gf1 = narrowed(want.code, ` ${(a.title ?? "").toLowerCase()} `);
+    if (gf1 && gf1.occupationCode === got.occupationCode && gf1.onCriticalSkillsList === got.onCriticalSkillsList && gf1.confidence === got.confidence) {
+      changed.push(`#${i} ${a.id ?? ""} GF1 ${want.code} to ${got.occupationCode}`);
+      return;
+    }
     if (got.occupationCode !== want.code) out.push(`#${i} ${a.id ?? ""} code ts=${got.occupationCode} py=${want.code}`);
     if (got.onCriticalSkillsList !== want.cs) out.push(`#${i} ${a.id ?? ""} onList ts=${got.onCriticalSkillsList} py=${want.cs}`);
     if (got.confidence !== want.conf) out.push(`#${i} ${a.id ?? ""} confidence ts=${got.confidence} py=${want.conf}`);
@@ -35,21 +43,21 @@ describe("rules matcher parity with classify.py", () => {
   it("matches the Python on every saved advert (title and description)", () => {
     const inputs = read("inputs-adverts.json");
     const diffs = differences(inputs, read("reference-adverts.json"));
-    console.log(`adverts compared: ${inputs.length}, differences: ${diffs.length}`);
+    console.log(`adverts compared: ${inputs.length}, differences: ${diffs.length}, GF1 changes so far: ${changed.length}`);
     expect(diffs).toEqual([]);
   });
 
   it("matches the Python on every saved title (empty description)", () => {
     const inputs = read("inputs-titles.json");
     const diffs = differences(inputs, read("reference-titles.json"));
-    console.log(`titles compared: ${inputs.length}, differences: ${diffs.length}`);
+    console.log(`titles compared: ${inputs.length}, differences: ${diffs.length}, GF1 changes so far: ${changed.length}`);
     expect(diffs).toEqual([]);
   });
 
   it("matches the Python on 60,000 made-up titles and descriptions built from the rule words and odd characters", () => {
     const inputs = read("inputs-fuzz.json");
     const diffs = differences(inputs, read("reference-fuzz.json"));
-    console.log(`fuzz compared: ${inputs.length}, differences: ${diffs.length}`);
+    console.log(`fuzz compared: ${inputs.length}, differences: ${diffs.length}, GF1 changes so far: ${changed.length}`);
     expect(diffs.slice(0, 20)).toEqual([]);
   });
 
