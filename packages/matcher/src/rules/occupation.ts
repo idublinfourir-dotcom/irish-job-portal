@@ -1,5 +1,5 @@
 // Title to occupation code. Python: prototype/classify.py:101-122 (R07 matching, R08 description tests),
-// used at classify.py:212-216. Behaves exactly like the Python, known misses included.
+// used at classify.py:212-216. Behaves exactly like the Python, known misses included, except the GF1 narrowing below.
 // The "not on the list" test before the "low confidence" test (classify.py:215-216) belongs to the
 // decision chain, not here: this only returns the match.
 import type { Matcher, OccupationMatch } from "../types";
@@ -17,6 +17,27 @@ const FIELD_ENGINEER = pyRegex("field service|installation|install|maintenance|s
 const RULES = TITLE_RULES.map((rule) => ({ ...rule, regex: pyRegex(rule.pattern) }));
 
 const match = (code: string, onCriticalSkillsList: OccupationMatch["onCriticalSkillsList"], confidence: OccupationMatch["confidence"]): OccupationMatch => ({ occupationCode: code, onCriticalSkillsList, confidence });
+
+// NEW BEHAVIOUR (26 November 2026, GF1), not in the Python. The reviewer's hand check (planning folder, step5/gate/HAND-CHECK-RESULT.md)
+// found title words of two rules read too widely. Each is narrowed only as far as the 1,303 labelled adverts allow: no badge the key
+// or the reviewer called right is lost (QA auditors, a fund accounting manager and construction risk managers keep theirs).
+// 2421 (chartered and certified accountants): a health and safety auditor is 3567 and a fund accounting associate 4129, both Ineligible.
+// 2424 (finance, investment, risk, credit and fraud analytics): financial planning and analysis (FP&A) and customer risk are neither.
+const SAFETY = pyRegex(String.raw`\b(health (and|&) safety|h ?& ?s|ehs|safety)\b`);
+const AUDIT = pyRegex(String.raw`\baudit`);
+const CONSTRUCTION = pyRegex(String.raw`\bconstruction\b`);
+const FUND = pyRegex(String.raw`\bfund account`);
+const ASSOCIATE = pyRegex(String.raw`\bassociate\b`);
+const QUALIFIED = pyRegex(String.raw`\b(chartered|aca|acca|cpa|qualified)\b`);
+const NOT_ANALYTICS = pyRegex(String.raw`\b(fp ?& ?a|financial planning|customer risk)\b`);
+
+/** The GF1 narrowing of a 2421 or 2424 title match, or null when the Python's answer stands. `t` is the padded lower-case title. */
+export function narrowed(code: string, t: string): OccupationMatch | null {
+  if (code === "2421" && SAFETY.test(t) && AUDIT.test(t) && !CONSTRUCTION.test(t)) return match("3567", "no", "medium");
+  if (code === "2421" && FUND.test(t) && ASSOCIATE.test(t) && !QUALIFIED.test(t)) return match("4129", "no", "medium");
+  if (code === "2424" && NOT_ANALYTICS.test(t)) return match("none", "unknown", "none");
+  return null;
+}
 
 /** First `count` code points, as Python's `text[:count]` (JavaScript slices UTF-16 units). */
 const head = (text: string, count: number) => Array.from(text.slice(0, count * 2)).slice(0, count).join("");
@@ -39,7 +60,7 @@ export function occupation(title: string, description: string): OccupationMatch 
     if (code === "3542?") {
       return NON_EEA_LANG.test(`${title} ${head(desc, 3000)}`) ? match("3542", "yes", "low") : match("3542", "no", "medium");
     }
-    return match(code, rule.onList, rule.confidence);
+    return narrowed(code, t) ?? match(code, rule.onList, rule.confidence);
   }
   return match("none", "unknown", "none");
 }

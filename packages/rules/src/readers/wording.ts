@@ -18,7 +18,12 @@ const NO_SPONSOR = py(
     // The plain words "right to work in Ireland" are not a rule: they also come in "ability to obtain the right to work".
     // "Must be eligible to work in Ireland" is ELIGIBLE below: it counts only when the advert offers no sponsorship anywhere.
     String.raw`|(?<![^\n])[ \t\u00a0•*-]{0,10}right\s+to\s+work\s+in\s+ireland(\s+and\s+(the\s+)?uk)?[ \t\u00a0]{0,10}\.?[ \t\u00a0]{0,10}(?![^\n])` +
-    String.raw`|work\s+authori[sz]ation\s{0,3}:?\s{0,10}ireland\s{0,3}\(required\)`,
+    String.raw`|work\s+authori[sz]ation\s{0,3}:?\s{0,10}ireland\s{0,3}\(required\)` +
+    // NEW BEHAVIOUR (26 November 2026, GF1): "our clients cannot assist with any visa sponsorship". The Python's verbs are offer,
+    // provide, support, consider and sponsor; the reviewer's hand check found a badge on this wording. Up to three words between
+    // the "no" and the verb ("not be able to assist"), none of them a word that turns the "no" round ("will not hesitate to assist
+    // with your visa", "no problem helping with visas", "not only help with visas").
+    String.raw`|(no|not|unable to|cannot|can't|can not|do not|don't|does not|will not|won't)\s+((?!(hesitat|problem|issue|doubt|only)\w*\s)\w+\s+){0,3}(assist|help|facilitate)\w*\s+(\w+\s+){0,3}(visa|sponsorship|work permit|employment permit)`,
   "i",
 );
 // R05. classify.py:21

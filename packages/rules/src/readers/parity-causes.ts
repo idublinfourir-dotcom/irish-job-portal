@@ -12,6 +12,7 @@ type Changes = Record<string, { cause: string; fields: Record<string, unknown> }
 const EU_NATIONAL = py(String.raw`\b(national|citizen)s?\s+of\b`, "i");
 const RIGHT_TO_WORK_LINE = py(String.raw`right\s+to\s+work\s+in\s+ireland|work\s+authori[sz]ation`, "i");
 const ELIGIBLE = py(String.raw`\b(eligible|entitled|authori[sz]ed|permitted)\s+to\s+work\b`, "i");
+const ASSIST = py(String.raw`\b(assist|help|facilitate)\w*\s`, "i");
 const SPONSOR_MAYBE = py(String.raw`sponsorship\s+(may|might|could|can)\s+be\s+(available|provided|offered|considered)`, "i");
 const MATERNITY = py(String.raw`\bmaternity\b`, "i");
 const PLACEMENT = py(String.raw`placement|\b(2nd|3rd|second|third|penultimate)[- ]year\s+students?\b`, "i");
@@ -38,6 +39,8 @@ export function causeOf(field: string, row: Row): string | null {
     if (RIGHT_TO_WORK_LINE.test(phrase)) return "a1c41a3 right-to-work line";
     // a1c41a3 and 7c32f89 (11 November 2026): "must be eligible to work in Ireland", only when the advert offers no sponsorship.
     if (ELIGIBLE.test(phrase) && !sponsorshipAvailable(text) && !SPONSOR_MAYBE.test(text)) return "a1c41a3, 7c32f89 eligible to work, no sponsorship offered";
+    // GF1 (26 November 2026): "cannot assist / help / facilitate ... visa sponsorship".
+    if (ASSIST.test(phrase)) return "GF1 cannot assist with sponsorship";
     return null;
   }
   if (field === "contract" || field === "contractWhy") {

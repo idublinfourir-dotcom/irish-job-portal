@@ -30,6 +30,26 @@ describe("R04 noSponsorshipPhrase", () => {
     expect(noSponsorshipPhrase("", "unable to offer 1 2 3 4 work permit")).toBeNull(); // four words after: over the limit of three
   });
 
+  // GF1 (26 November 2026): the reviewer's hand check found a badge on "cannot assist with any visa sponsorship".
+  test.each([
+    ["***Please note our clients cannot assist with any visa sponsorship***", "cannot assist with any visa sponsorship"],
+    ["We are unable to help with work permit applications", "unable to help with work permit"],
+    ["We will not be able to facilitate employment permit requests", "will not be able to facilitate employment permit"],
+    ["We do not currently assist with sponsorship", "do not currently assist with sponsorship"],
+  ])("GF1: finds the refusal in %j", (text, phrase) => {
+    expect(noSponsorshipPhrase("", text)).toBe(phrase);
+  });
+
+  test.each([
+    "We will not hesitate to assist with your visa application",
+    "No problem helping with visas, we sponsor",
+    "We do not only help with visa sponsorship, we pay for it",
+    "Our team can assist with visa sponsorship",
+    "We do not offer free parking but can help with visa sponsorship", // the "no" is about parking, the verb comes five words on
+  ])("GF1: no refusal in %j", (text) => {
+    expect(noSponsorshipPhrase("", text)).toBeNull();
+  });
+
   test("reads the title as well as the description", () => {
     expect(noSponsorshipPhrase("EU citizens only", "x")).toBe("EU citizens only");
     expect(noSponsorshipPhrase("Engineer", "no sponsorship available here")).toBeNull(); // "no" then "sponsorship" needs a verb first

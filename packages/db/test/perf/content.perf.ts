@@ -64,12 +64,16 @@ beforeAll(async () => {
   // its rows are flushed (pruneheap.c, PostgreSQL 17), and any asynchronous commit near them delays that until the WAL writer runs. The local
   // test server commits asynchronously (test-db.sh); the perf sessions do not (vitest.config.ts, TL1), but autovacuum's still do. Measured
   // before TL1: 103 of 1,489 pages in 4 of 6 runs, then the rare code's count read the heap (280 pages). So vacuum again until every page is.
+  // 26 Nov 2026 (PR #100's perf run in CI): the same happened to dete_permit_count, and the company page's count read 3,214 heap pages
+  // against 500. So every table the counts read is vacuumed until it is all-visible.
   const owner = db.pool("portal_owner");
   await owner.query("vacuum (analyze)");
-  for (let i = 0; (await owner.query("select relallvisible < relpages as short from pg_class where oid = 'job'::regclass")).rows[0].short; i++) {
-    if (i === 5) throw new Error("the visibility map of job is still not set after 5 vacuums");
-    await new Promise((r) => setTimeout(r, 200));
-    await owner.query("vacuum job");
+  for (const table of ["job", "dete_permit_count", "organisation_name"]) {
+    for (let i = 0; (await owner.query("select relallvisible < relpages as short from pg_class where oid = $1::regclass", [table])).rows[0].short; i++) {
+      if (i === 5) throw new Error(`the visibility map of ${table} is still not set after 5 vacuums`);
+      await new Promise((r) => setTimeout(r, 200));
+      await owner.query(`vacuum ${table}`);
+    }
   }
 });
 afterAll(() => db.drop());
