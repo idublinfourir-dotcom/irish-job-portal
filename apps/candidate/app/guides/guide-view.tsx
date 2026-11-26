@@ -5,6 +5,7 @@ import { Body } from "../_content/body";
 import { dayText } from "../_content/dates";
 import { PageHead, wrap } from "../_content/head";
 import { Join } from "../jobs/parts";
+import { coverFor } from "./photos";
 import { staticPath } from "../../lib/paths";
 
 export type GuideData = { slug: string; title: string; body: string; sourceUrl: string | null; checkedOn: string | null };
@@ -20,7 +21,7 @@ export function sourceOf(url: string | null): { host: string; href: string } | n
 
 export function GuideView({ guide: g, signedIn }: { guide: GuideData; signedIn: boolean }): ReactNode {
   const checked = dayText(g.checkedOn);
-  const src = sourceOf(g.sourceUrl);
+  const src = sourceOf(g.sourceUrl), c = coverFor(g.slug);
   return (
     <>
       <div className={`${wrap} pb-10`}>
@@ -37,6 +38,8 @@ export function GuideView({ guide: g, signedIn }: { guide: GuideData; signedIn: 
                 </span>
               )}
             />
+            {/* eslint-disable-next-line @next/next/no-img-element -- self-hosted, hashed by the build */}
+            <img src={c.src} width={c.width} height={c.height} alt={c.alt} loading="eager" fetchPriority="high" className="mt-6 aspect-video w-full max-w-[46rem] rounded-card object-cover" />
             <Body text={g.body} toc className="mt-6 max-w-[46rem] text-lead text-muted" />
           </div>
           <aside aria-labelledby="own-case" className="mt-8 flex flex-col gap-4 rounded-bento bg-ink p-6 text-white lg:sticky lg:top-6 lg:mt-[7.5rem]">

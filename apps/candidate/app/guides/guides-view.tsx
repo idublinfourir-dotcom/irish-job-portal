@@ -1,9 +1,10 @@
-// The guides index (frame C15), a pure view. Without chips, covers, a featured guide or related guides (decision #287, Q48 and Q115, L23); the government updates card is the three newest updates.
+// The guides index (frame C15), a pure view. Without chips, a featured guide or related guides (decision #287, Q48 and Q115, L23); the government updates card is the three newest updates.
 import type { ReactNode } from "react";
 import { A, EmptyState, Icon } from "@portal/ui";
 import { dayText, dublinDay } from "../_content/dates";
 import { PageHead, wrap } from "../_content/head";
 import { Join } from "../jobs/parts";
+import { coverFor } from "./photos";
 import { guidePath, staticPath } from "../../lib/paths";
 
 export type GuideItem = { slug: string; title: string; checkedOn: string | null };
@@ -11,9 +12,11 @@ export type UpdateItem = { slug: string; title: string; publishedAt: Date | stri
 export type GuidesProps = { guides: GuideItem[]; updates: UpdateItem[] | null; signedIn: boolean };
 
 function Card({ g }: { g: GuideItem }) {
-  const checked = dayText(g.checkedOn);
+  const checked = dayText(g.checkedOn), c = coverFor(g.slug);
   return (
     <article data-guide-card className="relative flex min-h-[170px] flex-col justify-between gap-6 rounded-bento bg-sand p-6 hover:bg-hover-light">
+      {/* eslint-disable-next-line @next/next/no-img-element -- self-hosted, hashed by the build */}
+      <img src={c.src} width={c.width} height={c.height} alt={c.alt} loading="lazy" className="aspect-video w-full rounded-card object-cover" />
       <h2 className="break-words text-[1.35rem] leading-snug"><A href={guidePath(g.slug)} className="no-underline after:absolute after:inset-0 after:rounded-bento hover:underline">{g.title}</A></h2>
       <p className="flex items-center justify-between gap-3 text-small text-muted">
         <span className="inline-flex items-center gap-1.5">{checked ? <><Icon name="check" size={14} />Checked on {checked}</> : "Not yet checked"}</span>

@@ -20,7 +20,9 @@ describe("guides index (C15, without chips or covers, #287)", () => {
     expect(h).toContain("First update");
     expect(h).toContain("2 Jul 2026"); // 23:30 UTC in July is the next Irish day
     expect(h).toContain('href="/updates"');
-    for (const t of ["Cover image", "Start here", "min read", "Sample", "<img"]) expect(h).not.toContain(t);
+    for (const t of ["Cover image", "Start here", "min read", "Sample"]) expect(h).not.toContain(t);
+    expect(h.match(/<img[^>]*>/g)).toHaveLength(2); // one self-hosted cover per guide
+    for (const img of h.match(/<img[^>]*>/g)!) expect(img).toMatch(/src="\/[^"]*\.webp" width="742" height="420" alt="[^"]{10,}" loading="lazy"/);
     expect(h).toContain("data-join");
   });
   it("says when there is no guide and when the updates could not be read", () => {

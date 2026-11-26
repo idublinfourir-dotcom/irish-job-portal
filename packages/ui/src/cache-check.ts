@@ -8,7 +8,8 @@ import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const ROOT = path.join(import.meta.dirname, "../../..");
-const PHOTOS = readdirSync(path.join(ROOT, "apps/candidate/app/_home/photos")).length;
+// Every page's photos: the home page, the guide covers and the sign-up photo each sit in a `photos` folder beside their page (26 Nov 2026).
+const PHOTOS = readdirSync(path.join(ROOT, "apps/candidate/app"), { recursive: true }).filter((f) => /(^|[\\/])photos[\\/][^\\/]+\.webp$/.test(String(f))).length;
 
 const freePort = () =>
   new Promise<number>((ok) => {

@@ -1,7 +1,8 @@
 // Frame NE1: the employer landing a visitor sees at "/". Plain server markup, no data: the figures and sector tiles of the frame are dropped (decision #287, Q93: no stored
-// DETE figures), the photo is a neutral block (frame NS6), and the claim search is the signed-in one (decision #287: account first, then the company), so the claim section explains it.
+// DETE figures), the photo is the designer's hero (NE1), and the claim search is the signed-in one (decision #287: account first, then the company), so the claim section explains it.
 import { A, Button, Icon, SponsorBadge, Wordmark, type IconName } from "@portal/ui";
 import { PublicHeader } from "../_site/chrome";
+import { EMPLOYER_HERO } from "./photos";
 
 const SIGN_UP = "/sign-up";
 const kinds = (kind: "employer" | "agency") => `/sign-up/account?kind=${kind}`;
@@ -51,7 +52,9 @@ export function Landing({ candidates, rules, help }: { candidates: string | null
               {["Free to post", "Renew in one click", "Live rule checks"].map((t) => <li key={t} className="rounded-pill border border-line bg-sand px-3.5 py-1.5 text-small font-medium">{t}</li>)}
             </ul>
           </div>
-          <div aria-hidden="true" className="relative min-h-[300px] rounded-bento bg-lilac lg:min-h-[400px]" data-photo-block>
+          <div className="relative min-h-[300px] rounded-bento bg-lilac lg:min-h-[400px]" data-photo-block>
+            {/* eslint-disable-next-line @next/next/no-img-element -- self-hosted, hashed by the build, same as the candidate home page */}
+            <img src={EMPLOYER_HERO.src} width={EMPLOYER_HERO.width} height={EMPLOYER_HERO.height} alt={EMPLOYER_HERO.alt} loading="eager" fetchPriority="high" className="absolute inset-0 h-full w-full rounded-bento object-cover" />
             <div className="absolute -top-3 right-4 flex max-w-[15rem] items-start gap-3 rounded-card bg-white p-4 shadow-pop sm:right-6">
               <Icon name="shield" className="mt-0.5 shrink-0 text-deep-green" />
               <p className="text-small"><strong className="block">Live rule checks</strong>Pay and eligibility are checked before a job goes live.</p>

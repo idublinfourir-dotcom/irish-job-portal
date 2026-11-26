@@ -1,7 +1,7 @@
 // P11, unit: the sign-up, sign-in, verify and reset pages. Every answer code of the routes has a plain sentence, every screen renders in every state to HTML
 // (react-dom/server, no browser, no network, no database), the return address check refuses everything that could leave the site, and the titles and
 // descriptions keep frame 01's size rules. Only Next's own pieces and the data layer are stood in.
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup as html } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -230,10 +230,15 @@ describe("sign in, reset and verified screens (C26, C27)", () => {
     expect(s).toContain('href="/jobs/a-1"');
     expect(s).toMatch(/Continue/);
   });
-  it("no screen ships a photo, an image tag, a Sample mark, a dash, or a number copied from a frame", () => {
-    const all = [html(<SignupView answer={null} employersHref={null} next={null} />), html(<NotForYouView employersHref={null} />), html(<CheckEmailView email="a@example.test" wait={3} />), html(<LoginView next={null} />),
+  it("only the sign-up screen ships a photo (self-hosted), and no screen ships a Sample mark, a dash, or a number copied from a frame", () => {
+    const signup = html(<SignupView answer={null} employersHref={null} next={null} />);
+    expect(signup.match(/<img[^>]*>/g)).toHaveLength(1);
+    expect(signup).toMatch(/<img src="\/[^"]*\.webp" width="1228" height="1280" alt="[^"]{10,}" loading="eager"/);
+    expect(signup).not.toMatch(/src="https?:|dangerouslySetInnerHTML/);
+    expect(statSync(join(import.meta.dirname, "photos", "signup-side.webp")).size).toBeLessThan(200 * 1024);
+    const all = [html(<NotForYouView employersHref={null} />), html(<CheckEmailView email="a@example.test" wait={3} />), html(<LoginView next={null} />),
       html(<ForgotView />), html(<ResetView />), html(<VerifiedView signedIn={false} loginHref="/login" continueHref="/jobs" />)].join("");
-    clean(all);
+    clean(all); clean(signup);
     expect(all).not.toMatch(/<img|amara@|Permitly|At least 10|10 characters|Northquay/i);
   });
 });
