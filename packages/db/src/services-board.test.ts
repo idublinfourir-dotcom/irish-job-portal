@@ -19,7 +19,9 @@ describe("status moves", () => {
 describe("document codes", () => {
   it("every code passes 0061's private.case_codes_ok shape, and labels are placeholders", () => {
     for (const c of Object.keys(CASE_DOCUMENT_CODES)) expect(c).toMatch(/^[a-z][a-z0-9_]{0,39}$/);
-    expect(Object.keys(CASE_DOCUMENT_CODES)).toHaveLength(8);
+    expect(Object.keys(CASE_DOCUMENT_CODES)).toHaveLength(16);
+    for (const c of ["passport_photo", "revenue_statement", "lmnt_advert_evidence", "hgv_licence"]) expect(isCaseDocumentCode(c)).toBe(true); // the route takes the checklist codes
+    expect(isCaseDocumentCode("bank_statement")).toBe(false);
     expect(isCaseDocumentCode("cv")).toBe(true);
     for (const x of ["toString", "__proto__", "CV", "", 1, null]) expect(isCaseDocumentCode(x)).toBe(false);
     expect(documentLabels(["cv", "gone"])).toEqual([{ code: "cv", label: "CV" }, { code: "gone", label: null }]);

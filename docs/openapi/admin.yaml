@@ -4517,7 +4517,7 @@ paths:
         case; the assignee must be an active handler who is not the requester. Every other action is for the assigned handler only (an
         administrator gets `not_case_handler`). `status`: received to documents_needed, waiting_for_employer or submitted; documents_needed and
         waiting_for_employer to each other or submitted; submitted to documents_needed (DETE may ask for more documents after submission) or decision. `documents`: codes from the fixed list (passport_copy,
-        offer_letter, contract, degree, registration, payslip, cv, other), before the decision. `decision`: granted or refused, at decision only.
+        offer_letter, contract, degree, registration, payslip, cv, other, passport_photo, immigration_stamp, previous_permits, idaei_support_letter, revenue_statement, lmnt_advert_evidence, aws_permission_letter, hgv_licence), before the decision. `decision`: granted or refused, at decision only.
         `close`: decided (needs an outcome), employer_not_engaged or no_reply (not once an outcome is recorded). `refer`: closes as
         referred_to_solicitor, optionally naming an active firm from the solicitor list. `note`: 1 to 2000 characters, newlines and tabs only,
         never shown to the requester. Each event gives the requester an in-app notice; documents, the decision, close and refer also queue one

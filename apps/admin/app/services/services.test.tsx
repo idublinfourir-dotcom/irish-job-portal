@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Actions, ActionsView, closeReasons, type Handlers, type Props, type ViewState } from "./[id]/actions";
 import { CaseView, Documents } from "./[id]/detail";
 import { OpenCopyView } from "../_queue/open-copy";
+import { CASE_DOCUMENT_CODES } from "../../../../packages/db/src/case-document-codes";
 import { DOC_CODES, MOVES, STATUSES, caseRef, holder, permitLabel, payerLabel, sideLabel, words, type CaseItem, type Doc, type Row } from "./text";
 import { Board, Services, Table, href, keep, isWho } from "./view";
 
@@ -37,6 +38,7 @@ describe("the words", () => {
     const yaml = readFileSync(path.join(import.meta.dirname, "../../../../docs/openapi/admin.yaml"), "utf8");
     const line = yaml.match(/`documents`: codes from the fixed list \(([^)]*)\)/)![1]!;
     expect(DOC_CODES.map(([c]) => c)).toEqual(line.split(",").map((c) => c.trim()));
+    expect(Object.fromEntries(DOC_CODES)).toEqual(CASE_DOCUMENT_CODES); // the staff list and the label list are the same codes and labels
   });
   it("close reasons follow the outcome", () => {
     expect(closeReasons("granted").map(([k]) => k)).toEqual(["decided"]);
