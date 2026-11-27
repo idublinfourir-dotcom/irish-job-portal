@@ -1,6 +1,7 @@
 // The asset cache check of check.yml, run after `npm run check` has built the three apps: `node packages/ui/src/cache-check.ts`.
 // Starts each built app (no database, no network) and asks the real server: every hashed file in .next/static/media must be sent as cached for a
-// year, the favicon must answer (a missing one is asked for again on every page), and a page must never be sent as cached.
+// year, the favicon must answer (a missing one is asked for again on every page), and the 404 page and the signed-in pages must never be sent as cached
+// (Stage 3: the cached pages are proved in packages/db/test/step16-w3-pages.test.ts; with no database the build keeps them per visit).
 import { spawn } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
@@ -48,7 +49,13 @@ async function check(app: string): Promise<string[]> {
     const icon = await get("/favicon.ico");
     if (icon.status !== 200 || !icon.type.startsWith("image/")) out.push(`/favicon.ico: ${icon.status} ${icon.type}`);
     const page = await get("/no-such-page");
-    if (/immutable|max-age=[1-9]/.test(page.cache)) out.push(`a page is cached: ${page.cache}`);
+    // Stage 3: s-maxage is the CDN's lifetime, so it counts too. The 404 page and the signed-in pages are never cached, whatever the build reached.
+    const CACHED = /immutable|max-age=[1-9]|s-maxage=[1-9]|public/;
+    if (CACHED.test(page.cache)) out.push(`a page is cached: ${page.cache}`);
+    for (const p of app === "candidate" ? ["/account", "/login", "/jobs"] : []) {
+      const r = await get(p);
+      if (CACHED.test(r.cache)) out.push(`${p} is cached: ${r.cache}`);
+    }
     if (app === "candidate" && (page.status !== 404 || !page.body.includes("that page") || !/<meta name="robots" content="noindex/.test(page.body))) out.push(`/no-such-page answers ${page.status}: not our 404 page, or not noindex`);
     // The built home page itself: no database here, so its sections show their failed state, but the page answers (24 Nov 2026: every photo was missing
     // in the production build only, and the live home page answered 500 while the tests and the dev server were fine).

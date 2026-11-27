@@ -1,11 +1,15 @@
 "use client";
 // The contact form of the help page (frame C21): POST /api/contact. A visitor gives a name and an email; a signed-in candidate does not (the account's are used). Every error code the route
 // can answer has its words (app/jobs/api.ts: 400, 403 bot and origin, 413, 429); the reply is only `{ ok: true }`, so the form never says whether an email has an account.
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Button, Icon, Input, Notice, Select, Textarea } from "@portal/ui";
 import { CONTACT_TOPICS, MESSAGE_MAX, sendContact } from "../_content/api";
 
-export function ContactForm({ signedIn }: { signedIn: boolean }) {
+const noChange = () => () => {}; // the hint is read once a render; it changes only with a sign-in or sign-out, which reload the page
+/** `signedIn` undefined (the cached /help): the visitor form first, then the hint cookie (lib/hint.ts) after hydration; POST /api/contact decides from the real session. */
+export function ContactForm({ signedIn: known }: { signedIn?: boolean }) {
+  const hinted = useSyncExternalStore(noChange, () => /(?:^|;\s*)cand_in=1(?:;|$)/.test(document.cookie), () => false); // the server and the first paint: a visitor
+  const signedIn = known ?? hinted;
   const [state, setState] = useState<{ kind: "idle" } | { kind: "sending" } | { kind: "done" } | { kind: "error"; message: string }>({ kind: "idle" });
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();

@@ -8,7 +8,7 @@ import { Join } from "../jobs/parts";
 import { ContactForm } from "./contact-form";
 
 export type HelpItem = { slug: string; title: string; category: string | null };
-export type HelpProps = { pages: HelpItem[] | null; signedIn: boolean };
+export type HelpProps = { pages: HelpItem[] | null; /** undefined: not known on the server (the cached page); the contact form asks the hint cookie */ signedIn: boolean | undefined };
 
 export const GROUPS: { key: string; title: string; note: string; icon: IconName }[] = [
   { key: "account", title: "Your account", note: "Sign-up, email, password, delete", icon: "user" },
