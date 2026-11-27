@@ -2,16 +2,18 @@
 // them (`await Page({ searchParams })` gives the element, rendered to HTML here), through the real data layer (apps/candidate/lib/data.ts), the real
 // routes for every write and the real candidate login. Only Next's request context is stood in (next/headers gives the headers a test sets; server-only
 // is empty); no network. Fake data only.
-// Budget (measured 23 and 24 November 2026, see the printed line): statements and median time of each page render, warm. The visitor search runs one more gated read (the minimums for the Permit rules card: its session lookup, two rate counts and the rules): 6 became 9. PERF-3 (27 Nov 2026): one statement for both windows; in Next one count a render (React cache), here one per read (cache is a pass-through outside a server render).
+// Budget (measured 23 and 24 November 2026, see the printed line): statements and median time of each page render, warm. PERF-7 (27 Nov 2026): round trips waited for one after another, a visitor job page 7 before, 1 after (budget 2: the count, then the reads); a visitor search 3 (the count, the reads, the reads chained inside the wave). The visitor search runs one more gated read (the minimums for the Permit rules card: its session lookup, two rate counts and the rules): 6 became 9. PERF-3 (27 Nov 2026): one statement for both windows; in Next one count a render (React cache), here one per read (cache is a pass-through outside a server render).
 import pg from "pg";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { answers, seedSignupTerms } from "./better-auth-helper";
 import { createTestDb, urlFor, type TestDb } from "./db";
 
-const { state } = vi.hoisted(() => ({ state: { headers: new Headers() } }));
+const { state } = vi.hoisted(() => ({ state: { headers: new Headers(), after: [] as Promise<unknown>[] } }));
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({ headers: async () => state.headers }));
+// PERF-7: the view count runs in after(), once the answer is sent; here it is kept and awaited when the render is done, as Next runs it then.
+vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: (fn: () => unknown) => { state.after.push(Promise.resolve().then(fn)); } }));
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
@@ -27,7 +29,7 @@ let Search: SearchPage, SearchMeta: (p: { searchParams: Promise<Record<string, s
 let JobP: JobPageFn, JobMeta: (p: { params: Promise<{ job: string }> }) => Promise<Meta>;
 let paths: { jobPath: (j: { id: string; title: string; county: string | null }) => string };
 const ids: Record<string, string> = {};
-const BUDGET = { searchVisitor: 9, searchSignedIn: 11, jobVisitor: 9, jobSignedIn: 20, medianMs: 120 };
+const BUDGET = { searchVisitor: 9, searchSignedIn: 11, jobVisitor: 9, jobSignedIn: 20, medianMs: 120, jobVisitorTrips: 2, searchVisitorTrips: 3 };
 
 beforeAll(async () => {
   db = await createTestDb();
@@ -106,7 +108,9 @@ const as = <T>(cookie: string | undefined, fn: () => Promise<T>, ip = freshIp())
 const write = (route: Handler, cookie: string, body: unknown, path = "/api/x") =>
   route(new Request(`${BASE}${path}`, { method: "POST", headers: { cookie, origin: BASE, "content-type": "application/json" }, body: JSON.stringify(body) }));
 const search = async (q: Record<string, string | string[]>, cookie?: string, ip?: string) => renderToStaticMarkup(await as(cookie, () => Search({ searchParams: Promise.resolve(q) }), ip));
-const jobPage = async (seg: string, cookie?: string, ip?: string) => renderToStaticMarkup(await as(cookie, () => JobP({ params: Promise.resolve({ job: seg }) }), ip));
+const jobPage = async (seg: string, cookie?: string, ip?: string) => {
+  try { return renderToStaticMarkup(await as(cookie, () => JobP({ params: Promise.resolve({ job: seg }) }), ip)); } finally { await Promise.all(state.after.splice(0)); }
+};
 const addressOf = (key: string, title: string, county: string | null) => paths.jobPath({ id: ids[key]!, title, county }).slice("/jobs/".length);
 const views = async (id: string) => Number((await su.query("select coalesce(sum(views), 0) v from job_daily_stat where job_id = $1", [id])).rows[0].v);
 const digestOf = async (p: Promise<unknown>) => { try { await p; return null; } catch (e) { return (e as { digest?: string }).digest ?? String(e); } };
@@ -115,6 +119,23 @@ async function counted<T>(fn: () => Promise<T>): Promise<[T, number]> {
   let c = 0;
   pg.Client.prototype.query = function (this: pg.Client, ...a: unknown[]) { c++; return (q as (...x: unknown[]) => unknown).apply(this, a); } as typeof q;
   try { return [await fn(), c]; } finally { pg.Client.prototype.query = q; }
+}
+/** PERF-7: the database round trips a render waits for one after another: each time a statement starts while none is in flight. Reads issued in one
+ *  wave overlap and count once; `await a; await b` counts twice. The after() work is left out: it runs once the answer is sent. */
+async function rounds<T>(fn: () => Promise<T>): Promise<number> {
+  const q = pg.Client.prototype.query;
+  let open = 0, n = 0;
+  pg.Client.prototype.query = function (this: pg.Client, ...a: unknown[]) {
+    if (open++ === 0) n++;
+    let closed = false;
+    const done = () => { if (!closed) { closed = true; open--; } };
+    const cb = a.at(-1);
+    if (typeof cb === "function") a[a.length - 1] = (...x: unknown[]) => { done(); return (cb as (...y: unknown[]) => unknown)(...x); }; // pg.Pool passes a callback
+    const r = (q as (...x: unknown[]) => unknown).apply(this, a) as Promise<unknown> | undefined;
+    r?.then(done, done);
+    return r;
+  } as typeof q;
+  try { await fn(); return n; } finally { pg.Client.prototype.query = q; state.after.splice(0); }
 }
 const median = async (fn: () => Promise<unknown>) => {
   const t: number[] = [];
@@ -305,6 +326,21 @@ describe("P8: /jobs/[job]", () => {
       expect(await digestOf(jobPage(seg))).toBe(stays);
     }
   });
+  it("PERF-7: counts a view after the render, and none for a closed job, a redirect or a page that is not a job", async () => {
+    const seg = addressOf("c7", "Page Cook c7", "Dublin");
+    const before = await views(ids.c7!);
+    await as(undefined, () => JobP({ params: Promise.resolve({ job: seg }) }));
+    expect(await views(ids.c7!)).toBe(before); // the render itself writes nothing
+    await Promise.all(state.after.splice(0));
+    expect(await views(ids.c7!)).toBe(before + 1);
+    const closed = await views(ids.closed!);
+    await jobPage(addressOf("closed", "Closed Role", "Cork"));
+    expect(await views(ids.closed!)).toBe(closed);
+    await digestOf(jobPage("an-old-title-" + ids.c7));
+    await digestOf(jobPage(ids.draft!));
+    expect(await views(ids.c7!)).toBe(before + 1);
+    expect(await views(ids.draft!)).toBe(0);
+  });
   it("words the rate limit (429)", async () => {
     const ip = freshIp();
     let h = "";
@@ -404,6 +440,11 @@ describe("performance: statements and time of each page render, warm", () => {
       expect(stmts, `${name} statements`).toBeLessThanOrEqual(budget);
       expect(ms, `${name} median ms`).toBeLessThan(BUDGET.medianMs);
     }
+    // PERF-7: a visitor's job page waits for at most 2 database round trips (the read-limit count, then the reads), whatever the number of reads
+    const trips = { jobVisitor: await rounds(() => as(undefined, () => JobP({ params: Promise.resolve({ job: seg }) }))), searchVisitor: await rounds(() => as(undefined, () => Search({ searchParams: Promise.resolve({ county: "Cork" }) }))) };
+    expect(trips.jobVisitor, "jobVisitor round trips").toBeLessThanOrEqual(BUDGET.jobVisitorTrips);
+    expect(trips.searchVisitor, "searchVisitor round trips").toBeLessThanOrEqual(BUDGET.searchVisitorTrips);
+    process.stderr.write(`round trips: ${JSON.stringify(trips)}\n`);
     process.stderr.write("page renders (statements, median ms): " + Object.entries(out).map(([k, [s, m]]) => `${k} ${s} ${m.toFixed(1)}`).join(", ") + "\n");
   });
 });

@@ -23,17 +23,20 @@ const asList = (r: Awaited<ReturnType<typeof readJobs>>): ListRead => (r.ok ? { 
 
 export default async function Page({ searchParams }: Props) {
   const state = parseSearch(await searchParams);
-  const [read, mine] = await Promise.all([readJobs(readQuery(state)), readSaved()]);
+  // PERF-7: one wave. The two reads that wait for another answer are chained inside it, so they still run only when needed: the newest sponsor jobs
+  // when the search is empty, the minimums (the visitor's "Permit rules" card) when readSaved says a visitor (401).
+  const listRead = readJobs(readQuery(state)), savedRead = readSaved();
+  const [read, mine, counts, titles, newest, rules] = await Promise.all([
+    listRead,
+    savedRead,
+    readSectors(queryOf(state)), // B11: the counts of the other filters (the read leaves the sector filter out of its own counts)
+    state.filters.occupationCode ? readOccupations() : null,
+    listRead.then((r) => (r.ok && (r.data as Answer).jobs.length === 0 ? readJobs(new URLSearchParams({ badge: "sponsor_confirmed", sort: "newest" })) : null)),
+    savedRead.then((m) => (m.ok ? null : readMinimums())),
+  ]);
   const list = asList(read);
   const signedIn = mine.ok;
   const savedIds = mine.ok ? ((mine.data as { saved: { jobId: string }[] }).saved ?? []).map((s) => s.jobId) : [];
-  const empty = list.ok && list.jobs.length === 0;
-  const [counts, titles, newest, rules] = await Promise.all([
-    readSectors(queryOf(state)), // B11: the counts of the other filters (the read leaves the sector filter out of its own counts)
-    state.filters.occupationCode ? readOccupations() : null,
-    empty ? readJobs(new URLSearchParams({ badge: "sponsor_confirmed", sort: "newest" })) : null,
-    signedIn ? null : readMinimums(), // the visitor's "Permit rules" card
-  ]);
   return (
     <>
       <PageLd make={(origin) => [breadcrumbLd(origin, searchCrumbs())]} />

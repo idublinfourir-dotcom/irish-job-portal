@@ -24,10 +24,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function Page({ params }: Props) {
   const { slug } = await params;
-  const r = await load(slug);
+  const [r, signedIn] = await Promise.all([load(slug), readSignedIn()]); // PERF-7: one wave
   if (!r.ok) {
     if (r.status === 404) notFound();
     return <Problem read={r as Failed} what="guide" back={{ href: "/guides", label: "All guides" }} />;
   }
-  return <GuideView guide={r.data as GuideData} signedIn={await readSignedIn()} />;
+  return <GuideView guide={r.data as GuideData} signedIn={signedIn} />;
 }

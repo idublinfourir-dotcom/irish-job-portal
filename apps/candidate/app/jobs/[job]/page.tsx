@@ -5,8 +5,9 @@ import { cache } from "react";
 import type { Metadata } from "next";
 import type { JobPage } from "@portal/db";
 import { notFound, permanentRedirect } from "next/navigation";
+import { after } from "next/server";
 import { Notice } from "@portal/ui";
-import { countView, readClosedJob, readDidYouApply, readJob, readMyJob, readProfile, readSignedIn, readSimilar } from "../../../lib/data";
+import { countView, readClosedJob, readDidYouApply, readJob, readMyJob, readProfile, readSimilar } from "../../../lib/data";
 import { jobIdOf, jobPath } from "../../../lib/paths";
 import { breadcrumbLd, canonicalUrl, jobPostingLd } from "../../../lib/seo";
 import { PageLd } from "../../_content/ld";
@@ -44,7 +45,10 @@ export default async function Page({ params }: Props) {
   const seg = (await params).job;
   const id = jobIdOf(seg);
   if (!id) notFound();
-  const r = await load(id);
+  // PERF-7: every read that does not need the job's answer starts with it, in one wave. readMyJob also says who is reading: 401 is a visitor,
+  // 404 JOB_NOT_FOUND a signed-in candidate who has not saved or tracked this job. One Promise.all, so a read left unused on a 404 or a redirect is never an unhandled rejection.
+  const [r, similar, mine] = await Promise.all([load(id), readSimilar({ id }), readMyJob(id)]);
+  const signedIn = mine.ok || mine.status === 404;
   const now = new Date();
   const same = (a: string, b: string) => a === b || (() => { try { return decodeURIComponent(a) === b; } catch { return false; } })();
 
@@ -56,9 +60,8 @@ export default async function Page({ params }: Props) {
     const closed = await loadClosed(id);
     if (closed.ok) {
       const c = closed.data as ClosedRead;
-      return <ClosedJob reason={c.reason} title={c.job.title} employerName={c.job.employerName} similar={(c.similar ?? []).map(fromSmall)} signedIn={await readSignedIn()} />;
+      return <ClosedJob reason={c.reason} title={c.job.title} employerName={c.job.employerName} similar={(c.similar ?? []).map(fromSmall)} signedIn={signedIn} />;
     }
-    const mine = await readMyJob(id);
     const own = mine.ok ? (mine.data as { job: { live: boolean; reason: string | null; title: string; employerName: string }; similar?: Parameters<typeof fromSmall>[0][] }) : null;
     if (!own || own.job.live) notFound();
     return <ClosedJob reason={own.job.reason} title={own.job.title} employerName={own.job.employerName} similar={(own.similar ?? []).map(fromSmall)} signedIn />;
@@ -67,11 +70,10 @@ export default async function Page({ params }: Props) {
   const job = r.data as JobPage;
   const path = jobPath(job);
   if (!same(`/jobs/${seg}`, path)) permanentRedirect(path);
-  await countView(job.id); // one view of one live job per page render (S12)
+  // One view of one live job per page render (S12), after the answer is sent (PERF-7): the write no longer holds up the page. Past the redirect on
+  // purpose: after() also runs on notFound and redirect, which must count nothing.
+  after(() => countView(job.id));
 
-  const [similar, mine] = await Promise.all([readSimilar({ id }), readMyJob(id)]);
-  // readMyJob: 401 is a visitor; 404 JOB_NOT_FOUND is a signed-in candidate who has not saved or tracked this job.
-  const signedIn = mine.ok || (!mine.ok && mine.status === 404);
   const own = mine.ok ? (mine.data as { job: { saved: boolean; stage: string | null } }).job : null;
   const cs = job.permitType === "critical_skills";
   const [profile, prompts] = signedIn ? await Promise.all([cs ? readProfile() : null, readDidYouApply()]) : [null, null];
