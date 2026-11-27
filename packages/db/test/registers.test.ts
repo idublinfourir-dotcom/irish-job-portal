@@ -138,7 +138,7 @@ describe("CRO import (as app_fetcher, through the command)", () => {
     const writes: number[] = [];
     const counting = { query: async (sql: string, p?: unknown[]) => { const r = await fetcher.query(sql, p); if (/^(insert|update|delete)/.test(sql)) writes.push(r.rowCount ?? 0); return r; } };
     const stats = { read: 0, kept: 0, skipped: 0, repeated: 0 };
-    const r = await importCro(counting as never, croRows(csvRecords([croCsv(many)]), stats), "2026-11-08", stats);
+    const r = await importCro(counting as never, croRows(csvRecords((async function* () { yield croCsv(many); })()), stats), "2026-11-08", stats);
     expect(r).toMatchObject({ kept: 3000, written: 0, marked: 0, deleted: 0 });
     expect(writes.reduce((a, b) => a + b, 0)).toBe(0); // at most 1% asked (audit DB-3); none measured
     expect(await versions()).toBe(before);
