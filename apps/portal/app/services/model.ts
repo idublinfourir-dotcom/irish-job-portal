@@ -23,6 +23,8 @@ export const permitLabel = (t: string) => PERMIT_LABEL[t] ?? "Employment permit"
 export const permitFeeLabel = (permitType: string) => (permitType === "critical_skills" ? "Paid by the employee or employer" : "Usually paid by the employer");
 /** Our service fee (#3, #84): the employer or agency pays it, never the candidate. */
 export const SERVICE_FEE = "Our service fee is paid by the employer or agency, never the candidate.";
+/** Our prices, quotes and invoices wait for the operating company (TRACKER M7); this line says so honestly. */
+export const PRICE_LINE = "Prices and invoices: available soon. We agree the price with you before any work starts.";
 
 /** "4 Nov 2026", in Irish time. */
 export const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("en-IE", { day: "numeric", month: "short", year: "numeric", timeZone: "Europe/Dublin" });

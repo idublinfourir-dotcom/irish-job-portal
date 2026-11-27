@@ -164,6 +164,7 @@ export function mountMotion(btn: HTMLButtonElement | null): () => void {
   }
 
   if (!preload()) startScroll(); // with the preloader, the scroll layer starts at the fly
+  root.removeAttribute("data-pre"); // the server cover (pre-cover.tsx) goes: the overlay, when it runs, is already on top
 
   return () => {
     started = true; // no new observer after cleanup

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { DM_Sans, Outfit } from "next/font/google";
-import { Motion, PortalShell, SITE_NAME, type PortalRole } from "@portal/ui";
+import { Motion, PreCover, PortalShell, SITE_NAME, type PortalRole } from "@portal/ui";
 import { readShell } from "../lib/data";
 import "./globals.css";
 
@@ -25,8 +25,9 @@ const isRole = (r: string): r is PortalRole => r in ROLE_LABEL;
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const shell = await readShell();
   return (
-    <html lang="en" className={`${outfit.variable} ${dmSans.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${outfit.variable} ${dmSans.variable}`}>
       <body>
+        <PreCover />
         {shell && isRole(shell.role) ? (
           <PortalShell companyName={shell.companyName} role={ROLE_LABEL[shell.role]} roleKey={shell.role} status={shell.status ?? undefined} unread={shell.unread}>
             {children}

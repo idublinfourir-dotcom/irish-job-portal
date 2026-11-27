@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { DM_Sans, Outfit } from "next/font/google";
-import { CandidateShell, Motion, SITE_NAME } from "@portal/ui";
+import { CandidateShell, Motion, PreCover, SITE_NAME } from "@portal/ui";
 import { readSiteFrame, siteOrigin } from "../lib/data";
 import { jsonLd, organizationLd, siteRobots, websiteLd } from "../lib/seo";
 import "./globals.css";
@@ -18,8 +18,9 @@ export const generateMetadata = (): Metadata => ({ title: SITE_NAME, robots: sit
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const { signedIn, standingLine, origin } = await readSiteFrame();
   return (
-    <html lang="en" className={`${outfit.variable} ${dmSans.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${outfit.variable} ${dmSans.variable}`}>
       <body>
+        <PreCover />
         {origin && (
           <>
             <script type="application/ld+json">{jsonLd(organizationLd(origin))}</script>

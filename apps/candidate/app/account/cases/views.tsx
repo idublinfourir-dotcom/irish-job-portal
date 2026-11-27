@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { A, Button, EmptyState, Icon, Notice, Pill } from "@portal/ui";
 import { ClosedNotice } from "../../permit-services/landing";
 import { casePath, permitRequestPath } from "../../../lib/paths";
-import { permitFeeLabel } from "../../jobs/format";
+import { permitFeeLabel, PRICE_LINE } from "../../jobs/format";
 import {
   banner, canUpload, caseState, caseSubtitle, caseTitle, fmtDate, fmtSize, isOpen, MAX_OPEN_CASES, permitLabel, STATUS_LABEL, steps, updateLine, whoPays,
   type CaseDoc, type CaseEvent, type CaseRow,
@@ -159,6 +159,7 @@ export function CaseView({ c, events, docs, docsError, notice, upload, withdraw 
             <h2 id="pay-h" className="text-ui font-semibold">Who pays</h2>
             <p>{whoPays(c.payer)}</p>
             <p className="text-small">DETE&apos;s permit fee for this permit: {permitFeeLabel(c.permitType)}.</p>
+            <p className="text-small">{PRICE_LINE}</p>
           </aside>
           <section aria-labelledby="upd-h" className="flex flex-col gap-3 rounded-bento bg-sand p-6">
             <h2 id="upd-h" className="text-[1.25rem]">Updates</h2>
