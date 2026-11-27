@@ -20,6 +20,8 @@ concurrency:
 jobs:
   restore-check:
     runs-on: ubuntu-latest
+    # Production secrets live in this Environment, which only main may use (audit SEC-7, SEC-29); no deployment record per run.
+    environment: { name: production, deployment: false }
     timeout-minutes: 15
     # The empty server to restore into: the same image as packages/db/test/test-db.sh and check.yml. Keep them in step.
     services:
