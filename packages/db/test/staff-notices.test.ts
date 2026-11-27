@@ -398,13 +398,13 @@ describe("performance", () => {
       assertPageBudget("sample make", cost, BUDGET.pages.sampleMake);
       await client.query("rollback");
     } finally { client.release(); }
-    // the digest: 1 + the email limit numbers for administrators (#275) + one per active staff member with a role + 1
+    // the digest: 1 + the email limit numbers for administrators (#275) + the stuck and failed email counts (OPS-5, S2c) + one per active staff member with a role + 1
     const a = new pg.Client({ connectionString: urlFor(db.name, "app_admin") });
     await a.connect();
     try {
       const people = (await a.query(DIGEST_STAFF)).rowCount!;
       const [, cliN] = await counted(() => writeDigest(a));
-      expect(cliN).toBeLessThanOrEqual(people + 3);
+      expect(cliN).toBeLessThanOrEqual(people + 4);
       expect(measured.digest = await median(() => writeDigest(a))).toBeLessThan(BUDGET.cliMs);
     } finally { await a.end(); }
     console.log("staff notices measured:", JSON.stringify(measured));

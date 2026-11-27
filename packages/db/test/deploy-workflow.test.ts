@@ -17,9 +17,13 @@ it("keeps read-only permissions, one deploy at a time, and does not keep the che
   expect(yml).toMatch(/group: deploy\n\s+cancel-in-progress: false/);
   expect(yml).toMatch(/persist-credentials: false/);
 });
-it("gives the three tokens to the deploy step only", () => {
-  expect([...yml.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]).sort()).toEqual(["VERCEL_TOKEN_ADMIN", "VERCEL_TOKEN_CANDIDATE", "VERCEL_TOKEN_PORTAL"]);
+it("gives the three tokens to the deploy step only, and the read-only backup login to the schema check only (DEP-5)", () => {
+  expect([...yml.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]).sort()).toEqual(["BACKUP_DATABASE_URL", "VERCEL_TOKEN_ADMIN", "VERCEL_TOKEN_CANDIDATE", "VERCEL_TOKEN_PORTAL"]);
   expect(step.match(/secrets\./g)).toHaveLength(3);
+  expect(step).not.toMatch(/BACKUP_DATABASE_URL/);
+  const schema = yml.split(/^ {6}- /m).find((s) => s.startsWith("name: Check the live schema matches the code")) ?? "";
+  expect(schema.match(/secrets\.(\w+)/g)).toEqual(["secrets.BACKUP_DATABASE_URL"]);
+  expect(yml.indexOf("name: Check the live schema matches the code")).toBeLessThan(yml.indexOf("name: Deploy the three apps"));
 });
 it("deploys each app to its own project, from a plain copy, with a pinned CLI", () => {
   for (const [app, id] of Object.entries(PROJECTS)) expect(step).toMatch(new RegExp(`^ +deploy ${app} ${id} "\\$TOKEN_${app.toUpperCase()}"$`, "m"));
