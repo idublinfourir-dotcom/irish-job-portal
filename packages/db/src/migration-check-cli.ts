@@ -10,18 +10,22 @@ import { sslOptions } from "./ssl.ts";
 export type Row = { hash: string; created_at: string | number };
 export type Entry = { tag: string; when: number };
 
-/** What differs between the journal (repo order) and the applied rows (id order). Pure. */
-export function migrationDrift(entries: Entry[], hashes: string[], rows: Row[]): string[] {
+/**
+ * What differs between the journal (repo order) and the applied rows (id order). Pure.
+ * The deploy runs before the engineer applies a new migration, so entries at the END with no applied row are `pending` (a warning, not a failure).
+ * Applied rows are matched to the journal by position, so a gap (an entry missing in the middle) shows as a changed file and fails.
+ */
+export function migrationDrift(entries: Entry[], hashes: string[], rows: Row[]): { problems: string[]; pending: string[] } {
   const p: string[] = [];
-  entries.forEach((e, i) => {
-    const r = rows[i];
-    if (!r) p.push(`${e.tag}: in the repo, not applied`);
-    else if (r.hash !== hashes[i]) p.push(`${e.tag}: the file differs from what was applied (edited after it ran, or a different order)`);
+  const pending = entries.slice(rows.length).map((e) => e.tag);
+  entries.slice(0, rows.length).forEach((e, i) => {
+    const r = rows[i]!;
+    if (r.hash !== hashes[i]) p.push(`${e.tag}: the file differs from what was applied (edited after it ran, or a different order)`);
     else if (Number(r.created_at) !== e.when) p.push(`${e.tag}: the journal time differs from the applied time`);
   });
   if (rows.length > entries.length) p.push(`${rows.length - entries.length} applied migration(s) are not in the repo`);
   entries.forEach((e, i) => { if (i && e.when <= entries[i - 1]!.when) p.push(`${e.tag}: its journal time is not later than the one before (drizzle would skip it)`); });
-  return p;
+  return { problems: p, pending };
 }
 
 export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: string) => void): Promise<number> {
@@ -32,9 +36,10 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: s
   try {
     await client.connect();
     const rows = (await client.query("select hash, created_at from drizzle.__drizzle_migrations order by id")).rows as Row[];
-    const problems = migrationDrift(entries, repoMigrationHashes(), rows);
+    const { problems, pending } = migrationDrift(entries, repoMigrationHashes(), rows);
+    for (const t of pending) log(`::warning::${t} is not applied yet: apply it after this deploy`);
     if (problems.length) return problems.forEach((x) => log(`FAIL ${x}`)), 1;
-    log(`migrations: ${entries.length} in the repo, all applied, hashes and times match`);
+    log(`migrations: ${entries.length} in the repo, ${entries.length - pending.length} applied, ${pending.length} pending, hashes and times match`);
     return 0;
   } catch (e) {
     log(`refused: ${(e as Error).message}`);
