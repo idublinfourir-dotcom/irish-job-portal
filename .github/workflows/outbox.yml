@@ -1,0 +1,44 @@
+name: Outbox
+
+# Sends the queued emails (notices, job alerts) soon after they are queued (audit of 27 Nov 2026, DEP-3 and OPS-5). GitHub's own scheduler starts
+# runs hours late and drops some, so this workflow has no schedule: the database starts it. pg_cron asks every 15 minutes whether a row is due and
+# the day's limit has room, and only then calls this workflow through pg_net (set up once with packages/db/src/scheduler-setup-cli.ts).
+# If that trigger ever stops (an expired token), the daily fetch still sends once a day, so nothing is lost, only late.
+# Secret and variables: the same as the daily fetch's "Send queued emails" step (BREVO_API_KEY; EMAIL_FROM, SITE_URL, PORTAL_SITE_URL, ALERTS_EMAIL_FROM).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never two runs at once; a second one waits. A daily-fetch run sending at the same moment is safe: the claim is "for update skip locked".
+concurrency:
+  group: outbox
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # The command itself keeps the day's limit (DAILY_CAP) and spaces the retries (DUE), so the batch here is only the most one run may send.
+      - name: Send queued emails
+        env:
+          DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+          SITE_URL: ${{ vars.SITE_URL }}
+          PORTAL_SITE_URL: ${{ vars.PORTAL_SITE_URL }}
+          ALERTS_EMAIL_FROM: ${{ vars.ALERTS_EMAIL_FROM }}
+        run: |
+          if [ -z "$BREVO_API_KEY" ]; then echo "email is off (no BREVO_API_KEY secret): nothing sent"; exit 0; fi
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          node packages/db/src/outbox-cli.ts --batch 200

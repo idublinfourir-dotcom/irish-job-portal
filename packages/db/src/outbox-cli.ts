@@ -1,7 +1,8 @@
 // The outbox sender (8.1b): sends the pending email_outbox rows through Brevo, every other row before job alerts and oldest first in each group (#275), as app_admin (the admin app's DATABASE_URL).
 //   DATABASE_URL=... BREVO_API_KEY=... EMAIL_FROM=... [ALERTS_EMAIL_FROM=...] SITE_URL=https://... PORTAL_SITE_URL=https://... node packages/db/src/outbox-cli.ts [--batch N]
 // A row is marked `sending` (attempts + 1) in its own committed statement BEFORE Brevo is called, so a crash never sends it twice; a row
-// left in `sending` by a crash is a human's call (look at it, then set it to pending or dropped). After MAX_ATTEMPTS failed tries a row is `failed`.
+// left in `sending` by a crash is a human's call (look at it, then set it to pending or dropped). After MAX_ATTEMPTS failed tries a row is `failed`;
+// the tries are spaced (DUE) and a UTC day sends at most DAILY_CAP, because outbox.yml runs this whenever the database says a row is due.
 // A row with no address (person erased or deleted, invite gone) or a reserved one (E2) is `dropped`; account_deleted uses params.email. Two runs at once share the work (skip locked).
 // A `job_alert` row (step 11, one per candidate per run) is built at send time: each alert in its params that is still active and belongs to the row's
 // candidate, with its jobs that are still live (job-alert-email.ts). Nothing left, or a row older than 3 days (D4): `dropped`. It needs SITE_URL (https).
@@ -21,9 +22,20 @@ export const MAX_ATTEMPTS = 3;
 export const DEFAULT_BATCH = 50;
 export const MAX_BATCH = 200;
 export const ALERT_MAX_AGE_MS = 3 * 86_400_000; // D4: a job alert queued more than 3 days ago is stale, not sent
+// The sender now runs many times a day (outbox.yml), so the day's limit and the retry spacing live here, not in the run count.
+export const DAILY_CAP = 200; // sends per UTC day, under Brevo's free 300 with room for the apps' own sign-up and reset emails (#275)
+// ponytail: one pool for notices and job alerts. Notices go first only inside a run, so alerts sent early in the day can use the 200 up and a later
+// notice waits for tomorrow; keep part of the limit for notices when alert subscribers pass about 150 (0 on 27 Nov 2026).
+/** A row that is due: pending, its time has come, and a failed one waits before the next try (the 2nd an hour, the 3rd a day after it was due).
+ *  ponytail: spaced from send_after, not from the last try (no such column); a row already a day old when it first fails is retried on the next runs. */
+export const DUE = "status = 'pending' and send_after <= now() and (attempts = 0 or send_after <= now() - case attempts when 1 then interval '1 hour' else interval '1 day' end)";
+/** Emails this sender sent since the UTC day began, counted up to the limit only (so it never reads more than DAILY_CAP rows), on email_outbox_record_idx. */
+export const SENT_TODAY =
+  "select count(*)::int from (select 1 from email_outbox where status = 'sent' and coalesce(sent_at, send_after) >= date_trunc('day', now() at time zone 'utc') at time zone 'utc' " +
+  `limit ${DAILY_CAP}) s`;
 
 export const CLAIM =
-  "with c as (select id from email_outbox where status = 'pending' and send_after <= now() order by (template = 'job_alert'), send_after, id limit $1 for update skip locked) " +
+  `with c as (select id from email_outbox where ${DUE} order by (template = 'job_alert'), send_after, id limit $1 for update skip locked) ` +
   "update email_outbox o set status = 'sending', attempts = o.attempts + 1 from c where o.id = c.id returning o.id, o.template, o.attempts, o.send_after, o.candidate_user_id, case when o.template in ('job_alert', 'data_request_confirm', 'staff_digest') then o.params end as params, " +
   "case when o.candidate_user_id is not null then 'candidate' when o.portal_user_id is not null or o.membership_id is not null then 'portal' end as side";
 // The alerts of the claimed job_alert rows (still active) and the jobs they name (still live): two statements for the whole batch.
@@ -34,7 +46,7 @@ export const LIVE_JOBS =
   "select id::text as id, title, employer_name, county, salary_low, salary_high, pay_grade, badge from job where id = any($1::bigint[]) and status = 'live' and not quota_full and closes_at > now()";
 export const PENDING = "select exists(select 1 from email_outbox where status = 'pending') as any";
 // After the run (#275): the rows still due, and one audit row with the run's counts (no address, no id). Both on email_outbox_pending_idx.
-export const LEFT = "select count(*)::int as n from email_outbox where status = 'pending' and send_after <= now()";
+export const LEFT = `select count(*)::int as n from email_outbox where ${DUE}`;
 export const RUN_AUDIT =
   "insert into audit_event(kind, actor_system, action, after, source) values ('admin_action', 'outbox-cli by ' || session_user, 'email_outbox.run', $1::jsonb, 'scheduled_job')";
 export const ADDRESSES =
@@ -234,13 +246,15 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: s
     await client.connect();
     if ((await client.query<{ any: boolean }>(PENDING)).rows[0]!.any && !(siteOrigin(env.SITE_URL) && siteOrigin(env.PORTAL_SITE_URL)))
       return log("SITE_URL and PORTAL_SITE_URL must both be set to https:// addresses (email links go to them); nothing was sent"), 2;
-    const r = await sendPending(client, mail, batch, log, env.SITE_URL, env.PORTAL_SITE_URL, sendAlert, drop);
+    const room = DAILY_CAP - (await client.query<{ count: number }>(SENT_TODAY)).rows[0]!.count;
+    const r = room > 0 ? await sendPending(client, mail, Math.min(batch, room), log, env.SITE_URL, env.PORTAL_SITE_URL, sendAlert, drop) : { sent: 0, retry: 0, failed: 0, dropped: 0, old: 0 };
     log(`outbox: sent ${r.sent}, to retry ${r.retry}, failed for good ${r.failed}, dropped (no address, nothing to send or too old) ${r.dropped}`);
+    if (r.retry) log(`::warning::email outbox: ${r.retry} emails could not be sent and wait for their next try`);
     const left = (await client.query<{ n: number }>(LEFT)).rows[0]!.n;
     await client.query(RUN_AUDIT, [JSON.stringify({ ...r, left })]);
     const warn = limitWarning(r, left);
     if (warn) log(warn);
-    return r.retry + r.failed ? 1 : 0;
+    return r.failed ? 1 : 0; // red only when a row is given up: a retry is a warning, or an outage would email on every run
   } catch (e) {
     log(`refused: ${(e as Error).message}`);
     return 1;

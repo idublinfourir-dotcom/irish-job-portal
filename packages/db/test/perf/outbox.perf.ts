@@ -2,10 +2,11 @@
 // pending index (pages budget), find the addresses by key, and finish in a time budget with an instant fake sender. Fake data only.
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createTestDb, type TestDb } from "../db";
-import { ADDRESSES, CLAIM, sendPending } from "../../src/outbox-cli.ts";
+import { ADDRESSES, CLAIM, SENT_TODAY, sendPending } from "../../src/outbox-cli.ts";
 import { assertPageBudget, measurePages } from "./pages";
 
 vi.setConfig({ testTimeout: 300_000, hookTimeout: 300_000 });
+export const SENT_TODAY_PAGES = 20; // measured 8 on 27 Nov 2026 with 90,000 rows sent today: the count stops at DAILY_CAP, so the day never costs more
 export const CLAIM_PAGES = 6000; // measured 3,836 on 12 Nov 2026 (about 19 pages a row: heap and the index entries the status change rewrites); 6,000 is 1.5 times that
 export const ADDRESS_PAGES = 1000; // measured 626 on 12 Nov 2026 (200 rows through 6 left joins by key)
 export const BATCH_MS = 3000; // measured 455 ms for a batch of 200 with an instant sender, about 6 times that
@@ -29,6 +30,11 @@ it("claims and addresses a batch of 200 within the page budget, and sends it wit
     assertPageBudget("outbox claim", claim, CLAIM_PAGES);
     expect(claim[0]!.scans).toContain("email_outbox_pending_idx");
     await c.query("rollback");
+    // The day's count (DAILY_CAP), asked once a run: on email_outbox_record_idx, never a pass over the table.
+    const today = await measurePages(c, [SENT_TODAY]);
+    console.log("sent today", today[0]!.pages, today[0]!.scans, today[0]!.ms);
+    assertPageBudget("outbox sent today", today, SENT_TODAY_PAGES);
+    expect(today[0]!.scans).toContain("email_outbox_record_idx");
     const ids = (await c.query("select id from email_outbox where status='pending' order by send_after, id limit 200")).rows.map((r) => r.id);
     const addr = await measurePages(c, [{ text: ADDRESSES, values: [ids] }]);
     console.log("addresses", addr[0]!.pages, addr[0]!.scans, addr[0]!.ms);

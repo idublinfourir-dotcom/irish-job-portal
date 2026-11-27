@@ -5,6 +5,8 @@ name: Backup
 # the AWS console). public.cro_company rows are left out (re-imported weekly). The restore is proved by restore-check.yml.
 # Secrets (set by the engineer): BACKUP_DATABASE_URL (app_backup's Supabase session pooler string), BACKUP_S3_KEY_ID and BACKUP_S3_SECRET (the
 # job-portal-backup IAM user: put, get and list only, no delete). A red run emails the engineer.
+# GitHub starts scheduled runs hours late and skips slots (audit of 27 Nov 2026, DEP-3), so the database also starts this workflow on time
+# (pg_cron and pg_net, packages/db/src/scheduler-setup-cli.ts). The schedule below stays as the fallback, so some days have more than four backups.
 on:
   schedule:
     # Every 6 hours (O1, before the first real account): 00:47, 06:47, 12:47 and 18:47 UTC; GitHub may start it late. Clear of the fetch (05:17, 06:02)
@@ -54,10 +56,17 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET }}
           AWS_DEFAULT_REGION: eu-west-1
+          # The most hours allowed between two backups (a repository variable; unset: the gap is only printed). Set once the database starts the
+          # backups on time: then a longer gap means that trigger has stopped.
+          BACKUP_MAX_GAP_HOURS: ${{ vars.BACKUP_MAX_GAP_HOURS }}
         run: |
           name="$(basename "$RUNNER_TEMP"/backup/db-*.json .json)"
           stamp="${name#db-}"
           prefix="s3://irish-job-portal-backups/db/${stamp:0:4}/${stamp:4:2}/"
+          previous="$(aws s3 ls s3://irish-job-portal-backups/db/ --recursive | awk '{print $4}' | grep '\.json$' | sort | tail -n 1)"
+          late=0
+          node packages/db/src/backup-gap-cli.ts "$previous" "$name" || late=$?
           aws s3 cp --only-show-errors "$RUNNER_TEMP/backup/$name.dump" "$prefix"
           aws s3 cp --only-show-errors "$RUNNER_TEMP/backup/$name.json" "$prefix"
           echo "uploaded $name.dump and $name.json"
+          exit "$late"

@@ -7,7 +7,8 @@ import type pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { fixtures } from "./fixtures";
-import { main, sendPending, MAX_ATTEMPTS, ALERTS, LIVE_JOBS, reservedAddress } from "../src/outbox-cli.ts";
+import { main, sendPending, DAILY_CAP, MAX_ATTEMPTS, ALERTS, LIVE_JOBS, reservedAddress } from "../src/outbox-cli.ts";
+import { OUTBOX_WHEN } from "../src/scheduler-setup-cli.ts";
 import { writeDigest } from "../src/staff-digest-cli.ts";
 import { createBrevoMail, BREVO_URL } from "../../auth/src/brevo.ts";
 import { deleteAccount } from "../src/candidate.ts";
@@ -28,6 +29,7 @@ const queue = async (cols: Record<string, unknown>) => {
 };
 const CAND = "https://www.example.ie", EMPL = "https://employers.example.ie";
 const row = async (id: number) => (await su.query("select status, attempts, sent_at from email_outbox where id=$1", [id])).rows[0];
+const ago = (hours: number) => new Date(Date.now() - hours * 3600_000);
 
 beforeAll(async () => {
   db = await createTestDb();
@@ -68,7 +70,7 @@ describe("outbox sender", () => {
   });
   it("retries a failed send on the next runs and gives up as failed after the third try", async () => {
     const c = await F.cand();
-    const id = await queue({ candidate_user_id: c });
+    const id = await queue({ candidate_user_id: c, send_after: ago(25) }); // due over a day ago, so no try has to wait (the spacing has its own test)
     const lines: string[] = [];
     const bad = fake(() => true);
     for (let i = 1; i < MAX_ATTEMPTS; i++) {
@@ -82,12 +84,27 @@ describe("outbox sender", () => {
   });
   it("one bad row does not stop the others, and a retry succeeds later", async () => {
     const a = await F.cand(), b = await F.cand();
-    const ia = await queue({ candidate_user_id: a }), ib = await queue({ candidate_user_id: b });
+    const ia = await queue({ candidate_user_id: a, send_after: ago(2) }), ib = await queue({ candidate_user_id: b });
     const f = fake((to) => to.startsWith(a));
     expect(await sendPending(admin, f.send)).toMatchObject({ sent: 1, retry: 1 });
     expect(await row(ib)).toMatchObject({ status: "sent" });
     expect(await sendPending(admin, fake().send)).toMatchObject({ sent: 1 });
     expect(await row(ia)).toMatchObject({ status: "sent", attempts: 2 });
+  });
+  it("spaces the tries of a failed row: the second an hour after it was due, the third a day after, so a run every 15 minutes cannot use them up", async () => {
+    const c = await F.cand();
+    const bad = fake(() => true), none = { sent: 0, retry: 0, failed: 0, dropped: 0, old: 0 };
+    const id = await queue({ candidate_user_id: c, send_after: ago(0.5) });
+    expect(await sendPending(admin, bad.send)).toMatchObject({ retry: 1 });
+    for (let i = 0; i < 3; i++) expect(await sendPending(admin, bad.send)).toEqual(none); // due 30 minutes ago: the second try waits
+    await su.query("update email_outbox set send_after = $2 where id = $1", [id, ago(1.1)]);
+    expect(await sendPending(admin, bad.send)).toMatchObject({ retry: 1 });
+    expect(await row(id)).toMatchObject({ status: "pending", attempts: 2 });
+    await su.query("update email_outbox set send_after = $2 where id = $1", [id, ago(23)]);
+    expect(await sendPending(admin, bad.send)).toEqual(none); // due 23 hours ago: the third try waits
+    await su.query("update email_outbox set send_after = $2 where id = $1", [id, ago(24.1)]);
+    expect(await sendPending(admin, bad.send)).toMatchObject({ failed: 1 });
+    expect(await row(id)).toMatchObject({ status: "failed", attempts: MAX_ATTEMPTS });
   });
   it("never sends a row twice: a second run, and two runs at the same time, send each row once", async () => {
     const c = await F.cand();
@@ -168,15 +185,54 @@ describe("outbox sender", () => {
 });
 
 describe("outbox command (main)", () => {
-  it("runs end to end from DATABASE_URL as app_admin with an injected sender, and exits 1 when a row is left to retry", async () => {
+  it("runs end to end from DATABASE_URL as app_admin with an injected sender; a row left to retry is a warning, a row given up turns the run red", async () => {
     const c = await F.cand();
     await queue({ candidate_user_id: c });
     const lines: string[] = [];
     const env = { DATABASE_URL: urlFor(db.name, "app_admin"), DATABASE_SSL: "disable", SITE_URL: CAND, PORTAL_SITE_URL: EMPL };
     expect(await main([], env, (l) => lines.push(l), fake().send)).toBe(0);
     expect(lines.at(-1)).toBe("outbox: sent 1, to retry 0, failed for good 0, dropped (no address, nothing to send or too old) 0");
-    await queue({ candidate_user_id: c });
+    const id = await queue({ candidate_user_id: c, send_after: ago(25) });
+    for (let i = 1; i < MAX_ATTEMPTS; i++) {
+      expect(await main([], env, (l) => lines.push(l), fake(() => true).send)).toBe(0); // or an outage would email the engineer on every run
+      expect(lines.filter((l) => l === "::warning::email outbox: 1 emails could not be sent and wait for their next try")).toHaveLength(i);
+    }
     expect(await main([], env, (l) => lines.push(l), fake(() => true).send)).toBe(1);
+    expect(await row(id)).toMatchObject({ status: "failed" });
+  });
+  it(`sends at most ${DAILY_CAP} a UTC day however often it runs: yesterday's emails do not count, today's do, and what is over waits with a warning`, async () => {
+    const c = await F.cand();
+    const env = { DATABASE_URL: urlFor(db.name, "app_admin"), DATABASE_SSL: "disable", SITE_URL: CAND, PORTAL_SITE_URL: EMPL };
+    const sent = (n: number, at: string) => su.query(
+      `insert into email_outbox(template, candidate_user_id, dedupe_key, status, attempts, sent_at) select 't', $1, 'cap' || $3 || ':' || g, 'sent', 1, ${at} from generate_series(1, $2::int) g`, [c, n, at]);
+    await sent(DAILY_CAP, "now() - interval '1 day'");
+    await sent(DAILY_CAP - 2, "now()");
+    for (let i = 0; i < 5; i++) await queue({ candidate_user_id: c });
+    const lines: string[] = [], f = fake();
+    expect(await main(["--batch", "200"], env, (l) => lines.push(l), f.send)).toBe(0);
+    expect(f.sent).toHaveLength(2);
+    expect(lines.at(-1)).toMatch(/^::warning::email outbox \(#275, Brevo Free 300 a day\): 3 emails left unsent/);
+    const g = fake();
+    expect(await main(["--batch", "200"], env, (l) => lines.push(l), g.send)).toBe(0); // the next run of the same day: nothing more
+    expect(g.sent).toHaveLength(0);
+    expect((await su.query("select count(*)::int n from email_outbox where status = 'pending'")).rows[0].n).toBe(3);
+  });
+  it("the database's own trigger (the portal-outbox job) starts a run only when a row is due and the day's limit has room", async () => {
+    const go = async () => (await su.query(`select ${OUTBOX_WHEN} as go`)).rows[0].go;
+    const c = await F.cand();
+    expect(await go()).toBe(false); // nothing queued: no run at all
+    const later = await queue({ candidate_user_id: c, send_after: new Date(Date.now() + 3600_000) });
+    expect(await go()).toBe(false); // its time has not come
+    await su.query("update email_outbox set send_after = $2, attempts = 1 where id = $1", [later, ago(0.5)]);
+    expect(await go()).toBe(false); // a failed row waiting for its second try
+    await su.query("update email_outbox set send_after = $2 where id = $1", [later, ago(1.1)]);
+    expect(await go()).toBe(true);
+    await su.query("update email_outbox set status = 'sending' where id = $1", [later]);
+    expect(await go()).toBe(false); // claimed by a run: not started again
+    await queue({ candidate_user_id: c });
+    expect(await go()).toBe(true);
+    await su.query(`insert into email_outbox(template, candidate_user_id, dedupe_key, status, attempts, sent_at) select 't', $1, 'full:' || g, 'sent', 1, now() from generate_series(1, ${DAILY_CAP}) g`, [c]);
+    expect(await go()).toBe(false); // the day's limit is used up: no run until tomorrow
   });
   it("without a key the real command exits 2 and sends nothing (a child process, no network)", async () => {
     const c = await F.cand();
@@ -453,7 +509,14 @@ describe("job alert email", () => {
     expect(await lastRun()).toEqual({ actor_system: "outbox-cli by app_admin", after: { sent: 200, retry: 0, failed: 0, dropped: 0, old: 0, left: 70 } });
     // security: counts only, never an address, a candidate id or a title
     for (const l of lines) { expect(l).not.toMatch(/@|Cook/); for (const c of cs) expect(l).not.toContain(c); }
-    // the next run sends the 70 and is quiet
+    // another run the same day sends nothing more (the day's limit) and still says 70 are left
+    lines.length = 0;
+    const same = fake();
+    expect(await main(["--batch", "200"], ENV(), (l) => lines.push(l), same.send)).toBe(0);
+    expect(same.sent).toHaveLength(0);
+    expect(lines.at(-1)).toMatch(/: 70 emails left unsent; /);
+    // the next day's run sends the 70 and is quiet
+    await su.query("update email_outbox set sent_at = sent_at - interval '1 day' where status = 'sent'");
     lines.length = 0;
     expect(await main(["--batch", "200"], ENV(), (l) => lines.push(l), fake().send)).toBe(0);
     expect(lines.some((l) => l.startsWith("::warning::"))).toBe(false);
