@@ -3,6 +3,7 @@
 // through the real claim route, staff decisions through src/account-review.ts as app_admin, the owner actions through the real portal route
 // handlers (app_portal) and straight through the database functions for the full status and role matrix. memoryStore() is the file store.
 // Fake people and companies only; no network.
+import { readFileSync } from "node:fs";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { approveAccount, askForMoreInfo, claimReview, rejectAccount } from "../src/account-review";
@@ -256,6 +257,15 @@ describe("SEC-1: a rejected claim clears website, text and logo", () => {
     expect(page).toMatchObject({ website: null, shortDescription: null, logoUrl: null });
     expect((await logoView(new Request(`${BASE}/x`), { params: Promise.resolve({ file }) })).status).toBe(404);
     expect(await one("select status from job where id = $1", [c.job])).toEqual({ status: "live" }); // the sponsor's other jobs stay listed
+  });
+  it("0078's one-off update (run from the migration's own text, as portal_owner) clears unclaimed and rejected rows only", async () => {
+    const sql = /^update organisation set website = null[\s\S]*?;$/m.exec(readFileSync(new URL("../migrations/0078_verified_company_gate.sql", import.meta.url), "utf8"))![0];
+    const rows: Record<string, string> = {};
+    for (const status of ["unclaimed", "rejected", "pending_review", "verified"]) { rows[status] = await F.org({ name: `Fake Old ${status} Ltd`, status: "verified" }); await fill(rows[status]!); await setStatus(rows[status]!, status); }
+    const k = await su.connect();
+    try { await k.query("begin"); await k.query("set local role portal_owner"); await k.query(sql); await k.query("commit"); } finally { k.release(); }
+    for (const status of ["unclaimed", "rejected"]) expect(await fields(rows[status]!), status).toMatchObject({ website: null, short_description: null, logo_key: null, logo_url: null });
+    for (const status of ["pending_review", "verified"]) expect(await fields(rows[status]!), status).toMatchObject({ website: "https://claimant.example.test", short_description: "Claimant text" });
   });
   it("a first-time registration rejected (to rejected), and any move to unclaimed, clear them too; other moves keep them", async () => {
     const reg = await login();
