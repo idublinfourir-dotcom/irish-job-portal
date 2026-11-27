@@ -1,4 +1,4 @@
-// PERF-11 (step 16, S3b): the public lists the CDN may keep (apps/candidate/app/api/cached.ts). A signed-in candidate gets the same body as a visitor and no
+// PERF-11 (step 16, S3b): the public lists the CDN may keep (apps/candidate/lib/api-cache.ts). A signed-in candidate gets the same body as a visitor and no
 // Set-Cookie; only a 200 is cacheable (a 429, 404 or 400 never); the routes that depend on the session stay uncached. Real route handlers, test database, no network.
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";

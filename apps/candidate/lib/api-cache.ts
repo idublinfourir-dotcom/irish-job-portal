@@ -1,5 +1,5 @@
 import { publicRead, type Work } from "@portal/db";
-import { signedInCandidate } from "../../lib/candidate";
+import { signedInCandidate } from "./candidate";
 
 // PERF-11: a public list that is the same for every reader (the work ignores the visitor flag) may sit on the CDN. Only a 200 is marked cacheable: a
 // refusal (429, 404, 400) never is, so a rate limit or a switched-off notice is not served to the next reader.
