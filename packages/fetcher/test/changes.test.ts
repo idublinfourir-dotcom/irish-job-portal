@@ -567,7 +567,7 @@ describe("performance: counted statements", () => {
   });
   it("any number of gone adverts cost no statement beyond the 4 of a board: they close inside the finish statement", async () => {
     const w = world();
-    for (let i = 0; i < 20; i++) w.put(`x${i}`, "passed");
+    for (let i = 0; i < 100; i++) w.put(`x${i}`, "passed");
     await w.go();
     for (let i = 0; i < 15; i++) w.drop(`x${i}`);
     const c = counting(db.pool("app_fetcher"));

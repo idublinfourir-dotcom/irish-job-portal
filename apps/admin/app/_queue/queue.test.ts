@@ -35,7 +35,7 @@ describe("ages and dates", () => {
 describe("words for every answer", () => {
   const CODES = ["no_session", "not_active", "not_active_staff", "not_reviewer", "not_found", "already_decided", "not_claimed", "not_claimer", "claimed_by_other", "organisation_not_pending",
     "has_permit_history", "free_email_domain", "domain_owned_by_other", "bad_domain", "no_claimant", "claimant_not_active", "bad_question", "job_not_in_review", "no_advert_text", "bad_occupation_code",
-    "bad_salary", "bad_input", "bad_stage", "bad_tab", "bad_cursor", "bad_origin", "bad_body", "bad_action", "bad_item_id", "bad_reason", "server_error", "rules_failed", "unknown_code", ""];
+    "bad_salary", "bad_input", "reauth_required", "bad_stage", "bad_tab", "bad_cursor", "bad_origin", "bad_body", "bad_action", "bad_item_id", "bad_reason", "server_error", "rules_failed", "unknown_code", ""];
   it("every code and status gives a plain sentence, never the code, and no dash", () => {
     for (const status of [0, 400, 401, 403, 404, 409, 429, 500, 502])
       for (const code of CODES) {
@@ -49,6 +49,7 @@ describe("words for every answer", () => {
     expect(errorWords("rules_failed", 409, "8 salary below 40,904")).toMatch(/8 salary below 40,904/);
     expect(errorWords("anything", 0)).toMatch(/Could not reach the server/);
     expect(errorWords("claimed_by_other", 409)).toMatch(/24 hours/);
+    expect(errorWords("reauth_required", 403)).toMatch(/Sign in again/); // SEC-12: a stale approve
   });
 });
 

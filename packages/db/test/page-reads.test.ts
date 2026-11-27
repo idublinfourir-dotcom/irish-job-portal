@@ -2,8 +2,8 @@
 // through the real route handlers, and the data layer wrappers of apps/candidate/lib/data.ts (sectors, guide, view count, the minimums and picker reads
 // and the ten signed-in readers) with the real candidate login. Only Next's request context is stood in (next/headers gives the headers a test sets;
 // server-only is empty); no network. Fake data only.
-// Budget (measured 23 November 2026, see the printed line): a visitor's minimums read is 3 statements warm (2 rate counts, the next-version lookup), the
-// picker 2 (the rules are kept), the sectors 3; the median time of each is under 15 ms.
+// Budget (measured 23 November 2026, see the printed line): a visitor's minimums read is 2 statements warm (the rate count, the next-version lookup), the
+// picker 1 (the rules are kept), the sectors 2 (PERF-3 on 27 Nov 2026 counts both windows in one statement); the median time of each is under 15 ms.
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { answers, seedSignupTerms } from "./better-auth-helper";
@@ -14,7 +14,7 @@ const { state } = vi.hoisted(() => ({ state: { headers: new Headers() } }));
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({ headers: async () => state.headers }));
 
-const BUDGET = { minimums: 3, occupations: 2, sectors: 3, medianMs: 15 };
+const BUDGET = { minimums: 2, occupations: 1, sectors: 2, medianMs: 15 };
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
 const BASE = "http://localhost:3000";
@@ -178,7 +178,7 @@ describe("B1: the data layer reads and the view count", () => {
       expect(await n(query), JSON.stringify(query)).toMatchObject({ ok: false, status: 400, code: "BAD_REQUEST" });
     expect(await as(undefined, () => D.readSectors([["county", "Cork"], ["county", "Kerry"]]))).toMatchObject({ ok: false, status: 400 }); // a filter twice
     const [, c] = await counted(() => as(undefined, () => D.readSectors({ occupationCode: "1122" })));
-    expect(c).toBeLessThanOrEqual(BUDGET.sectors); // 2 rate counts and one grouped read
+    expect(c).toBeLessThanOrEqual(BUDGET.sectors); // the rate count and one grouped read
   });
   it("reads a published guide by slug; a draft, a help page, an unknown, a missing or a hostile slug is a clean 404", async () => {
     expect(await as(undefined, () => D.readGuide({ slug: "a-guide" }))).toMatchObject({ ok: true, data: { kind: "guide", slug: "a-guide", checkedOn: "2026-11-01" } });

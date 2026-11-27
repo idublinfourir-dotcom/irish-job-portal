@@ -38,6 +38,19 @@ export async function countRate(table: RateTable, key: string, rate: { windowMs:
   const { rows } = await getPool().query(rateSql(table), [randomUUID(), key, Date.now(), rate.windowMs]);
   return { count: rows[0].count, end: Number(rows[0].last_request) };
 }
+/** PERF-3: rateSql for n keys in one statement (one round trip, one connection): $1 is now, then id, key and window for each row. The rows go in the
+ *  caller's order, so two requests for the same keys lock them in the same order. The keys must differ (one row may not be updated twice). */
+export const ratesSql = (table: RateTable, n: number) =>
+  `insert into ${table} as r (id, key, count, last_request) values ${Array.from({ length: n }, (_, i) => `($${3 * i + 2}, $${3 * i + 3}, 1, $1::bigint + $${3 * i + 4}::bigint)`).join(", ")}
+     on conflict (key) do update set count = case when r.last_request <= $1::bigint then 1 else r.count + 1 end,
+       last_request = case when r.last_request <= $1::bigint then excluded.last_request else r.last_request end
+     returning key, count, last_request`;
+/** Counts one call under each key, in one statement: the counts and window ends in the order given. */
+export async function countRates<L extends { key: string; rate: { windowMs: number } }>(table: RateTable, limits: L[]): Promise<(L & { count: number; end: number })[]> {
+  const { rows } = await getPool().query<{ key: string; count: number; last_request: string }>(ratesSql(table, limits.length), [Date.now(), ...limits.flatMap((l) => [randomUUID(), l.key, l.rate.windowMs])]);
+  const by = new Map(rows.map((r) => [r.key, r]));
+  return limits.map((l) => ({ ...l, count: by.get(l.key)!.count, end: Number(by.get(l.key)!.last_request) }));
+}
 export const withinRate = async (table: RateTable, key: string, rate: { windowMs: number; max: number }) => (await countRate(table, key, rate)).count <= rate.max;
 const withinLimit = (userId: string) => withinRate("candidate_rate_limit", `candidate:${userId}`, CANDIDATE_RATE);
 

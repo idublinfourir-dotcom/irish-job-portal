@@ -260,6 +260,21 @@ describe("P8: the client's written authority on an agency job", () => {
     expect([l.status, l.headers.get("cache-control"), new URL(l.headers.get("location")!).pathname]).toEqual([302, "no-store", `/${row.storage_key}`]);
     expect((await up(a.poster, job, DOCX)).code).toBe("WRONG_FILE_TYPE");
   });
+  it("SEC-14: a copy, shared by every member of the agency, opens only after the malware scan passed", async () => {
+    const a = await company("agency", "Fake Agency Limited");
+    const job = await clientJob(a.poster);
+    const doc = (await up(a.poster, job)).json.document.id;
+    const key = (await one("select storage_key from job_authority_document where id = $1", [doc])).storage_key;
+    for (const [tag, code] of [[null, "SCAN_PENDING"], ["THREATS_FOUND", "FILE_BLOCKED"], ["ACCESS_DENIED", "FILE_BLOCKED"]] as const) {
+      store.tags.set(key, tag);
+      for (const p of [a.poster, a.owner]) {
+        const l = await link(p, job, doc);
+        expect([l.status, l.code, l.headers.get("location")], String(tag)).toEqual([409, code, null]);
+      }
+    }
+    store.tags.set(key, "NO_THREATS_FOUND");
+    expect((await link(a.owner, job, doc)).status).toBe(302);
+  });
   it("security: a viewer, another agency, an employer's own job, no session, a wrong Origin and bad ids", async () => {
     const a = await company("agency", "Fake Agency Limited"), b = await company("agency", "Fake Other Agency Limited"), e = await company();
     const job = await clientJob(a.poster);

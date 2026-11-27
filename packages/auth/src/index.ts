@@ -156,7 +156,12 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
     // email was confirmed here (Better Auth's defaults, written out so a change shows in review). No trusted providers: Google's word
     // alone is not enough for an unconfirmed email-and-password account, so there is no silent takeover.
     account: { modelName: `${name}_account`, fields: snake.account, accountLinking: { enabled: true, requireLocalEmailVerified: true, trustedProviders: [] } },
-    verification: { modelName: `${name}_verification`, fields: snake.verification },
+    // SEC-9: tokens (reset links, Google sign-in state) are stored as a hash, so a read of the table cannot use them. Better Auth 1.7.17 still
+    // finds and consumes a row stored plain before this setting, so links sent before the deploy keep working until they expire.
+    verification: { modelName: `${name}_verification`, fields: snake.verification, storeIdentifier: "hashed" },
+    // SEC-10: Better Auth's /update-user takes any name and image. Staff names are set by administrators, so the staff pool has no such route;
+    // candidate and portal keep it behind the name rule (signupPlugin).
+    ...(name === "staff" ? { disabledPaths: ["/update-user"] } : {}),
     // Better Auth ignores the added status columns, so this refuses a session to a flagged person.
     databaseHooks: {
       // Candidate sign-up: the consent row is written here, in the sign-up transaction, right after the user row and before the
@@ -219,12 +224,31 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
         ...(name !== "staff" ? { update: { after: touchActive } } : {}),
       },
     },
+    // PERF-4: no schema read on each new instance (about 900 catalog rows, 48 ms, before the first auth call). The same check runs in CI on the
+    // migrated test database instead (packages/db/test/auth-settings.test.ts, through $context.explicitSchemaCheck).
     // The client address comes from the header Vercel sets, not X-Forwarded-For, which any client can send.
     // consent_record's id is made by the database (identity column); every other table keeps Better Auth's own ids.
-    advanced: { ...(background ? { backgroundTasks: { handler: background } } : {}), disableOriginCheck: false, database: { generateId: ({ model }: { model: string }) => (model === "consentRecord" ? false : generateRandomString(32, "a-z", "A-Z", "0-9")) }, cookiePrefix: name, useSecureCookies: secure, ipAddress: { ipAddressHeaders: ["x-vercel-forwarded-for"] } },
+    advanced: { ...(background ? { backgroundTasks: { handler: background } } : {}), disableOriginCheck: false, database: { validateSchema: false, generateId: ({ model }: { model: string }) => (model === "consentRecord" ? false : generateRandomString(32, "a-z", "A-Z", "0-9")) }, cookiePrefix: name, useSecureCookies: secure, ipAddress: { ipAddressHeaders: ["x-vercel-forwarded-for"] } },
   });
   later.send = (body) => auth.api.sendVerificationEmail({ body });
   return auth;
+}
+
+type Auth = ReturnType<typeof createAuth>;
+type Session = Awaited<ReturnType<Auth["api"]["getSession"]>>;
+// PERF-6: one session read per request. The app gives a per-request Map (React cache in the apps; this package does not load React, the CLIs and
+// database tests run it outside Next). With no scope, every call reads the session, as before. Only the raw read is shared: status and
+// freshness are checked on each call, so a fresh check is never answered by a plain one. The key is the pool and the cookie header, so two
+// requests, or two people, never share an entry (each request has its own Map).
+let scope: () => Map<string, Promise<Session>> | undefined = () => undefined;
+export const setSessionScope = (s: typeof scope): void => void (scope = s);
+export function sessionOnce(auth: Auth, headers: Headers): Promise<Session> {
+  const memo = scope();
+  if (!memo) return auth.api.getSession({ headers });
+  const key = `${auth.options.appName}\n${headers.get("cookie") ?? ""}`;
+  let p = memo.get(key);
+  if (!p) memo.set(key, (p = auth.api.getSession({ headers })));
+  return p;
 }
 
 /** A request with no usable staff session. `why` is "no_session" or "not_active". */
@@ -239,7 +263,7 @@ export async function requireStaff(auth: ReturnType<typeof createAuth>, headers:
 }
 /** requireStaff with the session's freshness, for a route where only some actions are sensitive. */
 export async function staffSession(auth: ReturnType<typeof createAuth>, headers: Headers, fresh = false): Promise<{ id: string; fresh: boolean }> {
-  const s = await auth.api.getSession({ headers });
+  const s = await sessionOnce(auth, headers);
   if (!s) throw new StaffRefused("no_session");
   if ((s.user as { status?: unknown }).status !== "active") throw new StaffRefused("not_active");
   const f = isFresh(s.session);
@@ -258,7 +282,7 @@ export type PortalLogin = { userId: string; email: string; fresh: boolean; membe
 // membership is null for a login with no company yet: such a login may only claim or register a company, every other portal
 // action must refuse it.
 export async function requirePortal(auth: ReturnType<typeof createAuth>, headers: Headers): Promise<PortalLogin> {
-  const s = await auth.api.getSession({ headers });
+  const s = await sessionOnce(auth, headers);
   if (!s) throw new PortalRefused("no_session");
   const u = s.user as { status?: unknown; deletedAt?: unknown };
   if (u.status !== "active" || u.deletedAt) throw new PortalRefused("not_active");

@@ -27,6 +27,8 @@ beforeAll(async () => {
     staff[role] = await F.staff();
     await su.query("insert into staff_role(staff_user_id, role, seeded_by_owner) values ($1, $2, true)", [staff[role], role]);
   }
+  staff.second_reviewer = await F.staff(); // SEC-11: another account reviewer completes an owner change, never the one who asked
+  await su.query("insert into staff_role(staff_user_id, role, seeded_by_owner) values ($1, 'account_reviewer', true)", [staff.second_reviewer]);
   source = (await su.query("select id::text from job_source where kind = 'portal' and board = 'employer'")).rows[0].id;
   // A failure the tests switch on: the outbox refuses a row whose template is in fail_templates, so the event and its notice must both roll back.
   await su.query(`create table fail_templates(t text primary key);
@@ -105,10 +107,10 @@ describe("team removal and owner transfer (0036)", () => {
     expect(await notes(t.uo)).toEqual([]);
     expect((await mails(t.uo)).map((m) => m.t)).toEqual(["owner_reassign_notice"]);
     await su.query("update owner_reassign set requested_at = requested_at - interval '8 days', completes_after = now() - interval '1 day' where id = $1", [r.requestId]);
-    await failing("owner_reassign_done", () => completeOwnerReassign(admin, staff.account_reviewer!, r.requestId));
+    await failing("owner_reassign_done", () => completeOwnerReassign(admin, staff.second_reviewer!, r.requestId));
     expect(await one("select status from owner_reassign where id = $1", [r.requestId])).toEqual({ status: "open" });
     expect(await notes(t.ur)).toEqual([]);
-    await completeOwnerReassign(admin, staff.account_reviewer!, r.requestId);
+    await completeOwnerReassign(admin, staff.second_reviewer!, r.requestId);
     const p = { organisationId: t.org, requestId: Number(r.requestId) };
     expect(await notes(t.ur)).toEqual([{ t: "owner_transferred", category: "account", org: String(t.org), params: p }]);
     expect(await notes(t.uo)).toEqual([{ t: "owner_reassign_done", category: "account", org: String(t.org), params: p }]);

@@ -1022,7 +1022,7 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_body } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
-          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`, `not_reviewer`: as on GET."
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`, `not_reviewer`: as on GET. `reauth_required` (C4, #270, audit SEC-12): an approve on a session older than 10 minutes; sign in again (the other actions work on any session)."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_origin } } }
         '404':
           description: "`not_found`: no such account review item (also an itemId that is not a valid id)."
@@ -1408,7 +1408,7 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_domain } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
-          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`, `not_domain_staff`: as on GET."
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`, `not_domain_staff`: as on GET. `reauth_required` (C4, #270, audit SEC-12): the session is older than 10 minutes; sign in again."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_origin } } }
         '404':
           description: "`not_found`: no such company. `domain_not_found`: remove of a domain the company does not have."
@@ -1559,7 +1559,7 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: same_company } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
-          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_company_staff`: neither account_reviewer nor fetched_job_reviewer."
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_company_staff`: neither account_reviewer nor fetched_job_reviewer. `reauth_required` (C4, #270, audit SEC-12): the session is older than 10 minutes; sign in again."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_company_staff } } }
         '404':
           description: "`not_found`: one of the companies does not exist."
@@ -1661,7 +1661,7 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_checked } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
-          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_account_reviewer`: no account_reviewer role."
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_account_reviewer`: no account_reviewer role. `reauth_required` (C4, #270, audit SEC-12): a request or a completion on a session older than 10 minutes; sign in again (cancel works on any session)."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_origin } } }
         '404':
           description: "`member_not_found`: no such membership (request). `not_found`: no such request (complete, cancel)."
@@ -1671,7 +1671,8 @@ paths:
             `already_owner`: the member is the owner. `company_not_open`: the company is not open for this. `no_owner`: the company has no
             owner. `user_not_active`: the member's login is not active. `request_open`: the company has an open request already.
             `not_open`: the request is not open. `too_early`: the 7 days have not passed. `owner_changed`: the owner is no longer the one the
-            request named. `member_gone`: the member left.
+            request named. `member_gone`: the member left. `same_person` (audit SEC-11, migration 0079): the reviewer completing is the one who asked;
+            another account reviewer completes it.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: too_early } } }
         '500': { $ref: '#/components/responses/ServerError' }
   /api/contact:
@@ -4766,7 +4767,7 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_value } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
-          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_administrator`: no administrator role."
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_administrator`: no administrator role. `reauth_required` (C4, #270, audit SEC-12): a propose or confirm on a session older than 10 minutes; sign in again (refuse works on any session)."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
         '404':
           description: "`not_found`: no such setting, or no such setting request."
@@ -5167,7 +5168,7 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: bad_item_id } } }
         '401': { $ref: '#/components/responses/NoStaffSession' }
         '403':
-          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_administrator`: no administrator role."
+          description: "`bad_origin`: Origin missing or not the admin app's. `not_active_staff`: the login is not active. `not_administrator`: no administrator role. `reauth_required` (C4, #270, audit SEC-12): proposing or confirming an erasure on a session older than 10 minutes; sign in again (the other actions work on any session)."
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorBody' }, example: { error: not_administrator } } }
         '404':
           description: "`not_found`: no open data request item with this id, or no such erase request."

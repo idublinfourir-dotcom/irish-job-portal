@@ -1,11 +1,11 @@
 "use client";
-// FM1 page motion: scroll reveals, count-up, the once-a-session preloader and intro, the scroll-to-top button. Web Animations API plus motion.css, no library.
+// FM1 page motion: scroll reveals, count-up, the once-per-device home-page preloader and intro, the scroll-to-top button. Web Animations API plus motion.css, no library.
 // Everything is added by JS after mount; the server HTML holds the final text and no hidden element. It always fails open: whatever throws, the overlay goes and scroll returns.
 import { useEffect, useRef } from "react";
 
 const EASE = "cubic-bezier(.23,1,.32,1)";
 const FLAG = "portal-pre";
-const FILL = 2800, SETTLE = 450, FLY = 900, HARD = 6000;
+const FILL = 600, SETTLE = 100, FLY = 300, HARD = 2000; // about 1 s in all (PERF-2); scroll is never locked
 const LOGO = 'a[aria-label$=", home"]';
 const RISE = [{ opacity: 0, transform: "translateY(28px) scale(.97)", filter: "blur(4px)" }, { opacity: 1, transform: "none", filter: "blur(0)" }];
 const fillAt = (t: number) => (t < 0.72 ? 0.8 * (1 - (1 - t / 0.72) ** 2) : 0.8 + 0.2 * ((u) => (u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2))((t - 0.72) / 0.28));
@@ -27,7 +27,7 @@ export function mountMotion(btn: HTMLButtonElement | null): () => void {
   const anims: Animation[] = [];
   const timers: ReturnType<typeof setTimeout>[] = [];
   const counted = new Map<Element, string>();
-  let raf = 0, io: IntersectionObserver | undefined, overlay: HTMLElement | undefined, locked: string | undefined, started = false;
+  let raf = 0, io: IntersectionObserver | undefined, overlay: HTMLElement | undefined, started = false;
 
   const play = (el: Element, kf: Keyframe[], ms: number, delay = 0, easing = EASE) => {
     const a = el.animate(kf, { duration: ms, delay, easing, fill: "both" });
@@ -89,16 +89,15 @@ export function mountMotion(btn: HTMLButtonElement | null): () => void {
     cancelAnimationFrame(raf);
     overlay?.remove();
     overlay = undefined;
-    if (locked !== undefined) { root.style.overflow = locked; locked = undefined; }
     startScroll();
   };
 
-  // Preloader: water fills the logo, settles, then the logo flies onto the real one. Once per browser session.
+  // Preloader: water fills the logo, settles, then the logo flies onto the real one. Home page only, once per device (localStorage).
   const preload = () => {
-    if (reduce || navigator.webdriver) return false;
+    if (reduce || navigator.webdriver || location.pathname !== "/") return false;
     const real = [...document.querySelectorAll<HTMLElement>(LOGO)].find((a) => { const r = a.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
     if (!real) return false;
-    try { if (sessionStorage.getItem(FLAG)) return false; sessionStorage.setItem(FLAG, "1"); } catch { /* storage blocked: run it every load, harmless */ }
+    try { if (localStorage.getItem(FLAG)) return false; localStorage.setItem(FLAG, "1"); } catch { /* storage blocked: run it every load, harmless */ }
     const guard = (fn: () => void) => () => { try { fn(); } catch { finish(); } };
     try {
       const mk = document.createElement("div");
@@ -116,8 +115,6 @@ export function mountMotion(btn: HTMLButtonElement | null): () => void {
       overlay.setAttribute("aria-hidden", "true");
       overlay.append(mk);
       document.body.append(overlay);
-      locked = root.style.overflow;
-      root.style.overflow = "hidden";
       timers.push(setTimeout(finish, HARD)); // the hard stop, whatever else happens
       scrollTo(0, 0);
       const K = 2.6;
@@ -140,7 +137,7 @@ export function mountMotion(btn: HTMLButtonElement | null): () => void {
         mk.style.transform = to;
         play(o, [{ backgroundColor: getComputedStyle(o).backgroundColor }, { backgroundColor: "transparent" }], FLY * 0.75, FLY * 0.2);
         o.style.background = "transparent";
-        later(guard(() => { intro(); startScroll(); root.style.overflow = locked ?? ""; }), FLY * 0.25);
+        later(guard(() => { intro(); startScroll(); }), FLY * 0.25);
         later(finish, FLY + 30);
       };
       raf = requestAnimationFrame(step);

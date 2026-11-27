@@ -1,10 +1,23 @@
-import { describe, expect, it } from "vitest";
-import { Refuse } from "./candidate-route";
+import { describe, expect, it, vi } from "vitest";
+import { Refuse, ratesSql } from "./candidate-route";
 import { BadEligibilityInput } from "@portal/rules";
-import { CANDIDATE_READ_RATES, checkerInput, closedJobRead, jobsRead, readLimits, readPaging, retryAfter, tooMany, VISITOR_JOBS, VISITOR_READ_RATES } from "./public-read";
+import { CANDIDATE_READ_RATES, type Gate, checkerInput, closedJobRead, gatedRead, jobsRead, readGate, uncounted, readLimits, readPaging, retryAfter, tooMany, VISITOR_JOBS, VISITOR_READ_RATES } from "./public-read";
 import { BadSearchInput, listJobs, listQuery, PAGE_SIZE } from "./search";
 import { scopedQuery } from "./public-pages";
 
+// PERF-3: the pool the gate counts with is a fake that answers every rate statement with count 1 and records each statement.
+const pool = vi.hoisted(() => ({ texts: [] as string[], values: [] as unknown[][] }));
+vi.mock("./index", async (real) => ({
+  ...(await real<object>()),
+  getPool: () => ({
+    query: async (t: string, v: unknown[] = []) => {
+      pool.texts.push(t);
+      pool.values.push(v);
+      const keys = v.filter((x, i) => i % 3 === 2) as string[];
+      return { rows: t.includes("rate_limit") ? keys.map((key) => ({ key, count: 1, last_request: String(Date.now() + 60_000) })) : [] };
+    },
+  }),
+}));
 const q = (s = "") => new URLSearchParams(s);
 const fakeDb = () => {
   const texts: string[] = [];
@@ -88,5 +101,43 @@ describe("B27: the closed-job read", () => {
     expect(d.texts).toHaveLength(1);
     expect(d.texts[0]).toContain("from private.candidate_closed_job($1::bigint)"); // the function answers only closed and expired (0075)
     expect(d.texts[0]).not.toMatch(/close_reason|from job\b/); // never the column or the table itself
+  });
+});
+
+describe("PERF-3: the read-limit count", () => {
+  const visitor = async () => ({ refused: "no_session" }) as const, candidate = async () => ({ userId: "u1" });
+  const h = (ip: string, more: Record<string, string> = {}) => new Headers({ "x-vercel-forwarded-for": ip, ...more });
+  const reset = () => { pool.texts.length = 0; pool.values.length = 0; };
+  it("ratesSql puts n keys in one upsert, now first, the rows in the order given", () => {
+    const s = ratesSql("candidate_rate_limit", 2);
+    expect(s.match(/insert into/g)).toHaveLength(1);
+    expect(s).toContain("($2, $3, 1, $1::bigint + $4::bigint), ($5, $6, 1, $1::bigint + $7::bigint)");
+    expect(s).toContain("returning key, count, last_request");
+    expect(ratesSql("portal_rate_limit", 1)).toContain("values ($2, $3, 1, $1::bigint + $4::bigint)\n");
+  });
+  it("a visitor's gate is one statement for both windows, keyed by the Vercel address only", async () => {
+    reset();
+    expect(await readGate(h("203.0.113.9", { "x-forwarded-for": "10.0.0.1", "x-real-ip": "10.0.0.2", rsc: "1" }), visitor)).toEqual({ who: { refused: "no_session" }, wait: null });
+    expect(pool.texts).toHaveLength(1);
+    expect(pool.values[0]!.filter((x, i) => i % 3 === 2)).toEqual(["read:ip:203.0.113.9:60000", "read:ip:203.0.113.9:3600000"]);
+  });
+  it("a candidate's gate is one statement, keyed by the login", async () => {
+    reset();
+    await readGate(h("203.0.113.9"), candidate);
+    expect(pool.values[0]!.filter((x, i) => i % 3 === 2)).toEqual(["read:candidate:u1:60000"]);
+  });
+  it("a shared gate makes any number of reads one count; uncounted makes none and no session lookup", async () => {
+    reset();
+    let shared: ReturnType<typeof readGate> | undefined;
+    const once: Gate = (hh, l) => (shared ??= readGate(hh, l));
+    process.env.DATABASE_URL ??= "postgres://fake@127.0.0.1:9/fake"; // the work is handed the real pool (never connected here: it reads nothing)
+    const work = async () => ({ fine: true });
+    const rs = await Promise.all(["a=1", "b=2", "sort=salary", ""].map((s) => gatedRead(h("203.0.113.10"), q(s), visitor, work, once)));
+    expect(rs.every((r) => r.ok)).toBe(true);
+    expect(pool.texts.filter((t) => t.includes("rate_limit"))).toHaveLength(1);
+    reset();
+    let logins = 0;
+    expect(await gatedRead(h("203.0.113.11"), q(), async () => (logins++, { userId: "u1" }), work, uncounted)).toEqual({ ok: true, data: { fine: true } });
+    expect([pool.texts.length, logins]).toEqual([0, 0]);
   });
 });

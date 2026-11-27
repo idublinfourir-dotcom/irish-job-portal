@@ -4,7 +4,7 @@ import { StaffRefused, staffSettings } from "@portal/auth";
 import { approveAccount, askForMoreInfo, claimReview, getAccountReview, getPool, listAccountReviews, QueueRefused, rejectAccount, releaseReview } from "@portal/db";
 import { BadRequest, checkLength, checkOrigin, parseBody, statusFor } from "../../../lib/account-review";
 import { readQuery } from "../../../lib/admin-api";
-import { requireStaff } from "../../../lib/staff";
+import { requireStaff, staffSession } from "../../../lib/staff";
 
 export const dynamic = "force-dynamic";
 
@@ -38,8 +38,9 @@ export async function POST(request: Request) {
   try {
     checkOrigin(request.headers.get("origin"), new URL(staffSettings(process.env).baseURL).origin);
     checkLength(request.headers.get("content-length"));
-    const staff = await requireStaff(request.headers);
+    const { id: staff, fresh } = await staffSession(request.headers);
     const b = parseBody(await request.text());
+    if (!fresh && b.action === "approve") throw new StaffRefused("reauth_required"); // SEC-12, C4: approving verifies the company (and may add its domain)
     const db = getPool();
     if (b.action === "claim") await claimReview(db, staff, b.itemId);
     else if (b.action === "release") await releaseReview(db, staff, b.itemId);

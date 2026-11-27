@@ -9,9 +9,9 @@ import { createTestDb, urlFor } from "./db";
 import { answers, makeAuth, mail, portalAnswers, seedSignupTerms } from "./better-auth-helper";
 
 // Statements one getSession sends, measured on 10 November 2026 with the cookie cache off: 2 per request (session by
-// token, then user by id), plus 2 more the first time an instance runs (Better Auth reads the column list once).
+// token, then user by id). PERF-4 (27 Nov 2026): the first request of an instance no longer reads the column list (validateSchema off), so it is 2 too.
 // Raise these only on purpose.
-const SESSION_SQL_BUDGET = { first: 4, next: 2 };
+const SESSION_SQL_BUDGET = { first: 2, next: 2 };
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 const roles = { candidate: "app_candidate", portal: "app_portal", staff: "app_admin" };
@@ -243,7 +243,7 @@ describe("better auth", () => {
     rec(o.status === 200 && !a.json?.user, `sign-out ${o.status}`);
   });
   // 8. cost: every signed-in page pays for one getSession, so its statement count has a budget
-  it("getSession on a signed-in request costs at most 2 statements (4 on an instance's first request)", async () => {
+  it("getSession on a signed-in request costs at most 2 statements (also on an instance's first request: no schema read, PERF-4)", async () => {
     const e4 = "counted@example.test";
     await call("candidate", "sign-up/email", { email: e4, password: pw("ct"), name: "Ct" });
     const link = mail.filter((m) => m.pool === "candidate" && m.email === e4).at(-1); await call("candidate", `verify-email?${new URL(link.url).searchParams.toString()}`);

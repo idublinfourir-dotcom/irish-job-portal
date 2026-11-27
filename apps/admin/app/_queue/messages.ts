@@ -4,6 +4,7 @@ const WORDS: Record<string, string> = {
   no_session: "Your session has ended. Sign in again.",
   not_active: "Your session has ended. Sign in again.",
   not_active_staff: "Your login is disabled, so nothing was saved.",
+  reauth_required: "Approving needs a sign-in from the last 10 minutes. Sign in again, then approve once more. Nothing was saved.",
   not_reviewer: "Your roles do not let you do this.",
   not_found: "This item is no longer in the queue. Go back to the list.",
   already_decided: "Someone has already decided this item. Go back to the list.",

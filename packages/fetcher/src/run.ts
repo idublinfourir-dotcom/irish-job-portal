@@ -7,6 +7,17 @@ import { planAdvert, stateOf } from "./plan";
 import { failBoard, finishBoard, saveJob, saveKnown, saveReject, settleAdvert, startBoard, type BoardRun } from "./store";
 import type { BoardReport, BoardTask, Deps, MatchResult } from "./types";
 
+// OPS-1: a list that lost more than 30% (and more than 5) of a board of 10 or more live adverts is held, nothing written. A real mass closing is accepted by naming
+// the board "kind/board" in FETCHER_ALLOW_SHRINK (comma list); the 7-day stale rule closes a truly dead board anyway.
+export const SHRINK = { minBoard: 10, minLost: 5, share: 0.3 };
+export function shrinkRefusal(task: { kind: string; board: string }, present: readonly string[], seen: readonly string[], allow = process.env.FETCHER_ALLOW_SHRINK ?? ""): string | null {
+  const now = new Set(seen);
+  const lost = present.filter((id) => !now.has(id)).length;
+  if (present.length < SHRINK.minBoard || lost <= Math.max(SHRINK.minLost, SHRINK.share * present.length)) return null;
+  if (allow.split(",").some((b) => b.trim() === `${task.kind}/${task.board}`)) return null;
+  return `list shrank from ${present.length} to ${present.length - lost}: ${lost} adverts missing, nothing closed (set FETCHER_ALLOW_SHRINK=${task.kind}/${task.board} to accept)`;
+}
+
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 type Allowed = ReturnType<typeof listCheck>;
@@ -40,6 +51,8 @@ async function runBoard(deps: Deps, task: BoardTask, plan: typeof planAdvert, bu
     return fail(message(e));
   }
   if (fetched.seen.length === 0 && present.length > 0) return fail(`returned nothing while ${present.length} adverts were known`);
+  const held = shrinkRefusal(task, present, fetched.seen);
+  if (held) return fail(held);
   report.seen = fetched.seen.length;
   let added = 0;
   let rechecked = 0;

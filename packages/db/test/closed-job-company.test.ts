@@ -9,7 +9,7 @@ import { loadSpec, replyProblems } from "./openapi";
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const BASE = "http://localhost:3000";
-const BUDGET = { closedVisitor: 5, companyVisitor: 10 }; // closed: 2 rate counts, the lookup, 1 or 2 similar queries (+ rules when a card has a pay grade); company: see its test
+const BUDGET = { closedVisitor: 4, companyVisitor: 10 }; // closed: the rate count (both windows, PERF-3), the lookup, 1 or 2 similar queries (+ rules when a card has a pay grade); company: see its test
 type Handler = (r: Request) => Promise<Response>;
 let db: TestDb, su: pg.Pool;
 let AUTH: Handler, CLOSED: Handler, COMPANY: Handler;
@@ -134,7 +134,7 @@ describe("B27: the closed-job read", () => {
     await su.query("update candidate_rate_limit set count = 60 where key = $1", [`read:ip:${ip}:60000`]);
     expect((await get(CLOSED, `/api/job/closed?id=${id}`, { ip })).status).toBe(429);
   });
-  it("costs a visitor at most the budget in statements (2 rate counts, the lookup, the similar query); a 404 costs 3", async () => {
+  it("costs a visitor at most the budget in statements (the rate count, the lookup, the similar query); a 404 costs 2", async () => {
     const id = await addJob("Fake Budget", "closed", "1122");
     await setStatus(id, "closed", "expired");
     const [g, ok] = await counted(() => get(CLOSED, `/api/job/closed?id=${id}`));
@@ -142,7 +142,7 @@ describe("B27: the closed-job read", () => {
     console.log(`B27 statements: closed job ${ok}, not closed ${miss}`);
     expect(g.status).toBe(200);
     expect(ok).toBeLessThanOrEqual(BUDGET.closedVisitor);
-    expect(miss).toBeLessThanOrEqual(3);
+    expect(miss).toBeLessThanOrEqual(2);
   });
   it("matches docs/openapi/candidate.yaml, 200 and 404", async () => {
     const spec = loadSpec("candidate");

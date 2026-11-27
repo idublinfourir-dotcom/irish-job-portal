@@ -4,7 +4,7 @@
 // headers a test sets, next/navigation's redirect throws as Next's does, server-only is empty) and BotID is the existing fake. The confirmation emails go to
 // the app's own fake sender (candidateMail): no network. Fake data only.
 // Budgets (measured 24 November 2026, see the printed line): statements per page render counted from the call, the session read included.
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import pg from "pg";
 import { renderToStaticMarkup as html } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -190,9 +190,12 @@ describe("emailed links land on our own pages (24 Nov 2026: a link without a lan
   it("password reset link: the table's token, opened, lands on /reset?token=; a good reset ends the link; the used link and an ended link land on /reset?error=; a signed-in visitor keeps the token", async () => {
     const m = await member("reset");
     expect((await post("request-password-reset", { email: m.email, redirectTo: "/reset" })).status).toBe(200);
-    const token = (await su.query("select identifier from candidate_verification where identifier like 'reset-password:%' order by id desc limit 1")).rows[0].identifier.split(":")[1] as string;
     const link = mails(m.email, "reset").at(-1)!.link;
-    expect(link).toContain(`/reset-password/${token}`);
+    const token = new URL(link).pathname.split("/").at(-1)!;
+    // SEC-9: the table keeps only the token's hash (sha256, base64url), never the token itself
+    const hash = createHash("sha256").update(`reset-password:${token}`).digest("base64url");
+    expect((await su.query("select count(*)::int c from candidate_verification where identifier = $1", [hash])).rows[0].c).toBe(1);
+    expect((await su.query("select count(*)::int c from candidate_verification where identifier like '%' || $1 || '%'", [token])).rows[0].c).toBe(0);
     expect(link).toContain("callbackURL=%2Freset");
     const r = await open(link);
     expect(r.status).toBe(302);
@@ -215,7 +218,7 @@ describe("emailed links land on our own pages (24 Nov 2026: a link without a lan
     expect(await body(await post("reset-password", { token, newPassword: "Fake-new-password-3" }))).toMatchObject({ status: 400, code: "INVALID_TOKEN" });
     // an ended link
     await post("request-password-reset", { email: m.email, redirectTo: "/reset" });
-    await su.query("update candidate_verification set expires_at = now() - interval '1 minute' where identifier like 'reset-password:%'");
+    await su.query("update candidate_verification set expires_at = now() - interval '1 minute' where value = (select id from candidate_user where email = $1)", [m.email]);
     const ended = new URL((await open(mails(m.email, "reset").at(-1)!.link)).headers.get("location")!, BASE);
     expect([ended.pathname, ended.searchParams.get("error")]).toEqual(["/reset", "INVALID_TOKEN"]);
   });

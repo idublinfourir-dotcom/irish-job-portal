@@ -182,7 +182,8 @@ describe("owner-reassign route", () => {
       for (const who of WHO.filter((x) => !AR.has(x))) is(await doOwner(who, { action, requestId: r.requestId }), 403, "not_account_reviewer");
       is(await doOwner("disabled", { action, requestId: r.requestId }), 401, "not_active");
       expect((await one("select status from owner_reassign where id = $1", [r.requestId])).status).toBe("open");
-      okay(await doOwner("account_reviewer", { action, requestId: r.requestId }));
+      if (action === "complete") is(await doOwner("account_reviewer", { action, requestId: r.requestId }), 409, "same_person"); // SEC-11: the one who asked
+      okay(await doOwner("both", { action, requestId: r.requestId })); // another account reviewer
       expect((await one("select status from owner_reassign where id = $1", [r.requestId])).status).toBe(action === "complete" ? "done" : "cancelled");
     }
   });
@@ -232,7 +233,7 @@ describe("owner-reassign route", () => {
     const a = await team(), b = await team();
     const r = okay(await doOwner("account_reviewer", { action: "request", membershipId: String(a.next), domainChecked: true, croChecked: true }));
     await su.query("update owner_reassign set requested_at = requested_at - interval '8 days', completes_after = completes_after - interval '8 days' where id = $1", [r.requestId]);
-    okay(await doOwner("account_reviewer", { action: "complete", requestId: r.requestId }));
+    okay(await doOwner("both", { action: "complete", requestId: r.requestId }));
     expect((await su.query("select role from membership where organisation_id = $1 order by id", [b.o])).rows.map((x) => x.role)).toEqual(["account_owner", "recruiter"]);
     expect((await one("select count(*)::int c from owner_reassign where organisation_id = $1", [b.o])).c).toBe(0);
     expect((await one("select count(*)::int c from email_outbox where params->>'organisationId' = $1", [String(b.o)])).c).toBe(0);

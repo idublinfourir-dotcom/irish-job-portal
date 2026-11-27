@@ -2,6 +2,7 @@
 // apps/portal with real portal sessions. Only Next's own request context is stood in (server-only, next/headers, next/navigation's redirect); no test reaches the network, the
 // email sender is the fake one that keeps its messages. Fake people and companies only. Also holds the statement and time budgets of the pages (check 5) and the role, hostile
 // input and open-redirect tests (check 6).
+import { createHash } from "node:crypto";
 import pg from "pg";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -168,7 +169,9 @@ describe("emailed links end on our own pages (24 Nov lesson)", () => {
     expect((await post("request-password-reset", { email: who.email, redirectTo: "/reset-password" })).status).toBe(200);
     const link = mailTo(who.email, "reset").link;
     const token = new URL(link).pathname.split("/").at(-1)!;
-    expect((await one("select count(*)::int c from portal_verification where identifier = $1", [`reset-password:${token}`])).c).toBe(1); // the link's token is the table's
+    const hashed = (t: string) => createHash("sha256").update(`reset-password:${t}`).digest("base64url"); // SEC-9: the table keeps the token's hash only
+    expect((await one("select count(*)::int c from portal_verification where identifier = $1", [hashed(token)])).c).toBe(1); // the link's token is the table's
+    expect((await one("select count(*)::int c from portal_verification where identifier like '%' || $1 || '%'", [token])).c).toBe(0); // never stored plain
     const good = await AUTH.GET(new Request(link));
     const to = new URL(good.headers.get("location")!, BASE);
     expect([to.pathname, to.searchParams.get("token")]).toEqual(["/reset-password", token]);
@@ -186,7 +189,7 @@ describe("emailed links end on our own pages (24 Nov lesson)", () => {
     expect((await post("request-password-reset", { email: who.email, redirectTo: "/reset-password" }, ip())).status).toBe(200);
     const link2 = mailTo(who.email, "reset").link;
     const t2 = new URL(link2).pathname.split("/").at(-1)!;
-    await su.query("update portal_verification set expires_at = now() - interval '1 minute' where identifier = $1", [`reset-password:${t2}`]);
+    await su.query("update portal_verification set expires_at = now() - interval '1 minute' where identifier = $1", [hashed(t2)]);
     const ended = new URL((await AUTH.GET(new Request(link2))).headers.get("location")!, BASE);
     expect([ended.pathname, ended.searchParams.get("error")]).toEqual(["/reset-password", "INVALID_TOKEN"]);
   });

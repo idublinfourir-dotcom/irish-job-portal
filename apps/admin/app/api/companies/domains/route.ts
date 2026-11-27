@@ -33,7 +33,7 @@ export async function POST(request: Request) {
   try {
     checkOrigin(request.headers.get("origin"), new URL(staffSettings(process.env).baseURL).origin);
     checkLength(request.headers.get("content-length"), MAX_BODY);
-    const staff = await requireStaff(request.headers);
+    const staff = await requireStaff(request.headers, true); // SEC-12, C4: a domain makes later claims from it verified with no review
     const b = parseBody(await request.text(), MAX_BODY, ACTIONS, FIELDS) as { action: "add" | "remove"; organisationId: string; domain: string; reason: string };
     const go = b.action === "add" ? addDomain : removeDomain;
     return Response.json({ ok: true, ...(await go(getPool(), staff, b.organisationId, b.domain, b.reason)) });

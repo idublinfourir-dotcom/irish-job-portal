@@ -2,7 +2,7 @@
 // them (`await Page({ searchParams })` gives the element, rendered to HTML here), through the real data layer (apps/candidate/lib/data.ts), the real
 // routes for every write and the real candidate login. Only Next's request context is stood in (next/headers gives the headers a test sets; server-only
 // is empty); no network. Fake data only.
-// Budget (measured 23 and 24 November 2026, see the printed line): statements and median time of each page render, warm. The visitor search runs one more gated read (the minimums for the Permit rules card: its session lookup, two rate counts and the rules): 6 became 9.
+// Budget (measured 23 and 24 November 2026, see the printed line): statements and median time of each page render, warm. The visitor search runs one more gated read (the minimums for the Permit rules card: its session lookup, two rate counts and the rules): 6 became 9. PERF-3 (27 Nov 2026): one statement for both windows; in Next one count a render (React cache), here one per read (cache is a pass-through outside a server render).
 import pg from "pg";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -309,7 +309,7 @@ describe("P8: /jobs/[job]", () => {
     const ip = freshIp();
     let h = "";
     const seg = addressOf("c4", "Page Cook c4", "Cork");
-    for (let i = 0; i < 32; i++) h = await jobPage(seg, undefined, ip); // two gated reads a render (the job and similar jobs)
+    for (let i = 0; i < 62; i++) h = await jobPage(seg, undefined, ip); // one count a render in Next (PERF-3: React cache shares it); more here, where cache is a pass-through
     expect(h).toContain("Too many requests");
   });
   it("shows no field a visitor must not see", async () => {

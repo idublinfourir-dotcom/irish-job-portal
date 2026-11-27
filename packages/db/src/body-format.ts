@@ -11,8 +11,9 @@ export type Block =
   | { kind: "ul" | "ol"; items: Line[] }
   | { kind: "table"; head: Line[]; rows: Line[][] };
 
-/** https, or a path on this site ("/x", never "//host"). */
-export const allowedHref = (h: string) => /^https:\/\/[^\s/?#][^\s]*$/.test(h) || /^\/(?!\/)[^\s]*$/.test(h);
+/** https, or a path on this site ("/x", never "//host"). No backslash anywhere, plain or as %5C (SEC-17): browsers read "/\host"
+ *  as "//host", another site, and a later path cleanup can decode %5C into one (the rule of ownPath in packages/auth/src/reauth.ts). */
+export const allowedHref = (h: string) => !/\\|%5c/i.test(h) && (/^https:\/\/[^\s/?#][^\s]*$/.test(h) || /^\/(?!\/)[^\s]*$/.test(h));
 
 // [text](href) or **bold**; neither crosses a line. Linear: no run can hold the character that starts another match ("[" in a link's text, brackets and
 // parentheses in its address, "*" in bold), so a failed try never rescans the rest of the text (50,000 "[" took 8 s before; the test keeps it under 200 ms).

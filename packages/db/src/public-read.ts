@@ -1,10 +1,12 @@
 // S3 and S5 (#46): the public reads of the candidate site (job list and search, one job, a company page, an occupation page) behind one gate.
 // The gate reads the session first. A visitor (no candidate session; a forged, expired, suspended or deleted one; a portal or staff session) gets at
 // most VISITOR_JOBS jobs of any list, no cursor, and a flag that more wait behind sign-in; the rows past them are never fetched. A signed-in candidate
-// keeps the full paging. Every read is counted in candidate_rate_limit through countRate: per client address for a visitor, per login for a candidate.
+// keeps the full paging. Every read is counted in candidate_rate_limit through countRates: per client address for a visitor, per login for a candidate.
+// PERF-3: both windows in one statement; a page counts once per request (lib/data.ts passes one cached gate to every read of a render), an API
+// route once per call; work that reads no table can skip the count (uncounted).
 import type pg from "pg";
 import { closedJob, similarLiveJobs } from "./candidate";
-import { clientAddress, countRate, Refuse } from "./candidate-route";
+import { clientAddress, countRates, Refuse } from "./candidate-route";
 import { BadEligibilityInput, registrationFor, type EligibilityInput } from "@portal/rules";
 import { BadContentInput, getHelp, listUpdates } from "./content";
 import { getPool } from "./index";
@@ -47,13 +49,21 @@ export type ReadResult =
   | { ok: false; status: 429; code: "TOO_MANY_REQUESTS"; retryAfter: number }
   | { ok: false; status: number; code: string }; // 400 BAD_REQUEST, 401 SIGN_IN_FOR_MORE, 404 NOT_FOUND
 
-/** The gate of every public read, callable from a Server Component with `await headers()`: session, rate limit, then the work.
- *  null from the work is 404; bad input is 400. */
-export async function gatedRead(headers: Headers, query: URLSearchParams, login: (headers: Headers) => Promise<ReportLogin>, work: Work): Promise<ReadResult> {
+/** The session and the read-limit count of one request: the reader, and the seconds to wait when over a limit (else null). One statement. */
+export type Gate = (headers: Headers, login: (headers: Headers) => Promise<ReportLogin>) => Promise<{ who: ReportLogin; wait: number | null }>;
+export const readGate: Gate = async (headers, login) => {
   const who = await login(headers);
   const now = Date.now();
-  const counts = await Promise.all(readLimits(who, clientAddress(headers)).map(async (l) => ({ rate: l.rate, ...(await countRate("candidate_rate_limit", l.key, l.rate)) })));
-  const wait = retryAfter(counts, now);
+  return { who, wait: retryAfter(await countRates("candidate_rate_limit", readLimits(who, clientAddress(headers))), now) };
+};
+/** PERF-3 step 3: for work that reads no table and ignores the visitor flag (the checker, the occupation picker, the registration bodies): no session
+ *  lookup, no count. The checker and the picker read the rules through getRules, one statement per instance every 5 minutes. */
+export const uncounted: Gate = async () => ({ who: { refused: "no_session" }, wait: null });
+
+/** The gate of every public read, callable from a Server Component with `await headers()`: session, rate limit, then the work.
+ *  null from the work is 404; bad input is 400. `gate` is readGate unless the caller shares one count across a request (a page). */
+export async function gatedRead(headers: Headers, query: URLSearchParams, login: (headers: Headers) => Promise<ReportLogin>, work: Work, gate: Gate = readGate): Promise<ReadResult> {
+  const { who, wait } = await gate(headers, login);
   if (wait !== null) return { ok: false, status: 429, code: "TOO_MANY_REQUESTS", retryAfter: wait };
   try {
     const data = await work(getPool(), query, !("userId" in who));
@@ -142,8 +152,7 @@ export async function legalInForce(db: Pick<pg.Pool, "query">, site: keyof typeo
 /** The portal's public read: no login, counted per client address in portal_rate_limit (the visitor limits of the candidate reads). */
 export async function portalLegalRead(request: Request): Promise<Response> {
   const ip = clientAddress(request.headers), now = Date.now();
-  const counts = await Promise.all(VISITOR_READ_RATES.map(async (rate) => ({ rate, ...(await countRate("portal_rate_limit", `legal:ip:${ip}:${rate.windowMs}`, rate)) })));
-  const wait = retryAfter(counts, now);
+  const wait = retryAfter(await countRates("portal_rate_limit", VISITOR_READ_RATES.map((rate) => ({ key: `legal:ip:${ip}:${rate.windowMs}`, rate }))), now);
   if (wait !== null) return tooMany(wait);
   try {
     const body = await legalInForce(getPool(), "portal", new URL(request.url).searchParams.get("purpose"));

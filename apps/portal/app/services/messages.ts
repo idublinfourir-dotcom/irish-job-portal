@@ -17,6 +17,8 @@ export const CODE_TEXT: Record<string, string> = {
   SERVICES_UNAVAILABLE: "Permit services are not open yet. Please try again later.",
   DOCUMENT_LIMIT: "This case already holds 20 documents, the most we keep.",
   DOCUMENT_NOT_FOUND: "That copy is no longer kept, so it cannot be opened.",
+  SCAN_PENDING: "This copy is still being checked for viruses. Try again in a minute.",
+  FILE_BLOCKED: "This copy did not pass the virus check, so it cannot be opened. Upload a clean copy.",
   EMPTY_FILE: "That file is empty. Choose a PDF, JPG or PNG.",
   FILE_TOO_LARGE: "That file is too big. Use a file of 4 MB or less.",
   WRONG_FILE_TYPE: "Upload a PDF, JPG or PNG.",

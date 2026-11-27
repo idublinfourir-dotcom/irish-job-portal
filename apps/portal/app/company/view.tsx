@@ -9,9 +9,10 @@ export type Company = {
   name: string; slug: string; status: string; description: string | null; descriptionMax: number; website: string | null; county: string | null; claimed: boolean; labels: string[];
   croNumber: string | null; croStatus: string | null; legalNames: string[]; permitsSince: number; permitCount: number | null;
 };
-/** The companies a profile can be changed for (the route answers 409 for the others). */
-export const EDITABLE = new Set(["pending_review", "needs_info", "verified", "verified_restricted"]);
-const PUBLIC = new Set(["verified", "verified_restricted"]);
+/** The companies a profile can be changed for: verified by staff (audit SEC-1, migration 0078; the route answers 409 for the others). */
+export const EDITABLE = new Set(["verified", "verified_restricted"]);
+const PUBLIC = EDITABLE;
+const WAITING = new Set(["pending_review", "needs_info"]);
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return <div className="grid gap-1 py-1.5 sm:grid-cols-[11rem_1fr] sm:gap-4"><dt className="text-muted">{label}</dt><dd className="min-w-0 break-words font-medium">{children}</dd></div>;
@@ -34,7 +35,9 @@ export function CompanyView({ c, isOwner, logoSrc, publicHref, members, invites 
           {canEdit && <Button type="submit" form="profile-form" size="lg" className="hidden lg:inline-flex">Save</Button>}
         </div>
       </header>
-      {isOwner && !canEdit && <Notice kind="warning" title="The profile cannot be changed now">This company is not open for changes. Open Account status to see where it stands.</Notice>}
+      {isOwner && !canEdit && (WAITING.has(c.status)
+        ? <Notice kind="info" title="You can change the profile once we verify the company">We are checking your claim. The description, website and logo open for changes when the check is done. Open Account status to see where it stands.</Notice>
+        : <Notice kind="warning" title="The profile cannot be changed now">This company is not open for changes. Open Account status to see where it stands.</Notice>)}
       <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="flex flex-col gap-6">
           <ProfileForm p={{ isOwner, name: c.name, description: c.description, website: c.website, county: c.county, descriptionMax: c.descriptionMax, logoSrc }} canEdit={canEdit} />

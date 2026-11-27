@@ -13,9 +13,9 @@ const { state } = vi.hoisted(() => ({ state: { headers: new Headers() } }));
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({ headers: async () => state.headers }));
 
-// Measured on 23 November 2026 (this file alone): every new public read is 3 statements for a visitor (2 rate counts, the read), median about 1 ms;
+// Measured on 23 November 2026 (this file alone): every new public read is 2 statements for a visitor (the rate count, the read; PERF-3 on 27 Nov 2026 counts both windows in one statement), median about 1 ms;
 // the sitemap ids 1 statement, the pages-0 part 1, a content part 1, the index route 1 (the ids, kept for 5 minutes after). Time limit 15 ms.
-const BUDGET = { read: 3, ids: 1, part: 1, medianMs: 15 };
+const BUDGET = { read: 2, ids: 1, part: 1, medianMs: 15 };
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const BASE = "http://localhost:3000";
 type Handler = (r: Request) => Promise<Response>;
@@ -301,7 +301,7 @@ describe("rate limit, statements and time", () => {
       expect(Number(last!.retry)).toBeGreaterThan(0);
     }
   });
-  it("each new read is 3 statements for a visitor and fast; the sitemap ids and parts are 1 statement", async () => {
+  it("each new read is 2 statements for a visitor and fast; the sitemap ids and parts are 1 statement", async () => {
     for (const [route, path] of [[GUIDES, "/api/guides"], [GUIDE, "/api/guide?slug=alpha-guide"], [HELPLIST, "/api/help/list"], [NOTICE, "/api/permit-notice"], [UPDATES, "/api/updates?category=quotas"], [LEGAL, "/api/legal?purpose=cookie_policy"]] as const) {
       const [, c] = await counted(() => get(route, path));
       const ms = await median(() => get(route, path));

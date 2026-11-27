@@ -777,6 +777,7 @@ paths:
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
         '404': { description: "`DOCUMENT_NOT_FOUND`: no such document of this login's case, or its copy was removed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: DOCUMENT_NOT_FOUND } } } }
+        '409': { description: "`SCAN_PENDING`: the malware scan has not passed yet (no result on the stored copy); try again in a minute. `FILE_BLOCKED`: the scan did not find the copy clean, so it is never opened (audit SEC-14). No link is made.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: SCAN_PENDING } } } }
         '503': { description: "`FILES_UNAVAILABLE`: file storage is not set up.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILES_UNAVAILABLE } } } }
   /api/portal/cases/{id}/timeline:
     parameters:
@@ -1036,8 +1037,8 @@ paths:
       summary: Edit my company's profile
       description: |
         The account owner sets the description, website and county. All three keys must be present; null clears a field. Name, CRO
-        number, status and slug are not fields here (an unknown field is 400). The company must be one that can take on people
-        (`pending_review`, `needs_info`, `verified`, `verified_restricted`), else 409. Origin checked first (403 `BAD_ORIGIN`).
+        number, status and slug are not fields here (an unknown field is 400). The company must be verified by staff
+        (`verified` or `verified_restricted`, audit SEC-1), else 409. Origin checked first (403 `BAD_ORIGIN`).
       security: [{ portalSession: [] }]
       x-roles: [account_owner]
       x-rate-limit: profile edits and company close together, 20 per login per 10 minutes
@@ -1065,7 +1066,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or an unknown refusal. `NOT_OWNER`: no company, or not its account owner.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_OWNER } } } }
-        '409': { description: "`ORGANISATION_NOT_AVAILABLE`: the company is suspended, rejected, banned or closed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: ORGANISATION_NOT_AVAILABLE } } } }
+        '409': { description: "`ORGANISATION_NOT_AVAILABLE`: the company is not verified yet (pending review or waiting for more information), or it is suspended, rejected, banned or closed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: ORGANISATION_NOT_AVAILABLE } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
         '429': { $ref: '#/components/responses/TooMany' }
   /api/portal/company/close:
@@ -1108,7 +1109,7 @@ paths:
         '400': { description: "`BAD_REQUEST`: bad JSON or body. `NAME_MISMATCH`: the name is not the company's exact name.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NAME_MISMATCH } } } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login. `NOT_OWNER`: no company, or not its account owner.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_OWNER } } } }
-        '409': { description: "`ORGANISATION_NOT_AVAILABLE`: the company is already suspended, rejected, banned or closed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: ORGANISATION_NOT_AVAILABLE } } } }
+        '409': { description: "`ORGANISATION_NOT_AVAILABLE`: the company is not verified yet (pending review or waiting for more information), or it is already suspended, rejected, banned or closed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: ORGANISATION_NOT_AVAILABLE } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
         '429': { $ref: '#/components/responses/TooMany' }
   /api/portal/company/logo/{file}:
@@ -1167,7 +1168,7 @@ paths:
         '400': { description: "`BAD_REQUEST`: not multipart or not exactly one `file` field. `EMPTY_FILE`: the file has no bytes.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_REQUEST } } } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login, or another refusal. `NOT_OWNER`: not the active account owner.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_OWNER } } } }
-        '409': { description: "`ORGANISATION_NOT_AVAILABLE`: the company is suspended, rejected, banned or closed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: ORGANISATION_NOT_AVAILABLE } } } }
+        '409': { description: "`ORGANISATION_NOT_AVAILABLE`: the company is not verified yet (pending review or waiting for more information), or it is suspended, rejected, banned or closed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: ORGANISATION_NOT_AVAILABLE } } } }
         '413': { description: "`FILE_TOO_LARGE`: over the cap by header, while reading, or a file over 1 MiB.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILE_TOO_LARGE } } } }
         '415': { description: "`WRONG_FILE_TYPE`: the bytes are not a PNG, JPEG or WebP, or an image (PNG, JPEG, WebP) does not decode or is over 40,000,000 pixels, or a PDF is cut short (no %%EOF at its end). Images are stored re-encoded, with no metadata (disarm at upload, S-Q6).", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: WRONG_FILE_TYPE } } } }
         '429': { $ref: '#/components/responses/TooMany' }
@@ -1751,6 +1752,7 @@ paths:
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
         '404': { description: "`JOB_NOT_FOUND`: as the list. `DOCUMENT_NOT_FOUND`: no such copy on this job, or its copy was removed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: DOCUMENT_NOT_FOUND } } } }
+        '409': { description: "`SCAN_PENDING`: the malware scan has not passed yet (no result on the stored copy); try again in a minute. `FILE_BLOCKED`: the scan did not find the copy clean, so it is never opened (audit SEC-14). No link is made.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: SCAN_PENDING } } } }
         '503': { description: "`FILES_UNAVAILABLE`: file storage is not set up.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILES_UNAVAILABLE } } } }
   /api/portal/job-stats:
     get:
@@ -1866,6 +1868,7 @@ paths:
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { description: "`BAD_ORIGIN`: wrong Origin. `REFUSED`: blocked or deleted login. `NOT_A_MEMBER`: no company. `NOT_OWNER`: not the account owner.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_OWNER } } } }
         '404': { description: "`JOB_NOT_FOUND`: no live or under-review agency job posted for my company with that id.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: JOB_NOT_FOUND } } } }
+        '409': { description: "`ORGANISATION_NOT_AVAILABLE`: my company is not verified yet, or it is suspended, rejected, banned or closed. Checked before the job, so nothing about the job is told.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: ORGANISATION_NOT_AVAILABLE } } } }
         '413': { $ref: '#/components/responses/BodyTooLarge' }
         '429': { $ref: '#/components/responses/TooMany' }
   /api/portal/notices:

@@ -1,11 +1,11 @@
 // Performance (S3, S5, #46): what a visitor's public read adds on the full-size fake fill (fill.ts: 5,000 live jobs in 38,000 rows). The capped first
 // page (6 jobs, src/public-read.ts) on every sort, plain and with a keyword, is one statement through the real listJobs; the read limit is the shared
-// rate upsert (candidate-route.ts rateSql) on a rate table of 100,000 rows, two per visitor read. Pages are counted with EXPLAIN (ANALYZE, BUFFERS,
+// rate upsert (candidate-route.ts ratesSql) on a rate table of 100,000 rows, both windows in one statement per request (PERF-3). Pages are counted with EXPLAIN (ANALYZE, BUFFERS,
 // SERIALIZE) as app_candidate (pages.ts); the median is wall time of 51 real calls, warm. Fake data only.
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "../db";
-import { rateSql } from "../../src/candidate-route";
+import { ratesSql } from "../../src/candidate-route";
 import { CLOSED_JOB_SQL, closedJob, LIVE_SIMILAR, similarLiveJobs, similarSql } from "../../src/candidate";
 import { VISITOR_JOBS, VISITOR_READ_RATES } from "../../src/public-read";
 import { listJobs, listQuery, SORTS, type SearchFilters } from "../../src/search";
@@ -14,7 +14,7 @@ import { measurePages } from "./pages";
 
 vi.setConfig({ testTimeout: 900_000, hookTimeout: 900_000 });
 // Measured 18 Nov 2026 (printed by the test): capped page 60 pages, median about 0.8 ms (1.2 on salary); with a common keyword 497 pages, about 3 ms
-// (the keyword's matches and the 200 count are read whatever the page size); rate upsert 7 pages, both windows 0.4 ms. Budgets about 3 times the
+// (the keyword's matches and the 200 count are read whatever the page size); rate upsert 7 pages, both windows 0.4 ms; both windows in one statement (PERF-3, 27 Nov 2026) 13 pages, 0.6 ms. Budgets about 3 times the
 // measure; the keyword page keeps the search page's 900 (search.perf.ts), as the cap cannot make it dearer.
 const LIST_PAGES = { plain: 200, keyword: 900 };
 const LIST_MEDIAN_MS = 15;
@@ -69,19 +69,19 @@ it("a visitor's capped first page is one statement inside its page and median ti
   } finally { await c.end(); }
 });
 
-it("the read limit is one upsert per window, two per visitor read, inside its page and median time budget", async () => {
+it("the read limit is one upsert of both windows per request, inside its page and median time budget", async () => {
   const c = new pg.Client({ connectionString: urlFor(db.name, "app_candidate") });
   await c.connect();
   try {
-    const sql = rateSql("candidate_rate_limit");
-    const at = (key: string, w: number) => ({ text: sql, values: [`perf-x-${key}`, key, Date.now(), w] });
+    const sql = ratesSql("candidate_rate_limit", VISITOR_READ_RATES.length);
+    const at = (ip: string, id: string) => ({ text: sql, values: [Date.now(), ...VISITOR_READ_RATES.flatMap((r) => [`${id}-${r.windowMs}`, `read:ip:${ip}:${r.windowMs}`, r.windowMs])] });
     await c.query("begin"); // EXPLAIN ANALYZE runs the upsert: rolled back after
-    const costs = await measurePages(c, VISITOR_READ_RATES.flatMap((r) => [at(`read:ip:198.18.3.7:${r.windowMs}`, r.windowMs), at(`read:ip:203.0.113.250:${r.windowMs}`, r.windowMs)]));
+    const costs = await measurePages(c, [at("198.18.3.7", "perf-x-old"), at("203.0.113.250", "perf-x-new")]);
     await c.query("rollback");
     let i = 0;
-    const ms = await median(() => Promise.all(VISITOR_READ_RATES.map((r) => c.query(sql, [`perf-m-${++i}`, `read:ip:198.18.9.${i % 200}:${r.windowMs}`, Date.now(), r.windowMs]))));
+    const ms = await median(() => (i++, c.query(at(`198.18.9.${i % 200}`, `perf-m-${i}`))));
     const worst = Math.max(...costs.map((x) => x.pages));
-    console.log(`read limit: ${VISITOR_READ_RATES.length} statements a visitor read, worst ${worst} pages (existing key and new key), both windows median ${ms.toFixed(2)} ms, on the unique key`);
+    console.log(`read limit: 1 statement a visitor request (${VISITOR_READ_RATES.length} windows), worst ${worst} pages (existing keys and new keys), median ${ms.toFixed(2)} ms, on the unique key`);
     expect(worst).toBeLessThanOrEqual(RATE_PAGES);
     expect(ms).toBeLessThan(RATE_MEDIAN_MS);
   } finally { await c.end(); }

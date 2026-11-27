@@ -1,6 +1,6 @@
 // Audit row R1: the signed-in portal login downloads its own data (GET) and deletes itself (DELETE { confirm: true }), as the candidate's account routes.
 // Both pass the session token, not a user id, to the database (migration 0034), which finds the login and makes every refusal; this file checks the request.
-import { isFresh } from "@portal/auth";
+import { isFresh, sessionOnce } from "@portal/auth";
 import { accountRefusal, checkDelete, exportFilename, portalDelete, portalExport, getPool } from "@portal/db";
 import { no, withinLimit } from "./company";
 import { portalAuth, portalOrigin } from "./portal";
@@ -11,7 +11,7 @@ export const DELETE_RATE = { windowMs: 10 * 60_000, max: 10 }; // delete attempt
 // The live session's token and user id, or the reply: no session 401 NO_SESSION, a blocked or deleted login 403 REFUSED (as requirePortal).
 // `fresh` (C4, the delete and the export): a session not made by a sign-in in the last 10 minutes is 403 REAUTH_REQUIRED.
 async function session(request: Request, fresh = false): Promise<Response | { token: string; userId: string }> {
-  const s = await portalAuth().api.getSession({ headers: request.headers });
+  const s = await sessionOnce(portalAuth(), request.headers);
   if (!s) return no(401, "NO_SESSION");
   const u = s.user as { status?: unknown; deletedAt?: unknown };
   if (u.status !== "active" || u.deletedAt) return no(403, "REFUSED");

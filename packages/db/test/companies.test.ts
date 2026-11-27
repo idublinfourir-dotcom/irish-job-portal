@@ -36,6 +36,7 @@ async function staffWith(role: string | null): Promise<string> {
 beforeAll(async () => {
   for (const r of ROLES) staff[r] = await staffWith(r);
   staff.none = await staffWith(null);
+  staff.second_reviewer = await staffWith("account_reviewer"); // SEC-11: completes the owner changes another reviewer asked for
   staff.disabled = await staffWith("account_reviewer");
   await su.query("update staff_user set status = 'disabled' where id = $1", [staff.disabled]);
 });
@@ -378,7 +379,9 @@ describe("an owner who cannot be reached (D6)", () => {
     await setWaitEnds(r.requestId, -1); // ended one minute ago
     for (const who of [...ROLES.filter((x) => x !== "account_reviewer"), "none"]) await refused(completeOwnerReassign(admin, staff[who]!, r.requestId), "not_account_reviewer");
     await refused(completeOwnerReassign(admin, staff.disabled!, r.requestId), "not_active_staff");
-    const other = await staffWith("account_reviewer"); // any account reviewer completes it, not only the one who asked
+    await refused(completeOwnerReassign(admin, staff.account_reviewer!, r.requestId), "same_person"); // SEC-11: the reviewer who asked cannot complete it
+    expect((await one("select status from owner_reassign where id = $1", [r.requestId])).status).toBe("open");
+    const other = await staffWith("account_reviewer"); // any other account reviewer completes it
     expect(await completeOwnerReassign(admin, other, r.requestId)).toEqual({ requestId: r.requestId, organisationId: String(t.o), ownerMembershipId: String(t.next) });
     expect((await su.query("select id, role, is_signer, status from membership where organisation_id = $1 order by id", [t.o])).rows).toEqual([
       { id: String(t.owner), role: "recruiter", is_signer: true, status: "active" }, { id: String(t.next), role: "account_owner", is_signer: false, status: "active" },
@@ -410,7 +413,7 @@ describe("an owner who cannot be reached (D6)", () => {
       const r = await askReassign("account_reviewer", t.next);
       await setWaitEnds(r.requestId, -1);
       await change(t);
-      await refused(completeOwnerReassign(admin, staff.account_reviewer!, r.requestId), why);
+      await refused(completeOwnerReassign(admin, staff.second_reviewer!, r.requestId), why);
       expect((await one("select status from owner_reassign where id = $1", [r.requestId])).status).toBe("open");
     };
     await run((t) => su.query("update membership set role = 'recruiter' where id = $1", [t.owner]).then(() => su.query("update membership set role = 'account_owner' where id = $1", [t.viewer])), "owner_changed");
@@ -422,7 +425,7 @@ describe("an owner who cannot be reached (D6)", () => {
     const a = await team(), b = await team();
     const r = await askReassign("account_reviewer", a.next);
     await setWaitEnds(r.requestId, -1);
-    await completeOwnerReassign(admin, staff.account_reviewer!, r.requestId);
+    await completeOwnerReassign(admin, staff.second_reviewer!, r.requestId);
     expect((await su.query("select role from membership where organisation_id = $1 order by id", [b.o])).rows.map((x) => x.role)).toEqual(["account_owner", "recruiter", "viewer"]);
     // the table has no way to name a member of another company: the request row always carries the member's own company
     const row = await one("select organisation_id, (select organisation_id from membership where id = new_owner_membership_id) nm, (select organisation_id from membership where id = old_owner_membership_id) om from owner_reassign where id = $1", [r.requestId]);

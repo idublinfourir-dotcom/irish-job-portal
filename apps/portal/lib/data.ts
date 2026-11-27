@@ -5,8 +5,9 @@
 // Component fails the build. The wall test beside it (data.test.ts) keeps pages from reaching round it.
 import "server-only";
 import { headers } from "next/headers";
+import { cache } from "react";
 import { redirect } from "next/navigation";
-import { ownPath, type PortalLogin } from "@portal/auth";
+import { ownPath, setSessionScope, type PortalLogin } from "@portal/auth";
 import { agencyJobs } from "./agency-jobs";
 import { caseList, caseRead, caseTimeline } from "./cases";
 import { occupationList, permitNotice } from "./permit-pages";
@@ -25,6 +26,10 @@ import { profileGet } from "./profile";
 import { statusGet } from "./status";
 import { teamGet } from "./team";
 import { verificationGet } from "./verification";
+
+// PERF-6: one session read per page request: the shell and each route read below share it (requirePortal reads through sessionOnce). React cache is
+// scoped to one request.
+setSessionScope(cache(() => new Map()));
 
 type Query = ConstructorParameters<typeof URLSearchParams>[0];
 /** What a route answered: its HTTP status and its JSON body (`{ code }` for a refusal). */

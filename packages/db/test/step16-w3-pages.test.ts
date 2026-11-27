@@ -413,11 +413,12 @@ describe("P10: /eligibility-checker", () => {
       expect(out).toContain("Eligibility");
     }
   });
-  it("words the rate limit", async () => {
+  it("is not counted against the read limit (PERF-3: the picker and the checker read no table)", async () => {
     const ip = freshIp();
     let h = "";
-    for (let i = 0; i < 32; i++) h = await render("checker", { sp: ok, ip }); // two gated reads a render (the picker list and the checker); a visitor's limit is 60 a minute
-    expect(h).toContain("Too many checks");
+    for (let i = 0; i < 62; i++) h = await render("checker", { sp: ok, ip }); // more than a visitor's 60 a minute
+    expect(h).not.toContain("Too many checks");
+    expect((await su.query("select count(*)::int as n from candidate_rate_limit where key like $1", [`read:ip:${ip}:%`])).rows[0].n).toBe(0);
   });
 });
 

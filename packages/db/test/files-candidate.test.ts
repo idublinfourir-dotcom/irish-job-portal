@@ -199,6 +199,40 @@ describe("the CV", () => {
   });
 });
 
+// SEC-14 (audit 27 Nov 2026): the owner's own downloads open only once the malware scan tagged the object NO_THREATS_FOUND, as the staff views do.
+const TAGS: [string | null, string][] = [[null, "SCAN_PENDING"], ["THREATS_FOUND", "FILE_BLOCKED"], ["UNSUPPORTED", "FILE_BLOCKED"], ["ACCESS_DENIED", "FILE_BLOCKED"],
+  ["FAILED", "FILE_BLOCKED"], ["no_threats_found", "FILE_BLOCKED"], [" NO_THREATS_FOUND", "FILE_BLOCKED"], ["", "FILE_BLOCKED"]];
+describe("SEC-14: a download waits for the malware scan", () => {
+  it("the CV: no tag yet is 409 SCAN_PENDING, any other tag 409 FILE_BLOCKED, and no link is made; NO_THREATS_FOUND opens it", async () => {
+    const p = await login();
+    await call(R.cv, "PUT", p, { body: file(PDF) });
+    const key = (await cvKey(p.id))!;
+    for (const [tag, code] of TAGS) {
+      store.tags.set(key, tag);
+      const r = await call(R.download, "GET", p);
+      expect([r.status, r.code, r.headers.get("location")], String(tag)).toEqual([409, code, null]);
+    }
+    store.tags.set(key, "NO_THREATS_FOUND");
+    expect((await call(R.download, "GET", p)).status).toBe(302);
+    store.objects.delete(key); // the object is gone from the bucket: no tag to read, so it waits like an unscanned one
+    expect((await call(R.download, "GET", p)).code).toBe("SCAN_PENDING");
+  });
+  it("a case document: the same gate; another candidate still gets DOCUMENT_NOT_FOUND before any scan is read", async () => {
+    const p = await login(), q = await login();
+    const c = await caseFor(p.id);
+    const doc = (await call(R.docs, "POST", p, { body: file(PDF), params: { id: c } })).json.document.id;
+    const key = (await one("select storage_key from case_document where id=$1", [doc]))[0].storage_key;
+    for (const [tag, code] of TAGS) {
+      store.tags.set(key, tag);
+      const r = await call(R.doc, "GET", p, { params: { id: c, docId: doc } });
+      expect([r.status, r.code, r.headers.get("location")], String(tag)).toEqual([409, code, null]);
+    }
+    expect((await call(R.doc, "GET", q, { params: { id: c, docId: doc } })).code).toBe("DOCUMENT_NOT_FOUND");
+    store.tags.delete(key);
+    expect((await call(R.doc, "GET", p, { params: { id: c, docId: doc } })).status).toBe(302);
+  });
+});
+
 describe("case documents, candidate side", () => {
   it("upload, list and open one's own; the copy goes with retention and then cannot be opened", async () => {
     const p = await login();

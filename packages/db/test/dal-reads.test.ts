@@ -1,8 +1,8 @@
 // Small wave 2, agent A: the gate pages call (gatedRead, src/public-read.ts), the new public routes (GET /api/updates, GET /api/checker, and R5 GET /api/legal for the combine) and
 // the S13 sitemap read (src/sitemap.ts), end to end on the test database as app_candidate through the real route handlers and the real candidate
 // login route. The gate and the route must give the same answer for the same input. Hostile input is tried. Fake data only; no network.
-// Budget (measured 19 November 2026, see the printed line): a visitor's updates page is 3 statements (2 rate counts, the feed), a visitor's checker
-// answer 2 (2 rate counts; the rules are cached per instance), a candidate's 1 more each (session 2, rate count 1). Raise them only on purpose.
+// Budget (measured 19 November 2026, see the printed line; PERF-3 on 27 November 2026 counts both windows in one statement): a visitor's updates page
+// is 2 statements (the rate count, the feed), a visitor's checker answer 1 (the rate count; the rules are cached per instance). Raise them only on purpose.
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { answers, seedSignupTerms } from "./better-auth-helper";
@@ -10,7 +10,7 @@ import { createTestDb, urlFor, type TestDb } from "./db";
 import { loadSpec, replyProblems } from "./openapi";
 import type { ReportLogin } from "../src/report";
 
-const BUDGET = { updates: 3, checker: 2, medianMs: 15 };
+const BUDGET = { updates: 2, checker: 1, medianMs: 15 };
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
 const BASE = "http://localhost:3000";

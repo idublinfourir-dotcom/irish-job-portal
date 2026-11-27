@@ -49,7 +49,7 @@ const STATUS = new Map<string, number>(Object.entries({
   not_found: 404,
   already_decided: 409, not_claimed: 409, not_claimer: 409, claimed_by_other: 409, organisation_not_pending: 409, has_permit_history: 409,
   free_email_domain: 409, domain_owned_by_other: 409, no_claimant: 409, claimant_not_active: 409,
-  no_session: 401, not_active: 401,
+  no_session: 401, not_active: 401, reauth_required: 403,
 }));
 /** The HTTP status for a refusal code; null for a code this route does not know, which the caller turns into a plain 500. */
 export const statusFor = (why: string): number | null => STATUS.get(why) ?? null;
