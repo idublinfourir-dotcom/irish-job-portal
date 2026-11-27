@@ -29,7 +29,7 @@ let Search: SearchPage, SearchMeta: (p: { searchParams: Promise<Record<string, s
 let JobP: JobPageFn, JobMeta: (p: { params: Promise<{ job: string }> }) => Promise<Meta>;
 let paths: { jobPath: (j: { id: string; title: string; county: string | null }) => string };
 const ids: Record<string, string> = {};
-const BUDGET = { searchVisitor: 9, searchSignedIn: 11, jobVisitor: 9, jobSignedIn: 20, medianMs: 120, jobVisitorTrips: 2, searchVisitorTrips: 3 };
+const BUDGET = { searchVisitor: 9, searchSignedIn: 12, jobVisitor: 9, jobSignedIn: 23, medianMs: 120, jobVisitorTrips: 2, searchVisitorTrips: 3 }; // SEC-6 (27 Nov 2026): each signed-in read now writes its read count; one count per page render is round 2 work (S3a), then lower these again
 
 beforeAll(async () => {
   db = await createTestDb();
