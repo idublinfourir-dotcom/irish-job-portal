@@ -225,7 +225,7 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
       },
     },
     // PERF-4: no schema read on each new instance (about 900 catalog rows, 48 ms, before the first auth call). The same check runs in CI on the
-    // migrated test database instead (packages/db/test/auth-schema.test.ts, through $context.explicitSchemaCheck).
+    // migrated test database instead (packages/db/test/auth-settings.test.ts, through $context.explicitSchemaCheck).
     // The client address comes from the header Vercel sets, not X-Forwarded-For, which any client can send.
     // consent_record's id is made by the database (identity column); every other table keeps Better Auth's own ids.
     advanced: { ...(background ? { backgroundTasks: { handler: background } } : {}), disableOriginCheck: false, database: { validateSchema: false, generateId: ({ model }: { model: string }) => (model === "consentRecord" ? false : generateRandomString(32, "a-z", "A-Z", "0-9")) }, cookiePrefix: name, useSecureCookies: secure, ipAddress: { ipAddressHeaders: ["x-vercel-forwarded-for"] } },
