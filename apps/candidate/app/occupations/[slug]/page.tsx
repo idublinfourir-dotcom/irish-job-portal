@@ -1,26 +1,27 @@
 // /occupations/<name-slug>: one occupation (P10, frame C14). The address is the SOC unit group title (#288); the read takes the code. A slug that names no unit group, or a code on
-// neither list, is the 404 page. Reads only through lib/data.ts.
-import { cache } from "react";
+// neither list, is the 404 page. Stage 3 step 6: cached at the CDN for 5 minutes, read as a visitor through lib/cached.ts (the first 6 jobs); a candidate's saved
+// marks come from the saved route in the browser (SavedMarksFromApi), the rest follows the hint switch. Rendered on its first visit, never at build.
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { readOccupation, readSaved } from "../../../lib/data";
+import { cachedOccupation } from "../../../lib/cached";
 import { occupationCodeOfSlug, occupationTitle } from "../../../lib/occupations";
 import { occupationPath } from "../../../lib/paths";
 import { breadcrumbLd, canonicalUrl, occupationLd } from "../../../lib/seo";
 import { PageLd } from "../../_content/ld";
 import { meta } from "../../_content/meta";
-import { Problem, type Failed } from "../../_content/problem";
+import { SavedMarksFromApi } from "../../jobs/client";
 import { OccupationView, headingOf, occupationCrumbs, titleOf, type OccupationData } from "../occupation-view";
 
 type Props = { params: Promise<{ slug: string }> };
 
-const load = cache((code: string) => readOccupation(new URLSearchParams({ code })));
+export const revalidate = 300;
+export const generateStaticParams = async () => [];
+const load = async (code: string) => (await cachedOccupation(code)) as OccupationData | null;
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const code = occupationCodeOfSlug((await params).slug);
-  const r = code ? await load(code) : null;
-  if (!r?.ok) return { title: "Occupation not found" };
-  const o = r.data as OccupationData;
+  const o = code ? await load(code) : null;
+  if (!o) return { title: "Occupation not found" };
   const t = titleOf(o, occupationTitle(o.code));
   return meta(headingOf(t), `${t}: the salary minimums, permit notes and registration rules in force, and the live jobs where a work permit is realistic.`, occupationPath((await params).slug));
 }
@@ -28,19 +29,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function Page({ params }: Props) {
   const slug = (await params).slug;
   const code = occupationCodeOfSlug(slug);
-  if (!code) notFound();
-  const [r, mine] = await Promise.all([load(code), readSaved()]); // PERF-7: one wave; readSaved is 200 only for a signed-in candidate, and marks the saved jobs
-  if (!r.ok) {
-    if (r.status === 404) notFound();
-    return <Problem read={r as Failed} what="occupation page" />;
-  }
+  const o = code ? await load(code) : null;
+  if (!code || !o) notFound();
   const path = occupationPath(slug);
-  const savedIds = mine.ok ? ((mine.data as { saved: { jobId: string }[] }).saved ?? []).map((s) => s.jobId) : [];
-  const o = r.data as OccupationData, name = occupationTitle(code), title = titleOf(o, name);
+  const name = occupationTitle(code), title = titleOf(o, name);
   return (
-    <>
+    <SavedMarksFromApi>
       <PageLd make={(origin) => [occupationLd({ name: title, code: o.code, url: canonicalUrl(origin, path), registrationBody: o.registration?.body }), breadcrumbLd(origin, occupationCrumbs(title))]} />
-      <OccupationView occupation={o} name={name} now={new Date()} path={path} signedIn={mine.ok} savedIds={savedIds} />
-    </>
+      <OccupationView occupation={o} name={name} now={new Date()} path={path} signedIn={undefined} />
+    </SavedMarksFromApi>
   );
 }

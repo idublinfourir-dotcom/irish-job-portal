@@ -4,7 +4,7 @@
 // A build with no DATABASE_URL (CI) makes the page per visit instead (connection()), never a cached failure.
 import "server-only";
 import { connection } from "next/server";
-import { BadContentInput, getPool, guideRead, guidesRead, helpListRead, helpRead, legalRead, updatesRead, type Work } from "@portal/db";
+import { BadContentInput, getPool, guideRead, guidesRead, helpListRead, helpRead, legalRead, occupationRead, updatesRead, type Work } from "@portal/db";
 
 async function load(work: Work, query: Record<string, string> = {}): Promise<unknown> {
   if (!process.env.DATABASE_URL) await connection();
@@ -21,3 +21,5 @@ export const cachedGuide = (slug: string) => load(guideRead, { slug });
 export const cachedUpdates = () => load(updatesRead);
 export const cachedHelpList = () => load(helpListRead);
 export const cachedHelp = (slug: string) => load(helpRead, { slug });
+/** Stage 3 step 6: an occupation page, the visitor's read (the first 6 jobs, no cursor). */
+export const cachedOccupation = (code: string) => load(occupationRead, { code });

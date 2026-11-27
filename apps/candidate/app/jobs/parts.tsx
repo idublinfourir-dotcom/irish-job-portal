@@ -5,6 +5,13 @@ import { initials } from "./format";
 
 export const wrap = "mx-auto max-w-page px-5 sm:px-8";
 
+/** Stage 3 step 6: on a cached page the server does not know who reads. Both variants are sent and the hint switch (globals.css) shows one. */
+export const ForCandidate = ({ children }: { children: ReactNode }) => <span data-in-only="" className="contents">{children}</span>;
+export const ForVisitor = ({ children }: { children: ReactNode }) => <span data-out-only="" className="contents">{children}</span>;
+/** The known variant when the server knows (`signedIn` a boolean), both under the hint switch when it does not (undefined). */
+export const BySignIn = ({ signedIn, yes, no }: { signedIn: boolean | undefined; yes: ReactNode; no: ReactNode }) =>
+  signedIn === undefined ? <><ForCandidate>{yes}</ForCandidate><ForVisitor>{no}</ForVisitor></> : <>{signedIn ? yes : no}</>;
+
 const HL = { peach: "bg-peach text-ink", green: "bg-deep-green text-white", lilac: "bg-lilac text-ink", white: "bg-white text-ink" } as const;
 /** A heading's key word in a coloured pill (NS2: at most two pills a line). */
 export function Hl({ c, tight, children }: { c: keyof typeof HL; tight?: boolean; children: ReactNode }) {

@@ -517,26 +517,33 @@ describe("performance: statements and time of each page's reads", () => {
 });
 
 describe("Stage 3 step 5: the cached pages (legal, guides, help) are the same for every visitor and read nothing of the request", () => {
-  const CACHED: [string, Record<string, string>?][] = [["privacy"], ["terms"], ["cookies"], ["acceptable"], ["retention"], ["guides"], ["guide", { slug: "w3-guide-a" }], ["help"], ["helpPage", { slug: "who-needs-a-permit" }]];
+  const CACHED: [string, Record<string, string>?][] = [["privacy"], ["terms"], ["cookies"], ["acceptable"], ["retention"], ["guides"], ["guide", { slug: "w3-guide-a" }], ["help"], ["helpPage", { slug: "who-needs-a-permit" }],
+    ["occupation", { slug: "nurses" }]]; // step 6: an occupation with live jobs (2231), checked below
   it("security: a candidate, portal, staff, forged and no cookie, and no request at all, give byte-equal HTML with no personal data", async () => {
+    const { occupationSlug } = await import("../../../apps/candidate/lib/occupations");
+    expect(occupationSlug("2231")).toBe(CACHED.at(-1)![1]!.slug);
     const { cookie, email } = await login();
+    for (const [, p] of await su.query<{ id: string }>("select id::text from job where occupation_code = '2231' and status = 'live' limit 2").then((r) => r.rows.entries()))
+      expect((await write(SAVED, cookie, { jobId: p.id })).status).toBe(200); // a candidate with saved jobs: the cached page still shows no mark
+    expect(cards(await render("occupation", { params: CACHED.at(-1)![1] }))).toBeGreaterThan(0);
     for (const [k, params] of CACHED) {
       const visitor = await render(k, { params });
       for (const c of [cookie, "portal.session_token=abc", "staff.session_token=abc", "candidate.session_token=forged", `cand_in=1; ${cookie}`]) expect(await render(k, { params, cookie: c }), `${k} ${c.slice(0, 30)}`).toBe(visitor);
       state.noHeaders = true;
       try { expect(await render(k, { params }), `${k} without a request`).toBe(visitor); } finally { state.noHeaders = false; }
       expect(visitor, k).not.toContain(email);
-      expect(visitor, k).not.toMatch(/Saved:|data-account-menu[^-]|Mark applied|session_token/);
+      expect(visitor, k).not.toMatch(/Saved:|aria-pressed="true"|data-account-menu[^-]|Mark applied|session_token/);
+      expect(cards(visitor), k).toBeLessThanOrEqual(6); // the visitor cap holds by construction
       expect(visitor, k).toContain("data-out-only"); // the Join band or the sign-in controls, hidden by the hint switch for a candidate
     }
   });
   it("each page module says how long it is kept, and a [slug] page renders nothing at build", async () => {
-    const LIFETIME: Record<string, number> = { privacy: 86400, terms: 86400, cookies: 86400, acceptable: 86400, retention: 86400, guides: 3600, guide: 3600, help: 3600, helpPage: 3600 };
+    const LIFETIME: Record<string, number> = { privacy: 86400, terms: 86400, cookies: 86400, acceptable: 86400, retention: 86400, guides: 3600, guide: 3600, help: 3600, helpPage: 3600, occupation: 300 };
     for (const [k] of CACHED) {
       const m = (await import(PAGES[k]!)) as { revalidate?: number; dynamic?: string; generateStaticParams?: () => Promise<unknown[]> };
       expect(m.revalidate, k).toBe(LIFETIME[k]);
       expect(m.dynamic, k).toBeUndefined(); // "force-dynamic" would undo the cache; the request-free render above is the guard
-      if (k === "guide" || k === "helpPage") expect(await m.generateStaticParams!(), k).toEqual([]);
+      if (k === "guide" || k === "helpPage" || k === "occupation") expect(await m.generateStaticParams!(), k).toEqual([]);
     }
   });
   it("a failed read throws (a regeneration keeps the last good copy), never a cached failure notice", async () => {
@@ -546,7 +553,9 @@ describe("Stage 3 step 5: the cached pages (legal, guides, help) are the same fo
       for (const [k, params] of CACHED) expect(await digestOf(render(k, { params })), k).toContain("fake pool failure");
     } finally { pg.Pool.prototype.query = q; }
   });
-  it("performance: at most 3 statements a regeneration, none of them a session lookup or a read-limit count", async () => {
+  // measured 27 Nov 2026: 1 or 2 statements a content page, 4 the occupation page (its read, the jobs, the count, the text); the gated render was 6
+  const REGEN: Record<string, number> = { occupation: 4 };
+  it("performance: at most 3 statements a regeneration (the occupation page 4), none of them a session lookup or a read-limit count", async () => {
     const sql: string[] = [];
     const q = pg.Client.prototype.query;
     pg.Client.prototype.query = function (this: pg.Client, ...a: unknown[]) { sql.push(String((a[0] as { text?: string })?.text ?? a[0])); return (q as (...x: unknown[]) => unknown).apply(this, a); } as typeof q;
@@ -554,7 +563,7 @@ describe("Stage 3 step 5: the cached pages (legal, guides, help) are the same fo
       for (const [k, params] of CACHED) {
         sql.length = 0;
         await render(k, { params });
-        expect(sql.length, `${k}: ${sql.join(" | ").slice(0, 200)}`).toBeLessThanOrEqual(3);
+        expect(sql.length, `${k}: ${sql.join(" | ").slice(0, 200)}`).toBeLessThanOrEqual(REGEN[k] ?? 3);
         expect(sql.join(" "), k).not.toMatch(/rate_limit|_session/);
       }
     } finally { pg.Client.prototype.query = q; }

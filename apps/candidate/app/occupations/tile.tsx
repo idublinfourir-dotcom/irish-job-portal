@@ -5,11 +5,11 @@ import { companyPath, jobPath } from "../../lib/paths";
 import { SaveButton } from "../jobs/client";
 import { salaryText, whenLine, type CardJob } from "../jobs/card";
 import { contractText, loginHref } from "../jobs/format";
-import { Logo } from "../jobs/parts";
+import { BySignIn, Logo } from "../jobs/parts";
 
 const VIEW = "inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-pill bg-lilac-soft px-5 text-small font-semibold text-deep-green no-underline hover:bg-lilac";
 
-export function OccupationTile({ job, now, signedIn, saved, path }: { job: CardJob; now: Date; signedIn: boolean; saved: boolean; path: string }) {
+export function OccupationTile({ job, now, signedIn, saved, path }: { job: CardJob; now: Date; signedIn: boolean | undefined; saved: boolean; path: string }) {
   const pay = salaryText(job);
   const contract = contractText(job.contractMonths);
   const place = [job.county, contract && `Fixed term, ${contract}`].filter(Boolean).join(" · ");
@@ -24,9 +24,11 @@ export function OccupationTile({ job, now, signedIn, saved, path }: { job: CardJ
             {place && <p className="text-small text-muted">{place}</p>}
           </div>
         </div>
-        {signedIn
-          ? <SaveButton jobId={job.id} title={job.title} saved={saved} />
-          : <A href={loginHref(path)} aria-label={`Log in to save ${job.title}`} className="grid size-11 shrink-0 place-items-center rounded-pill bg-white text-ink hover:bg-hover-light"><Icon name="bookmark" size={18} /></A>}
+        <BySignIn
+          signedIn={signedIn}
+          yes={<SaveButton jobId={job.id} title={job.title} saved={saved} />}
+          no={<A href={loginHref(path)} aria-label={`Log in to save ${job.title}`} className="grid size-11 shrink-0 place-items-center rounded-pill bg-white text-ink hover:bg-hover-light"><Icon name="bookmark" size={18} /></A>}
+        />
       </div>
       {(job.badge || job.permitHistory === "first_time" || job.quotaFull) && (
         <p className="flex flex-wrap items-center gap-2">

@@ -10,7 +10,7 @@ import { occupationJobsPath } from "../../lib/paths";
 import { shortDate } from "../_home/format";
 import type { CardJob } from "../jobs/card";
 import { contractText, euro, jobCount, type Count } from "../jobs/format";
-import { Join } from "../jobs/parts";
+import { BySignIn, ForVisitor, Join } from "../jobs/parts";
 import { OccupationTile } from "./tile";
 
 export type OccupationData = {
@@ -25,7 +25,8 @@ export type OccupationData = {
   registration: { status: "required" | "may_need" | "not_open"; body: { id: string; name: string; url: string; readOn: string }; line: string; steps: readonly string[]; degreeNote?: string } | null;
 };
 /** `name`: the SOC unit group title of the code (the occupation page is named after it); the list entry title stands in when the code has none. */
-export type OccupationProps = { occupation: OccupationData; name?: string | null; now: Date; path: string; signedIn: boolean; savedIds?: string[] };
+/** `signedIn` undefined: the cached page (Stage 3 step 6), the visitor's read with both variants under the hint switch. */
+export type OccupationProps = { occupation: OccupationData; name?: string | null; now: Date; path: string; signedIn: boolean | undefined; savedIds?: string[] };
 
 /** The occupation's name: its SOC unit group title, else the title of its Critical Skills list entry, else its first entry. */
 export const titleOf = (o: Pick<OccupationData, "entries">, name?: string | null) => name || (o.entries.find((e) => e.list === "critical-skills") ?? o.entries[0])?.title || "";
@@ -34,7 +35,7 @@ export const occupationCrumbs = (title: string) => [{ label: "Home", href: "/" }
 /** The title of the page: "<name> visa sponsorship jobs in Ireland" (frame C14). */
 export const headingOf = (title: string) => `${title} visa sponsorship jobs in Ireland`;
 
-function Hero({ o, title, signedIn }: { o: OccupationData; title: string; signedIn: boolean }) {
+function Hero({ o, title, signedIn }: { o: OccupationData; title: string; signedIn: boolean | undefined }) {
   const listed = o.listStatus === "critical-skills";
   const n = jobCount(o.jobs.count ?? { n: o.jobs.jobs.length, more: false });
   const [a, b] = [`${title} `, " jobs in Ireland"];
@@ -51,7 +52,7 @@ function Hero({ o, title, signedIn }: { o: OccupationData; title: string; signed
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <Button href={occupationJobsPath(o.code)} variant="sun" size="lg">See {n} {n === "1" ? "job" : "jobs"} <Icon name="arrow" size={16} /></Button>
-            <Button href={`${occupationJobsPath(o.code)}#alert`} size="lg" className="bg-transparent text-white hover:bg-ink-hover"><Icon name="bell" size={18} />{signedIn ? "Set a job alert" : "Sign in to set a job alert"}</Button>
+            <Button href={`${occupationJobsPath(o.code)}#alert`} size="lg" className="bg-transparent text-white hover:bg-ink-hover"><Icon name="bell" size={18} /><BySignIn signedIn={signedIn} yes="Set a job alert" no="Sign in to set a job alert" /></Button>
           </div>
         </div>
       </section>
@@ -182,7 +183,7 @@ export function OccupationView({ occupation: o, name, now, path, signedIn, saved
           </div>
           {shown.length === 0 && <p className="mt-6 rounded-bento border border-dashed border-line bg-sand p-6 text-muted">There are no live jobs for this occupation right now. A job appears here when it passes our checks.</p>}
           {shown.length > 0 && <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">{shown.map((j) => <OccupationTile key={j.id} job={j} now={now} signedIn={signedIn} saved={savedIds.includes(j.id)} path={path} />)}</div>}
-          {o.jobs.signInForMore && <div className="mt-6"><SignInMore shown={shown.length} count={o.jobs.count} path={path} /></div>}
+          {o.jobs.signInForMore && <ForVisitor><div className="mt-6"><SignInMore shown={shown.length} count={o.jobs.count} path={path} /></div></ForVisitor>}
         </section>
       </div>
       {!signedIn && <Join />}
