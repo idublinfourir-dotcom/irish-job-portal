@@ -47,6 +47,10 @@ describe("judge", () => {
       expect(judge(html(`<main><h1>Terms</h1><p>${t}</p></main>`), PAGE).fails, t).toEqual([`text: ${t}`]);
     }
   });
+  it("lets only the decided price line say coming soon (#307)", () => {
+    expect(judge(html("<main><h1>Services</h1><p>Prices and invoices: coming soon. We agree the price first.</p></main>"), PAGE).fails).toEqual([]);
+    expect(judge(html("<main><h1>Services</h1><p>Prices and invoices: coming soon. Booking coming soon.</p></main>"), PAGE).fails).toHaveLength(1);
+  });
 
   it("fails raw Markdown left in visible text", () => {
     for (const t of ["Read **this** first", "## Who can apply", "See [the list](https://enterprise.gov.ie/)"]) {

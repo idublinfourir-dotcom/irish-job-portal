@@ -31,7 +31,7 @@ const OPENED =
   "insert into audit_event(kind, actor_staff_user_id, role_in_force, action, object_type, object_id, after, source) values ('data_access', $1, $2, $3, $4, $5, $6::jsonb, 'panel')";
 const viewOf = (key: string, name: string) => staffFileView(key, keyKind(key) ?? "unknown", `${name}.${key.split(".").pop()}`);
 const removeLater = (key: unknown) => {
-  if (typeof key === "string") fileStore().remove(key).catch(() => console.error("staff upload: stored file not removed, delete by hand:", JSON.stringify(key)));
+  if (typeof key === "string") fileStore().remove(key).catch(() => console.error("staff upload: stored file not removed, the weekly orphan sweep removes it"));
 };
 
 // ===== Q6: the employer's written confirmation on a manual post =====

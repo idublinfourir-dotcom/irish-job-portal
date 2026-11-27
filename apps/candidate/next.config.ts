@@ -18,5 +18,6 @@ export default withSentryConfig(config, {
   authToken: process.env.SENTRY_AUTH_TOKEN,
   release: { name: process.env.APP_VERSION },
   telemetry: false,
+  bundleSizeOptimizations: { excludeTracing: true, excludeDebugStatements: true }, // PERF-9: no browser tracing (instrumentation-client has no router hook)
   silent: true,
 });

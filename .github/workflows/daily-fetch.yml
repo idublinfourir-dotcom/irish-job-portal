@@ -113,6 +113,14 @@ jobs:
         run: |
           export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
           node packages/db/src/scheduled-checks-cli.ts
+      # DB-4: red at 350 MB of the free plan's 500, with the 10 largest tables; read-only backup login, catalog only.
+      - name: Check the database size
+        if: ${{ !cancelled() }}
+        env:
+          SIZE_BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          node packages/db/src/scheduled-checks-cli.ts size
       # The staff digest (step 15 Q11): one email row per active staff member with work waiting for their roles (counts only), sent by the next
       # step. A second run the same day writes nothing. Same admin login, given to this step only; after the reminders, so they are counted.
       - name: Queue the staff digest
@@ -151,7 +159,7 @@ jobs:
           node packages/db/src/outbox-cli.ts --batch 200
       # The retention periods in `setting` (placeholders until the solicitor's, #99): one rule per database call, looped until nothing is due.
       # Same admin login, given to this step only; last, and it runs every day. The stored files the rules return are removed from S3 with the
-      # files key (this step only); a removal that fails prints its random key and goes red, and that file is deleted by hand.
+      # files key (this step only); a removal that fails is counted (no key printed) and goes red; the weekly orphan sweep removes that file.
       - name: Apply the retention rules
         if: ${{ !cancelled() }}
         env:
