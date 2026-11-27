@@ -72,6 +72,14 @@ describe("backup.yml", () => {
     expect(named(yml, "Back up the database")).toMatch(/node packages\/db\/src\/backup-cli\.ts "\$RUNNER_TEMP\/backup"/);
     expect(named(yml, "Back up the database")).toMatch(/DATABASE_CA_CERT="\$\(cat packages\/fetcher\/data\/supabase-ca\.crt\)"/);
   });
+  it("reads the gap since the previous backup before uploading, uploads whatever it says, and only then turns red on a gap over the limit", () => {
+    const up = named(yml, "Upload to S3");
+    expect(up).toMatch(/BACKUP_MAX_GAP_HOURS: \$\{\{ vars\.BACKUP_MAX_GAP_HOURS \}\}\n/); // a variable, not a secret; unset: the gap is only printed
+    expect(up).toMatch(/previous="\$\(aws s3 ls s3:\/\/irish-job-portal-backups\/db\/ --recursive \| awk '\{print \$4\}' \| grep '\\\.json\$' \| sort \| tail -n 1\)"/);
+    expect(up).toMatch(/late=0\n\s+node packages\/db\/src\/backup-gap-cli\.ts "\$previous" "\$name" \|\| late=\$\?\n/);
+    expect(up.indexOf("backup-gap-cli.ts")).toBeLessThan(up.indexOf("aws s3 cp")); // the list must not include this run's own manifest
+    expect(up.trimEnd().endsWith('exit "$late"')).toBe(true); // a late backup is still a backup: it is uploaded first
+  });
 });
 
 describe("restore-check.yml", () => {
