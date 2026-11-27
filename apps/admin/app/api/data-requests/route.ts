@@ -2,11 +2,11 @@
 // POST send_confirm {itemId, purpose} emails the matched login's own address a one-time link (its owner confirms, and downloads an export, on their
 // own site: staff never get the data), close {itemId} ends the item, erase_propose {itemId}, erase_confirm and erase_refuse {requestId} erase the
 // account through two administrators once the request is proved. The role check is inside each database call.
-import { staffSettings } from "@portal/auth";
+import { StaffRefused, staffSettings } from "@portal/auth";
 import { getPool } from "@portal/db";
 import { closeDataRequest, confirmDataRequestErase, DR_PURPOSES, listDataRequests, proposeDataRequestErase, refuseDataRequestErase, sendDataRequestConfirm } from "@portal/db/staff-tools";
 import { checkLength, checkOrigin, id19, parseBody, readQuery, refuse, type Field, type Spec } from "../../../lib/admin-api";
-import { requireStaff } from "../../../lib/staff";
+import { requireStaff, staffSession } from "../../../lib/staff";
 
 export const dynamic = "force-dynamic";
 
@@ -29,8 +29,9 @@ export async function POST(request: Request) {
   try {
     checkOrigin(request.headers.get("origin"), new URL(staffSettings(process.env).baseURL).origin);
     checkLength(request.headers.get("content-length"), MAX_BODY);
-    const staff = await requireStaff(request.headers);
+    const { id: staff, fresh } = await staffSession(request.headers);
     const b = parseBody(await request.text(), MAX_BODY, ACTIONS, FIELDS);
+    if (!fresh && (b.action === "erase_propose" || b.action === "erase_confirm")) throw new StaffRefused("reauth_required"); // SEC-12, C4: an erasure cannot be undone
     const db = getPool();
     if (b.action === "send_confirm") return Response.json({ ok: true, ...(await sendDataRequestConfirm(db, staff, b.itemId, b.purpose)) });
     if (b.action === "erase_propose") return Response.json({ ok: true, ...(await proposeDataRequestErase(db, staff, b.itemId)) });

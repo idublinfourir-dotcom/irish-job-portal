@@ -777,6 +777,7 @@ paths:
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
         '404': { description: "`DOCUMENT_NOT_FOUND`: no such document of this login's case, or its copy was removed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: DOCUMENT_NOT_FOUND } } } }
+        '409': { description: "`SCAN_PENDING`: the malware scan has not passed yet (no result on the stored copy); try again in a minute. `FILE_BLOCKED`: the scan did not find the copy clean, so it is never opened (audit SEC-14). No link is made.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: SCAN_PENDING } } } }
         '503': { description: "`FILES_UNAVAILABLE`: file storage is not set up.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILES_UNAVAILABLE } } } }
   /api/portal/cases/{id}/timeline:
     parameters:
@@ -1751,6 +1752,7 @@ paths:
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
         '404': { description: "`JOB_NOT_FOUND`: as the list. `DOCUMENT_NOT_FOUND`: no such copy on this job, or its copy was removed.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: DOCUMENT_NOT_FOUND } } } }
+        '409': { description: "`SCAN_PENDING`: the malware scan has not passed yet (no result on the stored copy); try again in a minute. `FILE_BLOCKED`: the scan did not find the copy clean, so it is never opened (audit SEC-14). No link is made.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: SCAN_PENDING } } } }
         '503': { description: "`FILES_UNAVAILABLE`: file storage is not set up.", content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: FILES_UNAVAILABLE } } } }
   /api/portal/job-stats:
     get:

@@ -26,7 +26,14 @@ describe("parseBody", () => {
 
 describe("allowedHref", () => {
   it.each([["https://enterprise.gov.ie/en/", true], ["/guides/x#y", true], ["/", true], ["http://a.ie", false], ["//evil.example", false], ["javascript:x", false],
-    ["https:///x", false], ["data:text/html,x", false], ["mailto:a@b.ie", false], ["guides/x", false]])("%s: %s", (h, ok) => expect(allowedHref(h)).toBe(ok));
+    ["https:///x", false], ["data:text/html,x", false], ["mailto:a@b.ie", false], ["guides/x", false],
+    // SEC-17: a backslash anywhere, which browsers read as "/" ("/\\evil.example" opens evil.example)
+    ["/\\evil.example", false], ["/\\/evil.example", false], ["/\\\\evil.example", false], ["\\\\evil.example", false], ["/x\\y", false], ["/guides/x\\", false],
+    ["https://a.ie\\@evil.example", false], ["https:\\\\evil.example", false], ["/%5Cevil.example", false], ["/x%5cy", false], ["/jobs%20list", true]])("%s: %s", (h, ok) => expect(allowedHref(h)).toBe(ok));
+  it("a backslash link is shown as its text and refused on save (SEC-17)", () => {
+    expect(parseInline("[x](/\\evil.example)")).toEqual([{ text: "[x](/\\evil.example)" }]);
+    expect(bodyProblem("see [x](/\\evil.example)")).toBe("link");
+  });
 });
 
 describe("bodyProblem", () => {

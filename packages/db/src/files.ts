@@ -27,6 +27,13 @@ const mime = (t: string) => MIME[t as Kind] ?? "application/octet-stream";
 // ===== the one staff file view (S-Q6, S-Q7 A): never a presigned link; the bytes through our admin route, after the malware scan =====
 /** The GuardDuty Malware Protection tag as a gate: only NO_THREATS_FOUND opens; no tag yet is "pending"; anything else is "blocked". Pure. */
 export const scanGate = (tag: string | null): "ok" | "pending" | "blocked" => (tag === "NO_THREATS_FOUND" ? "ok" : tag === null ? "pending" : "blocked");
+/** SEC-14: an owner's own download opens only after the malware scan passed, as the staff view does (409 SCAN_PENDING or FILE_BLOCKED, no link made). */
+async function scannedLink(d: { storage_key: string; file_name: string; content_type: string }): Promise<Response> {
+  const store = fileStore();
+  const gate = scanGate(await store.scanStatus(d.storage_key));
+  if (gate !== "ok") throw new Refuse(409, gate === "pending" ? "SCAN_PENDING" : "FILE_BLOCKED");
+  return download(await store.link(d.storage_key, { fileName: d.file_name, contentType: mime(d.content_type), seconds: LINK_SECONDS }));
+}
 // No fetch directives (default-src): Chrome, Edge and Safari have refused to show a PDF framed under default-src 'none', and Firefox's viewer takes
 // the page's CSP; sandbox makes Chrome refuse the PDF outright. The content type is fixed and nosniff is set, so nothing renders as HTML anyway;
 // frame-ancestors only stops another site framing the file.
@@ -160,7 +167,7 @@ export const cvDelete = (r: Request, env: FilesEnv) => fileRoute(r, env, "write"
 
 export const cvDownload = (r: Request, env: FilesEnv) => fileRoute(r, env, "read", async (db, userId) => {
   const cv = await cvRow(db, userId);
-  return download(await fileStore().link(cv.storage_key, { fileName: cv.file_name, contentType: mime(cv.content_type), seconds: LINK_SECONDS }));
+  return scannedLink(cv);
 });
 
 // ===== case documents (PDF, JPEG or PNG; through each side's own views) =====
@@ -206,7 +213,7 @@ export const caseDocGet = (r: Request, env: FilesEnv, caseId: string, docId: str
   if (!validId(caseId) || !validId(docId)) throw new Refuse(400, "BAD_REQUEST");
   const d = (await db.query(docSql(env.side).one, [docId, caseId, userId])).rows[0] as { storage_key: string; file_name: string; content_type: string } | undefined;
   if (!d) throw new Refuse(404, "DOCUMENT_NOT_FOUND");
-  return download(await fileStore().link(d.storage_key, { fileName: d.file_name, contentType: mime(d.content_type), seconds: LINK_SECONDS }));
+  return scannedLink(d);
 });
 
 // ===== the company logo (P3: the account owner; PNG, JPEG or WebP, at most 1 MB) =====
@@ -311,5 +318,5 @@ export const authorityDocGet = (r: Request, env: FilesEnv, jobId: string, docId:
   const j = await authorityJob(db, jobId, userId);
   const d = (await db.query(AUTHORITY_SQL.one, [docId, jobId, j.org])).rows[0] as { storage_key: string; file_name: string; content_type: string } | undefined;
   if (!d) throw new Refuse(404, "DOCUMENT_NOT_FOUND");
-  return download(await fileStore().link(d.storage_key, { fileName: d.file_name, contentType: mime(d.content_type), seconds: LINK_SECONDS }));
+  return scannedLink(d);
 });

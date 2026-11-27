@@ -441,6 +441,12 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/CodeError' }
           example: { code: FILES_UNAVAILABLE }
+    ScanNotPassed:
+      description: "`SCAN_PENDING`: the malware scan has not passed yet (no result on the stored copy); try again in a minute. `FILE_BLOCKED`: the scan did not find the copy clean, so it is never opened (audit SEC-14). No link is made."
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: SCAN_PENDING }
 tags:
   - name: public
     description: Open to visitors; a signed-in candidate gets more.
@@ -2748,7 +2754,7 @@ paths:
       operationId: downloadCv
       tags: [files]
       summary: Download the CV
-      description: 'A 302 to a download link that works for 60 seconds (`Cache-Control: no-store`, `Referrer-Policy: no-referrer`).'
+      description: 'A 302 to a download link that works for 60 seconds (`Cache-Control: no-store`, `Referrer-Policy: no-referrer`), once the malware scan has passed.'
       security: [{ candidateSession: [] }]
       x-roles: [candidate]
       responses:
@@ -2762,6 +2768,7 @@ paths:
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
         '404': *cvNotFound
+        '409': { $ref: '#/components/responses/ScanNotPassed' }
         '503': { $ref: '#/components/responses/FilesUnavailable' }
 
   /api/candidate/cases:
@@ -3040,6 +3047,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/CodeError' }
               example: { code: DOCUMENT_NOT_FOUND }
+        '409': { $ref: '#/components/responses/ScanNotPassed' }
         '503': { $ref: '#/components/responses/FilesUnavailable' }
   /api/candidate/cases/{id}/timeline:
     parameters:

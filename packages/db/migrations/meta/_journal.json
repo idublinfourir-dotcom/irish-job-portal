@@ -505,6 +505,13 @@
       "when": 1794300077000,
       "tag": "0077_no_badge_on_doubt",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1794300079000,
+      "tag": "0079_owner_reassign_two_people",
+      "breakpoints": true
     }
   ]
 }

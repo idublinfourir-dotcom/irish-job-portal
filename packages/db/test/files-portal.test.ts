@@ -96,6 +96,19 @@ describe("case documents, portal side", () => {
     expect(new URL(link.headers.get("location")!).pathname).toBe(`/${row.storage_key}`);
     expect((await call(R.docs, "POST", p, { body: file(DOCX, "a.docx"), params: { id: c } })).code).toBe("WRONG_FILE_TYPE");
   });
+  it("SEC-14: a copy opens only after the malware scan passed (409 SCAN_PENDING, 409 FILE_BLOCKED, no link)", async () => {
+    const p = await login();
+    const c = await caseFor(p.id);
+    const doc = (await call(R.docs, "POST", p, { body: file(PDF), params: { id: c } })).json.document.id;
+    const key = (await one("select storage_key from case_document where id=$1", [doc]))[0].storage_key;
+    for (const [tag, code] of [[null, "SCAN_PENDING"], ["THREATS_FOUND", "FILE_BLOCKED"], ["UNSUPPORTED", "FILE_BLOCKED"]] as const) {
+      store.tags.set(key, tag);
+      const r = await call(R.doc, "GET", p, { params: { id: c, docId: doc } });
+      expect([r.status, r.code, r.headers.get("location")], String(tag)).toEqual([409, code, null]);
+    }
+    store.tags.set(key, "NO_THREATS_FOUND");
+    expect((await call(R.doc, "GET", p, { params: { id: c, docId: doc } })).status).toBe(302);
+  });
   it("a closed or decided case refuses uploads; the 21st copy is refused", async () => {
     const p = await login();
     for (const s of ["decision", "closed"]) expect((await call(R.docs, "POST", p, { body: file(PDF), params: { id: await caseFor(p.id, s) } })).code).toBe("CASE_CLOSED");

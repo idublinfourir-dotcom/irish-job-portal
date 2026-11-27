@@ -84,7 +84,7 @@ const STATUS = new Map<string, number>(Object.entries({
   below_active: 409, already_owner: 409, company_not_open: 409, no_owner: 409, user_not_active: 409, request_open: 409, not_open: 409, too_early: 409, owner_changed: 409, member_gone: 409,
   not_administrator: 403, not_sponsor_staff: 403, already_confirmed: 409, job_not_live: 409, company_restricted: 409, decision_pending: 409, request_not_pending: 409,
   same_person: 409, no_statement_text: 409, empty_file: 400, file_too_large: 413, wrong_file_type: 415, file_active_content: 422, scan_pending: 409, file_blocked: 409,
-  no_session: 401, not_active: 401,
+  no_session: 401, not_active: 401, reauth_required: 403,
 }));
 /** The HTTP status for a refusal code: any `bad_` code is 400 except bad_origin; null for a code the routes do not know, which the caller turns into a plain 500. */
 export const statusFor = (why: string): number | null => STATUS.get(why) ?? (why.startsWith("bad_") ? 400 : null);

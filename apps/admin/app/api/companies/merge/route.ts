@@ -24,7 +24,7 @@ export async function POST(request: Request) {
   try {
     checkOrigin(request.headers.get("origin"), new URL(staffSettings(process.env).baseURL).origin);
     checkLength(request.headers.get("content-length"), MAX_SMALL_BODY);
-    const staff = await requireStaff(request.headers);
+    const staff = await requireStaff(request.headers, true); // SEC-12, C4: a merge moves jobs and names for good
     const b = parseMerge(await request.text());
     return Response.json({ ok: true, ...(await mergeCompanies(getPool(), staff, b.absorbedId, b.survivorId)) });
   } catch (e) {
