@@ -117,6 +117,9 @@ describe("messages: every refusal code of every route these pages call (docs/ope
     const m = [closeMessage({ status: 403, code: "NOT_A_POSTER" }), closeMessage({ status: 409, code: "BAD_STATE" }), closeMessage({ status: 429 }), closeMessage({ status: 404, code: "JOB_NOT_FOUND" })];
     expect(new Set(m).size).toBe(4);
   });
+  it("not recognised: an unverified company (SEC-1, 409) is told to wait for the check, not given a server error", () => {
+    expect(notRecognisedMessage({ status: 409, code: "ORGANISATION_NOT_AVAILABLE" })).toMatch(/once we have verified your company/);
+  });
   it("the pay floor re-sign-in code is a sign-in prompt, not a password box", () => {
     expect(floorMessage({ status: 403, code: "REAUTH_REQUIRED" })).toMatch(/sign in again/);
   });

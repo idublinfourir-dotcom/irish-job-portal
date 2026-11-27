@@ -61,6 +61,7 @@ export async function notRecognised(request: Request): Promise<Response> {
   } catch (e) {
     const { code, message = "" } = (e ?? {}) as { code?: string; message?: string };
     if (code !== "P0001") throw e;
+    if (message.includes("ORGANISATION_NOT_AVAILABLE")) return no(409, "ORGANISATION_NOT_AVAILABLE"); // SEC-1: only a verified company
     if (message.includes("JOB_NOT_FOUND")) return no(404, "JOB_NOT_FOUND");
     if (message.includes("NOT_OWNER")) return no(403, "NOT_OWNER");
     if (message.includes("NOT_A_MEMBER")) return no(403, "NOT_A_MEMBER");

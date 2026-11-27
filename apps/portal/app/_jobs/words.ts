@@ -157,9 +157,10 @@ export const REPORT_REASONS = {
 } as const;
 export const EVIDENCE_MAX = 2000;
 
-/** POST /api/portal/agency-jobs/not-recognised (DD32): 200; 403 NOT_OWNER; 404 JOB_NOT_FOUND; the rest as close. */
+/** POST /api/portal/agency-jobs/not-recognised (DD32): 200; 403 NOT_OWNER; 404 JOB_NOT_FOUND; 409 ORGANISATION_NOT_AVAILABLE (SEC-1); the rest as close. */
 export function notRecognisedMessage(a: Answer): string {
   if (a.status === 403 && a.code === "NOT_OWNER") return "Only the account owner can say a job is not yours.";
+  if (a.status === 409) return "You can do this once we have verified your company. Open Account status to see where it stands.";
   if (a.status === 404) return "That job is not on your list any more. Reload the page.";
   return common(a) ?? SERVER;
 }

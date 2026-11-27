@@ -91,13 +91,16 @@ describe("company profile (E18, BA31)", () => {
     expect(p).toContain("Only the account owner can change the profile");
     expect(p).toMatch(/<textarea[^>]*readonly/i);
   });
-  it("a suspended company: warned, no save, no close; its public link is hidden; a pending one can edit but has no public link", () => {
+  it("a suspended company: warned, no save, no close; its public link is hidden; a pending one (SEC-1) cannot edit or close until verified and is told why", () => {
     const s = company({ status: "suspended" });
     expect(s).toContain("cannot be changed now");
     expect(s).not.toMatch(/type="submit"|Close my company|View public page/);
-    const w = company({ status: "pending_review" });
-    expect(w).toMatch(/type="submit"/);
-    expect(w).not.toContain("View public page");
+    for (const status of ["pending_review", "needs_info"]) {
+      const w = company({ status });
+      expect(w, status).toContain("once we verify the company");
+      expect(w, status).not.toMatch(/type="submit"|Close my company|View public page|cannot be changed now/);
+    }
+    for (const status of ["verified", "verified_restricted"]) expect(company({ status }), status).toMatch(/type="submit"[\s\S]*Close my company/);
   });
   it("records: legal names, a permit count (singular and plural), no link yet, a missing CRO number; a logo is shown from its own path; no logo shows initials", () => {
     expect(company({ permitCount: 1 })).toContain("1 permit since 2019");
