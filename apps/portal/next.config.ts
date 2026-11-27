@@ -7,7 +7,7 @@ const config: NextConfig = {
   outputFileTracingRoot: path.join(__dirname, "../../"),
   serverExternalPackages: ["pg"],
   poweredByHeader: false,
-  headers: securityHeaders(),
+  headers: securityHeaders([], { perRequest: true }),
 };
 
 // Source maps upload only when SENTRY_AUTH_TOKEN is set (build time only); a build without it passes and uploads nothing. The release is the deployed
