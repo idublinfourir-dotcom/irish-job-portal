@@ -1,10 +1,12 @@
 name: Deploy
 
-# Deploys the three apps to Vercel production after every push to main, and by hand (#183, step 15). On Vercel Hobby a Git deploy of a commit
-# by anyone but the account owner is BLOCKED, and so is a deploy hook (tried 13 November 2026), so this deploys as the owner with a token, from a
-# plain copy of the commit (git archive: no .git, so Vercel sees a CLI deploy, as the laptop deploys do).
-# Secrets (set by the engineer): VERCEL_TOKEN_ADMIN, VERCEL_TOKEN_CANDIDATE, VERCEL_TOKEN_PORTAL, each a token of the owner's account scoped to
-# its one project. An app whose secret is not set is skipped with one line, so nothing deploys until the tokens exist.
+# Deploys the three apps to Vercel production after every push to main, and by hand (#183, step 15). It is the only deploy path: Vercel's own
+# Git deployments are off in each apps/*/vercel.json (audit DEP-1, 27 Nov 2026), because they built production a second time and a preview on
+# every push, and together reached Hobby's 100 deployments a day. It deploys as the owner with a token, from a plain copy of the commit
+# (git archive: no .git, so Vercel sees a CLI deploy, as the laptop deploys do).
+# Secrets (set by the engineer in the Environment "production", which admits main only): VERCEL_TOKEN_ADMIN, VERCEL_TOKEN_CANDIDATE,
+# VERCEL_TOKEN_PORTAL, each a token of the owner's account scoped to its one project. An app whose secret is not set is skipped with one line,
+# so a run started on any other branch deploys nothing.
 # Never on pull_request: code from a branch never runs with these secrets.
 on:
   push:
@@ -22,6 +24,8 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Production secrets live in this Environment, which only main may use (audit SEC-7, SEC-29); no deployment record per run.
+    environment: { name: production, deployment: false }
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

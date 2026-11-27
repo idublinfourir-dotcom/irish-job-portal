@@ -39,6 +39,8 @@ export const JOBS = [
 const CAN_DECRYPT =
   "select coalesce(bool_or(has_function_privilege(r.oid, p.oid, 'execute')), false) as can from pg_roles r, pg_proc p join pg_namespace n on n.oid = p.pronamespace " +
   "where r.rolname = any($1::text[]) and n.nspname = 'vault' and p.proname = '_crypto_aead_det_decrypt'";
+const QUEUE_READERS =
+  "select string_agg(rolname, ', ' order by rolname) as who from pg_roles where rolname = any($1::text[]) and has_table_privilege(oid, 'net.http_request_queue', 'select')";
 const STATUS_JOBS = "select jobname, schedule, active from cron.job where jobname = any($1::text[]) order by jobname";
 const STATUS_RUNS =
   "select j.jobname, to_char(d.start_time at time zone 'utc', 'YYYY-MM-DD HH24:MI') as at, d.status, left(coalesce(d.return_message, ''), 80) as message " +
@@ -114,8 +116,10 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: s
     if ((await db.query(CAN_DECRYPT, [APP_ROLES])).rows[0]!.can) throw new Error("an app login can decrypt Vault secrets; nothing was changed");
     await db.query("commit");
     log(`stored the token in the Vault as ${SECRET_NAME} and scheduled ${JOBS.map((j) => j.name).join(", ")}`);
-    if ((await db.query("select has_table_privilege('app_backup', 'net.http_request_queue', 'select') as can")).rows[0]!.can)
-      log("note: the read-only backup login can read pg_net's request queue, where a call waits (with its token) for the moment before it is sent");
+    // Supabase grants pg_net's tables to PUBLIC and a project cannot revoke that (audit SEC-29), so say plainly who can see the token.
+    const { who } = (await db.query(QUEUE_READERS, [APP_ROLES])).rows[0]!;
+    if (who)
+      log(`note: ${who} can read pg_net's request queue, where a call waits (with its token) until it is sent; a project cannot change that, so the production secrets stay in the GitHub Environment only main may use (audit SEC-29)`);
     // Proof 1: the outbox job's own statement runs here once, so a mistake in it shows now and not as a silent failed job. It calls GitHub only if a row is due.
     await db.query(JOBS[1].command);
     // Proof 2: start one backup now and read GitHub's answer. pg_net sends only after the statement commits.

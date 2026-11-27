@@ -19,7 +19,7 @@ function fake(opts: { token?: string; answer?: Record<string, unknown> | null; c
         if (opts.fail?.test(text)) throw new Error(`boom near ${opts.token ?? TOKEN}`); // a database error that repeats the value it was given
         if (text.startsWith("select id from vault.secrets")) return { rows: opts.secretExists ? [{ id: "7095d222-efe5-4cd5-b5c6-5755b451e223" }] : [] };
         if (text.includes("_crypto_aead_det_decrypt")) return { rows: [{ can: opts.canDecrypt ?? false }] };
-        if (text.includes("net.http_request_queue")) return { rows: [{ can: opts.queueReadable ?? false }] };
+        if (text.includes("net.http_request_queue")) return { rows: [{ who: opts.queueReadable ? "app_admin, app_backup" : null }] };
         if (text.startsWith("select net.http_post")) return { rows: [{ http_post: "41" }] };
         if (text.includes("from net._http_response where id")) return { rows: opts.answer === null ? [] : [opts.answer ?? { status_code: 204, timed_out: false, error: "" }] };
         if (text.includes("from cron.job_run_details")) return { rows: [{ jobname: "portal-outbox", at: "2026-11-27 07:00", status: "succeeded", message: "1 row" }, { jobname: "portal-backup", at: "2026-11-27 06:47", status: "failed", message: "relation \"net.http_post\" does not exist" }] };
@@ -128,10 +128,14 @@ describe("the set-up", () => {
     expect(silent.lines.at(-1)).toBe("no answer from GitHub within 20 seconds; run again with --status in a minute");
     expect(silent.calls.filter((c) => c.text.includes("from net._http_response where id"))).toHaveLength(20);
   });
-  it("notes when the read-only login can see pg_net's waiting calls", async () => {
+  it("names every app login that can see pg_net's waiting calls, and says nothing when none can", async () => {
     const f = fake({ queueReadable: true });
     await main([], ENV, f.log, f.deps);
-    expect(f.lines.some((l) => l.startsWith("note: the read-only backup login can read pg_net's request queue"))).toBe(true);
+    expect(f.calls.find((c) => c.text.includes("net.http_request_queue"))?.values).toEqual([["app_backup", "app_candidate", "app_portal", "app_admin", "app_fetcher"]]);
+    expect(f.lines.some((l) => l.startsWith("note: app_admin, app_backup can read pg_net's request queue"))).toBe(true);
+    const none = fake();
+    await main([], ENV, none.log, none.deps);
+    expect(none.lines.some((l) => l.startsWith("note:"))).toBe(false);
   });
   it("--status asks for no token, changes nothing, and prints the jobs and GitHub's last answers", async () => {
     const f = fake();
