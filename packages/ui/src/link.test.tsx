@@ -27,3 +27,11 @@ describe("loading.tsx", () => {
     expect(src).not.toMatch(/import|fetch|cookie|session/i);
   });
 });
+
+describe("Stage 3 step 8: prefetch only for the cached candidate routes", () => {
+  it("names the cached routes and nothing per visit", async () => {
+    const { cachedRoute } = await import("./candidate-shell");
+    for (const h of ["/privacy", "/terms", "/cookies", "/employer-acceptable-use", "/data-retention", "/guides", "/guides/a-guide", "/help", "/help/a-page", "/occupations/nurses"]) expect(cachedRoute(h), h).toBe(true);
+    for (const h of ["/", "/jobs", "/jobs/x-1", "/companies/x", "/updates", "/account", "/login", "/signup", "/eligibility-checker", "/help?x=1", "/occupations", "/guides/a/b", "/permit-services", "https://example.test/terms"]) expect(cachedRoute(h), h).toBe(false);
+  });
+});

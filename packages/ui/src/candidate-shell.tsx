@@ -11,6 +11,11 @@ import { NavPill } from "./nav-pill";
  * ONE switch. Set it to true when the directory page is built; nothing else changes. A company's own page (/companies/<slug>) is not the directory and is linked from jobs.
  */
 export const COMPANIES_DIRECTORY_LIVE = false;
+/**
+ * Stage 3 step 8 (PERF-5): the candidate routes the CDN caches (legal, guides, help, occupation pages). Their links prefetch again: a prefetch is a CDN hit,
+ * not a function run. Keep in step with the pages that export `revalidate` (packages/db/test/step16-w3-pages.test.ts lists them).
+ */
+export const cachedRoute = (href: string) => /^\/(privacy|terms|cookies|employer-acceptable-use|data-retention|guides|help)(\/[^/?#]+)?$|^\/occupations\/[^/?#]+$/.test(href);
 const listed = <T extends { href: string }>(items: readonly T[]): T[] => items.filter((i) => COMPANIES_DIRECTORY_LIVE || i.href !== "/companies");
 
 // Paths are placeholders until the page slices fix them (#288); change them here only. The header follows frame N01: five links, then the
@@ -84,7 +89,7 @@ export function SiteHeader({ signedIn }: { signedIn?: boolean }) {
         <nav aria-label="Main" className="hidden flex-1 items-center lg:flex">
           <NavPill className="flex flex-1 items-center justify-center gap-1">
             {items.map((i) => (
-              <A key={i.href} href={i.href} className={i.href === "/" ? link.replace("inline-flex", "hidden xl:inline-flex") : link}>
+              <A key={i.href} href={i.href} prefetch={cachedRoute(i.href)} className={i.href === "/" ? link.replace("inline-flex", "hidden xl:inline-flex") : link}>
                 {i.label}
               </A>
             ))}
@@ -144,7 +149,7 @@ export function SiteHeader({ signedIn }: { signedIn?: boolean }) {
             {/* Frame M08: the rest of the screen under the bar, dark, one big row per link. */}
             <nav aria-label="Mobile" className="fixed inset-x-0 bottom-0 top-[5.25rem] z-10 flex flex-col overflow-y-auto bg-ink px-5 pb-8 pt-4 text-white sm:px-8">
               {listed(MOBILE_NAV_ALL).map((i) => (
-                <A key={i.href} href={i.href} className={menuRow}>
+                <A key={i.href} href={i.href} prefetch={cachedRoute(i.href)} className={menuRow}>
                   {i.label} <Icon name="arrow" />
                 </A>
               ))}
@@ -219,7 +224,7 @@ export function SiteFooter({ standingLine, rulesCheckedOn }: { standingLine?: Re
             <ul className="flex flex-col">
               {g.links.map(([label, href]) => (
                 <li key={href}>
-                  <A href={href} className="inline-flex min-h-9 items-center text-small underline-offset-2 hover:text-white hover:underline">
+                  <A href={href} prefetch={cachedRoute(href)} className="inline-flex min-h-9 items-center text-small underline-offset-2 hover:text-white hover:underline">
                     {label}
                   </A>
                 </li>

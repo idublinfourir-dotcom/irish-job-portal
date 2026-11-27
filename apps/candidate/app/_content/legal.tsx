@@ -37,7 +37,7 @@ function Side({ current }: { current: Purpose }) {
     <nav aria-label="Legal documents" className="flex flex-col gap-1 rounded-bento bg-sand p-4 lg:p-5">
       <p className="px-3 py-2 text-small font-semibold">Legal</p>
       {LEGAL_PAGES.map((p) => (
-        <A key={p.purpose} href={legalPath(p.purpose)!} aria-current={p.purpose === current ? "page" : undefined} className={`flex min-h-11 items-center rounded-pill px-4 text-ui no-underline ${p.purpose === current ? "bg-deep-green font-semibold text-white" : "text-muted hover:bg-hover-light"}`}>{p.title}</A>
+        <A key={p.purpose} href={legalPath(p.purpose)!} prefetch aria-current={p.purpose === current ? "page" : undefined} className={`flex min-h-11 items-center rounded-pill px-4 text-ui no-underline ${p.purpose === current ? "bg-deep-green font-semibold text-white" : "text-muted hover:bg-hover-light"}`}>{p.title}</A>
       ))}
     </nav>
   );

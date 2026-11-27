@@ -52,7 +52,7 @@ export function HelpView({ pages, signedIn }: HelpProps): ReactNode {
               <ul className="flex flex-col gap-2.5">
                 {g.pages.map((p) => (
                   <li key={p.slug}>
-                    <A href={helpPath(p.slug)} className="flex min-h-[64px] items-center justify-between gap-4 rounded-bento bg-sand px-6 py-3 font-heading text-[1.05rem] font-semibold no-underline hover:bg-hover-light">
+                    <A href={helpPath(p.slug)} prefetch className="flex min-h-[64px] items-center justify-between gap-4 rounded-bento bg-sand px-6 py-3 font-heading text-[1.05rem] font-semibold no-underline hover:bg-hover-light">
                       <span className="break-words">{p.title}</span>
                       <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-pill bg-white text-deep-green"><Icon name="right" size={16} /></span>
                     </A>
