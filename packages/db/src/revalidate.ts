@@ -32,8 +32,9 @@ export type Checked = { paths: Target[] } | { refused: 400 | 401 | 503; code: st
 export function checkRevalidate(body: string, signature: string | null, env: Record<string, string | undefined>, now = Date.now()): Checked {
   const secret = secretOf(env);
   if (!secret) return { refused: 503, code: "NOT_CONFIGURED" };
+  if (body.length > MAX_BODY) return { refused: 401, code: "BAD_SIGNATURE" }; // before the HMAC: a long unsigned body costs nothing
   const want = Buffer.from(signBody(body, secret), "hex"), got = Buffer.from(signature ?? "", "hex");
-  if (body.length > MAX_BODY || got.length !== want.length || !timingSafeEqual(got, want)) return { refused: 401, code: "BAD_SIGNATURE" };
+  if (got.length !== want.length || !timingSafeEqual(got, want)) return { refused: 401, code: "BAD_SIGNATURE" };
   let b: unknown;
   try { b = JSON.parse(body); } catch { return { refused: 400, code: "BAD_BODY" }; }
   const o = (b ?? {}) as Record<string, unknown>;
@@ -41,7 +42,7 @@ export function checkRevalidate(body: string, signature: string | null, env: Rec
   if (typeof o.at !== "number" || Math.abs(now - o.at) > MAX_AGE_MS) return { refused: 401, code: "STALE" }; // signed but old: a replay
   if (o.tags !== undefined && !(Array.isArray(o.tags) && o.tags.length === 0)) return { refused: 400, code: "UNKNOWN_TAG" };
   const paths = o.paths;
-  const known = (t: unknown) => typeof t === "object" && t !== null && !Array.isArray(t) && Object.keys(t).every((k) => k === "path" || k === "type") && PATHS.has(key(t as Target));
+  const known = (t: unknown) => typeof t === "object" && t !== null && !Array.isArray(t) && Object.keys(t).every((k) => k === "path" || k === "type") && typeof (t as Target).path === "string" && [undefined, "page", "layout"].includes((t as Target).type) && PATHS.has(key(t as Target));
   if (!Array.isArray(paths) || paths.length === 0 || paths.length > PATHS.size || !paths.every(known)) return { refused: 400, code: "UNKNOWN_PATH" };
   return { paths: paths as Target[] };
 }

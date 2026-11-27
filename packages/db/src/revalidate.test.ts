@@ -1,6 +1,6 @@
 // Unit: the signed revalidate call (Stage 3 step 2). The check refuses everything not signed with the secret, not fresh or not on the fixed list; the
 // caller sends nothing when it is not set up and never throws. A fake fetch stands in for the candidate site. Time budget: the check reads untrusted
-// text (up to MAX_BODY characters); measured 27 Nov 2026 at about 0.02 ms a call, budget 1 ms.
+// text (up to MAX_BODY characters); measured 27 Nov 2026: median 0.021 ms a call (printed), budget 1 ms.
 import { describe, expect, it, vi } from "vitest";
 import { ALL_PAGES, CONTENT_PATHS, checkRevalidate, LEGAL_PATHS, MAX_BODY, REVALIDATE_HEADER, revalidateCandidate, revalidateOn, signBody } from "./revalidate";
 
@@ -28,7 +28,7 @@ describe("checkRevalidate", () => {
     const bad: unknown[] = [
       { paths: [{ path: "/account" }], at: NOW }, { paths: [{ path: "/guides/[slug]" }], at: NOW }, { paths: [{ path: "/guides", type: "layout" }], at: NOW },
       { paths: [{ path: "/../terms" }], at: NOW }, { paths: [{ path: "/terms", extra: 1 }], at: NOW }, { paths: [], at: NOW }, { paths: "/terms", at: NOW },
-      { paths: [null], at: NOW }, { paths: Array(100).fill({ path: "/terms" }), at: NOW },
+      { paths: [null], at: NOW }, { paths: Array(100).fill({ path: "/terms" }), at: NOW }, { paths: [{ path: ["/terms"] }], at: NOW }, { paths: [{ path: "/terms", type: [""] }], at: NOW },
     ];
     for (const o of bad) expect(check(o), JSON.stringify(o).slice(0, 60)).toEqual({ refused: 400, code: "UNKNOWN_PATH" });
     expect(check({ paths: LEGAL_PATHS, at: NOW, tags: ["jobs"] })).toEqual({ refused: 400, code: "UNKNOWN_TAG" });
@@ -44,7 +44,9 @@ describe("checkRevalidate", () => {
     const big = JSON.stringify({ paths: LEGAL_PATHS, at: NOW, pad: "x".repeat(MAX_BODY - 200) });
     const t: number[] = [];
     for (let i = 0; i < 51; i++) { const s = performance.now(); checkRevalidate(big, "ab".repeat(32), env, NOW); t.push(performance.now() - s); }
-    expect(t.sort((a, b) => a - b)[25]).toBeLessThan(1);
+    const m = t.sort((a, b) => a - b)[25]!;
+    process.stderr.write(`checkRevalidate median ms: ${m.toFixed(4)}\n`);
+    expect(m).toBeLessThan(1);
   });
 });
 

@@ -2,18 +2,18 @@
 // them (`await Page({ searchParams })` gives the element, rendered to HTML here), through the real data layer (apps/candidate/lib/data.ts), the real
 // routes for every write and the real candidate login. Only Next's request context is stood in (next/headers gives the headers a test sets; server-only
 // is empty); no network. Fake data only.
-// Budget (measured 23 and 24 November 2026, see the printed line): statements and median time of each page render, warm. PERF-7 (27 Nov 2026): round trips waited for one after another, a visitor job page 7 before, 1 after (budget 2: the count, then the reads); a visitor search 3 (the count, the reads, the reads chained inside the wave). The visitor search runs one more gated read (the minimums for the Permit rules card: its session lookup, two rate counts and the rules): 6 became 9. PERF-3 (27 Nov 2026): one statement for both windows; in Next one count a render (React cache), here one per read (cache is a pass-through outside a server render).
+// Budget (measured 23 and 24 November 2026, see the printed line): statements and median time of each page render, warm. PERF-7 (27 Nov 2026): round trips waited for one after another, a visitor job page 7 before, 1 after (budget 2: the count, then the reads); a visitor search 1 (budget 3: the count, the reads, the reads chained inside the wave). The visitor search runs one more gated read (the minimums for the Permit rules card: its session lookup, two rate counts and the rules): 6 became 9. PERF-3 (27 Nov 2026): one statement for both windows; in Next one count a render (React cache), here one per read (cache is a pass-through outside a server render).
 import pg from "pg";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { answers, seedSignupTerms } from "./better-auth-helper";
 import { createTestDb, urlFor, type TestDb } from "./db";
 
-const { state } = vi.hoisted(() => ({ state: { headers: new Headers(), after: [] as Promise<unknown>[] } }));
+const { state } = vi.hoisted(() => ({ state: { headers: new Headers(), after: [] as (Promise<unknown> | (() => unknown))[] } }));
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({ headers: async () => state.headers }));
 // PERF-7: the view count runs in after(), once the answer is sent; here it is kept and awaited when the render is done, as Next runs it then.
-vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: (fn: () => unknown) => { state.after.push(Promise.resolve().then(fn)); } }));
+vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: (fn: Promise<unknown> | (() => unknown)) => { state.after.push(fn); } })); // run in the flush, never before: Next runs it once the answer is sent
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
@@ -109,7 +109,7 @@ const write = (route: Handler, cookie: string, body: unknown, path = "/api/x") =
   route(new Request(`${BASE}${path}`, { method: "POST", headers: { cookie, origin: BASE, "content-type": "application/json" }, body: JSON.stringify(body) }));
 const search = async (q: Record<string, string | string[]>, cookie?: string, ip?: string) => renderToStaticMarkup(await as(cookie, () => Search({ searchParams: Promise.resolve(q) }), ip));
 const jobPage = async (seg: string, cookie?: string, ip?: string) => {
-  try { return renderToStaticMarkup(await as(cookie, () => JobP({ params: Promise.resolve({ job: seg }) }), ip)); } finally { await Promise.all(state.after.splice(0)); }
+  try { return renderToStaticMarkup(await as(cookie, () => JobP({ params: Promise.resolve({ job: seg }) }), ip)); } finally { await Promise.all(state.after.splice(0).map((f) => (typeof f === "function" ? f() : f))); }
 };
 const addressOf = (key: string, title: string, county: string | null) => paths.jobPath({ id: ids[key]!, title, county }).slice("/jobs/".length);
 const views = async (id: string) => Number((await su.query("select coalesce(sum(views), 0) v from job_daily_stat where job_id = $1", [id])).rows[0].v);
@@ -331,7 +331,7 @@ describe("P8: /jobs/[job]", () => {
     const before = await views(ids.c7!);
     await as(undefined, () => JobP({ params: Promise.resolve({ job: seg }) }));
     expect(await views(ids.c7!)).toBe(before); // the render itself writes nothing
-    await Promise.all(state.after.splice(0));
+    await Promise.all(state.after.splice(0).map((f) => (typeof f === "function" ? f() : f)));
     expect(await views(ids.c7!)).toBe(before + 1);
     const closed = await views(ids.closed!);
     await jobPage(addressOf("closed", "Closed Role", "Cork"));

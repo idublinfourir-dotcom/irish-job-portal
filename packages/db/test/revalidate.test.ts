@@ -7,8 +7,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestDb, type TestDb } from "./db";
 import { counted, staffHarness, type Route } from "./staff-routes-harness";
 
-const { state } = vi.hoisted(() => ({ state: { after: [] as Promise<unknown>[], cleared: [] as [string, string | undefined][] } }));
-vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: (fn: () => unknown) => { state.after.push(Promise.resolve().then(fn)); } }));
+const { state } = vi.hoisted(() => ({ state: { after: [] as (Promise<unknown> | (() => unknown))[], cleared: [] as [string, string | undefined][] } }));
+vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: (fn: Promise<unknown> | (() => unknown)) => { state.after.push(fn); } })); // run in the flush, never before: Next runs it once the answer is sent
 vi.mock("next/cache", () => ({ revalidatePath: (p: string, t?: string) => { state.cleared.push([p, t]); } }));
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
@@ -19,7 +19,7 @@ type Handler = (r: Request) => Promise<Response>;
 let db: TestDb, h: Awaited<ReturnType<typeof staffHarness>>, content: Route, legal: Route, REVALIDATE: Handler;
 let R: typeof import("../src/revalidate");
 const sent: string[] = [];
-const flush = async () => { await Promise.all(state.after.splice(0)); const c = state.cleared.splice(0); return c; };
+const flush = async () => { await Promise.all(state.after.splice(0).map((f) => (typeof f === "function" ? f() : f))); const c = state.cleared.splice(0); return c; };
 
 beforeAll(async () => {
   db = await createTestDb();
