@@ -5,6 +5,9 @@
 // same day writes nothing. Staff read and close them at /api/scheduled-checks.
 // Run from the repo root with the app_admin login, daily from .github/workflows/daily-fetch.yml:
 //   SCHEDULED_ADMIN_DATABASE_URL=... node packages/db/src/scheduled-checks-cli.ts
+// The database size check (audit DB-4), its own step with the read-only app_backup login (catalog sizes only, no new privilege):
+//   SIZE_BACKUP_DATABASE_URL=... node packages/db/src/scheduled-checks-cli.ts size
+// It prints the total and the 10 largest tables, and exits 1 (a red run, GitHub's failure email is the alert) at 350 MB or more of the free plan's 500.
 import pg from "pg";
 import { sslOptions } from "./ssl.ts";
 import { REGISTRATION_BODIES } from "../../rules/src/registration.ts";
@@ -66,13 +69,42 @@ export async function writeReminders(db: Pick<pg.ClientBase, "query">, bodies = 
   return { due: due.length, written: (await db.query(WRITE_REMINDERS, [JSON.stringify(due)])).rowCount ?? 0 };
 }
 
-export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: string) => void, bodies = BODIES): Promise<number> {
-  if (argv.length) return log("usage: scheduled-checks-cli.ts (no arguments)"), 2;
-  const url = env.SCHEDULED_ADMIN_DATABASE_URL;
-  if (!url) return log("SCHEDULED_ADMIN_DATABASE_URL is not set (the app_admin login)"), 2;
+// ===== the database size check (DB-4) =====
+export const SIZE_LIMIT_MB = 350;
+const MB = 1024 * 1024;
+// Catalog only: the database size and the 10 largest tables with their indexes and TOAST (every schema, Supabase's own included).
+export const SIZE_SQL =
+  "select pg_database_size(current_database())::float8 as total, coalesce((select jsonb_agg(t order by t.bytes desc) from (" +
+  "select n.nspname || '.' || c.relname as name, pg_total_relation_size(c.oid)::float8 as bytes from pg_class c join pg_namespace n on n.oid = c.relnamespace " +
+  "where c.relkind in ('r', 'm', 'p') and n.nspname not in ('pg_catalog', 'information_schema') order by 2 desc limit 10) t), '[]') as top";
+export type SizeRow = { name: string; bytes: number };
+/** The lines to print and whether the run goes red (at the limit or over). Pure. */
+export function sizeReport(total: number, top: readonly SizeRow[], limitMb = SIZE_LIMIT_MB): { red: boolean; lines: string[] } {
+  const mb = (b: number) => (b / MB).toFixed(1);
+  const red = total >= limitMb * MB;
+  return { red, lines: [
+    `database size: ${mb(total)} MB, limit ${limitMb} MB (free plan cap 500 MB)${red ? ": OVER THE LIMIT, plan the move to the paid database or free space" : ""}`,
+    // a control character in a table name could fake a log line: shown as "?"
+    ...top.map((t) => `  ${mb(t.bytes).padStart(7)} MB  ${t.name.replace(/[\u0000-\u001f\u007f]/g, "?")}`),
+  ] };
+}
+export async function sizeCheck(db: Pick<pg.ClientBase, "query">, log: (line: string) => void, limitMb = SIZE_LIMIT_MB): Promise<number> {
+  const r = (await db.query<{ total: number; top: SizeRow[] }>(SIZE_SQL)).rows[0]!;
+  const rep = sizeReport(r.total, r.top, limitMb);
+  rep.lines.forEach((l) => log(l));
+  return rep.red ? 1 : 0;
+}
+
+export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: string) => void, bodies = BODIES, limitMb = SIZE_LIMIT_MB): Promise<number> {
+  const size = argv.length === 1 && argv[0] === "size";
+  if (argv.length && !size) return log("usage: scheduled-checks-cli.ts (no arguments), or scheduled-checks-cli.ts size"), 2;
+  const [name, login] = size ? ["SIZE_BACKUP_DATABASE_URL", "app_backup"] : ["SCHEDULED_ADMIN_DATABASE_URL", "app_admin"];
+  const url = env[name];
+  if (!url) return log(`${name} is not set (the ${login} login)`), 2;
   const client = new pg.Client({ connectionString: url, ssl: sslOptions(env) });
   try {
     await client.connect();
+    if (size) return await sizeCheck(client, log, limitMb);
     const r = await writeReminders(client, bodies);
     log(`scheduled checks: ${r.due} due, ${r.written} new`);
     return 0;
