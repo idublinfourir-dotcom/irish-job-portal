@@ -177,32 +177,39 @@ export const UPSERT =
   "insert into cro_company(cro_number, name, normalised_name, status, company_type, county, last_seen_on) " +
   "select n, a, b, c, d, e, $7::date from unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[]) as t(n, a, b, c, d, e) " +
   "on conflict (cro_number) do update set name = excluded.name, normalised_name = excluded.normalised_name, status = excluded.status, " +
-  "company_type = excluded.company_type, county = excluded.county, last_seen_on = excluded.last_seen_on";
-/** Rows not in this file get this status instead of being deleted at once; they are deleted once unseen for GONE_DAYS. */
+  "company_type = excluded.company_type, county = excluded.county, last_seen_on = excluded.last_seen_on " +
+  // audit DB-3: an unchanged row is not written at all (a rewrite of every row every week was 79% of the database's churn)
+  "where (cro_company.name, cro_company.normalised_name, cro_company.status, cro_company.company_type, cro_company.county) " +
+  "is distinct from (excluded.name, excluded.normalised_name, excluded.status, excluded.company_type, excluded.county)";
+/** Rows not in this file get this status instead of being deleted at once; they are deleted once gone for GONE_DAYS. last_seen_on is the day a row
+ *  was last written: changed by a file, or marked gone (so for a gone row it is the day it went). An unchanged row keeps its old date. */
 export const GONE = "Not in latest file";
 export const GONE_DAYS = 90;
-export const MARK_GONE = `update cro_company set status = '${GONE}' where last_seen_on < $1::date and status <> '${GONE}'`;
-export const DELETE_OLD = `delete from cro_company where last_seen_on < $1::date - ${GONE_DAYS}`;
+// $2: every number in this file. An anti-join (hash), not `<> all`, so 343,000 numbers stay one quick pass.
+export const MARK_GONE = `update cro_company c set status = '${GONE}', last_seen_on = $1::date where c.status <> '${GONE}' ` +
+  "and not exists (select 1 from unnest($2::text[]) f(n) where f.n = c.cro_number)";
+export const DELETE_OLD = `delete from cro_company where status = '${GONE}' and last_seen_on < $1::date - ${GONE_DAYS}`;
 export const BEFORE = `select count(*)::int as n from cro_company where status <> '${GONE}'`;
 
 /** True when `row` should replace `old` for the same number: the later status date, and the earlier row when the dates are equal. */
 export const better = (row: Pick<CroRow, "statusDate">, old: Pick<CroRow, "statusDate">): boolean => row.statusDate > old.statusDate;
 
-export type CroResult = CroStats & { before: number; marked: number; deleted: number };
+export type CroResult = CroStats & { before: number; written: number; marked: number; deleted: number };
 
 /**
- * Loads rows into cro_company with last_seen_on = `today` (an ISO date), then marks and deletes what the file no longer has. A file with fewer than
+ * Loads new and changed rows into cro_company with last_seen_on = `today` (an ISO date; `written` counts them), then marks and deletes what the file no longer has. A file with fewer than
  * 80% of the kept rows we already hold is refused before anything is marked, so a cut-short download cannot make the whole register vanish.
  */
 export async function importCro(db: Db, rows: AsyncIterable<CroRow>, today: string, stats: CroStats): Promise<CroResult> {
   const before = (await db.query<{ n: number }>(BEFORE)).rows[0]!.n;
   const seen = new Map<string, string>(); // number -> status date of the row written for it; ~35 MB for the real file
   let batch = new Map<string, CroRow>();
+  let written = 0;
   const flush = async () => {
     if (!batch.size) return;
     const list = [...batch.values()];
     batch = new Map();
-    await db.query(UPSERT, [list.map((r) => r.croNumber), list.map((r) => r.name), list.map((r) => r.normalisedName), list.map((r) => r.status), list.map((r) => r.companyType), list.map((r) => r.county), today]);
+    written += (await db.query(UPSERT, [list.map((r) => r.croNumber), list.map((r) => r.name), list.map((r) => r.normalisedName), list.map((r) => r.status), list.map((r) => r.companyType), list.map((r) => r.county), today])).rowCount ?? 0;
   };
   for await (const row of rows) {
     const old = seen.get(row.croNumber);
@@ -216,7 +223,7 @@ export async function importCro(db: Db, rows: AsyncIterable<CroRow>, today: stri
   }
   await flush();
   if (before > 0 && seen.size < before * 0.8) throw new ImportRefused(`the file has ${seen.size} kept companies but the register holds ${before}: refused before marking anything as gone`);
-  const marked = (await db.query(MARK_GONE, [today])).rowCount ?? 0;
+  const marked = (await db.query(MARK_GONE, [today, [...seen.keys()]])).rowCount ?? 0;
   const deleted = (await db.query(DELETE_OLD, [today])).rowCount ?? 0;
-  return { ...stats, before, marked, deleted };
+  return { ...stats, before, written, marked, deleted };
 }

@@ -3,7 +3,7 @@
 // that is not 200, a test or local address in a link, a canonical off the page's own site, placeholder words or raw Markdown in the text.
 // It is EXPECTED to fail until the legal texts are published, so it never runs in `npm run check`; only its tests do.
 // GET only, one request per 1.1 s, at most 120 requests, no redirect followed to another origin. It never opens a job page (/jobs/<job>):
-// each render writes a view row on live (apps/candidate/app/jobs/[job]/page.tsx:70); those links are counted only.
+// each render writes a view row on live (apps/candidate/app/jobs/[job]/page.tsx, after()); those links are counted only.
 // The Vercel bypass secret of each site is read from its file at run time and sent only to that site; it is never printed.
 import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -41,6 +41,8 @@ const JOB_PAGE = /^\/jobs\/[^/]+/;
 const SKIP = /^\/(_next|api)\/|\.(png|jpe?g|svg|ico|webp|gif|woff2?|css|js|json|webmanifest|txt|xml|pdf)$/i;
 const BAD_URL = /localhost|127\.0\.0\.1|example\.com|vercel\.app|\.invalid\b|staging|^http:\/\//i;
 const BAD_TEXT = /placeholder|not published yet|coming soon|lorem|no updates here yet|\*\*|^#{1,6} |\]\(/im;
+// The one decided "coming soon" (#307, 27 Nov 2026): the services price line. Any other "coming soon" still fails.
+export const PRICES_SOON = "Prices and invoices: coming soon.";
 // Every pattern below is linear on hostile input: no class can run past the next quote or angle bracket, and the tag strip is indexOf based.
 const ATTR = /\b(href|src|action|content)\s*=\s*(?:"([^"<>]*)"|'([^'<>]*)')/gi;
 const CANONICAL = /<link\b[^<>]*\brel\s*=\s*["']?canonical\b[^<>]*>/gi;
@@ -89,7 +91,7 @@ export function judge(html: string, pageUrl: string): { fails: string[]; links: 
     try { origin = new URL(href, pageUrl).origin; } catch { /* reported below */ }
     if (origin !== own) fails.add(`canonical not on ${own}: ${href.slice(0, 120)}`);
   }
-  for (const line of visibleText(html).split("\n")) if (BAD_TEXT.test(line)) fails.add(`text: ${line.slice(0, 120)}`);
+  for (const line of visibleText(html).split("\n")) if (BAD_TEXT.test(line.replace(PRICES_SOON, ""))) fails.add(`text: ${line.slice(0, 120)}`);
   return { fails: [...fails], links: [...links] };
 }
 

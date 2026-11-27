@@ -103,6 +103,16 @@ describe("importCro", () => {
     expect(r.repeated).toBe(2);
     expect(upserts.flatMap((u) => u.params![3] as string[]).filter((s) => s === "Liquidation")).toHaveLength(1);
   });
+  it("DB-3: the upsert skips an equal row, and gone rows are found by an anti-join on this file's numbers, stamped and deleted only once gone", async () => {
+    const db = fake(0);
+    await importCro(db, rowsOf([row(1), row(2), row(1, "2021-01-01")]), "2026-11-12", fresh());
+    const [up, mark, del] = [db.calls.find((c) => c.sql.startsWith("insert"))!, db.calls.find((c) => c.sql.startsWith("update"))!, db.calls.find((c) => c.sql.startsWith("delete"))!];
+    expect(up.sql).toMatch(/do update set .* where \(cro_company\.name, .*\) is distinct from \(excluded\.name, /);
+    expect(up.sql).not.toMatch(/distinct from \([^)]*last_seen_on/); // the date alone never makes a row "changed"
+    expect(mark.params).toEqual(["2026-11-12", ["1", "2"]]);
+    expect(mark.sql).toMatch(/last_seen_on = \$1::date .*not exists \(select 1 from unnest\(\$2::text\[\]\)/);
+    expect(del.sql).toMatch(/^delete from cro_company where status = 'Not in latest file' and last_seen_on < /);
+  });
   it("refuses, before marking anything, a file with under 80% of the rows we hold", async () => {
     const db = fake(1000);
     await expect(importCro(db, rowsOf(Array.from({ length: 700 }, (_, i) => row(i + 1))), "2026-11-12", fresh())).rejects.toThrow(/refused before marking/);

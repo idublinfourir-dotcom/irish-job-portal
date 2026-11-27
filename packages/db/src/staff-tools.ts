@@ -238,7 +238,7 @@ export const refuseSetting = (db: Db, staff: string, requestId: unknown) =>
 // ===== C6: merge two candidate accounts of one person =====
 // An administrator proposes {keep, drop}; a different administrator confirms and private.candidate_merge (0048) moves the dropped account's rows to the
 // kept one and erases the dropped account in the same transaction, using the request once. The stored files it returns are removed after the commit;
-// a failed removal is logged by key (a random id) for removal by hand, as the self delete does. The proposer withdraws, another administrator refuses.
+// a failed removal is logged as a count (never the key) and the weekly orphan sweep removes the file. The proposer withdraws, another administrator refuses.
 const LOGIN_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const CANDIDATE = "select deleted_at is not null as deleted from candidate_user where id = $1";
 const MERGE_REFUSED = /^merge refused: ([a-z_]+)/;
@@ -279,8 +279,9 @@ export async function confirmCandidateMerge(db: Db, staff: string, requestId: un
   });
   let filesRemoved = 0;
   for (const k of out.storage_keys) {
-    try { await fileStore().remove(k); filesRemoved++; } catch { console.error("candidate merge: stored file not removed, delete by hand:", JSON.stringify(k)); }
+    try { await fileStore().remove(k); filesRemoved++; } catch { /* counted below */ }
   }
+  if (filesRemoved < out.storage_keys.length) console.error(`candidate merge: ${out.storage_keys.length - filesRemoved} stored files not removed, the weekly orphan sweep removes them`);
   return { keep: out.keep, drop: out.drop, moved: out.moved, filesRemoved };
 }
 
@@ -388,8 +389,9 @@ export async function confirmDataRequestErase(db: Db, staff: string, requestId: 
   });
   let filesRemoved = 0;
   for (const k of out.storage_keys) {
-    try { await fileStore().remove(k); filesRemoved++; } catch { console.error("data request erase: stored file not removed, delete by hand:", JSON.stringify(k)); }
+    try { await fileStore().remove(k); filesRemoved++; } catch { /* counted below */ }
   }
+  if (filesRemoved < out.storage_keys.length) console.error(`data request erase: ${out.storage_keys.length - filesRemoved} stored files not removed, the weekly orphan sweep removes them`);
   return { kind: out.kind, userId: out.userId, filesRemoved };
 }
 

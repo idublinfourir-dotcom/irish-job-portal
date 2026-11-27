@@ -4,6 +4,7 @@ import type { EmailKind, LoginPool, SendEmail } from ".";
 import { createBrevoMail } from "./brevo";
 import { createFakeEmail, type FakeEmail } from "./fake-email";
 import { render, SITE_NAME, type Email, type Part } from "./email-layout";
+import { ownPath } from "./reauth";
 
 // Draft wording (E1) until the content writers' final text (N2 stays open). The link times come from the code that makes them:
 // Better Auth's defaults, as createAuth sets neither (emailVerification.expiresIn and resetPasswordTokenExpiresIn, both 3600 s), and
@@ -41,18 +42,37 @@ export function accountEmail(kind: EmailKind, link: string, baseURL: string): Em
   return render(w.subject, { heading: w.heading, paragraphs: w.paragraphs, button: { label: w.button, url: link }, footer: FOOTER });
 }
 
+/** The page an emailed confirm link opens (SEC-3): it changes nothing on GET; only its button goes on to Better Auth's GET /verify-email. */
+export const CONFIRM_PATH = "/confirm-email";
+const CONFIRM_KINDS: ReadonlySet<EmailKind> = new Set(["verify", "change-email", "new-email"]);
+/** SEC-3: Better Auth's verify, change-email and new-email links act on a plain GET, which a mail filter's link scan triggers. On the candidate
+ *  and portal pools those links are sent as our own confirm page instead, with the same token (so the same expiry and single use). callbackURL
+ *  is kept only when it is a path on this site. Any other link (reset, invite, staff) is returned unchanged. */
+export function confirmLink(pool: LoginPool, kind: EmailKind, link: string): string {
+  const u = new URL(link);
+  const token = u.searchParams.get("token");
+  if (pool === "staff" || !CONFIRM_KINDS.has(kind) || !u.pathname.endsWith(`/api/auth/${pool}/verify-email`) || !token) return link;
+  const q = new URLSearchParams({ token });
+  const cb = u.searchParams.get("callbackURL");
+  if (ownPath(cb, u.origin)) q.set("callbackURL", cb);
+  return `${u.origin}${CONFIRM_PATH}?${q}`;
+}
+
 /** The same shape as the fake sender; with Brevo the outbox stays empty (nothing is kept in memory). */
 export function createMail(baseURL: string, env: NodeJS.ProcessEnv = process.env, print?: (line: string) => void, fetchImpl?: typeof fetch): FakeEmail {
   const apiKey = env.BREVO_API_KEY, from = env.EMAIL_FROM;
-  if (!apiKey && !from) return createFakeEmail(baseURL, print, env);
+  if (!apiKey && !from) {
+    const fake = createFakeEmail(baseURL, print, env);
+    return { outbox: fake.outbox, send: (pool, kind, to, link) => fake.send(pool, kind, to, confirmLink(pool, kind, link)) };
+  }
   if (!apiKey || !from) throw new Error("BREVO_API_KEY and EMAIL_FROM must be set together (or neither, for the local fake sender).");
   const mail = createBrevoMail({ apiKey, from, fetch: fetchImpl });
   // Brevo puts its own unsubscribe on every email and a click blocks that one sender for that person (help.brevo.com 209458705), so a reset
   // comes from its own address, security@ on EMAIL_FROM's domain: an unsubscribe on a verify or invite email never blocks a later reset.
   // The notice to the old address about an email change is a security email too (C4).
   const reset = createBrevoMail({ apiKey, from: `security@${from.split("@")[1]}`, fetch: fetchImpl });
-  const send: SendEmail = async (_pool: LoginPool, kind, to, link) => {
-    const m = accountEmail(kind, link, baseURL);
+  const send: SendEmail = async (pool: LoginPool, kind, to, link) => {
+    const m = accountEmail(kind, confirmLink(pool, kind, link), baseURL);
     await (kind === "reset" || kind === "change-email" ? reset : mail)(to, m.subject, m.text, m.html);
   };
   return { outbox: [], send };

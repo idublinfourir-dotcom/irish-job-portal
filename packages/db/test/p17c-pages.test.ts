@@ -19,7 +19,8 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh() {} }), redirec
 vi.mock("next/server", () => ({ connection: async () => {}, after: () => {} }));
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
-const BUDGET = { caseStatements: 14, caseMs: 60, listStatements: 8, listMs: 40 }; // measured 25 Nov 2026: case page 14 statements (5 reads, each with its 2 session statements) and 11 ms; list 7 and 5 ms
+const BUDGET = { caseStatements: 15, caseMs: 60, listStatements: 8, listMs: 40 }; // measured 25 Nov 2026: case page 14 statements (5 reads, each with its 2 session statements) and 11 ms; list 7 and 5 ms
+// SEC-6 (27 Nov 2026): each signed-in read now writes its read count; one count per page render is round 2 work (S3a), then lower these again
 const secret = "trial-only-secret-trial-only-secret-32", BASE = "http://localhost:3000";
 let db: TestDb, su: pg.Pool, AUTH: (r: Request) => Promise<Response>;
 let F: { text(p?: string): Promise<string>; staff(): Promise<string> };

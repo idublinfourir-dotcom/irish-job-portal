@@ -73,7 +73,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: s
       text.setEncoding("utf8");
       const r = await importCro(db, croRows(csvRecords(text as AsyncIterable<string>), stats), today, stats);
       await db.query("insert into register_import(source, validator, imported_on, row_count) values ('cro', null, $1::date, $2) on conflict (source) do update set imported_on = excluded.imported_on, row_count = excluded.row_count", [today, r.kept - r.repeated]);
-      log(`CRO: read ${r.read} rows, kept ${r.kept} (${r.repeated} repeated numbers), skipped ${r.skipped} odd rows, ${r.marked} marked as not in the latest file, ${r.deleted} deleted after 90 days, in ${Math.round((Date.now() - started) / 1000)} s, peak memory ${Math.round(process.resourceUsage().maxRSS / 1024)} MB`);
+      log(`CRO: read ${r.read} rows, kept ${r.kept} (${r.repeated} repeated numbers), ${r.written} written, skipped ${r.skipped} odd rows, ${r.marked} marked as not in the latest file, ${r.deleted} deleted after 90 days, in ${Math.round((Date.now() - started) / 1000)} s, peak memory ${Math.round(process.resourceUsage().maxRSS / 1024)} MB`);
     } else {
       let pdf = local;
       let validator: string | null = null;

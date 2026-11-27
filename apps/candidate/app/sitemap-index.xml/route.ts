@@ -4,5 +4,5 @@ import { readSitemapIndex } from "../../lib/data";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  return new Response(await readSitemapIndex(), { headers: { "content-type": "application/xml; charset=utf-8" } });
+  return new Response(await readSitemapIndex(), { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, s-maxage=3600, stale-while-revalidate=86400" } });
 }

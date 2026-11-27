@@ -1,6 +1,7 @@
 // C4 (#270) on the candidate site, end to end on the test database through the real route handlers as app_candidate: the delete needs a sign-in
 // in the last 10 minutes, the email change takes effect only after the old address confirms and the new one is verified, and "sign out everywhere"
 // (Better Auth's /revoke-sessions) ends every session at once. Email goes to the fake sender only; no network. Fake people only.
+import { pressed } from "./confirm-link";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "./db";
@@ -30,6 +31,7 @@ beforeAll(async () => {
   PROFILE = await import("../../../apps/candidate/app/api/candidate/profile/route");
   EXPORT = await import("../../../apps/candidate/app/api/candidate/export/route");
   ({ candidateMail: mail } = await import("../../../apps/candidate/lib/candidate"));
+  mail = pressed(mail, "candidate");
 });
 afterAll(async () => {
   const { getPool } = await import("../src");

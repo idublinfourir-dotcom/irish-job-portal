@@ -40,7 +40,7 @@ it("the staff export reads by the acting id only and leaves out evidence, bodies
 
 describe("portalDelete", () => {
   afterEach(() => setFileStore(undefined));
-  it("removes every stored file the erase returns; a failed removal is logged by key and the reply still says deleted", async () => {
+  it("removes every stored file the erase returns; a failed removal is logged as a count (never the key) and the reply still says deleted", async () => {
     const store = memoryStore();
     setFileStore(store);
     for (const k of ["case/a", "case/b"]) await store.put(k, new Uint8Array([1]), "application/pdf");
@@ -49,7 +49,7 @@ describe("portalDelete", () => {
     store.failNext();
     expect(await portalDelete(db, "token")).toEqual({ ok: true, filesRemoved: 1 });
     expect([...store.objects.keys()]).toEqual(["case/a"]);
-    expect(log).toHaveBeenCalledWith(expect.stringContaining("delete by hand"), '"case/a"');
+    expect(log.mock.calls).toEqual([["portal account delete: 1 stored files not removed, the weekly orphan sweep removes them"]]);
     log.mockRestore();
   });
 });

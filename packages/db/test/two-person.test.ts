@@ -500,7 +500,7 @@ sections[7] = async () => {
   await rule(t, "app_admin cannot drop a trigger", { refuse: () => run("app_admin", S.A, "drop trigger approval_request_guard on approval_request"), expect: "must be owner" });
   await rule(t, "app_admin cannot become the owner (set role portal_owner)", { refuse: () => run("app_admin", S.A, "set role portal_owner"), expect: "permission denied" });
   await rule(t, "app_admin cannot call the approval helper directly (private.use_approval)", { refuse: () => run("app_admin", S.A, "select private.use_approval(1,'ban','strike','1')"), expect: "permission denied" });
-  await rule(t, "app_admin cannot replace a trigger function (create or replace function private.approval_check)", { refuse: () => run("app_admin", S.A, "create or replace function private.approval_check() returns trigger language plpgsql as $f$ begin return new; end $f$"), expect: "" });
+  await rule(t, "app_admin cannot replace a trigger function (create or replace function private.approval_check)", { refuse: () => run("app_admin", S.A, "create or replace function private.approval_check() returns trigger language plpgsql as $f$ begin return new; end $f$"), expect: "permission denied for schema private" });
   await rule(t, "app_admin cannot create objects in schema public (a shadow table or function)", { refuse: () => run("app_admin", S.A, "create table public.approval_request_shadow(id int)"), expect: "permission denied" });
   await rule(t, "app_admin cannot write the audit trail in someone else's name away from the app (no update or delete on audit_event)", { refuse: () => run("app_admin", S.A, "delete from audit_event"), expect: "permission denied" });
   // the acting id is a plain setting

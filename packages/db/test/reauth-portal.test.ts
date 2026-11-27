@@ -1,6 +1,7 @@
 // C4 (#270) on the portal, end to end on the test database through the real auth route as app_portal: the email change needs a fresh session,
 // keeps the domain, and takes effect only after the old address confirms and the new one is verified; "sign out everywhere" ends every session at
 // once. The delete, pay-floor sign and appeal checks are in portal-account, pay-floors-portal and status-route. Fake sender only; no network.
+import { pressed } from "./confirm-link";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "./db";
@@ -28,6 +29,7 @@ beforeAll(async () => {
   AUTH = await import("../../../apps/portal/app/api/auth/portal/[...all]/route");
   STATUS = await import("../../../apps/portal/app/api/portal/status/route");
   ({ portalMail: mail } = await import("../../../apps/portal/lib/portal"));
+  mail = pressed(mail, "portal");
 });
 afterAll(async () => {
   const { getPool } = await import("../src");

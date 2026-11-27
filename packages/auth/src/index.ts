@@ -1,10 +1,10 @@
 import { betterAuth, getCurrentAdapter, type DBFieldAttribute } from "better-auth";
-import { APIError, getOAuthState } from "better-auth/api";
+import { APIError, createAuthMiddleware, getOAuthState } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { generateRandomString } from "better-auth/crypto";
 import type { Pool } from "pg";
 import { COUNT_NO, checkPortalSignup, checkSignup, signupPlugin, writeConsent, type Answers } from "./signup";
-import { emailLimitPlugin } from "./email-limit";
+import { EMAIL_DAY_BUDGET, emailLimitPlugin, signInLimitPlugin, withinDayBudget } from "./email-limit";
 import { isFresh, reauthPlugin } from "./reauth";
 import { UNVERIFIED_PATH, unverifiedEmailPlugin } from "./unverified-email";
 
@@ -12,7 +12,7 @@ export { readAnswers, readPortalAnswers, checkSignup, checkPortalSignup, current
 export { createFakeEmail, type FakeEmail } from "./fake-email";
 export { accountEmail, createMail } from "./mail";
 export { createBrevoMail, type SendMail } from "./brevo";
-export { EMAIL_LIMIT, emailLimitKey } from "./email-limit";
+export { dayBudgetKey, EMAIL_DAY_BUDGET, EMAIL_LIMIT, emailLimitKey, SIGN_IN_LIMIT, signInLimitKey } from "./email-limit";
 export { isFresh, ownPath, REAUTH_CODE, REAUTH_SECONDS } from "./reauth";
 
 // The pool is called portal, not employer: its tables are portal_user and so on (23-database-design.md).
@@ -26,7 +26,11 @@ export type GoogleSettings = { clientId: string; clientSecret: string };
 // google is for the candidate pool only, and only when set; without it the Google routes answer "provider not found".
 // background: how the app keeps a task alive after the reply (Next's after() in the apps). With it, sign-up and reset answer without
 // waiting for the email send (slice 2 review finding 4), so the reply time does not show whether an address has an account.
-export type AuthOptions = { database: Pool; baseURL: string; secret: string; sendEmail: SendEmail; google?: GoogleSettings; background?: (task: Promise<unknown>) => void };
+// emailBudget: the daily budget of account emails (SEC-2, email-limit.ts). Unset, it is on wherever the app is deployed (on Vercel, or with
+// NODE_ENV=production), as fake-email.ts tells a deployed site, and off on a developer machine and in tests, whose test databases sign up
+// far more people than a day's budget; the budget's own tests turn it on.
+export type AuthOptions = { database: Pool; baseURL: string; secret: string; sendEmail: SendEmail; google?: GoogleSettings; background?: (task: Promise<unknown>) => void; emailBudget?: boolean };
+export const emailBudgetOn = (env: NodeJS.ProcessEnv) => Boolean(env.VERCEL) || env.NODE_ENV === "production";
 
 // Better Auth's camelCase fields mapped to the lowercase columns of the migrations.
 const snake = {
@@ -67,7 +71,10 @@ export const STAFF_REFRESH_SECONDS = 300;
 // An app's settings for one pool (STAFF_AUTH_URL and STAFF_AUTH_SECRET, CANDIDATE_..., PORTAL_...), read from its environment.
 // Missing ones fail closed, like checkSettings.
 export function authSettings(prefix: "STAFF" | "CANDIDATE" | "PORTAL", env: NodeJS.ProcessEnv): { baseURL: string; secret: string } {
-  const baseURL = env[`${prefix}_AUTH_URL`], secret = env[`${prefix}_AUTH_SECRET`];
+  // A preview deployment (VERCEL_ENV "preview" only, never production) with no *_AUTH_URL uses its own address: Vercel's branch address,
+  // else the deployment address (a CLI deploy has no Git branch). Neither includes https://. https://vercel.com/docs/environment-variables/system-environment-variables
+  const previewHost = env.VERCEL_ENV === "preview" ? env.VERCEL_BRANCH_URL || env.VERCEL_URL : undefined;
+  const baseURL = env[`${prefix}_AUTH_URL`] || (previewHost ? `https://${previewHost}` : undefined), secret = env[`${prefix}_AUTH_SECRET`];
   if (!baseURL || !secret) throw new Error(`${prefix}_AUTH_URL and ${prefix}_AUTH_SECRET must be set.`);
   checkSettings(baseURL, secret);
   return { baseURL, secret };
@@ -96,13 +103,31 @@ const fromGoogle = new WeakMap<object, Answers>();
 // Three separate login pools in one database (#97): the same email can exist once in each, with its own
 // tables and its own cookie. The options are the ones the tests in packages/db/test/better-auth.test.ts prove
 // (23-database-design.md section 2.2).
-export function createAuth(name: LoginPool, { database, baseURL, secret, sendEmail: send, google, background }: AuthOptions) {
+export function createAuth(name: LoginPool, { database, baseURL, secret, sendEmail: send, google, background, emailBudget = emailBudgetOn(process.env) }: AuthOptions) {
   const { secure } = checkSettings(baseURL, secret);
+  // SEC-2: the daily budget (email-limit.ts), counted just before the send, so after the reply when there is a background handler.
+  // The reply waits for the count only (the after hook below), never for the send: the send is still started before the reply, as without
+  // a budget, so a reply that sends an email costs one statement more and nothing else. The set is per instance, not per request; waiting
+  // a few ms on another request's count does no harm.
+  const budget: Partial<Record<EmailKind, number>> = name === "staff" || !emailBudget ? {} : EMAIL_DAY_BUDGET[name];
+  const counting = new Set<Promise<unknown>>();
+  const budgeted: SendEmail = (pool, kind, to, link) => {
+    const max = budget[kind];
+    if (max === undefined || name === "staff") return send(pool, kind, to, link);
+    let sending: Promise<void> | undefined;
+    const counted = withinDayBudget(database, name, kind, max).then((ok) => {
+      if (ok) sending = send(pool, kind, to, link);
+      else console.error(`[auth] ${pool} ${kind} email not sent: today's budget of ${max} is used`);
+    });
+    const held = counted.catch(() => {}).finally(() => counting.delete(held));
+    counting.add(held);
+    return counted.then(() => sending);
+  };
   // A send that runs after the reply has no caller to fail, so its error is logged here (never the address). Without background the
   // error reaches the caller as before (staff: refuseEmail).
   const sendEmail: SendEmail = background
-    ? (pool, kind, to, link) => send(pool, kind, to, link).catch((e) => console.error(`[auth] ${pool} ${kind} email not sent: ${(e as Error).message}`))
-    : send;
+    ? (pool, kind, to, link) => budgeted(pool, kind, to, link).catch((e) => console.error(`[auth] ${pool} ${kind} email not sent: ${(e as Error).message}`))
+    : budgeted;
   // C1: the dormant rules (retention rules 3 to 5, 0002_functions.sql) read last_active_at, so a sign-in and each session refresh set it;
   // a trigger then clears inactive_warned_at, which cancels a warning already sent. A refresh of a row deleted meanwhile passes null.
   // B55: the portal's team list shows "last active", so a portal sign-in and refresh set portal_user.last_active_at the same way (no dormant rule reads it).
@@ -150,8 +175,9 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
       ...(name === "staff" ? { expiresIn: STAFF_IDLE_SECONDS, updateAge: STAFF_REFRESH_SECONDS } : {}),
     },
     // Staff: server calls (requireStaff) refresh the session row, and this sends the new cookie back in Next.js route handlers and server actions.
-    plugins: name === "staff" ? [nextCookies()] : name === "candidate" || name === "portal"
-      ? [emailLimitPlugin(database, name, secret), signupPlugin(database, name), reauthPlugin(name, secret), ...(name === "candidate" ? [unverifiedEmailPlugin((b) => later.send!(b))] : [])] : [],
+    // SEC-5: every pool has the sign-in limit per account.
+    plugins: name === "staff" ? [signInLimitPlugin(database, name, secret), nextCookies()] : name === "candidate" || name === "portal"
+      ? [signInLimitPlugin(database, name, secret), emailLimitPlugin(database, name, secret), signupPlugin(database, name), reauthPlugin(name, secret), ...(name === "candidate" ? [unverifiedEmailPlugin((b) => later.send!(b))] : [])] : [],
     // A Google sign-in joins an existing account with the same email only when Google says the email is verified AND that account's
     // email was confirmed here (Better Auth's defaults, written out so a change shows in review). No trusted providers: Google's word
     // alone is not enough for an unconfirmed email-and-password account, so there is no silent takeover.
@@ -224,6 +250,7 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
         ...(name !== "staff" ? { update: { after: touchActive } } : {}),
       },
     },
+    hooks: { after: createAuthMiddleware(async () => { if (counting.size) await Promise.all(counting); }) },
     // PERF-4: no schema read on each new instance (about 900 catalog rows, 48 ms, before the first auth call). The same check runs in CI on the
     // migrated test database instead (packages/db/test/auth-settings.test.ts, through $context.explicitSchemaCheck).
     // The client address comes from the header Vercel sets, not X-Forwarded-For, which any client can send.

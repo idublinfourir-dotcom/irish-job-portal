@@ -54,8 +54,8 @@ describe("the services landing (DD26, from the old text of C19)", () => {
     const p = html(<LandingView {...landing()} />);
     expect(p).not.toMatch(/Stamp 4|family reunification|Paid by you(?!r)|book a|booking|section 55|Robin|named case handler|message your/i);
     expect(text(p)).toMatch(/Candidates never pay for our permit services/);
-    expect(text(p)).toMatch(/Prices and invoices: available soon\. We agree the price with your employer or agency before any work starts\./);
-    expect(text(p)).not.toMatch(/coming soon|placeholder|TBC/i);
+    expect(text(p)).toMatch(/Prices and invoices: coming soon\. We agree the price with your employer or agency before any work starts\./);
+    expect(text(p).replace("Prices and invoices: coming soon.", "")).not.toMatch(/coming soon|placeholder|TBC/i); // #307: only the price line may say it
   });
   it("words the promises to what is built: 1 working day is an aim, emails go out once a day, copies are kept 30 days after close", () => {
     const t = text(html(<LandingView {...landing()} />));

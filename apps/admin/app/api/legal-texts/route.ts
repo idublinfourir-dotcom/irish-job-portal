@@ -2,9 +2,11 @@
 // content editor or an administrator). POST proposes a new version (a content editor), confirms it (an administrator who did not propose; the text
 // is published at once) or refuses it (an administrator; withdrawn when the proposer does it). Proposing and confirming publish legal text, so they
 // need a sign-in in the last 10 minutes (C4, #270). The role checks are inside each database call.
+import { after } from "next/server";
 import { StaffRefused, staffSettings } from "@portal/auth";
 import { getPool } from "@portal/db";
 import { confirmLegal, listLegal, proposeLegal, refuseLegal } from "@portal/db/legal-texts";
+import { LEGAL_PATHS, revalidateCandidate, revalidateOn } from "@portal/db/revalidate";
 import { checkLength, checkOrigin, id19, parseBody, readQuery, refuse, type Field, type Spec } from "../../../lib/admin-api";
 import { requireStaff, staffSession } from "../../../lib/staff";
 
@@ -34,7 +36,12 @@ export async function POST(request: Request) {
     if (!fresh && b.action !== "refuse") throw new StaffRefused("reauth_required");
     const db = getPool();
     if (b.action === "propose") return Response.json({ ok: true, ...(await proposeLegal(db, staff, { purpose: b.purpose, version: b.version, body: b.body })) });
-    if (b.action === "confirm") return Response.json({ ok: true, ...(await confirmLegal(db, staff, b.requestId)) });
+    if (b.action === "confirm") {
+      const done = await confirmLegal(db, staff, b.requestId);
+      // Stage 3 step 2: the text is published at once, so the candidate site's legal pages are cleared once it has committed
+      if (revalidateOn(process.env)) after(() => revalidateCandidate(process.env, LEGAL_PATHS));
+      return Response.json({ ok: true, ...done });
+    }
     await refuseLegal(db, staff, b.requestId);
     return Response.json({ ok: true });
   } catch (e) {

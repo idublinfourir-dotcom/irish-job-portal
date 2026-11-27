@@ -1,0 +1,92 @@
+name: Preview
+
+# An on-demand preview of one app from a branch you pick (audit DEP-2, option 1). Run it by hand from main: Actions, Preview, Run workflow
+# (use workflow from main), type the branch in "ref", choose the app. It applies that branch's migrations to the separate preview database, then
+# deploys the app to Vercel WITHOUT --prod, so the deploy gets only the Preview-target variables and counts once against Hobby's 100 a day.
+# Two branches with different migrations share the one preview database: reset it before switching.
+# Why two jobs: branch code must never meet a token that can deploy production (#110). Job "migrate" runs branch code (npm ci, drizzle) with
+# only the preview database login. Job "deploy" has the Vercel tokens and runs no branch code: it unpacks the branch source and passes it to a
+# pinned Vercel CLI started from an empty folder, so no .npmrc or package.json of the branch is read. Vercel builds it on its own side.
+# Both Environments, "preview-db" (secret PREVIEW_DATABASE_URL_MIGRATE, optional PREVIEW_DATABASE_CA_CERT) and "preview" (VERCEL_TOKEN_ADMIN,
+# VERCEL_TOKEN_CANDIDATE, VERCEL_TOKEN_PORTAL), must be created with the deployment branch rule "main only". Never on pull_request.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch to preview (code is taken from it; this workflow must be run from main)
+        type: string
+        required: true
+      app:
+        description: App to preview
+        type: choice
+        options: [candidate, portal, admin]
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    environment: { name: preview-db, deployment: false }
+    timeout-minutes: 15
+    steps:
+      - name: Run from main only
+        env: { WF_REF: '${{ github.ref }}' }
+        run: '[ "$WF_REF" = refs/heads/main ] || { echo "Run this workflow from main, not $WF_REF"; exit 1; }'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # TLS is on and verified by packages/db/src/ssl.ts through drizzle.config.ts (depends on the TLS fix of S2c).
+      - name: Apply the migrations to the preview database
+        env:
+          DATABASE_URL_MIGRATE: ${{ secrets.PREVIEW_DATABASE_URL_MIGRATE }}
+          CA_SECRET: ${{ secrets.PREVIEW_DATABASE_CA_CERT }}
+        run: |
+          if [ -z "$DATABASE_URL_MIGRATE" ]; then echo "PREVIEW_DATABASE_URL_MIGRATE is not set: stop"; exit 1; fi
+          export DATABASE_URL_MIGRATE
+          export DATABASE_CA_CERT="${CA_SECRET:-$(cat packages/fetcher/data/supabase-ca.crt)}"
+          npm run db:migrate -w packages/db
+  deploy:
+    needs: migrate
+    runs-on: ubuntu-latest
+    environment: { name: preview, deployment: false }
+    timeout-minutes: 15
+    steps:
+      # No npm ci, no npm run, no script of the branch in this job.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Deploy a preview
+        env:
+          VERCEL_ORG_ID: team_pZOOvJvO0ATGeXTxzS8DVJLV
+          APP: ${{ inputs.app }}
+          TOKEN_ADMIN: ${{ secrets.VERCEL_TOKEN_ADMIN }}
+          TOKEN_CANDIDATE: ${{ secrets.VERCEL_TOKEN_CANDIDATE }}
+          TOKEN_PORTAL: ${{ secrets.VERCEL_TOKEN_PORTAL }}
+        run: |
+          case "$APP" in
+            admin) id=prj_d4UD3QwfTfojpF7tFp1KZtYdGmP1; token="$TOKEN_ADMIN" ;;
+            candidate) id=prj_ihOGwSmteseWB7oWfpFkMk4QD5Ut; token="$TOKEN_CANDIDATE" ;;
+            portal) id=prj_cba6rpOgoMrlynCFTz7Y5QUPWtd8; token="$TOKEN_PORTAL" ;;
+            *) echo "unknown app"; exit 1 ;;
+          esac
+          if [ -z "$token" ]; then echo "$APP: its token secret is not set: stop"; exit 1; fi
+          copy="$RUNNER_TEMP/src"; mkdir -p "$copy" "$RUNNER_TEMP/cli"; git archive HEAD | tar -x -C "$copy"
+          version="$(git rev-parse --short=7 HEAD)"
+          # Started from an empty folder: the branch's .npmrc and package.json are never read by npx.
+          cd "$RUNNER_TEMP/cli" && VERCEL_TOKEN="$token" VERCEL_PROJECT_ID="$id" npx -y vercel@65.14.0 deploy "$copy" --yes --target=preview --env APP_VERSION="$version" --build-env APP_VERSION="$version"

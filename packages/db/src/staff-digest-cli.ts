@@ -23,11 +23,24 @@ export function emailLimit(r: { run: { left?: unknown; old?: unknown } | null; s
   return { emailsLeft: n(r.run?.left), alertsTooOld: n(r.run?.old), alertSubscribers: r.subscribers };
 }
 
+// OPS-5: rows a person must look at. `sending` is committed before Brevo is called, so a row left there for over an hour means the run died; `failed` is
+// given up after 3 tries. Counts only, no address. Both read tiny partial indexes (0080: email_outbox_sending_idx, email_outbox_failed_idx).
+// ponytail: a `sending` row is aged by send_after (sent_at is empty until sent), so a long-queued row mid-send in a concurrent run counts too; the digest is written before the send step, so none is.
+export const OUTBOX_PROBLEMS =
+  "select (select count(*)::int from email_outbox where status = 'sending' and send_after < now() - interval '1 hour') as stuck, " +
+  "(select count(*)::int from email_outbox where status = 'failed' and coalesce(sent_at, send_after) >= now() - interval '7 days') as failed";
+/** The administrators' stuck and failed email counts from OUTBOX_PROBLEMS' row (keys of outbox-cli.ts DIGEST_LABELS). Pure. */
+export function outboxProblems(r: { stuck: unknown; failed: unknown }): Record<string, number> {
+  const n = (x: unknown) => (Number.isSafeInteger(x) ? (x as number) : 0);
+  return { emailsStuck: n(r.stuck), emailsFailed: n(r.failed) };
+}
+
 // ponytail: one counts statement per staff member (the team is a few dozen); one statement for all of them if it ever grows past a few hundred.
 export async function writeDigest(db: Pick<pg.ClientBase, "query">): Promise<{ staff: number; written: number }> {
   const people = (await db.query<{ id: string; roles: string[] }>(DIGEST_STAFF)).rows;
   const rows = [];
-  const limit = people.some((p) => p.roles.includes("administrator")) ? emailLimit((await db.query(EMAIL_LIMIT)).rows[0]) : {};
+  const admins = people.some((p) => p.roles.includes("administrator"));
+  const limit = admins ? { ...emailLimit((await db.query(EMAIL_LIMIT)).rows[0]), ...outboxProblems((await db.query(OUTBOX_PROBLEMS)).rows[0]) } : {};
   for (const p of people) {
     const counts = digestParams(await staffCounts(db, p.id, p.roles));
     if (p.roles.includes("administrator")) for (const [k, v] of Object.entries(limit)) if (v > 0) counts[k] = v;

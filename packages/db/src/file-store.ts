@@ -15,6 +15,8 @@ export type FileStore = {
   get(key: string, max: number): Promise<{ bytes: Uint8Array; contentType: string } | null>;
   /** The object's GuardDutyMalwareScanStatus tag, or null when it has none (not scanned yet) or the object is missing. */
   scanStatus(key: string): Promise<string | null>;
+  /** Every key under `prefix` with its last write time, all pages (the orphan sweep, audit OPS-3). Throws on any failed page, never a partial list. */
+  list(prefix: string): Promise<{ key: string; at: Date }[]>;
 };
 export const SCAN_TAG = "GuardDutyMalwareScanStatus";
 export type S3Settings = { keyId: string; secret: string; bucket: string; region: string; endpoint?: string /* tests only: the fake on 127.0.0.1 */ };
@@ -68,6 +70,31 @@ export function s3Store(s: S3Settings): FileStore {
       for (const [, k, v] of text.matchAll(/<Tag>\s*<Key>([^<]*)<\/Key>\s*<Value>([^<]*)<\/Value>\s*<\/Tag>/g)) if (k === SCAN_TAG) return v!;
       return null;
     },
+    // ListObjectsV2, 1,000 keys a page, following the continuation token.
+    async list(prefix) {
+      const out: { key: string; at: Date }[] = [];
+      const xml = (t: string) => t.replace(/&(lt|gt|quot|apos|amp);/g, (_, e: string) => ({ lt: "<", gt: ">", quot: '"', apos: "'", amp: "&" })[e]!);
+      for (let token: string | undefined, page = 0; ; page++) {
+        if (page >= 1000) throw new Error("file store: list ran past 1,000 pages");
+        const u = new URL(`${base}/`);
+        u.searchParams.set("list-type", "2");
+        u.searchParams.set("prefix", prefix);
+        if (token) u.searchParams.set("continuation-token", token);
+        const r = await aws.fetch(u.toString(), { method: "GET" });
+        const text = await r.text();
+        if (!r.ok) throw new Error(`file store: LIST answered ${r.status}`);
+        for (const [, c] of text.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
+          const key = /<Key>([^<]*)<\/Key>/.exec(c!)?.[1], at = /<LastModified>([^<]*)<\/LastModified>/.exec(c!)?.[1];
+          const d = new Date(at ?? "");
+          if (key === undefined || Number.isNaN(d.getTime())) throw new Error("file store: LIST answer not understood");
+          out.push({ key: xml(key), at: d });
+        }
+        if (!/<IsTruncated>true<\/IsTruncated>/.test(text)) return out;
+        token = /<NextContinuationToken>([^<]*)<\/NextContinuationToken>/.exec(text)?.[1];
+        if (!token) throw new Error("file store: LIST answer not understood");
+        token = xml(token);
+      }
+    },
     async link(key, { fileName, contentType, seconds = 60 }) {
       if (!(Number.isInteger(seconds) && seconds >= 1 && seconds <= MAX_LINK_SECONDS)) throw new Error(`file store: a link lasts 1 to ${MAX_LINK_SECONDS} seconds`);
       const u = new URL(url(key));
@@ -80,21 +107,24 @@ export function s3Store(s: S3Settings): FileStore {
 }
 
 export type MemoryStore = FileStore & {
-  objects: Map<string, { bytes: Uint8Array; contentType: string }>; tags: Map<string, string | null>; scanDefault: string | null; failNext(): void;
+  objects: Map<string, { bytes: Uint8Array; contentType: string }>; tags: Map<string, string | null>; times: Map<string, Date>; scanDefault: string | null; failNext(): void;
 };
 /** The test fake: a Map. failNext() makes the next call throw. A stored key's scan status is its entry in `tags` (null: no tag), else
- *  `scanDefault` (NO_THREATS_FOUND, so tests that do not look at the scan open files as before). */
+ *  `scanDefault` (NO_THREATS_FOUND, so tests that do not look at the scan open files as before). `times`: each key's last write (put sets now;
+ *  a test may set an older one). */
 export function memoryStore(): MemoryStore {
-  const objects = new Map<string, { bytes: Uint8Array; contentType: string }>(), tags = new Map<string, string | null>();
+  const objects = new Map<string, { bytes: Uint8Array; contentType: string }>(), tags = new Map<string, string | null>(), times = new Map<string, Date>();
   let fail = false;
   const gate = () => { if (fail) { fail = false; throw new Error("file store: fake failure"); } };
   const store: MemoryStore = {
     objects,
     tags,
+    times,
     scanDefault: "NO_THREATS_FOUND",
     failNext: () => { fail = true; },
-    async put(key, bytes, contentType) { gate(); objects.set(key, { bytes: new Uint8Array(bytes), contentType }); },
-    async remove(key) { gate(); objects.delete(key); tags.delete(key); },
+    async put(key, bytes, contentType) { gate(); objects.set(key, { bytes: new Uint8Array(bytes), contentType }); times.set(key, new Date()); },
+    async remove(key) { gate(); objects.delete(key); tags.delete(key); times.delete(key); },
+    async list(prefix) { gate(); return [...objects.keys()].filter((k) => k.startsWith(prefix)).sort().map((key) => ({ key, at: times.get(key)! })); },
     async get(key, max) {
       gate();
       const o = objects.get(key);

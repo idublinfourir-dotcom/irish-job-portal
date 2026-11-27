@@ -1,5 +1,6 @@
 // Integration: job stats (step 9, part 12b) on the real test database. The view counter runs as app_candidate (the job page's login); the employer read goes
 // through the real /api/portal/job-stats handler as app_portal with real portal sessions. Jobs and stat rows are written as postgres. No network. Fake people only.
+import { pressed } from "./confirm-link";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { COUNT_VIEW, countJobView, STATS_READ } from "../src/job-stats";
@@ -34,6 +35,7 @@ beforeAll(async () => {
   ({ POST: authPOST } = await import("../../../apps/portal/app/api/auth/portal/[...all]/route"));
   ({ GET: statsGET } = await import("../../../apps/portal/app/api/portal/job-stats/route"));
   ({ portalMail: mail } = await import("../../../apps/portal/lib/portal"));
+  mail = pressed(mail, "portal");
   source = (await su.query("insert into job_source(kind, board) values ('portal', 'portal') returning id::text")).rows[0].id;
 });
 afterAll(async () => {

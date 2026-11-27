@@ -11,7 +11,7 @@ import { DETE_FIGURES as DETE, NUM, pct, topFiveShare } from "./dete";
 import { jobCount, searchCount, type Count } from "../jobs/format";
 import { eur, jobsIn, sectorLabel, shortDate } from "./format";
 import { employersHref } from "./meta";
-import { photoSrc } from "./photos";
+import { photoSize, photoSrc } from "./photos";
 import { FEATURED, type Failed, type HomeData, type Jobs, type Minimums, type Occupation, type Sec, type SectorCount } from "./load";
 
 const JOBS_LIMIT = 6; // #46: what a visitor sees of any list
@@ -25,13 +25,13 @@ const EXT = { target: "_blank", rel: "noopener noreferrer" } as const;
 /** `true`: in view when the page opens, on every screen. "sm": only from 640 px (below that it is hidden, so a phone must not fetch it). */
 type Eager = boolean | "sm";
 /** A decorative photo from ./photos; the text beside it says what it shows, so alt is empty. */
-function Photo({ name, className = "", eager }: { name: string; className?: string; eager?: Eager }) {
+function Photo({ name, className = "", eager, priority }: { name: string; className?: string; eager?: Eager; priority?: boolean }) {
   const src = photoSrc(name);
   return (
     <>
       {eager === "sm" && <link rel="preload" as="image" href={src} media="(min-width: 40rem)" />}
       {/* eslint-disable-next-line @next/next/no-img-element -- the files are already sized webp; the image optimiser would add cost, not quality */}
-      <img src={src} alt="" loading={eager === true ? "eager" : "lazy"} decoding="async" className={`object-cover ${className}`} />
+      <img src={src} alt="" loading={eager === true ? "eager" : "lazy"} {...photoSize(name)} {...(priority ? { fetchPriority: "high" as const } : {})} decoding="async" className={`object-cover ${className}`} />
     </>
   );
 }
@@ -165,7 +165,7 @@ function Hero({ d }: { d: HomeData }) {
         </div>
       </div>
       <div className="relative self-start">
-        <Photo name="hero" eager className="h-64 w-full rounded-bento sm:h-[29.25rem]" />
+        <Photo name="hero" eager priority className="h-64 w-full rounded-bento sm:h-[29.25rem]" />
         <div className="absolute right-0 top-0 hidden rounded-bl-bento bg-white pb-3 pl-3 sm:block">
           <div className="rounded-3xl bg-white px-5 py-4 shadow-pop">
             <p className="text-small text-muted">Permits issued, {DETE.short}</p>

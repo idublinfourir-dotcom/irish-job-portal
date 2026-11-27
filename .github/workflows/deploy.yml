@@ -34,6 +34,18 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # Audit DEP-5: no deploy ahead of its schema. Compares every migration file's hash and time with the live record, through the read-only
+      # app_backup login (secret BACKUP_DATABASE_URL, the backup's own), and stops the deploy on a missing, extra, edited or out-of-order one.
+      # Run the migrations first (the engineer does, before the merge). Without the secret the check is skipped with a warning.
+      - name: Check the live schema matches the code
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          if [ -z "$BACKUP_DATABASE_URL" ]; then echo "::warning::BACKUP_DATABASE_URL is not set: the schema check is skipped"; exit 0; fi
+          export DATABASE_CA_CERT="$(cat packages/fetcher/data/supabase-ca.crt)"
+          node packages/db/src/migration-check-cli.ts
       - name: Deploy the three apps
         env:
           VERCEL_ORG_ID: team_pZOOvJvO0ATGeXTxzS8DVJLV

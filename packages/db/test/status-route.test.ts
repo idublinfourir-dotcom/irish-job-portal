@@ -1,6 +1,7 @@
 // Step 8 status page, end to end on the test database through the real /api/portal/status handlers, connected as app_portal, with real
 // portal sessions (sign-up, confirm and sign-in through the real auth route). No test calls the real network. Fake people only.
 // Strike rows are seeded as the database owner with triggers off (session_replication_role = replica) so dates and levels are free.
+import { pressed } from "./confirm-link";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "./db";
@@ -30,6 +31,7 @@ beforeAll(async () => {
   ({ POST: authPOST } = await import("../../../apps/portal/app/api/auth/portal/[...all]/route"));
   ({ GET: statusGET, POST: statusPOST } = await import("../../../apps/portal/app/api/portal/status/route"));
   ({ portalMail: mail } = await import("../../../apps/portal/lib/portal"));
+  mail = pressed(mail, "portal");
 });
 afterAll(async () => {
   const { getPool } = await import("../src");

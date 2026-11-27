@@ -110,7 +110,7 @@ describe("one case (A08)", () => {
     const c = row({ status: "documents_needed", documentCount: 1, documentsNeeded: [{ code: "passport_copy", label: "Passport copy" }] });
     const h = view(c, [ev("received", "received"), ev("documents_needed", "documents_needed", "2026-11-04T09:00:00.000Z", { documentsNeeded: c.documentsNeeded })], [doc()]);
     expect(h.match(/<h1/g)).toHaveLength(1);
-    for (const w of ["Permit case", "Critical Skills Employment Permit", "Example Care Ltd", "Case 31", "Documents needed", "Action needed from you", "Received", "Submitted", "Decision", "Passport copy", "offer.pdf", "Who pays", "Prices and invoices: available soon", "Updates", "We keep them for 30 days after your case closes"]) expect(text(h)).toContain(w);
+    for (const w of ["Permit case", "Critical Skills Employment Permit", "Example Care Ltd", "Case 31", "Documents needed", "Action needed from you", "Received", "Submitted", "Decision", "Passport copy", "offer.pdf", "Who pays", "Prices and invoices: coming soon", "Updates", "We keep them for 30 days after your case closes"]) expect(text(h)).toContain(w);
     expect(h).toContain('href="/api/candidate/cases/31/documents/9"');
     expect(h).toContain('data-x="upload"');
     expect(text(h)).toContain("Copies only, never originals."); // decision #297, next to the upload

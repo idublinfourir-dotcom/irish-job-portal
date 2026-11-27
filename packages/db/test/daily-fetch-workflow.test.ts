@@ -30,7 +30,7 @@ it("the Fetch and Refresh steps both wait for the guard", () => {
 it("keeps read-only permissions, the one-at-a-time group, and only the known secrets", () => {
   expect(yml).toMatch(/^permissions:\n {2}contents: read$/m);
   expect(yml).toMatch(/group: daily-fetch\n\s+cancel-in-progress: false/);
-  expect([...new Set([...yml.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]))].sort()).toEqual(["ADMIN_DATABASE_URL", "BREVO_API_KEY", "FETCHER_DATABASE_URL", "FETCHER_MODEL_KEY", "FILES_S3_KEY_ID", "FILES_S3_SECRET"]);
+  expect([...new Set([...yml.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]))].sort()).toEqual(["ADMIN_DATABASE_URL", "BACKUP_DATABASE_URL", "BREVO_API_KEY", "FETCHER_DATABASE_URL", "FETCHER_MODEL_KEY", "FILES_S3_KEY_ID", "FILES_S3_SECRET"]);
 });
 it("closes expired employer jobs every day, with the admin login only in that step (0019)", () => {
   const s = step("Close expired employer jobs");
@@ -64,6 +64,14 @@ it("writes the scheduled reminders every day, after the minimum and before reten
   expect(s).not.toMatch(/FETCHER_/);
   expect(yml.indexOf("name: Write scheduled reminders")).toBeGreaterThan(yml.indexOf("name: Apply a new minimum"));
   expect(yml.indexOf("name: Apply the retention rules")).toBeGreaterThan(yml.indexOf("name: Write scheduled reminders"));
+});
+it("checks the database size every day with the read-only backup login in that step only, red without skipping later steps (DB-4)", () => {
+  const s = step("Check the database size");
+  expect(s).toMatch(/if: \$\{\{ !cancelled\(\) \}\}/);
+  expect(s).toMatch(/SIZE_BACKUP_DATABASE_URL: \$\{\{ secrets\.BACKUP_DATABASE_URL \}\}/);
+  expect(s).toMatch(/node packages\/db\/src\/scheduled-checks-cli\.ts size/);
+  expect(s).not.toMatch(/ADMIN_DATABASE_URL|FETCHER_/);
+  expect(yml.match(/secrets\.BACKUP_DATABASE_URL/g)).toHaveLength(1);
 });
 it("queues the staff digest every day, after the reminders and before the outbox sends, with the admin login only in that step (Q11)", () => {
   const s = step("Queue the staff digest");

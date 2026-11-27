@@ -3,6 +3,7 @@
 // Only Next's request context is stood in (next/headers gives the headers a test sets; server-only is empty) and the confirmation email goes to the
 // app's own fake sender (candidateMail). No network. Fake data only.
 // Budgets (measured 23 November 2026, see the printed line): statements per signed-in read counted from the request, including the session read.
+import { pressed } from "./confirm-link";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { answers, seedSignupTerms } from "./better-auth-helper";
@@ -13,8 +14,9 @@ const { state } = vi.hoisted(() => ({ state: { headers: new Headers() } }));
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({ headers: async () => state.headers }));
 
-// session read (2) plus the route's own statements; 25 ms median; the tracker query reads about 2.5 pages a row (measured 50 for 20 rows)
-const BUDGET = { tracker: 3, notices: 3, security: 3, dataAccess: 3, alert: 3, markOne: 4, medianMs: 25, trackerPages: 70 };
+// session read (2) plus the route's own statements; 25 ms median; the tracker query reads about 2.5 pages a row (measured 50 for 20 rows).
+// 27 Nov 2026, SEC-6: each read is one more, the read limit's count (markOne is a write and was already counted).
+const BUDGET = { tracker: 4, notices: 4, security: 4, dataAccess: 4, alert: 4, markOne: 4, medianMs: 25, trackerPages: 70 };
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
 const BASE = "http://localhost:3000";
@@ -40,6 +42,7 @@ beforeAll(async () => {
   ({ GET: CASES } = await import("../../../apps/candidate/app/api/candidate/cases/route"));
   ({ GET: CASE_ONE } = await import("../../../apps/candidate/app/api/candidate/cases/[id]/route"));
   ({ candidateMail: mail } = await import("../../../apps/candidate/lib/candidate"));
+  mail = pressed(mail, "candidate");
   D = await import("../../../apps/candidate/lib/data");
   org = (await su.query("insert into organisation(slug, display_name, kind, status) values ('fake-a3-org', 'Fake A3 Org', 'employer', 'verified') returning id")).rows[0].id;
   src = (await su.query("insert into job_source(kind, board) values ('portal', 'fake-a3') returning id")).rows[0].id;

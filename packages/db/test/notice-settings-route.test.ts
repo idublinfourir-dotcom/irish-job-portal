@@ -1,6 +1,7 @@
 // N7: the portal notice settings end to end on the test database, through the real /api/portal/notices/settings handlers connected as app_portal, with real
 // portal sessions (sign-up, confirm and sign-in through the real auth route), and the real expiry sender (private.expire_employer_jobs, as app_admin)
 // honouring the switch. Candidate and staff sessions are real session rows with correctly signed cookies. No test calls the real network. Fake people only.
+import { pressed } from "./confirm-link";
 import { createHmac } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -32,6 +33,7 @@ beforeAll(async () => {
   ({ POST: authPOST, GET: authGET } = await import("../../../apps/portal/app/api/auth/portal/[...all]/route"));
   ({ GET, PUT } = await import("../../../apps/portal/app/api/portal/notices/settings/route"));
   ({ portalMail: mail } = await import("../../../apps/portal/lib/portal"));
+  mail = pressed(mail, "portal");
 });
 afterAll(async () => {
   const { getPool } = await import("../src");

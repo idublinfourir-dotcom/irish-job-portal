@@ -9,7 +9,7 @@ import { fixtures } from "./fixtures";
 import { loadSpec, replyProblems } from "./openapi";
 import { counted, median } from "./staff-routes-harness";
 
-const BUDGET = { statements: 4, medianMs: 12 };
+const BUDGET = { statements: 5, medianMs: 12 }; // 27 Nov 2026, SEC-6: 4 plus the read limit's count (portal_rate_limit)
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32", BASE = "http://localhost:3001";
 type Handler = (r: Request, ctx: never) => Promise<Response>;

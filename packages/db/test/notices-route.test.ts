@@ -1,6 +1,7 @@
 // N3: the portal notice reader end to end on the test database, through the real /api/portal/notices handlers connected as app_portal, with real
 // portal sessions (sign-up, confirm and sign-in through the real auth route). A #93 notice is written by the real writer (rules-admin.ts NOTICES, as
 // app_admin). Candidate and staff sessions are real session rows with correctly signed cookies. No test calls the real network. Fake people only.
+import { pressed } from "./confirm-link";
 import { createHmac } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -36,6 +37,7 @@ beforeAll(async () => {
   ({ POST: authPOST, GET: authGET } = await import("../../../apps/portal/app/api/auth/portal/[...all]/route"));
   ({ GET, POST } = await import("../../../apps/portal/app/api/portal/notices/route"));
   ({ portalMail: mail } = await import("../../../apps/portal/lib/portal"));
+  mail = pressed(mail, "portal");
 });
 afterAll(async () => {
   const { getPool } = await import("../src");

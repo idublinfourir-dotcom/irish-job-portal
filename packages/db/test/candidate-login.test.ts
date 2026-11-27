@@ -2,6 +2,7 @@
 // resend and reset go through the real route handler of apps/candidate with a Request, connected as app_candidate. Email is the
 // fake sender (in memory, localhost only). The placeholder wording is saved by the real command as app_admin. Fake people only.
 // The steps share state (cookies, ids), so they run in order.
+import { pressed } from "./confirm-link";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
@@ -14,7 +15,9 @@ import { seedSignupTerms } from "./better-auth-helper";
 // consent row, with the rate limit): 10 on the first request of an instance, which includes Better Auth's one-off column list read.
 // Sign-in: 6, and 7 since 17 November 2026 (C1: the update of last_active_at). A server-side getSession is 2, and 4 through the route
 // (the rate limit adds 2). Raise these only on purpose.
-const BUDGET = { signUp: 10, signIn: 7, getSession: 2, signUpMs: 700, concurrentMs: 2100, signInMs: 740 };
+// 27 Nov 2026, SEC-5: sign-in 7 to 9, the per-account count and, after a good sign-in, giving it back. (The SEC-2 email budget, one more on a
+// sign-up that sends, is off in tests: packages/db/test/auth-limits.test.ts measures it.)
+const BUDGET = { signUp: 10, signIn: 9, getSession: 2, signUpMs: 700, concurrentMs: 2100, signInMs: 740 };
 // Times measured three times on 12 November 2026 (about 5 times the measured value): sign-up 141 ms (budget 700), 10 concurrent sign-ups
 // 420 ms (2100), sign-in 148 ms (740). Hashing the password dominates sign-up and sign-in.
 
@@ -31,6 +34,7 @@ beforeAll(async () => {
   Object.assign(process.env, { DATABASE_URL: urlFor(db.name, "app_candidate"), DATABASE_SSL: "disable", CANDIDATE_AUTH_URL: BASE, CANDIDATE_AUTH_SECRET: secret });
   ({ POST, GET } = await import("../../../apps/candidate/app/api/auth/candidate/[...all]/route"));
   ({ candidateMail: mail } = await import("../../../apps/candidate/lib/candidate"));
+  mail = pressed(mail, "candidate");
 });
 afterAll(async () => {
   const { getPool } = await import("../src");

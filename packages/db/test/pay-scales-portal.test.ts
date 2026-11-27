@@ -2,6 +2,7 @@
 // app_portal, real sessions): the grade picker read, the public pay check on a post and a dry-run check, and the job page's scale line. The version
 // is written here as the owner's fixture before any route reads the rules (pay-scales.test.ts proves the two-person route). No network: the sign-up
 // mail goes to the existing fake. Fake people only.
+import { pressed } from "./confirm-link";
 import { readFileSync } from "node:fs";
 import type pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -44,6 +45,7 @@ beforeAll(async () => {
   ({ POST: postPOST } = await import("../../../apps/portal/app/api/portal/jobs/route"));
   ({ POST: checkPOST } = await import("../../../apps/portal/app/api/portal/jobs/check/route"));
   ({ portalMail: mail } = await import("../../../apps/portal/lib/portal"));
+  mail = pressed(mail, "portal");
 });
 afterAll(async () => {
   const { getPool } = await import("../src");

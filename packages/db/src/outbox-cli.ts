@@ -108,6 +108,7 @@ const DIGEST_LABELS: Record<string, string> = {
   casesUnassigned: "Services cases nobody holds", casesMine: "Services cases assigned to you", // SV-B2
   // #275, administrators (staff-digest-cli.ts emailLimit)
   emailsLeft: "Emails left unsent by the last send run", alertsTooOld: "Job alerts dropped as too old in the last send run", alertSubscribers: "Active job alert subscribers",
+  emailsStuck: "Emails stuck sending for over an hour", emailsFailed: "Emails given up on in the last 7 days", // OPS-5
 };
 /** The digest lines from a row's params. Pure. */
 export function digestLines(params: unknown): string[] {

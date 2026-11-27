@@ -72,8 +72,8 @@ describe("candidate settings and sessions (#177)", () => {
   });
   it("the candidate and portal pools check the sign-up answers before the route runs; the staff pool does not", async () => {
     const candidate = await make("candidate").$context, portal = await make("portal").$context;
-    expect(candidate.options.plugins?.map((p) => p.id)).toEqual(["candidate-email-limit", "candidate-signup", "candidate-reauth", "candidate-unverified-email"]);
-    expect(portal.options.plugins?.map((p) => p.id)).toEqual(["portal-email-limit", "portal-signup", "portal-reauth"]);
+    expect(candidate.options.plugins?.map((p) => p.id)).toEqual(["candidate-sign-in-limit", "candidate-email-limit", "candidate-signup", "candidate-reauth", "candidate-unverified-email"]); // SEC-5 first
+    expect(portal.options.plugins?.map((p) => p.id)).toEqual(["portal-sign-in-limit", "portal-email-limit", "portal-signup", "portal-reauth"]);
     expect((await make("staff").$context).options.plugins?.map((p) => p.id)).not.toContain("staff-signup");
   });
   it("sign-in, sign-up, the Google start, reset and resend each have their own rate limit", async () => {

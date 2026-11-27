@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createBrevoMail, BREVO_URL, SENDER_NAME } from "./brevo";
 import { SITE_NAME } from "./email-layout";
-import { createMail } from "./mail";
+import { confirmLink, createMail } from "./mail";
 
 const KEY = "xkeysib-SECRET-KEY-123";
 const ok = (status = 201) => vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ messageId: "<1@x>" }), { status }));
@@ -122,5 +122,40 @@ describe("createMail (the switch)", () => {
     for (const bad of ["https://evil.example/x", "http://portal.example.com/x", "https://portal.example.com.evil.example/x", "javascript:alert(1)"])
       await expect(m.send("portal", "verify", "pat@example.com", bad), bad).rejects.toThrow();
     expect(f).not.toHaveBeenCalled();
+  });
+});
+
+describe("SEC-3: confirmLink (the emailed confirm link opens our own page)", () => {
+  const O = "https://portal.example.com";
+  const ba = (pool: string, q: string) => `${O}/api/auth/${pool}/verify-email?${q}`;
+  it("verify, change-email and new-email on the candidate and portal pools go to /confirm-email with the same token and our callback", () => {
+    for (const pool of ["candidate", "portal"] as const) for (const kind of ["verify", "change-email", "new-email"] as const)
+      expect(confirmLink(pool, kind, ba(pool, "token=a.b.c&callbackURL=%2Fsettings%3Femail%3Dlink"))).toBe(`${O}/confirm-email?token=a.b.c&callbackURL=%2Fsettings%3Femail%3Dlink`);
+  });
+  it("keeps callbackURL only when it is a path on this site", () => {
+    for (const bad of ["https://evil.example/x", "//evil.example", "/\\evil.example", "javascript:alert(1)", "/%2F%2Fevil.example"])
+      expect(confirmLink("candidate", "verify", ba("candidate", `token=a.b.c&callbackURL=${encodeURIComponent(bad)}`)), bad).toBe(`${O}/confirm-email?token=a.b.c`);
+  });
+  it("leaves every other link alone: reset, invite, the staff pool, another path, another pool's path, no token", () => {
+    const same = [
+      ["candidate", "reset", `${O}/api/auth/candidate/reset-password/abc?callbackURL=%2Freset`],
+      ["portal", "invite", `${O}/team/accept?token=t`],
+      ["staff", "verify", ba("staff", "token=a.b.c")],
+      ["portal", "verify", `${O}/x/verify-email?token=a.b.c`],
+      ["portal", "verify", ba("candidate", "token=a.b.c")],
+      ["candidate", "verify", ba("candidate", "callbackURL=%2F")],
+    ] as const;
+    for (const [pool, kind, link] of same) expect(confirmLink(pool, kind, link), link).toBe(link);
+  });
+  it("the fake sender keeps, and Brevo sends, the confirm-page link, never Better Auth's acting GET", async () => {
+    const m = createMail("http://localhost:3000", {}, () => {});
+    await m.send("candidate", "verify", "pat@example.com", "http://localhost:3000/api/auth/candidate/verify-email?token=a.b.c&callbackURL=%2F");
+    expect(m.outbox[0]!.link).toBe("http://localhost:3000/confirm-email?token=a.b.c&callbackURL=%2F");
+    const f = ok();
+    const b = createMail(O, { BREVO_API_KEY: KEY, EMAIL_FROM: "no-reply@example.com" }, () => {}, f as unknown as typeof fetch);
+    await b.send("portal", "new-email", "new@example.com", ba("portal", "token=a.b.c&callbackURL=%2Fsettings"));
+    const body = JSON.parse(f.mock.calls[0]![1]!.body as string);
+    expect(body.htmlContent).toContain(`href="${O}/confirm-email?token=a.b.c&amp;callbackURL=%2Fsettings"`);
+    expect(body.htmlContent + body.textContent).not.toContain("verify-email");
   });
 });

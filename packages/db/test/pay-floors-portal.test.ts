@@ -1,6 +1,7 @@
 // Integration: pay floors from the employer portal (step 9, part 12b), end to end on the test database through the real /api/portal/pay-floors handlers,
 // connected as app_portal, with real portal sessions (sign-up, confirm and sign-in through the real auth route). No test calls the real network. Fake people only.
 // Companies, members and the big-company flag are written as postgres (every CHECK, foreign key and trigger still fires).
+import { pressed } from "./confirm-link";
 import { SOC2010_CODES } from "@portal/rules";
 import lists from "../../fetcher/data/occupation-lists.json";
 import pg from "pg";
@@ -35,6 +36,7 @@ beforeAll(async () => {
   ({ POST: authPOST } = await import("../../../apps/portal/app/api/auth/portal/[...all]/route"));
   ({ GET: floorGET, POST: floorPOST } = await import("../../../apps/portal/app/api/portal/pay-floors/route"));
   ({ portalMail: mail } = await import("../../../apps/portal/lib/portal"));
+  mail = pressed(mail, "portal");
 });
 afterAll(async () => {
   const { getPool } = await import("../src");

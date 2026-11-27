@@ -1,5 +1,5 @@
-import { publicRead, updatesRead } from "@portal/db";
-import { signedInCandidate } from "../../../lib/candidate";
+import { updatesRead } from "@portal/db";
+import { cachedRead } from "../../../lib/api-cache";
 
 // The updates feed, newest first: ?after (the `next` of the page before). Open to everyone, rate limited like the other public reads.
-export const GET = (r: Request) => publicRead(r, signedInCandidate, updatesRead);
+export const GET = (r: Request) => cachedRead(r, updatesRead);

@@ -29,13 +29,12 @@ export default async function Page({ params }: Props) {
   const slug = (await params).slug;
   const code = occupationCodeOfSlug(slug);
   if (!code) notFound();
-  const r = await load(code);
+  const [r, mine] = await Promise.all([load(code), readSaved()]); // PERF-7: one wave; readSaved is 200 only for a signed-in candidate, and marks the saved jobs
   if (!r.ok) {
     if (r.status === 404) notFound();
     return <Problem read={r as Failed} what="occupation page" />;
   }
   const path = occupationPath(slug);
-  const mine = await readSaved(); // 200 only for a signed-in candidate; it also marks the saved jobs
   const savedIds = mine.ok ? ((mine.data as { saved: { jobId: string }[] }).saved ?? []).map((s) => s.jobId) : [];
   const o = r.data as OccupationData, name = occupationTitle(code), title = titleOf(o, name);
   return (
