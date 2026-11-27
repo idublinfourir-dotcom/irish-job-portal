@@ -115,6 +115,14 @@ export function signupPlugin(database: Pool, pool: SignupPool): BetterAuthPlugin
           else checkPortalSignup(ctx.body, true);
           await currentTermsId(database, pool);
         }),
+      }, {
+        // SEC-10: /update-user keeps the sign-up name rule, and takes no image (no screen sets one; a long or outside address would show to staff).
+        matcher: (ctx) => ctx.path === "/update-user",
+        handler: createAuthMiddleware(async (ctx) => {
+          const body = (ctx.body ?? {}) as { name?: unknown; image?: unknown };
+          if (body.image !== undefined) throw new APIError("BAD_REQUEST", { message: "A picture cannot be set here.", code: "IMAGE_REFUSED" });
+          if (body.name !== undefined) checkName(body);
+        }),
       }],
     },
   };

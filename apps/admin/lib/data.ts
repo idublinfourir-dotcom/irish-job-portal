@@ -5,6 +5,7 @@
 // which the CLIs and vitest load outside Next. The import wall test is data.test.ts.
 import "server-only";
 import { headers } from "next/headers";
+import { cache } from "react";
 import {
   type ApproveInput, dryRunApprove, getAccountReview, getContact, getContentPage, getFloorCheck, getItem, getJobQueueItem, getPool, getReport, getServiceCase, getCase, latestPermitRises, listAccountReviews, listAudit, listBans, listTrust, listWrcReported,
   listContact, listJobAuthority, listContentPages, listCases, listDomains, listFloorChecks, listJobQueue, listManualPosts, listOwnerReassigns, listPayDealEmployers, listRulesHistory, searchManualCompanies, listQueue, listReports, listRules, listServiceCases,
@@ -19,6 +20,10 @@ import { listCaseDocuments } from "@portal/db/staff-case-files";
 import { queueRules } from "./queue-rules";
 import { sidebarCounts } from "./sidebar";
 import { requireStaff } from "./staff";
+import { setSessionScope } from "@portal/auth";
+
+// PERF-6: one staff session read per page request (the sidebar and each read below share it); React cache is scoped to one request.
+setSessionScope(cache(() => new Map()));
 
 export type { ApproveInput, AuditFilter, AuditRow, DryRun } from "@portal/db";
 

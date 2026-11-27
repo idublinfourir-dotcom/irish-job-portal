@@ -1,7 +1,7 @@
 // No database: the pool points at a closed port, and nothing here sends a query.
 import pg from "pg";
 import { describe, expect, it } from "vitest";
-import { authSettings, candidateSettings, checkSettings, createAuth, googleSettings, portalSettings, refuseEmail, STAFF_IDLE_SECONDS, STAFF_REFRESH_SECONDS, staffSettings, type LoginPool } from ".";
+import { authSettings, candidateSettings, checkSettings, createAuth, googleSettings, portalSettings, refuseEmail, sessionOnce, setSessionScope, STAFF_IDLE_SECONDS, STAFF_REFRESH_SECONDS, staffSettings, type LoginPool } from ".";
 
 const secret = "a".repeat(32);
 const database = new pg.Pool({ connectionString: "postgres://nobody:none@127.0.0.1:1/none" });
@@ -119,5 +119,41 @@ describe("portal settings and sessions (#189, #190)", () => {
     expect([ctx.sessionConfig.expiresIn, ctx.sessionConfig.updateAge]).toEqual([604800, 86400]);
     expect(ctx.options.emailAndPassword?.requireEmailVerification).toBe(true);
     expect(ctx.options.session?.cookieCache?.enabled).toBe(false);
+  });
+});
+
+describe("audit wave B settings (SEC-9, SEC-10, PERF-4)", () => {
+  for (const name of ["candidate", "portal", "staff"] as const)
+    it(`${name}: tokens stored hashed, no schema read at start, /update-user off for staff only`, async () => {
+      const o = (await make(name).$context).options;
+      expect(o.verification?.storeIdentifier).toBe("hashed");
+      expect(o.advanced?.database?.validateSchema).toBe(false);
+      expect(o.disabledPaths ?? []).toEqual(name === "staff" ? ["/update-user"] : []);
+    });
+});
+
+describe("sessionOnce (PERF-6)", () => {
+  // A fake auth: counts reads and answers by cookie. No database.
+  const fake = (appName = "portal-candidate") => {
+    const calls: string[] = [];
+    const auth = { options: { appName }, api: { getSession: async ({ headers }: { headers: Headers }) => (calls.push(headers.get("cookie") ?? ""), { cookie: headers.get("cookie") }) } };
+    return { auth: auth as unknown as Parameters<typeof sessionOnce>[0], calls };
+  };
+  const h = (cookie?: string) => new Headers(cookie ? { cookie } : {});
+  it("with no request scope every call reads; with one, a cookie is read once per scope", async () => {
+    const f = fake();
+    setSessionScope(() => undefined);
+    await sessionOnce(f.auth, h("a=1")); await sessionOnce(f.auth, h("a=1"));
+    expect(f.calls).toHaveLength(2);
+    const scope = new Map();
+    setSessionScope(() => scope);
+    try {
+      const got = await Promise.all([sessionOnce(f.auth, h("a=1")), sessionOnce(f.auth, h("a=1")), sessionOnce(f.auth, h("b=2")), sessionOnce(f.auth, h())]);
+      expect(got.map((s) => (s as unknown as { cookie: string | null }).cookie)).toEqual(["a=1", "a=1", "b=2", null]);
+      expect(f.calls).toEqual(["a=1", "a=1", "a=1", "b=2", ""]);
+      const other = fake("portal-staff"); // another pool's instance with the same cookie text has its own entry
+      await sessionOnce(other.auth, h("a=1"));
+      expect(other.calls).toEqual(["a=1"]);
+    } finally { setSessionScope(() => undefined); }
   });
 });
