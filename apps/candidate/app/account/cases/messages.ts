@@ -20,6 +20,8 @@ const BY_CODE: Record<CaseFlow, Record<string, string>> = {
     REFUSED: "This account cannot see permit requests. If you think this is a mistake, use the Help page to contact us.",
     FILES_UNAVAILABLE: "Documents are not open yet. Please try again later.",
     DOCUMENT_NOT_FOUND: "That copy is no longer kept, so it cannot be opened.",
+    SCAN_PENDING: "This copy is still being checked for viruses. Try again in a minute.",
+    FILE_BLOCKED: "This copy did not pass the virus check, so it cannot be opened. Upload a clean copy.",
   },
 };
 /** The message for one answer of one route; an unknown code gets the general line of its status, never a blank or the server's text. */
