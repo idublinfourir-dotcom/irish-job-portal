@@ -2,7 +2,7 @@
 import { candidateSettings } from "@portal/auth";
 import {
   answerClick, applyClick, candidateRead, candidateWrite, checkAnswer, checkDelete, checkJobId, checkNoticeSeen, checkProfile, checkSettings, checkStage, dataAccessLog, deleteAccount,
-  didYouApplyPrompts, exportData, exportFilename, getProfile, getSecurity, getSettings, listCandidateNotices, listSaved, listTracker, markApplied, markCandidateNotices, putProfile,
+  didYouApplyPrompts, exportData, exportFilename, exportLimit, getProfile, getSecurity, getSettings, listCandidateNotices, listSaved, listTracker, markApplied, markCandidateNotices, putProfile,
   putSettings, saveJob, savedJob, setStage, unsaveJob,
 } from "@portal/db";
 import { signedInCandidate } from "./candidate";
@@ -32,9 +32,9 @@ export const settingsGet = (r: Request) => candidateRead(r, env(), getSettings);
 export const settingsPut = (r: Request) => candidateWrite(r, env(), checkSettings, putSettings);
 export const accountDelete = (r: Request) => candidateWrite(r, freshEnv(), checkDelete, (db, userId) => deleteAccount(db, userId));
 
-/** The candidate's own data as one downloadable file (GET, changes nothing but one audit row). Query parameters are ignored. */
+/** The candidate's own data as one downloadable file (GET, changes nothing but one audit row). Query parameters are ignored. At most 5 an hour (SEC-6). */
 export async function exportGet(r: Request) {
-  const res = await candidateRead(r, freshEnv(), (db, userId) => exportData(db, userId));
+  const res = await candidateRead(r, freshEnv(), (db, userId) => exportData(db, userId), exportLimit);
   res.headers.set("cache-control", "no-store");
   if (res.ok) res.headers.set("content-disposition", `attachment; filename="${exportFilename(new Date())}"`);
   return res;

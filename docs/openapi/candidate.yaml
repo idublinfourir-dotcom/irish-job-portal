@@ -384,6 +384,12 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/CodeError' }
           example: { code: TOO_MANY_REQUESTS }
+    ReadTooMany:
+      description: '`TOO_MANY_REQUESTS`: over 300 reads a minute by this login (SEC-6: every signed-in read counts together, and on the candidate site the public reads too). No Retry-After.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CodeError' }
+          example: { code: TOO_MANY_REQUESTS }
     PublicTooMany:
       description: '`TOO_MANY_REQUESTS`: a visitor over 60 reads a minute or 600 an hour from one address, or a candidate over 300 reads a minute.'
       headers:
@@ -1747,6 +1753,7 @@ paths:
               example: { profile: { fullName: Alex Example, phone: '+353 1 555 0100', occupationCode: '2136', yearsExperience: 4, hasRelevantDegree: true, degreeField: Computing, degreeAwardedMonth: '2020-06-01', registrationBody: null, registrationNumber: null, registrationStatus: none, locationKind: abroad, currentStamp: null, degreeBox: relevant } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
+        '429': { $ref: '#/components/responses/ReadTooMany' }
     put:
       operationId: putProfile
       tags: [account]
@@ -1817,6 +1824,7 @@ paths:
               example: { saved: [{ jobId: '1042', title: Staff Nurse, employerName: Example Care Ltd, county: Dublin, salaryLow: 38000, salaryHigh: 45000, payGrade: null, badge: null, live: true, reason: null, savedAt: '2026-11-17T10:00:00.000Z' }, { jobId: '1007', title: Chef de Partie, employerName: Example Hotel Ltd, live: false, reason: under_review, savedAt: '2026-11-12T10:00:00.000Z' }] }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
+        '429': { $ref: '#/components/responses/ReadTooMany' }
     post:
       operationId: saveJob
       tags: [account]
@@ -1953,6 +1961,7 @@ paths:
               example: { prompts: [{ clickId: '501', jobId: '1042', title: Staff Nurse, employerName: Example Care Ltd, county: Dublin, salaryLow: 38000, salaryHigh: 45000, payGrade: null, badge: null, clickedAt: '2026-11-16T12:00:00.000Z' }] }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
+        '429': { $ref: '#/components/responses/ReadTooMany' }
     post:
       operationId: answerDidYouApply
       tags: [account]
@@ -2029,6 +2038,7 @@ paths:
               example: { tracker: [{ jobId: '1042', title: Staff Nurse, employerName: Example Care Ltd, county: Dublin, salaryLow: 38000, salaryHigh: 45000, payGrade: null, badge: null, live: true, reason: null, route: redirect, stage: interview, updatedAt: '2026-11-18T09:30:00.000Z' }, { jobId: '1007', title: Chef de Partie, employerName: Example Hotel Ltd, live: false, reason: no_longer_available, route: redirect, stage: applied, updatedAt: '2026-11-10T12:00:00.000Z' }], count: 2 }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
+        '429': { $ref: '#/components/responses/ReadTooMany' }
     post:
       operationId: markApplied
       tags: [account]
@@ -2151,6 +2161,7 @@ paths:
               example: { code: BAD_CURSOR }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
+        '429': { $ref: '#/components/responses/ReadTooMany' }
     post:
       operationId: markCandidateNoticesSeen
       tags: [account]
@@ -2211,6 +2222,7 @@ paths:
               example: { passwordChangedAt: '2026-11-02T10:00:00.000Z', signInMethods: [credential, google] }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
+        '429': { $ref: '#/components/responses/ReadTooMany' }
 
   /api/candidate/data-access:
     get:
@@ -2245,6 +2257,7 @@ paths:
               example: { log: [{ by: Example Care Ltd, action: contact_request.accept, at: '2026-11-18T09:30:00.000Z' }] }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
+        '429': { $ref: '#/components/responses/ReadTooMany' }
 
   /api/candidate/job:
     get:
@@ -2291,6 +2304,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/CodeError' }
               example: { code: JOB_NOT_FOUND }
+        '429': { $ref: '#/components/responses/ReadTooMany' }
 
   /api/candidate/notifications:
     get:
@@ -2318,6 +2332,7 @@ paths:
               example: { settings: { job_alerts: false, account: true } }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
+        '429': { $ref: '#/components/responses/ReadTooMany' }
     put:
       operationId: putNotificationSettings
       tags: [account]
@@ -2363,8 +2378,10 @@ paths:
         consents, notification settings and notifications, plus their emails, own actions and who accessed their data. Never
         tokens, password hashes, storage keys or staff notes. Writes one audit row. Query parameters are ignored.
         C4 (#270): the session must come from a sign-in in the last 10 minutes, else 403 `REAUTH_REQUIRED` (no file, no audit row).
+        SEC-6: at most 5 exports an hour per login, counted with the read limit; over it 429 `TOO_MANY_REQUESTS` (no file, no audit row).
       security: [{ candidateSession: [] }]
       x-roles: [candidate]
+      x-rate-limit: 5 an hour per login, and the read limit (300 a minute per login)
       responses:
         '200':
           description: The file.
@@ -2422,6 +2439,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/CodeError' }
               example: { code: REAUTH_REQUIRED }
+        '429': { $ref: '#/components/responses/ReadTooMany' }
 
   /api/candidate/account:
     delete:
@@ -2499,6 +2517,7 @@ paths:
               example: { code: ALERT_NOT_FOUND }
         '401': { $ref: '#/components/responses/NoSession' }
         '403': { $ref: '#/components/responses/ReadForbidden' }
+        '429': { $ref: '#/components/responses/ReadTooMany' }
     post:
       operationId: createAlert
       tags: [alerts]
@@ -3122,6 +3141,7 @@ paths:
         '404':
           description: "`CASE_NOT_FOUND`: not this candidate's case."
           content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: CASE_NOT_FOUND } } }
+        '429': { $ref: '#/components/responses/ReadTooMany' }
   /api/data-request:
     parameters:
       - { name: token, in: query, required: true, description: 'The token from the confirm email (43 characters, checked before any query). The only query key allowed.', schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' } }

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { Refuse, ratesSql } from "./candidate-route";
+import { CANDIDATE_READ_RATES, Refuse, ratesSql } from "./candidate-route";
 import { BadEligibilityInput } from "@portal/rules";
-import { CANDIDATE_READ_RATES, type Gate, checkerInput, closedJobRead, gatedRead, jobsRead, readGate, uncounted, readLimits, readPaging, retryAfter, tooMany, VISITOR_JOBS, VISITOR_READ_RATES } from "./public-read";
+import { type Gate, checkerInput, closedJobRead, gatedRead, jobsRead, readGate, uncounted, readLimits, readPaging, retryAfter, tooMany, VISITOR_JOBS, VISITOR_READ_RATES } from "./public-read";
 import { BadSearchInput, listJobs, listQuery, PAGE_SIZE } from "./search";
 import { scopedQuery } from "./public-pages";
 

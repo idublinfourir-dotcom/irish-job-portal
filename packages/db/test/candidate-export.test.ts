@@ -9,7 +9,9 @@ import { fixtures } from "./fixtures";
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
 const BASE = "http://localhost:3000";
-const BUDGET = { statements: 4, medianMs: 60 }; // a full candidate (200 saved, 200 tracked, 200 asked), measured 13 Nov 2026: 4 statements (2 session, export, extras)
+// a full candidate (200 saved, 200 tracked, 200 asked), measured 13 Nov 2026: 4 statements (2 session, export, extras).
+// 27 Nov 2026, SEC-6: 5, the read and export limits counted in one statement.
+const BUDGET = { statements: 5, medianMs: 60 };
 let db: TestDb, su: pg.Pool, F: { org(o?: object): Promise<string>; staff(): Promise<string>; portal(): Promise<string>; member(org: string, user: string): Promise<string> };
 let AUTH: (r: Request) => Promise<Response>, ROUTE: Record<string, (r: Request) => Promise<Response>>;
 let org: string, src: string;
@@ -275,6 +277,7 @@ describe("performance", () => {
     const q = pg.Client.prototype.query;
     const times: number[] = []; let statements = 0;
     for (let i = 0; i < 9; i++) {
+      await su.query("delete from candidate_rate_limit where key = $1", [`export:${p.id}`]); // 9 timed runs, over the 5 an hour (SEC-6)
       let c = 0;
       pg.Client.prototype.query = function (this: pg.Client, ...a: unknown[]) { c++; return (q as (...x: unknown[]) => unknown).apply(this, a); } as typeof q;
       const t = performance.now();

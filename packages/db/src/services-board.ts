@@ -322,4 +322,4 @@ export const caseTimelineGet = (request: Request, env: CandidateEnv, side: CaseS
     const t = await caseTimeline(db, side, userId, caseId);
     if (!t) throw new Refuse(404, "CASE_NOT_FOUND");
     return t;
-  });
+  }, undefined, side);

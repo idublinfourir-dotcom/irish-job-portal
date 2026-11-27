@@ -9,7 +9,7 @@ import { fixtures } from "./fixtures";
 import { loadSpec, replyProblems } from "./openapi";
 import { counted, median } from "./staff-routes-harness";
 
-const BUDGET = { statements: 3, medianMs: 12 };
+const BUDGET = { statements: 4, medianMs: 12 }; // 27 Nov 2026, SEC-6: 3 plus the read limit's count
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32", BASE = "http://localhost:3000";
 type Handler = (r: Request, ctx: never) => Promise<Response>;
@@ -87,7 +87,7 @@ describe("GET /api/candidate/cases/[id]/timeline", () => {
     expect((await get(PORTAL_TL, me.cookie, c)).status).not.toBe(200); // no portal session on a candidate cookie
   });
 
-  it("perf: the read is one statement after the session (2), within budget", async () => {
+  it("perf: the read is one statement after the session (2) and the read count (1), within budget", async () => {
     const me = await login();
     const c = await caseOf(me.id);
     await get(TL, me.cookie, c);

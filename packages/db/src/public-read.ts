@@ -6,7 +6,7 @@
 // route once per call; work that reads no table can skip the count (uncounted).
 import type pg from "pg";
 import { closedJob, similarLiveJobs } from "./candidate";
-import { clientAddress, countRates, Refuse } from "./candidate-route";
+import { candidateReadLimits, clientAddress, countRates, Refuse } from "./candidate-route";
 import { BadEligibilityInput, registrationFor, type EligibilityInput } from "@portal/rules";
 import { BadContentInput, getHelp, listUpdates } from "./content";
 import { getPool } from "./index";
@@ -17,13 +17,13 @@ import { BadSearchInput, getJob, listJobs, PAGE_SIZE, parseSearch, type Sort } f
 
 export const VISITOR_JOBS = 6; // #46
 export const VISITOR_READ_RATES = [{ windowMs: 60_000, max: 60 }, { windowMs: 3_600_000, max: 600 }]; // per client address
-export const CANDIDATE_READ_RATES = [{ windowMs: 60_000, max: 300 }]; // per login: a person paging fast stays far under it
+// CANDIDATE_READ_RATES (per login) is in candidate-route.ts since SEC-6: the signed-in GETs count under the same keys.
 
 type Rate = { windowMs: number; max: number };
 /** The rate keys of one reader. The window is in the key, so the minute and the hour count apart. */
 export const readLimits = (who: ReportLogin, ip: string): { key: string; rate: Rate }[] =>
   "userId" in who
-    ? CANDIDATE_READ_RATES.map((rate) => ({ key: `read:candidate:${who.userId}:${rate.windowMs}`, rate }))
+    ? candidateReadLimits(who.userId)
     : VISITOR_READ_RATES.map((rate) => ({ key: `read:ip:${ip}:${rate.windowMs}`, rate }));
 
 /** Seconds until every limit that is over has a new window, or null when none is over. */

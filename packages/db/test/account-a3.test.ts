@@ -14,8 +14,9 @@ const { state } = vi.hoisted(() => ({ state: { headers: new Headers() } }));
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({ headers: async () => state.headers }));
 
-// session read (2) plus the route's own statements; 25 ms median; the tracker query reads about 2.5 pages a row (measured 50 for 20 rows)
-const BUDGET = { tracker: 3, notices: 3, security: 3, dataAccess: 3, alert: 3, markOne: 4, medianMs: 25, trackerPages: 70 };
+// session read (2) plus the route's own statements; 25 ms median; the tracker query reads about 2.5 pages a row (measured 50 for 20 rows).
+// 27 Nov 2026, SEC-6: each read is one more, the read limit's count (markOne is a write and was already counted).
+const BUDGET = { tracker: 4, notices: 4, security: 4, dataAccess: 4, alert: 4, markOne: 4, medianMs: 25, trackerPages: 70 };
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
 const BASE = "http://localhost:3000";

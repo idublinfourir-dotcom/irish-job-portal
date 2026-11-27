@@ -8,6 +8,11 @@ import type { ReportLogin } from "./report";
 
 export const CANDIDATE_MAX_BODY = 2048; // characters; the largest good body (a full profile) is under 1,000
 export const CANDIDATE_RATE = { windowMs: 10 * 60_000, max: 60 }; // writes per login, all candidate routes together
+// Reads per login: the public reads of a signed-in candidate (public-read.ts) and the signed-in GETs below share these keys (SEC-6).
+export const CANDIDATE_READ_RATES = [{ windowMs: 60_000, max: 300 }]; // a person paging fast stays far under it
+export type Limit = { key: string; rate: { windowMs: number; max: number } };
+export const candidateReadLimits = (userId: string, side: "candidate" | "portal" = "candidate"): Limit[] =>
+  CANDIDATE_READ_RATES.map((rate) => ({ key: `read:${side}:${userId}:${rate.windowMs}`, rate }));
 
 export class Refuse extends Error {
   constructor(readonly status: number, readonly code: string) { super(code); }
@@ -52,7 +57,7 @@ export async function countRates<L extends { key: string; rate: { windowMs: numb
   return limits.map((l) => ({ ...l, count: by.get(l.key)!.count, end: Number(by.get(l.key)!.last_request) }));
 }
 export const withinRate = async (table: RateTable, key: string, rate: { windowMs: number; max: number }) => (await countRate(table, key, rate)).count <= rate.max;
-const withinLimit = (userId: string) => withinRate("candidate_rate_limit", `candidate:${userId}`, CANDIDATE_RATE);
+const writeLimits = (userId: string): Limit[] => [{ key: `candidate:${userId}`, rate: CANDIDATE_RATE }];
 
 /** One transaction on one connection. */
 export async function inTransaction<T>(db: pg.Pool, work: (c: pg.PoolClient) => Promise<T>): Promise<T> {
@@ -80,10 +85,11 @@ function refusalFor(e: unknown): Refuse | null {
   return new Refuse(403, "REFUSED"); // the tracker guard and any other rule: fail closed, no detail
 }
 
-async function run(env: CandidateEnv, headers: Headers, rate: boolean, work: (userId: string) => Promise<unknown>): Promise<Response> {
+// Counted only once the login passes, so no session, a portal or a staff cookie writes no count; every key is made from the session's id.
+async function run(env: CandidateEnv, headers: Headers, limits: (userId: string) => Limit[], work: (userId: string) => Promise<unknown>, table: RateTable = "candidate_rate_limit"): Promise<Response> {
   const who = await env.login(headers);
   if ("refused" in who) return who.refused === "no_session" ? no(401, "NO_SESSION") : no(403, who.refused === "reauth_required" ? "REAUTH_REQUIRED" : "REFUSED");
-  if (rate && !(await withinLimit(who.userId))) return no(429, "TOO_MANY_REQUESTS");
+  if ((await countRates(table, limits(who.userId))).some((c) => c.count > c.rate.max)) return no(429, "TOO_MANY_REQUESTS");
   try { return Response.json(await work(who.userId)); } catch (e) {
     const r = refusalFor(e);
     if (r) return no(r.status, r.code);
@@ -91,9 +97,10 @@ async function run(env: CandidateEnv, headers: Headers, rate: boolean, work: (us
   }
 }
 
-/** A GET: needs a session, no Origin or rate limit (it changes nothing). */
-export const candidateRead = (request: Request, env: CandidateEnv, work: (db: pg.Pool, userId: string, url: URL) => Promise<unknown>) =>
-  run(env, request.headers, false, (userId) => work(getPool(), userId, new URL(request.url)));
+/** A GET: needs a session, no Origin. SEC-6: counted per login with the read limit, and `extra` limits (the export's) in the same statement. `side` portal:
+ *  the portal's case timeline shares this plumbing, so it counts in the portal's own table (app_portal may not write the candidate's). */
+export const candidateRead = (request: Request, env: CandidateEnv, work: (db: pg.Pool, userId: string, url: URL) => Promise<unknown>, extra?: (userId: string) => Limit[], side: "candidate" | "portal" = "candidate") =>
+  run(env, request.headers, (id) => [...candidateReadLimits(id, side), ...(extra?.(id) ?? [])], (userId) => work(getPool(), userId, new URL(request.url)), `${side}_rate_limit`);
 
 /** A POST, PUT or DELETE: Origin, body cap, JSON, the body check, session, rate limit, then the work. */
 export async function candidateWrite<T>(request: Request, env: CandidateEnv, check: (b: unknown) => T | null, work: (db: pg.Pool, userId: string, body: T) => Promise<unknown>): Promise<Response> {
@@ -105,5 +112,5 @@ export async function candidateWrite<T>(request: Request, env: CandidateEnv, che
   try { parsed = JSON.parse(text); } catch { return no(400, "BAD_REQUEST"); }
   const body = check(parsed);
   if (body === null) return no(400, "BAD_REQUEST");
-  return run(env, request.headers, true, (userId) => work(getPool(), userId, body));
+  return run(env, request.headers, writeLimits, (userId) => work(getPool(), userId, body));
 }

@@ -361,6 +361,10 @@ select (select count(*) from logged) as logged, jsonb_build_object(
       order by c.created_at desc, c.id desc), '[]') from candidate_services_case c left join job j on j.id = c.job_id where c.candidate_user_id = $1),
   'applications', '[]'::jsonb, 'contactRequests', '[]'::jsonb) as data`;
 type ExportCase = { firm: string | null; events: Parameters<typeof timelineEvents>[0]; documentsNeeded: string[] } & Record<string, unknown>;
+// SEC-6: each export writes an audit row (kept 24 months) and is the heaviest candidate read, so it has its own limit per login, counted in the
+// read limit's statement before exportData runs (apps/candidate/lib/account.ts). Over it: 429, no file, no audit row.
+export const EXPORT_RATE = { windowMs: 3_600_000, max: 5 };
+export const exportLimit = (userId: string) => [{ key: `export:${userId}`, rate: EXPORT_RATE }];
 export async function exportData(db: Pick<pg.Pool, "query">, userId: string) {
   const r = await db.query(EXPORT_SQL, [userId, REFERRAL_FIRM_SHOWN]);
   const data = r.rows[0].data;

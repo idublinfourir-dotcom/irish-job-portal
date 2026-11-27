@@ -792,7 +792,7 @@ paths:
         rule: the requester, or the Owner or a Recruiter of the case's company. A case this login cannot read is 404, whatever the case is.
       security: [{ portalSession: [] }]
       x-roles: [the requester, or the Owner or a Recruiter of the case's company]
-      x-rate-limit: none
+      x-rate-limit: 300 reads a minute per login (SEC-6)
       responses:
         '200':
           description: The steps.
@@ -846,6 +846,7 @@ paths:
         '404':
           description: "`CASE_NOT_FOUND`: not a case this login may read."
           content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: CASE_NOT_FOUND } } }
+        '429': { $ref: '#/components/responses/TooMany' }
   /api/portal/claim:
     post:
       operationId: portalClaim
