@@ -4,7 +4,7 @@ import { nextCookies } from "better-auth/next-js";
 import { generateRandomString } from "better-auth/crypto";
 import type { Pool } from "pg";
 import { COUNT_NO, checkPortalSignup, checkSignup, signupPlugin, writeConsent, type Answers } from "./signup";
-import { emailLimitPlugin } from "./email-limit";
+import { emailLimitPlugin, signInLimitPlugin } from "./email-limit";
 import { isFresh, reauthPlugin } from "./reauth";
 import { UNVERIFIED_PATH, unverifiedEmailPlugin } from "./unverified-email";
 
@@ -12,7 +12,7 @@ export { readAnswers, readPortalAnswers, checkSignup, checkPortalSignup, current
 export { createFakeEmail, type FakeEmail } from "./fake-email";
 export { accountEmail, createMail } from "./mail";
 export { createBrevoMail, type SendMail } from "./brevo";
-export { EMAIL_LIMIT, emailLimitKey } from "./email-limit";
+export { EMAIL_LIMIT, emailLimitKey, SIGN_IN_LIMIT, signInLimitKey } from "./email-limit";
 export { isFresh, ownPath, REAUTH_CODE, REAUTH_SECONDS } from "./reauth";
 
 // The pool is called portal, not employer: its tables are portal_user and so on (23-database-design.md).
@@ -153,8 +153,9 @@ export function createAuth(name: LoginPool, { database, baseURL, secret, sendEma
       ...(name === "staff" ? { expiresIn: STAFF_IDLE_SECONDS, updateAge: STAFF_REFRESH_SECONDS } : {}),
     },
     // Staff: server calls (requireStaff) refresh the session row, and this sends the new cookie back in Next.js route handlers and server actions.
-    plugins: name === "staff" ? [nextCookies()] : name === "candidate" || name === "portal"
-      ? [emailLimitPlugin(database, name, secret), signupPlugin(database, name), reauthPlugin(name, secret), ...(name === "candidate" ? [unverifiedEmailPlugin((b) => later.send!(b))] : [])] : [],
+    // SEC-5: every pool has the sign-in limit per account.
+    plugins: name === "staff" ? [signInLimitPlugin(database, name, secret), nextCookies()] : name === "candidate" || name === "portal"
+      ? [signInLimitPlugin(database, name, secret), emailLimitPlugin(database, name, secret), signupPlugin(database, name), reauthPlugin(name, secret), ...(name === "candidate" ? [unverifiedEmailPlugin((b) => later.send!(b))] : [])] : [],
     // A Google sign-in joins an existing account with the same email only when Google says the email is verified AND that account's
     // email was confirmed here (Better Auth's defaults, written out so a change shows in review). No trusted providers: Google's word
     // alone is not enough for an unconfirmed email-and-password account, so there is no silent takeover.

@@ -15,7 +15,8 @@ import { seedSignupTerms } from "./better-auth-helper";
 // consent row, with the rate limit): 10 on the first request of an instance, which includes Better Auth's one-off column list read.
 // Sign-in: 6, and 7 since 17 November 2026 (C1: the update of last_active_at). A server-side getSession is 2, and 4 through the route
 // (the rate limit adds 2). Raise these only on purpose.
-const BUDGET = { signUp: 10, signIn: 7, getSession: 2, signUpMs: 700, concurrentMs: 2100, signInMs: 740 };
+// 27 Nov 2026, SEC-5: sign-in 7 to 9, the per-account count and, after a good sign-in, giving it back.
+const BUDGET = { signUp: 10, signIn: 9, getSession: 2, signUpMs: 700, concurrentMs: 2100, signInMs: 740 };
 // Times measured three times on 12 November 2026 (about 5 times the measured value): sign-up 141 ms (budget 700), 10 concurrent sign-ups
 // 420 ms (2100), sign-in 148 ms (740). Hashing the password dominates sign-up and sign-in.
 
