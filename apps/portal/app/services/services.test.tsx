@@ -21,7 +21,7 @@ import RequestPage from "./request/page";
 import { buildRequest } from "./request/build";
 import { ResultView, RequestView } from "./request/views";
 import { CODE_TEXT, say } from "./messages";
-import { asked, banner, canUpload, caseState, fmtSize, permitFeeLabel, reached, SERVICE_FEE, steps, updateLine, type CaseEvent, type CaseRow } from "./model";
+import { asked, banner, canUpload, caseState, fmtSize, permitFeeLabel, reached, PRICE_LINE, SERVICE_FEE, steps, updateLine, type CaseEvent, type CaseRow } from "./model";
 import { CaseProblem, CasesView, CaseView, RoleRefused } from "./views";
 
 type PEl = ReactElement<Record<string, unknown>>;
@@ -60,6 +60,7 @@ describe("the model", () => {
     expect(banner(C({ status: "documents_needed" }), "open", 0).action).toBeNull();
     for (const s of ["granted", "refused", "referred", "withdrawn", "closed"] as const) expect(banner(C(), s, 0).title.length).toBeGreaterThan(5);
     expect(SERVICE_FEE).toBe("Our service fee is paid by the employer or agency, never the candidate.");
+    expect(PRICE_LINE).not.toMatch(/placeholder|coming soon|lorem|draft|TBC|[\u2013\u2014]/i); // the live check's banned words, and no dashes
     expect(permitFeeLabel("critical_skills")).toBe("Paid by the employee or employer");
     expect(permitFeeLabel("general")).toBe("Usually paid by the employer");
     expect(fmtSize(2048)).toBe("2 KB");
@@ -80,7 +81,7 @@ describe("the list", () => {
     expect(html(<CasesView cases={[]} nextHref={null} notice={null} />).match(/<h1/g)).toHaveLength(1);
     const many = html(<CasesView cases={[C(), C({ id: "32", jobTitle: null, status: "documents_needed" }), C({ id: "33", status: "closed", decisionOutcome: "granted" })]} nextHref="/services?after=abc" prevHref="/services" notice={{ title: "DETE portal closed", body: "Back soon." }} />);
     const t = many.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-    for (const w of ["Fake Nurse", "Permit request", "Critical Skills Employment Permit", "Case 31", "Documents needed", "Granted", "DETE portal closed", "Payment", "What we handle", "Previous", "Next"]) expect(t).toContain(w);
+    for (const w of ["Fake Nurse", "Permit request", "Critical Skills Employment Permit", "Case 31", "Documents needed", "Granted", "DETE portal closed", "Payment", "Prices and invoices: available soon", "What we handle", "Previous", "Next"]) expect(t).toContain(w);
     expect(many).toContain('href="/services/31"');
     expect(many).toContain('href="/services?after=abc"');
     clean(many);

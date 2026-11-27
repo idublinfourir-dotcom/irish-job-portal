@@ -195,6 +195,15 @@ describe("preloader", () => {
     expect(body().kids).toHaveLength(0);
     expect(docEl().style.overflow).toBe("scroll");
   });
+  it("clears the server cover (data-pre) on mount, whether the preloader runs or not", () => {
+    docEl().setAttribute("data-pre");
+    mountMotion(null);
+    expect(docEl().hasAttribute("data-pre")).toBe(false);
+    logo(); docEl().setAttribute("data-pre");
+    mountMotion(null);
+    expect(body().kids).toHaveLength(1); // the JS overlay is on before the cover goes
+    expect(docEl().hasAttribute("data-pre")).toBe(false);
+  });
   it("cleanup mid-flight removes the overlay and starts nothing new", () => {
     logo();
     const stop = mountMotion(null);

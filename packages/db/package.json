@@ -9,6 +9,7 @@
     "./rules-data": "./src/rules-data.ts",
     "./staff-tools": "./src/staff-tools.ts",
     "./legal-texts": "./src/legal-texts.ts",
+    "./body-format": "./src/body-format.ts",
     "./staff-uploads": "./src/staff-uploads.ts",
     "./staff-case-files": "./src/staff-case-files.ts"
   },

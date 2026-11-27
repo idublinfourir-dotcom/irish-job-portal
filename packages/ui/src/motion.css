@@ -1,6 +1,9 @@
 /* Page motion (FM1). JS adds data-rv to blocks that start below the fold and removes it as they enter; nothing is hidden in the server HTML. */
 [data-rv] { opacity: 0; }
 .mo-pre { position: fixed; inset: 0; z-index: 2147483000; display: grid; place-items: center; background: var(--color-cream); }
+/* The first-visit cover (pre-cover.tsx): shown only while html[data-pre], under the JS overlay; the 6 s stop matches HARD in motion.tsx. */
+html[data-pre] .mo-cover { display: block; position: fixed; inset: 0; z-index: 2147482999; background: var(--color-cream); animation: mo-cover-off 0s 6s forwards; }
+@keyframes mo-cover-off { to { visibility: hidden; } }
 .mo-mk { position: relative; transform-origin: 0 0; will-change: transform; user-select: none; pointer-events: none; }
 .mo-mk, .mo-mk * { color: var(--color-deep-green) !important; text-decoration: none; }
 .mo-base { opacity: 0.12; }

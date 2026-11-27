@@ -4,7 +4,7 @@
 import type { FormEvent, ReactNode } from "react";
 import { A, Breadcrumb, Button, Checkbox, Icon, Input, Notice, Pill, Select } from "@portal/ui";
 import { Picker } from "../actions";
-import { fmtSize, permitFeeLabel, SERVICE_FEE } from "../model";
+import { fmtSize, permitFeeLabel, PRICE_LINE, SERVICE_FEE } from "../model";
 import { ClosedNotice, type Notice as NoticeProps } from "../views";
 
 export type Occupation = { code: string; title: string };
@@ -28,6 +28,7 @@ export function Aside({ step = 1 }: { step?: number }) {
       <div className="flex flex-col gap-2 rounded-bento bg-peach p-6">
         <h2 className="text-ui font-semibold">Payment</h2>
         <p className="text-small">{SERVICE_FEE}</p>
+        <p className="text-small">{PRICE_LINE}</p>
         <p className="text-small">DETE&apos;s permit fee: {permitFeeLabel("critical_skills")} for Critical Skills, {permitFeeLabel("general").toLowerCase()} for General.</p>
       </div>
       <div className="flex flex-col gap-4 rounded-bento bg-sand p-6">

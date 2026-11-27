@@ -260,7 +260,7 @@ describe("B21: the sitemap parts and the index", () => {
   it("pages-0 holds the static pages and each legal text in force with its date, and nothing without a version", async () => {
     const urls = (await SITEMAP({ id: Promise.resolve("pages-0") })).map((e) => e.url.replace(BASE, ""));
     // no "/companies": the directory (C13) has no page yet
-    expect(urls).toEqual(["/", "/jobs", "/guides", "/updates", "/help", "/eligibility-checker", "/permit-services", "/cookies", "/data-retention", "/employer-acceptable-use"]);
+    expect(urls).toEqual(["/", "/jobs", "/companies", "/guides", "/updates", "/help", "/eligibility-checker", "/permit-services", "/cookies", "/data-retention", "/employer-acceptable-use"]);
     const legal = await D.readSitemapPart("pages-0");
     expect(legal!.filter((e) => e.kind === "legal").every((e) => !Number.isNaN(Date.parse(e.lastModified!)))).toBe(true);
   });

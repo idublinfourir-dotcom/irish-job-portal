@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { DM_Sans, Outfit } from "next/font/google";
-import { ADMIN_ROLES, AdminShell, Motion, SITE_NAME, type AdminRole } from "@portal/ui";
+import { ADMIN_ROLES, AdminShell, Motion, PreCover, SITE_NAME, type AdminRole } from "@portal/ui";
 import { readSidebar } from "../lib/data";
 import "./globals.css";
 
@@ -23,8 +23,9 @@ const isRole = (r: string): r is AdminRole => (ADMIN_ROLES as readonly string[])
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const me = await readSidebar();
   return (
-    <html lang="en" className={`${outfit.variable} ${dmSans.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${outfit.variable} ${dmSans.variable}`}>
       <body>
+        <PreCover />
         {me ? (
           <AdminShell roles={me.roles.filter(isRole)} name={me.name} counts={me.counts}>
             {children}

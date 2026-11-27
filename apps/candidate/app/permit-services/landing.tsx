@@ -3,7 +3,7 @@
 // The "verify your email" variant cannot be reached here (an unverified account cannot sign in); the request form shows it when the route says NOT_VERIFIED.
 import type { ReactNode } from "react";
 import { A, Breadcrumb, Button, Icon, Notice, Pill } from "@portal/ui";
-import { permitFeeLabel } from "../jobs/format";
+import { permitFeeLabel, PRICE_LINE } from "../jobs/format";
 import { Dot, Hl, Join, wrap } from "../jobs/parts";
 
 export type Variant = "visitor" | "no-case" | "open-case";
@@ -91,6 +91,7 @@ export function LandingView({ variant, open, notice, startHref, loginHref, signu
             <div className="flex flex-1 flex-col gap-2 rounded-bento bg-peach p-7">
               <h2 className="text-ui font-semibold">Candidates never pay for our permit services</h2>
               <p className="text-small">The employer or agency pays. You do not pay us for an application, a renewal or the first consultation.</p>
+              <p className="text-small">{PRICE_LINE}</p>
             </div>
             <div className="flex flex-1 flex-col gap-2 rounded-bento bg-ink p-7 text-white">
               <h2 className="text-ui font-semibold">Application support, not legal advice</h2>

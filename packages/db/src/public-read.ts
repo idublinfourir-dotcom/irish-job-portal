@@ -8,6 +8,7 @@ import { clientAddress, countRate, Refuse } from "./candidate-route";
 import { BadEligibilityInput, registrationFor, type EligibilityInput } from "@portal/rules";
 import { BadContentInput, getHelp, listUpdates } from "./content";
 import { getPool } from "./index";
+import { listCompanies } from "./companies-directory";
 import { checkWithSiteLists, getCompanyPage, getOccupationPage } from "./public-pages";
 import type { ReportLogin } from "./report";
 import { BadSearchInput, getJob, listJobs, PAGE_SIZE, parseSearch, type Sort } from "./search";
@@ -85,6 +86,8 @@ export const companyRead: Work = async (db, q, visitor) => {
   const c = await getCompanyPage(db, q.get("slug") ?? "", { after, limit });
   return c && "jobs" in c ? { ...c, jobs: shown(c.jobs, visitor) } : c;
 };
+// B25: the directory pages for everyone (companies, not jobs: no visitor cap); ?q, ?after.
+export const companiesRead: Work = (db, q) => listCompanies(db, { q: q.get("q") ?? undefined, after: q.get("after") ?? undefined });
 export const occupationRead: Work = async (db, q, visitor) => {
   const { limit, after } = readPaging(q, visitor);
   const o = await getOccupationPage(db, q.get("code") ?? "", { after, limit });

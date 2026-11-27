@@ -12,6 +12,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@portal/db": "*"
+  },
   "peerDependencies": {
     "react": "19.3.1",
     "next": "16.4.5"

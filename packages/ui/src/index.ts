@@ -10,3 +10,5 @@ export * from "./nav-links";
 export * from "./sidebar-shells";
 export * from "./link";
 export * from "./motion";
+export * from "./body";
+export * from "./pre-cover";

@@ -4,7 +4,7 @@
 import type { ReactNode } from "react";
 import { A, Button, EmptyState, Icon, Notice, Pager, Pill } from "@portal/ui";
 import {
-  asked, banner, canUpload, caseState, caseSubtitle, caseTitle, fmtDate, fmtSize, isOpen, MAX_OPEN_CASES, permitFeeLabel, permitLabel, SERVICE_FEE, STATUS_LABEL, steps, updateLine,
+  asked, banner, canUpload, caseState, caseSubtitle, caseTitle, fmtDate, fmtSize, isOpen, MAX_OPEN_CASES, permitFeeLabel, permitLabel, PRICE_LINE, SERVICE_FEE, STATUS_LABEL, steps, updateLine,
   type CaseDoc, type CaseEvent, type CaseRow,
 } from "./model";
 
@@ -61,6 +61,7 @@ function Side({ permitType }: { permitType?: string }) {
       <aside aria-labelledby="pay-h" className="flex flex-col gap-2 rounded-bento bg-peach p-6">
         <h2 id="pay-h" className="text-ui font-semibold">Payment</h2>
         <p>{SERVICE_FEE}</p>
+        <p className="text-small">{PRICE_LINE}</p>
         {permitType ? <p className="text-small">DETE&apos;s permit fee for this permit: {permitFeeLabel(permitType)}.</p> : <p className="text-small">DETE&apos;s permit fee: {permitFeeLabel("critical_skills")} for Critical Skills, {permitFeeLabel("general").toLowerCase()} for General.</p>}
       </aside>
       {!permitType && (

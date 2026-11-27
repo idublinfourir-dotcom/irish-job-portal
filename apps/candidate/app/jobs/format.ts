@@ -112,4 +112,6 @@ export function jobDescription(j: { title: string; employerName: string; county:
 }
 
 /** Who pays DETE's permit fee, by permit type (#297). Not our service fee: the employer or agency pays that, never the candidate (#3, #84). */
+/** Our prices, quotes and invoices wait for the operating company (TRACKER M7); this line says so honestly. */
+export const PRICE_LINE = "Prices and invoices: available soon. We agree the price with your employer or agency before any work starts.";
 export const permitFeeLabel = (permitType: string) => (permitType === "critical_skills" ? "Paid by the employee or employer" : "Usually paid by the employer");
