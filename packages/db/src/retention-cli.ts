@@ -10,8 +10,9 @@
 // application.cv_storage_key included, which app_admin cannot) and the files key (list and delete on the files bucket):
 //   SWEEP_BACKUP_DATABASE_URL=... FILES_S3_...=... node packages/db/src/retention-cli.ts sweep
 // It lists each prefix, keeps every key written in the last 24 hours (an upload stores the object before its row), asks the database which of the
-// older keys a row still names, and removes the rest. A failed listing or query removes nothing. More than SWEEP_MAX orphans is refused (a wrong
-// database would look like every file is an orphan, and the bucket has no versioning). Counts only in the log.
+// older keys a row still names, and removes the rest. A failed listing or query removes nothing. More than SWEEP_MAX orphans, or more than
+// SWEEP_FEW that are over half the older files, is refused (a wrong database looks like every file is an orphan; the bucket has no versioning).
+// Counts only in the log.
 import pg from "pg";
 import { fileStore, type FileStore } from "./file-store.ts";
 import { sslOptions } from "./ssl.ts";
@@ -51,6 +52,7 @@ export async function drain(db: Pick<pg.ClientBase, "query">, log: (line: string
 export const SWEEP_PREFIXES = ["cv/", "case/", "authority/", "logo/", "sponsor/", "evidence/"] as const;
 export const SWEEP_AGE_MS = 24 * 60 * 60_000;
 export const SWEEP_MAX = 200;
+export const SWEEP_FEW = 5;
 // Every column that names a stored file. A sponsor confirmation sits in its approval request (change->>'key') while it waits, so every request's key counts.
 export const REFERENCED =
   "select k from (select storage_key k from candidate_cv union all select cv_storage_key from application union all select storage_key from case_document " +
@@ -63,7 +65,9 @@ export async function sweep(db: Pick<pg.ClientBase, "query">, log: (line: string
   for (const prefix of SWEEP_PREFIXES) for (const o of await store().list(prefix)) if (now - o.at.getTime() > SWEEP_AGE_MS) old.push({ prefix, key: o.key });
   const named = new Set((await db.query<{ k: string }>(REFERENCED, [old.map((o) => o.key)])).rows.map((r) => r.k));
   const orphans = old.filter((o) => !named.has(o.key));
-  if (orphans.length > max) return log(`sweep: ${orphans.length} orphans of ${old.length} older files, over the cap of ${max}: nothing removed, check the database login`), 1;
+  // over the cap, or (past a handful) most of the older files: a wrong database looks like that, so nothing is removed
+  if (orphans.length > max || (orphans.length > SWEEP_FEW && orphans.length * 2 > old.length))
+    return log(`sweep: ${orphans.length} orphans of ${old.length} older files, over the cap (${max}, or half of them past ${SWEEP_FEW}): nothing removed, check the database login`), 1;
   let failed = 0;
   for (const o of orphans) { try { await store().remove(o.key); } catch { failed++; } }
   const per = SWEEP_PREFIXES.map((p) => `${p} ${orphans.filter((o) => o.prefix === p).length}`).join(", ");

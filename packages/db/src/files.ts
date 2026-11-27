@@ -245,7 +245,7 @@ export const logoPut = (r: Request, env: FilesEnv) => fileRoute(r, env, "upload"
     await store.remove(key).catch(() => {});
     throw companyRefused(e);
   }
-  // ponytail: a failed removal leaves the old file in the bucket unreferenced; a sweep of logo/ keys not in organisation.logo_key would clear it
+  // a failed removal leaves the old file unnamed; the weekly orphan sweep (retention-cli.ts sweep) removes it
   if (old) await store.remove(old).catch(() => {});
   return { logo: { contentType: MIME[c.kind], sizeBytes: c.bytes.length } };
 }, MAX_LOGO + 16 * 1024);

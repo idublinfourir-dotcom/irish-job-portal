@@ -114,6 +114,19 @@ describe("the orphan sweep, no database", () => {
     expect([...store.objects.keys()].sort()).toEqual(["case/young", "check/x", "cv/named", "cv/young", "rules/x"]);
     expect(lines).toEqual(["sweep: 2 files older than 24 hours, 1 still named by a row, 1 orphans removed (cv/ 1, case/ 0, authority/ 0, logo/ 0, sponsor/ 0, evidence/ 0), 0 failed"]);
   });
+  it("the proportional guard: 5 orphans pass; 6 of 11 older files is refused; 6 of 12 passes", async () => {
+    const ages = (orphans: number, named: number) => Object.fromEntries([...Array.from({ length: orphans }, (_, i) => [`cv/o${i}`, 2 * SWEEP_AGE_MS]), ...Array.from({ length: named }, (_, i) => [`cv/n${i}`, 2 * SWEEP_AGE_MS])]);
+    const keep = (n: number) => Array.from({ length: n }, (_, i) => `cv/n${i}`);
+    const s0 = await setup(ages(5, 0));
+    expect(await sweep(named(keep(0)).db, () => {}, () => s0, NOW)).toBe(0);
+    expect(s0.objects.size).toBe(0);
+    const s1 = await setup(ages(6, 5));
+    expect(await sweep(named(keep(5)).db, () => {}, () => s1, NOW)).toBe(1);
+    expect(s1.objects.size).toBe(11);
+    const s2 = await setup(ages(6, 6));
+    expect(await sweep(named(keep(6)).db, () => {}, () => s2, NOW)).toBe(0);
+    expect(s2.objects.size).toBe(6);
+  });
   it("a failing query removes nothing", async () => {
     const store = await setup({ "cv/orphan": 2 * SWEEP_AGE_MS });
     const db = { query: async () => { throw new Error("refused"); } } as never;

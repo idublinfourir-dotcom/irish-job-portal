@@ -219,7 +219,17 @@ describe("the orphan sweep (retention-cli.ts sweep)", () => {
     const lines: string[] = [];
     try { expect(await sweep(c, (x) => lines.push(x), () => store, Date.now(), 3)).toBe(1); } finally { await c.end(); }
     expect(store.objects.size).toBe(4);
-    expect(lines).toEqual(["sweep: 4 orphans of 4 older files, over the cap of 3: nothing removed, check the database login"]);
+    expect(lines).toEqual(["sweep: 4 orphans of 4 older files, over the cap (3, or half of them past 5): nothing removed, check the database login"]);
+  });
+  it("more than 5 orphans that are over half the older files: nothing removed, red, whatever the cap", async () => {
+    const store = memoryStore();
+    for (let i = 0; i < 6; i++) await put(store, `case/half-${i}`, 3 * DAY);
+    const c = new pg.Client({ connectionString: urlFor(db.name, "app_backup") });
+    await c.connect();
+    const lines: string[] = [];
+    try { expect(await sweep(c, (x) => lines.push(x), () => store)).toBe(1); } finally { await c.end(); }
+    expect(store.objects.size).toBe(6);
+    expect(lines[0]).toMatch(/^sweep: 6 orphans of 6 older files, over the cap/);
   });
   it("security: app_backup reads every key column with no new privilege and still cannot write; a hostile key is only a value", async () => {
     const all = (await su("select array_agg(r.rolname::text order by 1) m from pg_auth_members a join pg_roles r on r.oid = a.roleid where a.member = 'app_backup'::regrole")).rows[0].m;
