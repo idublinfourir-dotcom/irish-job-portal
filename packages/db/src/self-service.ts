@@ -20,13 +20,14 @@ export const portalExport = async (db: Pick<pg.Pool, "query">, token: string) =>
   toWire({ exportedAt: new Date().toISOString(), ...(await db.query("select private.portal_account_export($1) r", [token])).rows[0].r }) as Record<string, unknown>;
 
 /** Erases the login that holds this session token (every session ends with it), then removes its stored files. The rows are already gone when a removal
- *  fails, so the key (a random id, never a name) goes to the server log for removal by hand, as the retention run does; the reply still says deleted. */
+ *  fails, so the weekly orphan sweep (retention-cli.ts sweep) removes the file; the log has a count only, never the key; the reply still says deleted. */
 export async function portalDelete(db: Pick<pg.Pool, "query">, token: string): Promise<{ ok: true; filesRemoved: number }> {
   const keys: string[] = (await db.query("select private.portal_account_delete($1) r", [token])).rows[0].r.storage_keys;
   let removed = 0;
   for (const k of keys) {
-    try { await fileStore().remove(k); removed++; } catch { console.error("portal account delete: stored file not removed, delete by hand:", JSON.stringify(k)); }
+    try { await fileStore().remove(k); removed++; } catch { /* counted below */ }
   }
+  if (removed < keys.length) console.error(`portal account delete: ${keys.length - removed} stored files not removed, the weekly orphan sweep removes them`);
   return { ok: true, filesRemoved: removed };
 }
 

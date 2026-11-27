@@ -1,7 +1,7 @@
 // No database: the retention loop with a fake run_retention. The real rules on real rows are packages/db/test/retention-cli.test.ts.
 import { describe, expect, it } from "vitest";
 import { memoryStore, s3Settings, s3Store } from "./file-store.ts";
-import { drain, main } from "./retention-cli.ts";
+import { drain, main, sweep, SWEEP_AGE_MS } from "./retention-cli.ts";
 
 type S = { rule: string | null; target?: string; done: number; left: number; skipped?: unknown[]; storage_keys?: string[] };
 const fake = (steps: S[]) => {
@@ -51,7 +51,7 @@ describe("retention loop", () => {
     expect(store.objects.size).toBe(0);
     expect(lines.at(-1)).toBe("stored files: 2 removed, 0 failed");
   });
-  it("a failed removal finishes the loop, prints only the failed key (escaped), and goes red", async () => {
+  it("a failed removal finishes the loop, prints a count (never a key), and goes red", async () => {
     const store = memoryStore();
     store.failNext();
     const lines: string[] = [];
@@ -59,8 +59,8 @@ describe("retention loop", () => {
     expect(await drain(f.db, (l) => lines.push(l), undefined, undefined, () => store)).toBe(1);
     expect(f.calls()).toBe(2);
     expect(lines.join("\n")).toContain("stored files: 1 removed, 1 failed");
-    expect(lines.at(-1)).toBe('not removed (file store: fake failure), delete by hand: "x\\ny"');
-    expect(lines.join("\n")).not.toContain("cv/ok");
+    expect(lines.at(-1)).toBe("not removed (file store: fake failure): 1 files, the weekly orphan sweep removes them");
+    expect(lines.join("\n")).not.toMatch(/cv\/ok|x\ny/);
   });
   it("missing FILES_S3_ settings make every removal fail, naming the settings, never their values", async () => {
     const lines: string[] = [];
@@ -79,6 +79,10 @@ describe("retention loop", () => {
 describe("retention main, failure paths", () => {
   it("refuses arguments and a missing login with exit 2", async () => {
     expect(await main(["x"], {}, () => {})).toBe(2);
+    expect(await main(["sweep", "x"], {}, () => {})).toBe(2);
+    const s: string[] = [];
+    expect(await main(["sweep"], { RETENTION_ADMIN_DATABASE_URL: "postgres://x" }, (l) => s.push(l))).toBe(2);
+    expect(s).toEqual(["SWEEP_BACKUP_DATABASE_URL is not set (the app_backup login)"]);
     const lines: string[] = [];
     expect(await main([], {}, (l) => lines.push(l))).toBe(2);
     expect(lines.join()).toMatch(/RETENTION_ADMIN_DATABASE_URL is not set/);
@@ -87,5 +91,33 @@ describe("retention main, failure paths", () => {
     const lines: string[] = [];
     expect(await main([], { RETENTION_ADMIN_DATABASE_URL: "postgres://app_admin:pw@127.0.0.1:1/postgres", DATABASE_SSL: "disable" }, (l) => lines.push(l))).toBe(1);
     expect(lines.join()).toMatch(/^refused:/);
+  });
+});
+
+describe("the orphan sweep, no database", () => {
+  const NOW = Date.parse("2026-11-29T03:00:00Z");
+  const setup = async (ages: Record<string, number>) => {
+    const store = memoryStore();
+    for (const [k, age] of Object.entries(ages)) { await store.put(k, new Uint8Array([1]), "application/pdf"); store.times.set(k, new Date(NOW - age)); }
+    return store;
+  };
+  const named = (keys: string[]) => {
+    const asked: unknown[] = [];
+    return { asked, db: { query: async (_q: string, p: unknown[]) => (asked.push(p[0]), { rows: (p[0] as string[]).filter((k) => keys.includes(k)).map((k) => ({ k })) }) } as never };
+  };
+  it("asks only about keys older than 24 hours, keeps every key a row names, removes the rest", async () => {
+    const store = await setup({ "cv/named": 2 * SWEEP_AGE_MS, "cv/orphan": SWEEP_AGE_MS + 1, "cv/young": SWEEP_AGE_MS, "case/young": 1000, "rules/x": 9 * SWEEP_AGE_MS, "check/x": 9 * SWEEP_AGE_MS });
+    const d = named(["cv/named"]);
+    const lines: string[] = [];
+    expect(await sweep(d.db, (l) => lines.push(l), () => store, NOW)).toBe(0);
+    expect(d.asked).toEqual([["cv/named", "cv/orphan"]]);
+    expect([...store.objects.keys()].sort()).toEqual(["case/young", "check/x", "cv/named", "cv/young", "rules/x"]);
+    expect(lines).toEqual(["sweep: 2 files older than 24 hours, 1 still named by a row, 1 orphans removed (cv/ 1, case/ 0, authority/ 0, logo/ 0, sponsor/ 0, evidence/ 0), 0 failed"]);
+  });
+  it("a failing query removes nothing", async () => {
+    const store = await setup({ "cv/orphan": 2 * SWEEP_AGE_MS });
+    const db = { query: async () => { throw new Error("refused"); } } as never;
+    await expect(sweep(db, () => {}, () => store, NOW)).rejects.toThrow("refused");
+    expect(store.objects.size).toBe(1);
   });
 });

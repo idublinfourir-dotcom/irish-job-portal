@@ -163,14 +163,14 @@ describe("the kept account has no profile or CV: the dropped one's move, and its
     expect(await one("select storage_key from candidate_cv where candidate_user_id = $1", [K])).toEqual({ storage_key: "cv/only" });
     expect(store.objects.has("cv/only")).toBe(true);
   });
-  it("a stored file that cannot be removed is logged by key for removal by hand; the merge stands", async () => {
+  it("a stored file that cannot be removed is logged as a count (never the key) for the orphan sweep; the merge stands", async () => {
     const K = await F.cand(), D = await F.cand();
     await profile(K, "Has One"); await cv(K, "cv/k-has"); await cv(D, "cv/d-stuck");
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
     const req = await propose(K, D);
     store.failNext();
     expect((await h.ok(confirm(req))).filesRemoved).toBe(0);
-    expect(err).toHaveBeenCalledWith("candidate merge: stored file not removed, delete by hand:", JSON.stringify("cv/d-stuck"));
+    expect(err.mock.calls).toEqual([["candidate merge: 1 stored files not removed, the weekly orphan sweep removes them"]]);
     err.mockRestore();
     expect([await exists(D), store.objects.has("cv/d-stuck")]).toEqual([false, true]);
   });

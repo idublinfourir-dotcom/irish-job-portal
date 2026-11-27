@@ -247,7 +247,7 @@ describe("sponsor confirmation on a manual post (Q6)", () => {
   it("file storage off: 503, nothing written", async () => {
     const { job } = await manualPost();
     const off = async () => { throw new FilesUnavailable("off"); };
-    setFileStore({ put: off, remove: async () => {}, link: off, get: off, scanStatus: off });
+    setFileStore({ put: off, remove: async () => {}, link: off, get: off, scanStatus: off, list: off });
     try {
       is(await upload("account_reviewer", job), 503, "files_unavailable");
       expect(await one("select count(*)::int n from approval_request where target_id = $1", [job])).toEqual({ n: 0 });

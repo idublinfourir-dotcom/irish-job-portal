@@ -3,7 +3,7 @@
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { memoryStore } from "../src/file-store.ts";
-import { drain, main } from "../src/retention-cli.ts";
+import { drain, main, REFERENCED, sweep } from "../src/retention-cli.ts";
 import { createTestDb, urlFor } from "./db";
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
@@ -130,7 +130,7 @@ describe("retention removes stored files", () => {
     expect(r.lines.join("\n")).not.toMatch(/cv\/gone|case\/old/);
     expect((await su("select storage_key, copy_deleted_at is not null gone from case_document where id = $1", [doc])).rows[0]).toEqual({ storage_key: null, gone: true });
   });
-  it("a failed removal makes the run red and prints that key", async () => {
+  it("a failed removal makes the run red and prints a count, never the key", async () => {
     await candidate("c-files-fail", true, "90 days");
     await su("update candidate_user set deleted_at = now() - interval '40 days' where id = 'c-files-fail'");
     await su("insert into candidate_cv(candidate_user_id, storage_key, file_name, content_type, size_bytes) values ('c-files-fail', 'cv/fail', 'a.pdf', 'pdf', 10)");
@@ -138,7 +138,114 @@ describe("retention removes stored files", () => {
     store.failNext();
     const r = await drainWith(store);
     expect(r.code).toBe(1);
-    expect(r.lines.at(-1)).toBe('not removed (file store: fake failure), delete by hand: "cv/fail"');
+    expect(r.lines.at(-1)).toBe("not removed (file store: fake failure): 1 files, the weekly orphan sweep removes them");
+    expect(r.lines.join()).not.toContain("cv/fail");
     expect((await runMain()).code).toBe(0); // the row went with the erase: tomorrow's run has nothing left to remove
+  });
+});
+
+// Audit OPS-3: the weekly orphan sweep, as the read-only app_backup login, with the store fake.
+describe("the orphan sweep (retention-cli.ts sweep)", () => {
+  const DAY = 24 * 60 * 60_000;
+  const sweepEnv = (role = "app_backup") => ({ SWEEP_BACKUP_DATABASE_URL: urlFor(db.name, role), DATABASE_SSL: "disable" });
+  const runSweep = async (store: ReturnType<typeof memoryStore>, role?: string) => {
+    const lines: string[] = [];
+    return { code: await main(["sweep"], sweepEnv(role), (l) => lines.push(l), () => store), lines };
+  };
+  const put = async (store: ReturnType<typeof memoryStore>, key: string, ageMs: number) => {
+    await store.put(key, new Uint8Array([1]), "application/pdf");
+    store.times.set(key, new Date(Date.now() - ageMs));
+  };
+
+  it("an erase while the store fails leaves an orphan; the sweep removes it and keeps every key a row names, fresh uploads and rules/ files", async () => {
+    // the erase: a deleted account past its grace, its CV removal fails, the row goes anyway
+    await candidate("c-sweep-gone", true, "90 days");
+    await su("update candidate_user set deleted_at = now() - interval '40 days' where id = 'c-sweep-gone'");
+    await su("insert into candidate_cv(candidate_user_id, storage_key, file_name, content_type, size_bytes) values ('c-sweep-gone', 'cv/sweep-gone', 'a.pdf', 'pdf', 10)");
+    const store = memoryStore();
+    await put(store, "cv/sweep-gone", 3 * DAY);
+    store.failNext();
+    const c = new pg.Client({ connectionString: urlFor(db.name, "app_admin") });
+    await c.connect();
+    try { expect(await drain(c, () => {}, undefined, undefined, () => store)).toBe(1); } finally { await c.end(); }
+    expect(store.objects.has("cv/sweep-gone")).toBe(true);
+    expect((await su("select count(*)::int n from candidate_cv where storage_key = 'cv/sweep-gone'")).rows[0].n).toBe(0);
+    // live rows that name old files: a CV, an application's CV copy, a case document, a pending sponsor confirmation
+    await candidate("c-sweep-live", true, "90 days");
+    await su("insert into candidate_cv(candidate_user_id, storage_key, file_name, content_type, size_bytes) values ('c-sweep-live', 'cv/sweep-live', 'a.pdf', 'pdf', 10)");
+    const staff = `s-sweep-${Date.now()}`;
+    await su("insert into staff_user(id, name, email, email_verified, created_at, updated_at) values ($1, 'Fake Staff', $2, true, now(), now())", [staff, `${staff}@example.test`]);
+    const t = await db.pool("postgres").connect();
+    try {
+      await t.query("begin");
+      await t.query("set local session_replication_role = replica"); // the guard triggers want a full staff session; this test only needs the row
+      await t.query("insert into approval_request(kind, target_table, target_id, proposed_by_staff_user_id, change) values ('manual_post_sponsor_confirmed', 'sponsorship_statement', '1', $1, $2)", [staff, { key: "sponsor/wait.pdf" }]);
+      await t.query("commit");
+    } catch (e) { await t.query("rollback"); throw e; } finally { t.release(); }
+    for (const k of ["cv/sweep-live", "sponsor/wait.pdf", "rules/old.pdf", "case/orphan-old", "logo/orphan.png"]) await put(store, k, 3 * DAY);
+    await put(store, "case/in-flight", 60_000); // an upload whose row is not written yet: under 24 hours, kept
+    await put(store, "cv/23h", DAY - 60 * 60_000);
+    const r = await runSweep(store);
+    expect(r.code, r.lines.join("\n")).toBe(0);
+    expect([...store.objects.keys()].sort()).toEqual(["case/in-flight", "cv/23h", "cv/sweep-live", "rules/old.pdf", "sponsor/wait.pdf"]);
+    expect(r.lines).toEqual(["sweep: 5 files older than 24 hours, 2 still named by a row, 3 orphans removed (cv/ 1, case/ 1, authority/ 0, logo/ 1, sponsor/ 0, evidence/ 0), 0 failed"]);
+    expect(r.lines.join()).not.toMatch(/sweep-gone|orphan-old|orphan\.png/); // counts only: the run log of a public repo is public
+    // a second run finds nothing to remove
+    expect((await runSweep(store)).lines[0]).toMatch(/2 still named by a row, 0 orphans removed/);
+  });
+  it("a failed listing or a failed query removes nothing and is red; a failed removal is red with a count", async () => {
+    const store = memoryStore();
+    await put(store, "cv/never-named", 3 * DAY);
+    store.failNext();
+    const l = await runSweep(store);
+    expect([l.code, l.lines[0]]).toEqual([1, "refused: file store: fake failure"]);
+    const q = await runSweep(store, "app_candidate"); // a login that cannot read the key columns: the query fails, nothing removed
+    expect(q.code).toBe(1);
+    expect(q.lines[0]).toMatch(/^refused: permission denied/);
+    expect(store.objects.has("cv/never-named")).toBe(true);
+    const c = new pg.Client({ connectionString: urlFor(db.name, "app_backup") });
+    await c.connect();
+    const lines: string[] = [];
+    let first = true;
+    const failing = { ...store, remove: async (k: string) => { if (first) { first = false; throw new Error("fake"); } return store.remove(k); } };
+    try { expect(await sweep(c, (x) => lines.push(x), () => failing)).toBe(1); } finally { await c.end(); }
+    expect(lines[0]).toMatch(/0 orphans removed .*, 1 failed$/);
+  });
+  it("more orphans than the cap: nothing removed, red (a wrong database must not empty the bucket)", async () => {
+    const store = memoryStore();
+    for (let i = 0; i < 4; i++) await put(store, `case/cap-${i}`, 3 * DAY);
+    const c = new pg.Client({ connectionString: urlFor(db.name, "app_backup") });
+    await c.connect();
+    const lines: string[] = [];
+    try { expect(await sweep(c, (x) => lines.push(x), () => store, Date.now(), 3)).toBe(1); } finally { await c.end(); }
+    expect(store.objects.size).toBe(4);
+    expect(lines).toEqual(["sweep: 4 orphans of 4 older files, over the cap of 3: nothing removed, check the database login"]);
+  });
+  it("security: app_backup reads every key column with no new privilege and still cannot write; a hostile key is only a value", async () => {
+    const all = (await su("select array_agg(r.rolname::text order by 1) m from pg_auth_members a join pg_roles r on r.oid = a.roleid where a.member = 'app_backup'::regrole")).rows[0].m;
+    expect(all).toEqual(["pg_read_all_data"]);
+    await expect(db.query("app_backup", "delete from candidate_cv")).rejects.toThrow(/permission denied/);
+    const store = memoryStore();
+    await put(store, "cv/x'); delete from candidate_cv; --", 3 * DAY);
+    const r = await runSweep(store);
+    expect(r.code).toBe(0);
+    expect(store.objects.size).toBe(0);
+    expect((await su("select count(*)::int n from candidate_cv where storage_key = 'cv/sweep-live'")).rows[0].n).toBe(1);
+  });
+  it("performance: one statement for every listed key, and its pages stay within budget with 2,000 keys", async () => {
+    const { measurePages, assertPageBudget } = await import("./perf/pages");
+    const keys = Array.from({ length: 2000 }, (_, i) => `cv/perf-${i}`);
+    const c = new pg.Client({ connectionString: urlFor(db.name, "app_backup") });
+    await c.connect();
+    try {
+      const costs = await measurePages(c, [{ text: REFERENCED, values: [keys] }]);
+      assertPageBudget("orphan sweep query", costs, 100);
+      let statements = 0;
+      const counting = { query: (sql: string, p?: unknown[]) => (statements++, c.query(sql, p)) };
+      const store = memoryStore();
+      for (const k of keys.slice(0, 50)) await put(store, k, 3 * DAY);
+      await sweep(counting as never, () => {}, () => store, Date.now(), 100);
+      expect(statements).toBe(1);
+    } finally { await c.end(); }
   });
 });

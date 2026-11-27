@@ -7,11 +7,14 @@ import { disposition, memoryStore, s3Settings, s3Store, SCAN_TAG, SETTINGS, type
 type Seen = { method: string; url: string; headers: IncomingMessage["headers"]; body: Buffer };
 const seen: Seen[] = [];
 let answer = 200, reply: { body?: Buffer | string; headers?: Record<string, string> } = {};
+const queue: { status: number; body: string; headers?: Record<string, string> }[] = []; // one answer per request, then `answer`/`reply`
 const server = createServer((req, res) => {
   const parts: Buffer[] = [];
   req.on("data", (c) => parts.push(c)).on("end", () => {
     seen.push({ method: req.method!, url: req.url!, headers: req.headers, body: Buffer.concat(parts) });
-    res.writeHead(answer, reply.headers).end(reply.body);
+    const next = queue.shift();
+    if (next) res.writeHead(next.status, next.headers).end(next.body);
+    else res.writeHead(answer, reply.headers).end(reply.body);
   });
 });
 let s: S3Settings;
@@ -132,7 +135,42 @@ describe("disposition", () => {
   });
 });
 
+describe("s3Store list (ListObjectsV2), against the fake S3", () => {
+  const page = (items: [string, string][], next?: string) => `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><Name>fake-bucket</Name>` +
+    items.map(([k, t]) => `<Contents><Key>${k}</Key><LastModified>${t}</LastModified><Size>1</Size></Contents>`).join("") +
+    (next ? `<IsTruncated>true</IsTruncated><NextContinuationToken>${next}</NextContinuationToken>` : "<IsTruncated>false</IsTruncated>") + "</ListBucketResult>";
+  it("follows the continuation token over pages, signed GETs with the prefix, keys and times decoded", async () => {
+    const n = seen.length;
+    queue.push({ status: 200, body: page([["cv/a", "2026-11-20T10:00:00.000Z"], ["cv/b&amp;c", "2026-11-21T10:00:00.000Z"]], "tok+/=&amp;x") }, { status: 200, body: page([["cv/d", "2026-11-22T10:00:00.000Z"]]) });
+    expect(await s3Store(s).list("cv/")).toEqual([
+      { key: "cv/a", at: new Date("2026-11-20T10:00:00Z") }, { key: "cv/b&c", at: new Date("2026-11-21T10:00:00Z") }, { key: "cv/d", at: new Date("2026-11-22T10:00:00Z") }]);
+    const [p1, p2] = seen.slice(n);
+    const q1 = new URL(p1!.url, "http://x").searchParams, q2 = new URL(p2!.url, "http://x").searchParams;
+    expect([p1!.method, new URL(p1!.url, "http://x").pathname, q1.get("list-type"), q1.get("prefix"), q1.get("continuation-token")]).toEqual(["GET", "/", "2", "cv/", null]);
+    expect(q2.get("continuation-token")).toBe("tok+/=&x");
+    expect(p1!.headers.authorization).toMatch(/^AWS4-HMAC-SHA256 /);
+  });
+  it("a refused page, a truncated answer without a token, or an answer it cannot read throws (never a partial list)", async () => {
+    queue.push({ status: 200, body: page([["cv/a", "2026-11-20T10:00:00Z"]], "t1") }, { status: 403, body: "<Error/>" });
+    await expect(s3Store(s).list("cv/")).rejects.toThrow(/^file store: LIST answered 403$/);
+    queue.push({ status: 200, body: page([["cv/a", "2026-11-20T10:00:00Z"]]).replace("false", "true") });
+    await expect(s3Store(s).list("cv/")).rejects.toThrow(/not understood/);
+    queue.push({ status: 200, body: page([["cv/a", "not a date"]]) });
+    await expect(s3Store(s).list("cv/")).rejects.toThrow(/not understood/);
+  });
+});
+
 describe("memoryStore", () => {
+  it("list: the keys under a prefix with their write time; remove forgets the time", async () => {
+    const m = memoryStore();
+    await m.put("cv/b", new Uint8Array([1]), "x"); await m.put("cv/a", new Uint8Array([1]), "x"); await m.put("case/c", new Uint8Array([1]), "x");
+    m.times.set("cv/a", new Date("2026-01-01T00:00:00Z"));
+    const l = await m.list("cv/");
+    expect(l.map((o) => o.key)).toEqual(["cv/a", "cv/b"]);
+    expect(l[0]!.at).toEqual(new Date("2026-01-01T00:00:00Z"));
+    await m.remove("cv/a");
+    expect(m.times.has("cv/a")).toBe(false);
+  });
   it("get and scanStatus: the bytes, the cap, a set tag, null for no tag, scanDefault for the rest, null for a missing object", async () => {
     const m = memoryStore();
     await m.put("k", new Uint8Array([1, 2]), "image/png");

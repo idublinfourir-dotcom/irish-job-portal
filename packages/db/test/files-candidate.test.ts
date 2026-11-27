@@ -153,7 +153,7 @@ describe("the CV", () => {
     expect(u.searchParams.get("response-content-disposition")).toBe("attachment; filename*=UTF-8''%C3%93%20Briain%20CV.pdf");
     expect(u.searchParams.get("response-content-type")).toBe("application/pdf");
   });
-  it("DELETE removes the object, then the row; after it GET, download and DELETE answer 404", async () => {
+  it("DELETE removes the row, then the object; after it GET, download and DELETE answer 404", async () => {
     const p = await login();
     await call(R.cv, "PUT", p, { body: file(PDF) });
     const key = (await cvKey(p.id))!;
@@ -162,12 +162,23 @@ describe("the CV", () => {
     expect(await cvKey(p.id)).toBeUndefined();
     for (const [route, m] of [[R.cv, "GET"], [R.download, "GET"], [R.cv, "DELETE"]] as const) expect((await call(route, m, p)).code).toBe("CV_NOT_FOUND");
   });
-  it("a failed object removal keeps the row (never a row with no file left behind as orphan bytes)", async () => {
+  it("OPS-3: a failed object removal still deletes the row (the CV is gone for the person; the weekly sweep removes the unnamed object)", async () => {
     const p = await login();
     await call(R.cv, "PUT", p, { body: file(PDF) });
     const key = (await cvKey(p.id))!;
     store.failNext();
-    await expect(call(R.cv, "DELETE", p)).rejects.toThrow(/fake failure/);
+    expect((await call(R.cv, "DELETE", p)).json).toEqual({ ok: true });
+    expect([await cvKey(p.id), store.objects.has(key)]).toEqual([undefined, true]);
+  });
+  it("OPS-3: a failed row delete leaves both row and object (never a row that points at nothing); storage off is 503 with nothing changed", async () => {
+    const p = await login();
+    await call(R.cv, "PUT", p, { body: file(PDF) });
+    const key = (await cvKey(p.id))!;
+    failNextQuery("delete from candidate_cv");
+    await expect(call(R.cv, "DELETE", p)).rejects.toThrow(/fake database failure/);
+    expect([await cvKey(p.id), store.objects.has(key)]).toEqual([key, true]);
+    setFileStore(undefined);
+    try { expect((await call(R.cv, "DELETE", p)).code).toBe("FILES_UNAVAILABLE"); } finally { setFileStore(store); }
     expect([await cvKey(p.id), store.objects.has(key)]).toEqual([key, true]);
   });
   it("a failed object write stores no row; a failed first row removes the object it just wrote", async () => {

@@ -1,6 +1,7 @@
 // Stored files (step 10 CV, step 14 case documents): the routes' work for both apps. The person always comes from the session and is in every
 // WHERE or INSERT (no row level security). Storage keys are random (cv/<uuid>, case/<uuid>) and never leave the server except inside a 60-second
-// presigned link. Order: object first, then the row (an upload whose row fails removes its object; a delete removes the object, then the row).
+// presigned link. Order: an upload stores the object first, then the row (a row that fails removes its object); a delete removes the row first,
+// then the object (audit OPS-3: a failed removal leaves only an unnamed object, which the weekly sweep in retention-cli.ts removes).
 // Plain uploads and replacements write no audit_event, the same as the profile and every other candidate or portal write (only the export does).
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
@@ -160,8 +161,9 @@ export const cvPut = (r: Request, env: FilesEnv) => fileRoute(r, env, "upload", 
 
 export const cvDelete = (r: Request, env: FilesEnv) => fileRoute(r, env, "write", async (db, userId) => {
   const { storage_key } = await cvRow(db, userId);
-  await fileStore().remove(storage_key);
+  const store = fileStore(); // storage off: 503 before anything changes
   await db.query(CV_SQL.delete, [userId, storage_key]);
+  await store.remove(storage_key).catch(() => {}); // the row is gone, so the weekly sweep removes a file left behind
   return { ok: true };
 });
 
