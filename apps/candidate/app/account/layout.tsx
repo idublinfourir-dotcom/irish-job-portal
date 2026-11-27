@@ -7,6 +7,7 @@ import { A, Icon, Notice, SITE_NAME, type IconName } from "@portal/ui";
 import { readAccountEmail, readAlerts, readCases, readProfile, readSaved, readTracker } from "../../lib/data";
 import { alertsPath, applicationsPath, casesPath, profilePath, savedPath, settingsPath } from "../../lib/paths";
 import { NavLink } from "./nav";
+import { HINT_SET } from "../../lib/hint";
 
 export const metadata: Metadata = { title: `Your account | ${SITE_NAME}`, robots: { index: false, follow: false } };
 
@@ -61,6 +62,8 @@ export default async function AccountLayout({ children }: { children: ReactNode 
   const where = p?.locationKind === "ireland" ? "Living in Ireland" : p?.locationKind === "abroad" ? "Looking from abroad" : null;
   return (
     <div className="mx-auto max-w-page px-5 pb-24 pt-6 sm:px-8 lg:grid lg:grid-cols-[284px_minmax(0,1fr)] lg:gap-6 lg:pb-0">
+      {/* Stage 3 step 4: a session from before the hint cookie existed gets it here, the first page a signed-in candidate opens that knows the session */}
+      <script>{HINT_SET}</script>
       <aside aria-label="Your account" className="lg:sticky lg:top-4 lg:self-start">
         <div className="hidden rounded-bento bg-sand p-4 lg:block">
           <p className="flex items-center gap-3 px-2 pb-4 pt-1">

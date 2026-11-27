@@ -33,9 +33,10 @@ export function PhotoBlock({ className = "" }: { className?: string }) {
 }
 
 /** The dark join band the footer runs on from (frame N01): only for a visitor. data-join tells the footer to drop its gap and corners. */
+/** The visitor band. data-out-only: hidden by the hint switch (globals.css) for a signed-in candidate, so a cached page can carry it for everyone. */
 export function Join() {
   return (
-    <section data-join aria-labelledby="join-h" className="mt-12 rounded-t-[2.5rem] bg-ink text-white">
+    <section data-join data-out-only="" aria-labelledby="join-h" className="mt-12 rounded-t-[2.5rem] bg-ink text-white">
       <div className={`${wrap} flex flex-col items-start justify-between gap-8 border-b border-white/15 py-14 lg:flex-row lg:items-center`}>
         <h2 id="join-h" className="text-[2.4rem] leading-[1.3] text-white sm:text-[3.75rem]">
           Create a <Hl c="green">free</Hl> account{" "}

@@ -56,8 +56,26 @@ export function Wordmark({ className, dark }: { className?: string; dark?: boole
   );
 }
 
-/** The public header, or the signed-in one when `signedIn`: a floating bar (frame N01). The mobile menu is a native <details>, so it needs no script. */
-export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
+/**
+ * Stage 3 step 4 (AUDIT section 5, blocker 1): with `signedIn` left out, both variants are rendered, marked [data-in-only] and [data-out-only]; the
+ * candidate app's hint cookie script (apps/candidate/lib/hint.ts) marks <html data-in> and its globals.css shows one. One HTML for everyone.
+ */
+/** One of two variants: the known one when the server knows (`signedIn` a boolean), both under the hint's CSS switch when it does not (undefined). */
+function Either({ signedIn, yes, no }: { signedIn: boolean | undefined; yes: ReactNode; no: ReactNode }) {
+  if (signedIn !== undefined) return <>{signedIn ? yes : no}</>;
+  return (
+    <>
+      {yes && <div data-in-only="" className="contents">{yes}</div>}
+      {no && <div data-out-only="" className="contents">{no}</div>}
+    </>
+  );
+}
+
+/**
+ * The public header, or the signed-in one when `signedIn`: a floating bar (frame N01). The mobile menu is a native <details>, so it needs no script.
+ * `signedIn` left out: both, switched by the hint cookie (HINT_SCRIPT), so the HTML is the same for every visitor.
+ */
+export function SiteHeader({ signedIn }: { signedIn?: boolean }) {
   const items = listed(PUBLIC_NAV_ALL);
   return (
     <header className="relative z-30 px-5 pt-4 sm:px-8 sm:pt-5">
@@ -71,7 +89,9 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
               </A>
             ))}
           </NavPill>
-          {signedIn ? (
+          <Either
+            signedIn={signedIn}
+            yes={
             <div className="flex items-center gap-2">
               <A href="/account/notices" aria-label="Notices" className="grid size-11 place-items-center rounded-pill bg-white text-ink hover:bg-hover-light">
                 <Icon name="bell" />
@@ -90,7 +110,8 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
                 </div>
               </details>
             </div>
-          ) : (
+            }
+            no={
             <div className="flex items-center gap-1">
               <A href="/employers" className={link}>
                 For employers
@@ -102,14 +123,19 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
                 Create free account <Icon name="arrow" size={16} />
               </Button>
             </div>
-          )}
+            }
+          />
         </nav>
         <div className="flex items-center gap-2 lg:hidden">
-          {!signedIn && (
-            <A href="/login" className="hidden px-2 text-small font-semibold min-[360px]:inline">
-              Sign in
-            </A>
-          )}
+          <Either
+            signedIn={signedIn}
+            yes={null}
+            no={
+              <A href="/login" className="hidden px-2 text-small font-semibold min-[360px]:inline">
+                Sign in
+              </A>
+            }
+          />
           <details className="group relative" data-menu>
             <summary className="grid size-11 cursor-pointer list-none place-items-center rounded-pill bg-ink text-white group-open:bg-hover-light group-open:text-ink" aria-label="Menu">
               <Icon name="menu" className="group-open:hidden" />
@@ -122,7 +148,9 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
                   {i.label} <Icon name="arrow" />
                 </A>
               ))}
-              {signedIn ? (
+              <Either
+                signedIn={signedIn}
+                yes={
                 <>
                   {ACCOUNT_NAV.map((i) => (
                     <A key={i.href} href={i.href} className={menuRow}>
@@ -131,13 +159,15 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
                   ))}
                   <SignOutHere className="mt-6 inline-flex min-h-11 w-full items-center justify-center font-semibold" />
                 </>
-              ) : (
+                }
+                no={
                 <div className="mt-7 flex flex-col items-center gap-4">
                   <Button href="/signup" variant="sun" size="lg" className="w-full">Create free account</Button>
                   <A href="/login" className="inline-flex min-h-11 items-center font-semibold">Sign in</A>
                   <A href="/employers" className="inline-flex min-h-11 items-center gap-2 text-small text-white/70">For employers and agencies <Icon name="external" size={16} /></A>
                 </div>
-              )}
+                }
+              />
             </nav>
           </details>
         </div>
@@ -233,7 +263,7 @@ export function CookieBanner({ onAccept, onReject, settingsHref = "/cookies" }: 
 }
 
 /** The candidate site frame: header, content, footer. Fixed: no data is read here. */
-export function CandidateShell({ children, signedIn = false, standingLine, rulesCheckedOn }: { children: ReactNode; signedIn?: boolean; standingLine?: ReactNode; rulesCheckedOn?: string }) {
+export function CandidateShell({ children, signedIn, standingLine, rulesCheckedOn }: { children: ReactNode; signedIn?: boolean; standingLine?: ReactNode; rulesCheckedOn?: string }) {
   return (
     <div className="flex min-h-screen flex-col">
       <A href="#main" className="sr-only focus:not-sr-only focus:p-3">Skip to content</A>
