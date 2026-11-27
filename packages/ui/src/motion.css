@@ -1,8 +1,8 @@
 /* Page motion (FM1). JS adds data-rv to blocks that start below the fold and removes it as they enter; nothing is hidden in the server HTML. */
 [data-rv] { opacity: 0; }
-.mo-pre { position: fixed; inset: 0; z-index: 2147483000; display: grid; place-items: center; background: var(--color-cream); }
-/* The first-visit cover (pre-cover.tsx): shown only while html[data-pre], under the JS overlay; the 6 s stop matches HARD in motion.tsx. */
-html[data-pre] .mo-cover { display: block; position: fixed; inset: 0; z-index: 2147482999; background: var(--color-cream); animation: mo-cover-off 0s 6s forwards; }
+.mo-pre { position: fixed; inset: 0; z-index: 2147483000; display: grid; place-items: center; background: var(--color-cream); pointer-events: none; }
+/* The first-visit cover (pre-cover.tsx): shown only while html[data-pre], under the JS overlay; the 2 s stop matches HARD in motion.tsx. */
+html[data-pre] .mo-cover { display: block; position: fixed; inset: 0; z-index: 2147482999; background: var(--color-cream); animation: mo-cover-off 0s 2s forwards; }
 @keyframes mo-cover-off { to { visibility: hidden; } }
 .mo-mk { position: relative; transform-origin: 0 0; will-change: transform; user-select: none; pointer-events: none; }
 .mo-mk, .mo-mk * { color: var(--color-deep-green) !important; text-decoration: none; }
@@ -25,3 +25,8 @@ html[data-pre] .mo-cover { display: block; position: fixed; inset: 0; z-index: 2
 }
 @media (max-width: 600px) { .mo-stt { right: 16px; bottom: 72px; } }
 @media (prefers-reduced-motion: reduce) { .mo-stt, .mo-stt * { transition: none !important; } }
+/* Pending mark (link.tsx): the clicked link dims while the next page loads. Loading skeletons (loading.tsx): a quiet pulsing block. */
+a:has(> .lk-pending[data-on]) { opacity: 0.6; cursor: progress; }
+.mo-sk { min-height: 60vh; margin: 2rem auto; width: min(100% - 2rem, 72rem); border-radius: 1rem; background: rgb(20 20 43 / 0.06); animation: mo-sk 1.2s ease-in-out infinite alternate; }
+@keyframes mo-sk { to { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .mo-sk { animation: none; } }

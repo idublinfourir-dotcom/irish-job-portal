@@ -61,7 +61,8 @@ beforeEach(() => {
   vi.stubGlobal("IntersectionObserver", IO);
   vi.stubGlobal("matchMedia", () => ({ matches: reduce }));
   vi.stubGlobal("navigator", { get webdriver() { return webdriver; } });
-  vi.stubGlobal("sessionStorage", { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) });
+  vi.stubGlobal("localStorage", { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) });
+  vi.stubGlobal("location", { pathname: "/" });
   vi.stubGlobal("requestAnimationFrame", (f: (t: number) => void) => setTimeout(() => f(performance.now()), 16));
   vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id));
   vi.stubGlobal("innerHeight", 800);
@@ -150,18 +151,26 @@ describe("scroll reveals", () => {
 });
 
 describe("preloader", () => {
-  it("runs once per session, locks scroll, then removes itself and unlocks", () => {
+  it("runs once per device, never locks scroll, and is gone within 1.2 s", () => {
     logo();
     const stop = mountMotion(null);
     expect(body().kids).toHaveLength(1);
-    expect(docEl().style.overflow).toBe("hidden");
-    expect([...store.keys()]).toEqual(["portal-pre"]);
-    vi.advanceTimersByTime(4300);
-    expect(body().kids).toHaveLength(0);
     expect(docEl().style.overflow).toBe("");
+    expect([...store.keys()]).toEqual(["portal-pre"]);
+    vi.advanceTimersByTime(1200);
+    expect(body().kids).toHaveLength(0);
     stop();
     mountMotion(null);
-    expect(body().kids).toHaveLength(0); // second load of the session: no overlay
+    expect(body().kids).toHaveLength(0); // second load on the device: no overlay
+  });
+  it("runs on the home page only", () => {
+    logo();
+    for (const p of ["/jobs", "/account", "/jobs/x"]) {
+      vi.stubGlobal("location", { pathname: p });
+      mountMotion(null);
+      expect(body().kids).toHaveLength(0);
+      expect(store.size).toBe(0);
+    }
   });
   it("is skipped with no logo, with a webdriver browser, and when storage is blocked it still runs", () => {
     mountMotion(null);
@@ -170,7 +179,7 @@ describe("preloader", () => {
     mountMotion(null);
     expect(body().kids).toHaveLength(0);
     webdriver = false;
-    vi.stubGlobal("sessionStorage", { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } });
+    vi.stubGlobal("localStorage", { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } });
     mountMotion(null);
     expect(body().kids).toHaveLength(1);
   });
@@ -179,7 +188,7 @@ describe("preloader", () => {
     El.throwOnAnimate = true;
     mountMotion(null);
     expect(body().kids).toHaveLength(1);
-    vi.advanceTimersByTime(3400); // the fill ends, the fly calls animate, it throws
+    vi.advanceTimersByTime(900); // the fill ends, the fly calls animate, it throws
     expect(body().kids).toHaveLength(0);
     expect(docEl().style.overflow).toBe("");
   });
@@ -188,12 +197,12 @@ describe("preloader", () => {
     vi.stubGlobal("requestAnimationFrame", () => 1);
     docEl().style.overflow = "scroll";
     mountMotion(null);
-    expect(docEl().style.overflow).toBe("hidden");
-    vi.advanceTimersByTime(5900);
+    expect(docEl().style.overflow).toBe("scroll");
+    vi.advanceTimersByTime(1900);
     expect(body().kids).toHaveLength(1);
     vi.advanceTimersByTime(200);
     expect(body().kids).toHaveLength(0);
-    expect(docEl().style.overflow).toBe("scroll");
+    expect(docEl().style.overflow).toBe("scroll"); // never touched
   });
   it("clears the server cover (data-pre) on mount, whether the preloader runs or not", () => {
     docEl().setAttribute("data-pre");
@@ -207,7 +216,7 @@ describe("preloader", () => {
   it("cleanup mid-flight removes the overlay and starts nothing new", () => {
     logo();
     const stop = mountMotion(null);
-    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(300);
     stop();
     expect(body().kids).toHaveLength(0);
     expect(docEl().style.overflow).toBe("");
@@ -245,8 +254,8 @@ describe("server HTML", () => {
 describe("security", () => {
   const src = readFileSync(new URL("./motion.tsx", import.meta.url), "utf8");
   it("builds DOM nodes only: no innerHTML, eval, outside origin, cookie or other storage", () => {
-    expect(src).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|dangerouslySetInnerHTML|eval\(|new Function|document\.write|document\.cookie|localStorage|fetch\(|sendBeacon/);
+    expect(src).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|dangerouslySetInnerHTML|eval\(|new Function|document\.write|document\.cookie|sessionStorage|fetch\(|sendBeacon/);
     expect([...src.matchAll(/https?:\/\/[^'"`\s)]+/g)].map((m) => m[0])).toEqual(["http://www.w3.org/2000/svg"]); // the data: SVG's namespace, not a request
-    expect([...src.matchAll(/sessionStorage\.(\w+)\(([^)]*)\)/g)].map((m) => m[2])).toEqual(["FLAG", "FLAG, \"1\""]);
+    expect([...src.matchAll(/localStorage\.(\w+)\(([^)]*)\)/g)].map((m) => m[2])).toEqual(["FLAG", "FLAG, \"1\""]);
   });
 });
