@@ -1,0 +1,67 @@
+name: Preview
+
+# An on-demand preview of one app from the branch you pick (audit DEP-2, option 1). Run it by hand: Actions, Preview, Run workflow, choose the
+# branch and the app. It applies the branch's migrations to the separate preview database, then deploys the app to Vercel WITHOUT --prod, so
+# the deploy gets only the Preview-target variables (never a production value) and counts once against Hobby's 100 deployments a day.
+# Two branches with different migrations share the one preview database: reset it before switching (see the hand-over of S4).
+# Secrets (the Environment "preview", which any branch may use; never the production secrets): PREVIEW_DATABASE_URL_MIGRATE (the preview
+# project's owner login, direct connection, port 5432), PREVIEW_DATABASE_CA_CERT (optional: the repo's supabase-ca.crt is the default),
+# VERCEL_TOKEN_ADMIN, VERCEL_TOKEN_CANDIDATE, VERCEL_TOKEN_PORTAL (one token per project, as in deploy.yml).
+# Never on pull_request: code from a branch must not run with these secrets without a person starting it.
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: App to preview
+        type: choice
+        options: [candidate, portal, admin]
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    environment: { name: preview, deployment: false }
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # TLS is on and verified: the CA is checked by packages/db/src/ssl.ts (rejectUnauthorized), unless the URL says otherwise.
+      - name: Apply the migrations to the preview database
+        env:
+          DATABASE_URL_MIGRATE: ${{ secrets.PREVIEW_DATABASE_URL_MIGRATE }}
+          CA_SECRET: ${{ secrets.PREVIEW_DATABASE_CA_CERT }}
+        run: |
+          if [ -z "$DATABASE_URL_MIGRATE" ]; then echo "PREVIEW_DATABASE_URL_MIGRATE is not set: stop"; exit 1; fi
+          export DATABASE_URL_MIGRATE
+          export DATABASE_CA_CERT="${CA_SECRET:-$(cat packages/fetcher/data/supabase-ca.crt)}"
+          npm run db:migrate -w packages/db
+      - name: Deploy a preview
+        env:
+          VERCEL_ORG_ID: team_pZOOvJvO0ATGeXTxzS8DVJLV
+          APP: ${{ inputs.app }}
+          TOKEN_ADMIN: ${{ secrets.VERCEL_TOKEN_ADMIN }}
+          TOKEN_CANDIDATE: ${{ secrets.VERCEL_TOKEN_CANDIDATE }}
+          TOKEN_PORTAL: ${{ secrets.VERCEL_TOKEN_PORTAL }}
+        run: |
+          case "$APP" in
+            admin) id=prj_d4UD3QwfTfojpF7tFp1KZtYdGmP1; token="$TOKEN_ADMIN" ;;
+            candidate) id=prj_ihOGwSmteseWB7oWfpFkMk4QD5Ut; token="$TOKEN_CANDIDATE" ;;
+            portal) id=prj_cba6rpOgoMrlynCFTz7Y5QUPWtd8; token="$TOKEN_PORTAL" ;;
+            *) echo "unknown app"; exit 1 ;;
+          esac
+          if [ -z "$token" ]; then echo "$APP: its token secret is not set: stop"; exit 1; fi
+          copy="$RUNNER_TEMP/$APP"; mkdir -p "$copy"; git archive HEAD | tar -x -C "$copy"
+          cd "$copy" && VERCEL_TOKEN="$token" VERCEL_PROJECT_ID="$id" npx -y vercel@65.14.0 deploy --yes --target=preview --env APP_VERSION="${GITHUB_SHA::7}" --build-env APP_VERSION="${GITHUB_SHA::7}"

@@ -67,7 +67,10 @@ export const STAFF_REFRESH_SECONDS = 300;
 // An app's settings for one pool (STAFF_AUTH_URL and STAFF_AUTH_SECRET, CANDIDATE_..., PORTAL_...), read from its environment.
 // Missing ones fail closed, like checkSettings.
 export function authSettings(prefix: "STAFF" | "CANDIDATE" | "PORTAL", env: NodeJS.ProcessEnv): { baseURL: string; secret: string } {
-  const baseURL = env[`${prefix}_AUTH_URL`], secret = env[`${prefix}_AUTH_SECRET`];
+  // A preview deployment (VERCEL_ENV "preview" only, never production) with no *_AUTH_URL uses its own address: Vercel's branch address,
+  // else the deployment address (a CLI deploy has no Git branch). Neither includes https://. https://vercel.com/docs/environment-variables/system-environment-variables
+  const previewHost = env.VERCEL_ENV === "preview" ? env.VERCEL_BRANCH_URL || env.VERCEL_URL : undefined;
+  const baseURL = env[`${prefix}_AUTH_URL`] || (previewHost ? `https://${previewHost}` : undefined), secret = env[`${prefix}_AUTH_SECRET`];
   if (!baseURL || !secret) throw new Error(`${prefix}_AUTH_URL and ${prefix}_AUTH_SECRET must be set.`);
   checkSettings(baseURL, secret);
   return { baseURL, secret };
