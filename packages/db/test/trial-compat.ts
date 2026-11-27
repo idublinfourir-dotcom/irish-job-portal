@@ -11,6 +11,12 @@ const text = (e) => `${e.code || ""} ${e.message}`;
 export const in30 = () => new Date(Date.now() + 864e5 * 29);
 export const daysAgo = (d) => new Date(Date.now() - 864e5 * d);
 
+// TEST-1: a refusal must name the rule it expects, or any thrown error (a typo, a missing fixture row) would count as the rule working.
+export function checkSpec(table, name, spec) {
+  if (spec.refuse && !spec.expect) throw new Error(`[${table}] ${name}: a refuse step needs expect (the text of the error this rule gives)`);
+}
+export const refusedBy = (spec, m) => m.toLowerCase().includes(spec.expect.toLowerCase());
+
 export function setup(db, known0 = {}) {
   const known = process.env.NOKNOWN ? {} : known0; // NOKNOWN=1 shows the real errors of the it.fails checks
   const P = new Proxy({}, { get: (_, role) => db.pool(role) });
@@ -32,12 +38,13 @@ export function setup(db, known0 = {}) {
   };
   async function rule(table, name, spec) {
     let refused = null, allowed = null, detail = "";
+    checkSpec(table, name, spec);
     for (const step of Object.keys(spec)) {
       if (step === "refuse") {
         try { await spec.refuse(); refused = false; detail += "bad action was accepted. "; }
         catch (e) {
           const m = text(e);
-          refused = spec.expect ? m.toLowerCase().includes(spec.expect.toLowerCase()) : true;
+          refused = refusedBy(spec, m);
           detail += `refused: ${m}`.slice(0, 200) + ". ";
           if (!refused) detail += `(expected "${spec.expect}") `;
         }
