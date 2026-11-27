@@ -19,6 +19,20 @@ export const consume = (table: string) =>
      last_request = case when r.last_request <= $3::bigint then $3::bigint + $4::bigint else r.last_request end
    returning count`;
 
+// SEC-2: a daily budget per pool for the account emails anyone can trigger without a session (the verify email of a sign-up or a resend, and the
+// reset), so a flood of new addresses cannot use up Brevo Free's 300 a day, which every other email shares: the outbox keeps 200 a UTC day
+// (packages/db/src/outbox-cli.ts DAILY_CAP), these 95, which leaves 5 for email changes and invites (signed-in actions, not budgeted). Verify and
+// reset count apart, so a sign-up flood never stops resets. Over the budget the email is not sent and one line is logged; the reply is unchanged.
+// The key carries the UTC date, so the day matches the outbox's and Brevo's. Not counted: an address with no account gets no email, so no count.
+export const EMAIL_DAY_BUDGET = { candidate: { verify: 50, reset: 20 }, portal: { verify: 15, reset: 10 } } as const;
+export const dayBudgetKey = (kind: string, now: Date) => `email-day:${kind}:${now.toISOString().slice(0, 10)}`;
+/** Counts one email of `kind` today in the pool's table (one statement): true while within `max`. */
+export async function withinDayBudget(database: Pool, pool: "candidate" | "portal", kind: string, max: number): Promise<boolean> {
+  const now = new Date();
+  const { rows } = await database.query<{ count: number }>(consume(`${pool}_rate_limit`), [randomUUID(), dayBudgetKey(kind, now), now.getTime(), 86_400_000]);
+  return rows[0]!.count <= max;
+}
+
 export const emailLimitKey = (secret: string, path: string, email: string) =>
   `email:${path}:${createHmac("sha256", secret).update(email.toLowerCase()).digest("hex")}`;
 
