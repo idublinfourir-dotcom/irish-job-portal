@@ -122,7 +122,7 @@ describe("SEC-3: the emailed confirm link opens our page; only its button acts",
       }
       for (const cb of ["//evil.example/x", "https://evil.example/x", "/\\evil.example", "javascript:alert(1)", ["/a", "/b"]]) {
         const html = await render({ token: "aaa.bbb.ccc", callbackURL: cb });
-        expect(html).toContain(`name="callbackURL" value="${pool === "candidate" ? "/verify" : "/verify-email"}"`);
+        expect(html).toContain(`name="callbackURL" value="${pool === "candidate" ? "/verify?verified=1" : "/verify-email"}"`);
       }
       const html = await render({ token: "aaa.bbb.ccc", callbackURL: "/settings?email=link" });
       expect(html).toContain('name="token" value="aaa.bbb.ccc"');

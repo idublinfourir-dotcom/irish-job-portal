@@ -28,7 +28,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
     <AuthFrame title={<>Confirm your <span className="text-deep-green">email</span></>} lead="Press the button to confirm. Nothing changes on your account until you do." side={CHECK_SIDE}>
       <form method="get" action="/api/auth/candidate/verify-email" rel="noreferrer">
         <input type="hidden" name="token" value={token} />
-        <input type="hidden" name="callbackURL" value={ownPath(cb, "http://own.invalid") ? cb : "/verify"} />
+        <input type="hidden" name="callbackURL" value={ownPath(cb, "http://own.invalid") ? cb : "/verify?verified=1"} />
         <Button type="submit" variant="dark" size="lg" className="w-full">Confirm</Button>
       </form>
     </AuthFrame>
