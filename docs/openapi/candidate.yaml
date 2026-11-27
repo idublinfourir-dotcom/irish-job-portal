@@ -342,6 +342,11 @@ components:
       in: cookie
       name: candidate.session_token
       description: The candidate pool's Better Auth session cookie (`__Secure-candidate.session_token` over HTTPS).
+    revalidateSignature:
+      type: apiKey
+      in: header
+      name: x-revalidate-signature
+      description: The hex HMAC-SHA256 of the exact request body under `REVALIDATE_SECRET` (POST /api/revalidate only).
   responses:
     BadRequest:
       description: '`BAD_REQUEST`: the body is not JSON, or a field is unknown, missing, of the wrong type or outside its limits.'
@@ -3199,3 +3204,66 @@ paths:
         '429':
           description: '`TOO_MANY_REQUESTS`: over 30 calls in 10 minutes from one client address.'
           content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: TOO_MANY_REQUESTS } } }
+  /api/revalidate:
+    post:
+      operationId: revalidatePages
+      tags: [ops]
+      summary: Clear cached pages after a write elsewhere (signed)
+      description: |
+        Stage 3 step 2 (AUDIT section 5). The admin and portal apps and the command-line jobs call it once their write has committed, so the
+        candidate site's cached pages show the change on their next visit. Not for browsers: the body must be signed with HMAC-SHA256 under
+        `REVALIDATE_SECRET` (the hex digest of the exact body text in `x-revalidate-signature`), `at` must be within 60 s of the site's clock,
+        and every path must be on the fixed list (the content pages, the five legal pages, or `/` as a layout). Tags: none yet; a body with one is refused.
+        Reads no database. A page that is not cached is unaffected. No Origin check: the callers are servers, which send no Origin header;
+        the signature takes its place.
+      security: [{ revalidateSignature: [] }]
+      x-roles: [signed caller]
+      x-body-cap: 8000 characters
+      x-rate-limit: 'None: the signature is the gate. An unsigned or wrongly signed call is refused after one HMAC of at most 8000 characters, before any other work.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [paths, at]
+              properties:
+                paths:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [path]
+                    properties:
+                      path: { type: string, maxLength: 1024 }
+                      type: { enum: [page, layout] }
+                tags: { type: array, maxItems: 0 }
+                at: { type: integer, description: 'The caller''s clock, milliseconds since 1970.' }
+            example: { paths: [{ path: /privacy }, { path: '/guides/[slug]', type: page }], at: 1800000000000 }
+      responses:
+        '200':
+          description: Each path is marked; it regenerates on its next visit.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ok, cleared]
+                properties:
+                  ok: { const: true }
+                  cleared: { type: integer, minimum: 1 }
+              example: { ok: true, cleared: 5 }
+        '400':
+          description: '`BAD_BODY`: not a JSON object of the known keys; `UNKNOWN_PATH`: a path or type off the list; `UNKNOWN_TAG`: any tag.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: UNKNOWN_PATH } } }
+        '401':
+          description: '`BAD_SIGNATURE`: no signature or a wrong one; `STALE`: `at` is more than 60 s from the site''s clock.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_SIGNATURE } } }
+        '413':
+          description: '`BAD_BODY`: over the body cap.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: BAD_BODY } } }
+        '503':
+          description: '`NOT_CONFIGURED`: the site has no `REVALIDATE_SECRET`.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeError' }, example: { code: NOT_CONFIGURED } } }

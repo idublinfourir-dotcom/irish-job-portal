@@ -11,7 +11,8 @@
     "./legal-texts": "./src/legal-texts.ts",
     "./body-format": "./src/body-format.ts",
     "./staff-uploads": "./src/staff-uploads.ts",
-    "./staff-case-files": "./src/staff-case-files.ts"
+    "./staff-case-files": "./src/staff-case-files.ts",
+    "./revalidate": "./src/revalidate.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -1,8 +1,10 @@
 // The content editor (#234 D3): GET lists the pages of every state (?kind=&status=&after=), shows one with its body (?id=), lists the stale guides, help and occupation pages (?stale=1, optionally &kind=guide, help or occupation; Q14, B74) or shows one page as its public page would (?id=&preview=1, B74); POST creates or edits a draft and
 // publishes or withdraws a page. Who may do what is decided in the database calls: a content editor writes drafts, publishes help and updates and withdraws any
 // page; a rules-data editor publishes guides and occupation texts. The database wants a source and a checked-on date to publish anything but help.
+import { after } from "next/server";
 import { staffSettings } from "@portal/auth";
 import { createContentDraft, editContentDraft, getContentPage, getPool, listContentPages, listStaleContent, previewContentPage, publishContent, withdrawContent } from "@portal/db";
+import { CONTENT_PATHS, revalidateCandidate, revalidateOn } from "@portal/db/revalidate";
 import { BadRequest, checkLength, checkOrigin, id19, parseBody, readQuery, refuse, type Field, type Spec } from "../../../lib/admin-api";
 import { requireStaff } from "../../../lib/staff";
 
@@ -60,6 +62,8 @@ export async function POST(request: Request) {
       case "publish": await publishContent(db, staff, s("id")); break;
       case "withdraw": await withdrawContent(db, staff, s("id")); break;
     }
+    // Stage 3 step 2: a publish or withdraw changed what the candidate site shows; once it has committed, its cached pages are cleared (a draft shows nowhere)
+    if ((b.action === "publish" || b.action === "withdraw") && revalidateOn(process.env)) after(() => revalidateCandidate(process.env, CONTENT_PATHS));
     return Response.json({ ok: true });
   } catch (e) {
     return refuse(e, "content");

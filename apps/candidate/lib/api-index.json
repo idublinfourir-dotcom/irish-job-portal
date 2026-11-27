@@ -65,6 +65,7 @@
     "downloadCaseDocument": "GET /api/candidate/cases/{id}/documents/{docId} (candidate who uploaded it)",
     "candidateCaseTimeline": "GET /api/candidate/cases/{id}/timeline (candidate who owns the case)",
     "dataRequestInfo": "GET /api/data-request (anyone with the token)",
-    "dataRequestConfirm": "POST /api/data-request (anyone with the token)"
+    "dataRequestConfirm": "POST /api/data-request (anyone with the token)",
+    "revalidatePages": "POST /api/revalidate (signed caller)"
   }
 }
