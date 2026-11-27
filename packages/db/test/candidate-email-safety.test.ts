@@ -12,7 +12,9 @@ import { answers, portalAnswers, seedSignupTerms } from "./better-auth-helper";
 const GAP_MS = 100, SEND_MS = 300;
 // Statements measured on 13 November 2026 (counting every pg.Client.query call), two runs: a reset request for a known address 6, for an unknown
 // one 7, a resend 4 (each includes the 1 statement of the per-address limit and the 2 of the per-IP limit). Raise only on purpose.
-const BUDGET = { resetKnown: 6, resetUnknown: 7, resend: 4 };
+// 27 Nov 2026, SEC-9: unknown 8. With tokens stored hashed, Better Auth's decoy lookup for an unknown address tries the hash, then the plain form
+// (its fallback for links sent before the change), so one more select. The known path is unchanged.
+const BUDGET = { resetKnown: 6, resetUnknown: 8, resend: 4 };
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
