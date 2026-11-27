@@ -7,8 +7,8 @@ import { answers, publishLegal } from "./better-auth-helper";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { loadSpec, replyProblems } from "./openapi";
 
-// Measured 19 Nov 2026: a visitor's read is 3 statements (2 rate counts, the read), a candidate's 4 (session 2, rate count, the read); median 0.9 ms.
-const BUDGET = { visitor: 3, candidate: 4, medianMs: 15 };
+// Measured 19 Nov 2026: a visitor's read is 2 statements (the rate count, the read; PERF-3 on 27 Nov 2026 counts both windows in one statement), a candidate's 4 (session 2, rate count, the read); median 0.9 ms.
+const BUDGET = { visitor: 2, candidate: 4, medianMs: 15 };
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const BASE = "http://localhost:3000";
 type Handler = (r: Request) => Promise<Response>;
