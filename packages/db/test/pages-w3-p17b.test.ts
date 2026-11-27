@@ -2,6 +2,7 @@
 // database as app_candidate. Real Better Auth routes, real account routes, real reads through apps/candidate/lib/data.ts and the real page functions (called with
 // their searchParams, the element rendered to HTML). Only Next's request context is stood in. Emails go to the app's fake sender: no network. Fake people only.
 // Budgets (measured 25 November 2026, see the printed line): statements per page render counted from the call, the session read included, and the median time.
+import { pressed } from "./confirm-link";
 import pg from "pg";
 import { renderToStaticMarkup as html } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -41,6 +42,7 @@ beforeAll(async () => {
   EXPORT = await import("../../../apps/candidate/app/api/candidate/export/route");
   CASES = await import("../../../apps/candidate/app/api/candidate/cases/route");
   ({ candidateMail: mail } = await import("../../../apps/candidate/lib/candidate"));
+  mail = pressed(mail, "candidate");
   ({ sayAccount } = await import("../../../apps/candidate/app/account/settings-messages"));
   const page = async (p: string) => (await import(p)).default as Page;
   P.profile = await page("../../../apps/candidate/app/account/profile/page");

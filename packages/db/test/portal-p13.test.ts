@@ -2,6 +2,7 @@
 // apps/portal with real portal sessions. Only Next's own request context is stood in (server-only, next/headers, next/navigation's redirect); no test reaches the network, the
 // email sender is the fake one that keeps its messages. Fake people and companies only. Also holds the statement and time budgets of the pages (check 5) and the role, hostile
 // input and open-redirect tests (check 6).
+import { pressed } from "./confirm-link";
 import { createHash } from "node:crypto";
 import pg from "pg";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -109,7 +110,7 @@ const call = async (h: (r: Request) => Promise<Response>, cookie: string, body?:
   const json = await res.json().catch(() => ({}));
   return { status: res.status, code: json.code as string | undefined, json };
 };
-const mailTo = (email: string, kind: string) => M.portalMail().filter((m) => m.to === email && m.kind === kind).at(-1)!;
+const mailTo = (email: string, kind: string) => pressed(M.portalMail, "portal")().filter((m) => m.to === email && m.kind === kind).at(-1)!;
 
 describe("emailed links end on our own pages (24 Nov lesson)", () => {
   it("sign-up verification: a good link confirms the address and lands on /verify-email with the return path; an opened link again, and an ended one, land there too", async () => {

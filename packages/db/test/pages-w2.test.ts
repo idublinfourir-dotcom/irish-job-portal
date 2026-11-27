@@ -4,6 +4,7 @@
 // headers a test sets, next/navigation's redirect throws as Next's does, server-only is empty) and BotID is the existing fake. The confirmation emails go to
 // the app's own fake sender (candidateMail): no network. Fake data only.
 // Budgets (measured 24 November 2026, see the printed line): statements per page render counted from the call, the session read included.
+import { pressed } from "./confirm-link";
 import { createHash, createHmac } from "node:crypto";
 import pg from "pg";
 import { renderToStaticMarkup as html } from "react-dom/server";
@@ -50,6 +51,7 @@ beforeAll(async () => {
   ({ POST: CASES } = await import("../../../apps/candidate/app/api/candidate/cases/route"));
   ({ POST: DOCS } = (await import("../../../apps/candidate/app/api/candidate/cases/[id]/documents/route")) as unknown as { POST: Handler });
   ({ candidateMail: mail } = await import("../../../apps/candidate/lib/candidate"));
+  mail = pressed(mail, "candidate");
   D = await import("../../../apps/candidate/lib/data");
   const page = async (p: string) => (await import(p)).default;
   P.signup = await page("../../../apps/candidate/app/signup/page");

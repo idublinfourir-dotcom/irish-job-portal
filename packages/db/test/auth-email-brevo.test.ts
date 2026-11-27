@@ -1,5 +1,5 @@
 // E1: the auth send path end to end on the test database. Each pool's real auth handler (createAuth) sends through createMail with Brevo
-// switched on, and Brevo is a fetch fake: the request body must carry the sender name, HTML and text, and the link Better Auth made.
+// switched on, and Brevo is a fetch fake: the request body must carry the sender name, HTML and text, and the link Better Auth made (the verify link as our confirm page, SEC-3).
 // Nothing calls the network (the network guard stays on). Fake people only.
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -45,7 +45,8 @@ describe("auth emails through the Brevo sender (fetch fake)", () => {
         const html = String(body.htmlContent), text = String(body.textContent);
         const links = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]!.replace(/&amp;/g, "&"));
         expect(links).toHaveLength(1); // the button only, no raw link in the HTML
-        expect(links.every((l) => l.startsWith(`${BASE}/api/auth/${pool}/`))).toBe(true);
+        // SEC-3: the verify link opens our own confirm page (it changes nothing on GET); the reset link is Better Auth's own page link
+        expect(links[0]!.startsWith(body.subject === "Reset your password" ? `${BASE}/api/auth/${pool}/reset-password/` : `${BASE}/confirm-email?token=`), links[0]).toBe(true);
         expect(text).toContain(links[0]!);
         expect(html + text).toContain("1 hour");
         expect(html + text).not.toMatch(/<script|PLACEHOLDER/); // the person's typed name is never in the email

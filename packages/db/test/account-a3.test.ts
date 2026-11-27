@@ -3,6 +3,7 @@
 // Only Next's request context is stood in (next/headers gives the headers a test sets; server-only is empty) and the confirmation email goes to the
 // app's own fake sender (candidateMail). No network. Fake data only.
 // Budgets (measured 23 November 2026, see the printed line): statements per signed-in read counted from the request, including the session read.
+import { pressed } from "./confirm-link";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { answers, seedSignupTerms } from "./better-auth-helper";
@@ -40,6 +41,7 @@ beforeAll(async () => {
   ({ GET: CASES } = await import("../../../apps/candidate/app/api/candidate/cases/route"));
   ({ GET: CASE_ONE } = await import("../../../apps/candidate/app/api/candidate/cases/[id]/route"));
   ({ candidateMail: mail } = await import("../../../apps/candidate/lib/candidate"));
+  mail = pressed(mail, "candidate");
   D = await import("../../../apps/candidate/lib/data");
   org = (await su.query("insert into organisation(slug, display_name, kind, status) values ('fake-a3-org', 'Fake A3 Org', 'employer', 'verified') returning id")).rows[0].id;
   src = (await su.query("insert into job_source(kind, board) values ('portal', 'fake-a3') returning id")).rows[0].id;

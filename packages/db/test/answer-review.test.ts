@@ -1,6 +1,7 @@
 // Step 8 slice 8.4 (#197, #203, migration 0016): the employer's answer to "ask for more" and the 24 hour cool-down after a rejected claim, end to end on
 // the test database through the real /api/portal/claim and /api/portal/review-answer handlers (real portal sessions, connected as app_portal) and the
 // real staff functions (as app_admin). No test calls the real network (the sign-up emails go to the fake sender). Fake people only.
+import { pressed } from "./confirm-link";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "./db";
@@ -35,6 +36,7 @@ beforeAll(async () => {
   ({ POST: claimPOST } = await import("../../../apps/portal/app/api/portal/claim/route"));
   ({ POST: answerPOST } = await import("../../../apps/portal/app/api/portal/review-answer/route"));
   ({ portalMail: mail } = await import("../../../apps/portal/lib/portal"));
+  mail = pressed(mail, "portal");
   const c = await su.connect();
   try { reviewer = await seedStaff(c, { email: "rev@example.test", name: "Fake Reviewer", roles: ["account_reviewer"] }, "Fake-reviewer-password-1"); } finally { c.release(); }
 });

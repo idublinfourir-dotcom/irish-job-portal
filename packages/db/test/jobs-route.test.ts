@@ -1,5 +1,6 @@
 // Step 9 part 12a, end to end on the test database through the real /api/portal/jobs handlers, connected as app_portal, with real portal
 // sessions (sign-up, confirm and sign-in through the real auth route). No test calls the real network. Fake people and companies only.
+import { pressed } from "./confirm-link";
 import { readFileSync } from "node:fs";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -42,6 +43,7 @@ beforeAll(async () => {
   ({ POST: renewPOST } = await import("../../../apps/portal/app/api/portal/jobs/renew/route"));
   ({ POST: closePOST } = await import("../../../apps/portal/app/api/portal/jobs/close/route"));
   ({ portalMail: mail } = await import("../../../apps/portal/lib/portal"));
+  mail = pressed(mail, "portal");
 });
 afterAll(async () => {
   const { getPool } = await import("../src");

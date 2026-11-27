@@ -1,6 +1,7 @@
 // Step 8 slice 8.3 (#52, #103, #130, #132, #184, #191): teams for employers and agencies, end to end on the test database through the
 // real /api/portal/team handlers, connected as app_portal, with real portal sessions (sign-up, confirm and sign-in through the real
 // auth route). The invite email goes to the fake sender only; no test calls the real network. Fake people only.
+import { pressConfirm } from "./confirm-link";
 import { createHash } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -92,7 +93,7 @@ type Login = { email: string; password: string; cookie: string; id: string };
 async function login(domain = "elsewhere.example.test"): Promise<Login> {
   const p = { email: `fake.t${++n}@${domain}`, password: `Fake-t${n}-password-1`, name: `Fake T${n}`, ...portalAnswers };
   expect((await authCall("sign-up/email", p)).status).toBe(200);
-  await click(mail().filter((m) => m.to === p.email && m.kind === "verify").at(-1)!.link);
+  await click(pressConfirm(mail().filter((m) => m.to === p.email && m.kind === "verify").at(-1)!.link, "portal"));
   const r = await authCall("sign-in/email", { email: p.email, password: p.password });
   expect(r.status, r.text).toBe(200);
   return { email: p.email, password: p.password, cookie: r.cookie, id: (await one("select id from portal_user where email=$1", [p.email])).id };

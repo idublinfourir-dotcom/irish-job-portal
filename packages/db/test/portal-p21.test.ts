@@ -1,6 +1,7 @@
 // Step 16 page slice P21 (company profile, team, account status, settings, help): the pages' server code and the routes their forms call, on the test database with real portal sessions.
 // Only Next's own request context is stood in (server-only, next/headers, redirect); no test reaches the network, the email sender is the fake one that keeps its messages. Fake people and
 // companies only. Also holds the statement and time budgets of the pages (check 5) and the role, hostile input and exposure tests (check 6).
+import { pressed } from "./confirm-link";
 import pg from "pg";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -333,19 +334,19 @@ describe("the emailed email-change links end on /settings (24 Nov lesson)", () =
     expect((await post("change-email", { newEmail: to, callbackURL: "/settings?email=confirm" }, o.cookie)).status).toBe(200);
     const click = (link: string) => AUTH.GET(new Request(link, { headers: { "x-vercel-forwarded-for": ip() }, redirect: "manual" }));
     const where = (r: Response) => new URL(r.headers.get("location") ?? "", BASE);
-    const first = M.portalMail().filter((m) => m.to === o.email && m.kind === "change-email").at(-1)!.link;
+    const first = pressed(M.portalMail, "portal")().filter((m) => m.to === o.email && m.kind === "change-email").at(-1)!.link;
     const g1 = await click(first);
     expect(g1.status).toBe(302);
     expect(where(g1).pathname).toBe("/settings");
     expect(where(g1).searchParams.get("email")).toBe("confirm");
-    const second = M.portalMail().filter((m) => m.to === to && m.kind === "new-email").at(-1)!.link;
+    const second = pressed(M.portalMail, "portal")().filter((m) => m.to === to && m.kind === "new-email").at(-1)!.link;
     const g2 = await click(second);
     expect(where(g2).pathname).toBe("/settings");
     expect((await one("select email from portal_user where id=$1", [o.id])).email).toBe(to);
     expect(where(await click(second)).pathname).toBe("/settings"); // used again
     const late = await login();
     expect((await post("change-email", { newEmail: `fake.p21.late.${n}@fakehotels.example.test`, callbackURL: "/settings?email=confirm" }, late.cookie)).status).toBe(200);
-    const old = M.portalMail().filter((m) => m.to === late.email && m.kind === "change-email").at(-1)!.link;
+    const old = pressed(M.portalMail, "portal")().filter((m) => m.to === late.email && m.kind === "change-email").at(-1)!.link;
     vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 3 * 3600_000 });
     let ended: Response;
     try { ended = await click(old); } finally { vi.useRealTimers(); }

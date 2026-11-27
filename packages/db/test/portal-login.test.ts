@@ -2,6 +2,7 @@
 // sign-in, resend and reset go through the real auth route of apps/portal with a Request, connected as app_portal; claim and
 // register go through the real /api/portal/claim and /api/portal/register handlers. Email is the fake sender. Fake people only.
 // The steps share state (cookies, ids), so they run in order.
+import { pressed } from "./confirm-link";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "./db";
@@ -37,6 +38,7 @@ beforeAll(async () => {
   ({ POST: claimPOST } = await import("../../../apps/portal/app/api/portal/claim/route"));
   ({ POST: registerPOST } = await import("../../../apps/portal/app/api/portal/register/route"));
   ({ portalMail: mail, portalAuth: auth } = await import("../../../apps/portal/lib/portal"));
+  mail = pressed(mail, "portal");
 });
 afterAll(async () => {
   const { getPool } = await import("../src");

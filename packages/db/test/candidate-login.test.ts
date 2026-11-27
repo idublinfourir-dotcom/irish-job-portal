@@ -2,6 +2,7 @@
 // resend and reset go through the real route handler of apps/candidate with a Request, connected as app_candidate. Email is the
 // fake sender (in memory, localhost only). The placeholder wording is saved by the real command as app_admin. Fake people only.
 // The steps share state (cookies, ids), so they run in order.
+import { pressed } from "./confirm-link";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
@@ -31,6 +32,7 @@ beforeAll(async () => {
   Object.assign(process.env, { DATABASE_URL: urlFor(db.name, "app_candidate"), DATABASE_SSL: "disable", CANDIDATE_AUTH_URL: BASE, CANDIDATE_AUTH_SECRET: secret });
   ({ POST, GET } = await import("../../../apps/candidate/app/api/auth/candidate/[...all]/route"));
   ({ candidateMail: mail } = await import("../../../apps/candidate/lib/candidate"));
+  mail = pressed(mail, "candidate");
 });
 afterAll(async () => {
   const { getPool } = await import("../src");

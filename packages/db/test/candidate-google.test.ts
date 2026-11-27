@@ -2,6 +2,7 @@
 // real route handler of apps/candidate as app_candidate. Google is a fake: the global fetch is replaced, so the token call is answered
 // here and any other outside address fails the test. The network guard stays on. Fake people only.
 // The steps share state (cookies, ids), so they run in order.
+import { pressed } from "./confirm-link";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestDb, urlFor, type TestDb } from "./db";
@@ -45,6 +46,7 @@ beforeAll(async () => {
   Object.assign(process.env, { DATABASE_URL: urlFor(db.name, "app_candidate"), DATABASE_SSL: "disable", CANDIDATE_AUTH_URL: BASE, CANDIDATE_AUTH_SECRET: secret, GOOGLE_CLIENT_ID: "fake-client-id", GOOGLE_CLIENT_SECRET: "fake-client-secret" });
   ({ POST, GET } = await import("../../../apps/candidate/app/api/auth/candidate/[...all]/route"));
   ({ candidateMail: mail } = await import("../../../apps/candidate/lib/candidate"));
+  mail = pressed(mail, "candidate");
 });
 afterAll(async () => {
   vi.unstubAllGlobals();
