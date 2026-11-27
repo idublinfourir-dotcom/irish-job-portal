@@ -4,13 +4,12 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { A, Notice, Pill } from "@portal/ui";
-import { readLegal, readSignedIn } from "../../lib/data";
+import { cachedLegal } from "../../lib/cached";
 import { legalPath } from "../../lib/paths";
 import { Body } from "./body";
 import { dublinDay } from "./dates";
 import { wrap } from "./head";
 import { meta } from "./meta";
-import { Problem, type Failed } from "./problem";
 import { Join } from "../jobs/parts";
 
 export const LEGAL_PAGES = [
@@ -38,7 +37,7 @@ function Side({ current }: { current: Purpose }) {
     <nav aria-label="Legal documents" className="flex flex-col gap-1 rounded-bento bg-sand p-4 lg:p-5">
       <p className="px-3 py-2 text-small font-semibold">Legal</p>
       {LEGAL_PAGES.map((p) => (
-        <A key={p.purpose} href={legalPath(p.purpose)!} aria-current={p.purpose === current ? "page" : undefined} className={`flex min-h-11 items-center rounded-pill px-4 text-ui no-underline ${p.purpose === current ? "bg-deep-green font-semibold text-white" : "text-muted hover:bg-hover-light"}`}>{p.title}</A>
+        <A key={p.purpose} href={legalPath(p.purpose)!} prefetch aria-current={p.purpose === current ? "page" : undefined} className={`flex min-h-11 items-center rounded-pill px-4 text-ui no-underline ${p.purpose === current ? "bg-deep-green font-semibold text-white" : "text-muted hover:bg-hover-light"}`}>{p.title}</A>
       ))}
     </nav>
   );
@@ -70,9 +69,9 @@ export function LegalView({ purpose, text, signedIn }: { purpose: Purpose; text:
   );
 }
 
-/** A legal page: reads the text in force (one gated read) and shows it. A 404 is "not published yet", never a crash; any other refusal has its words. */
+/** A legal page: the text in force, read by the cached loader (Stage 3 step 5: cached a day, cleared when a legal text is confirmed). A missing text is
+ *  "not published yet"; a failed read throws, so a regeneration keeps the last good copy. The Join band is the visitor's, hidden by the hint switch. */
 export async function LegalPage({ purpose }: { purpose: Purpose }): Promise<ReactNode> {
-  const [r, signedIn] = await Promise.all([readLegal(new URLSearchParams({ purpose })), readSignedIn()]);
-  if (!r.ok && r.status !== 404) return <Problem read={r as Failed} what="page" />;
-  return <LegalView purpose={purpose} text={r.ok ? (r.data as LegalText) : null} signedIn={signedIn} />;
+  const text = (await cachedLegal(purpose)) as LegalText | null;
+  return <LegalView purpose={purpose} text={text} signedIn={false} />;
 }

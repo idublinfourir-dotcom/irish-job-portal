@@ -1,17 +1,37 @@
 "use client";
 // The interactive parts of the job pages: save, report, the apply card with the "Did you apply?" prompt, and the alert builder.
 // Everything else on the pages is server rendered. Every write goes through api.ts (the documented routes); a refusal is worded, never swallowed.
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { A, Button, Icon, Notice, cx } from "@portal/ui";
 import { EVIDENCE_MAX, REPORT_REASONS, answerPrompt, createAlert, logApplyClick, markApplied, reportJob, saveJob } from "./api";
 import { loginHref } from "./format";
 import { MODAL_BODY, MODAL_FOOT, Modal } from "./modal";
 import { Logo } from "./parts";
 
+// ===== saved marks on a cached page (Stage 3 step 6) =====
+// A cached page is the visitor's HTML. When the hint cookie (lib/hint.ts) says signed in, this asks GET /api/candidate/saved once (the gated route, its own
+// session check) and every SaveButton inside shows its mark. No hint, or the route answers 401: no request result, no marks.
+export const SavedMarks = createContext<ReadonlySet<string> | null>(null);
+const HINTED = /(?:^|;\s*)cand_in=1(?:;|$)/;
+export function SavedMarksFromApi({ children }: { children: ReactNode }) {
+  const [ids, setIds] = useState<ReadonlySet<string> | null>(null);
+  useEffect(() => {
+    if (!HINTED.test(document.cookie)) return;
+    let live = true;
+    fetch("/api/candidate/saved", { credentials: "same-origin" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ saved?: { jobId: string }[] }>) : null))
+      .then((b) => { if (live && b?.saved) setIds(new Set(b.saved.map((s) => s.jobId))); }, () => {});
+    return () => { live = false; };
+  }, []);
+  return <SavedMarks.Provider value={ids}>{children}</SavedMarks.Provider>;
+}
+
 // ===== save =====
-/** The round bookmark of a card, or (`label`) the outlined "Save" button of the apply card. */
+/** The round bookmark of a card, or (`label`) the outlined "Save" button of the apply card. Inside SavedMarksFromApi, the mark also comes from the candidate's saved list. */
 export function SaveButton({ jobId, title, saved: initial, label, className }: { jobId: string; title: string; saved: boolean; label?: boolean; className?: string }) {
-  const [saved, setSaved] = useState(initial);
+  const marks = useContext(SavedMarks);
+  const [changed, setSaved] = useState<boolean | null>(null);
+  const saved = changed ?? (initial || marks?.has(jobId) === true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   async function toggle() {

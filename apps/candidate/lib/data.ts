@@ -5,6 +5,7 @@
 import "server-only";
 import { cache } from "react";
 import { headers } from "next/headers";
+import { connection } from "next/server";
 import {
   dataRequestGet, checkerRead, companiesRead, closedJobRead, companyRead, countJobView, gatedRead, readGate, uncounted, getPool, getRules, guideRead, guidesRead, helpListRead, helpRead, jobRead, jobsRead, legalRead, minimumsRead, occupationRead, occupationsRead,
   permitNoticeRead, registrationBodiesRead, sectorsRead, similarRead, sitemapIds, sitemapIndexXml, sitemapPart, updatesRead, type Gate, type ReadResult, type SitemapEntry, type Work,
@@ -122,16 +123,15 @@ export const siteOrigin = () => new URL(candidateSettings(process.env).baseURL).
 export const readSignedIn = async (): Promise<boolean> => signedInCandidate(await headers()).then((l) => !("refused" in l), () => false);
 
 /**
- * P1: what the site frame (header and footer) needs on every page: whether a candidate is signed in, and the standing line with the day the rules were last
- * checked. The day comes from the rules in force (the same value as GET /api/minimums, rulesCheckedOn), kept by getRules, so a warm read costs no statement; the
- * session check is the page's own (signedInCandidate), not a gated read, so the frame never counts against the visitor's read limit. A failure shows the signed-out
- * frame without the line or the site origin (origin is for the JSON-LD): the frame must never be the reason a page (or the error page) fails; the page's own read shows the real error.
+ * P1: what the site frame (header and footer) needs on every page: the standing line with the day the rules were last checked, and the site origin
+ * (for the JSON-LD). The day comes from the rules in force (the same value as GET /api/minimums, rulesCheckedOn), kept by getRules, so a warm read
+ * costs no statement. Stage 3 step 4: nothing of the visitor any more (the header follows the hint cookie, packages/ui HINT_SCRIPT), so the frame
+ * no longer makes every page per visit. A failure shows the frame without the line or the origin: the frame must never be the reason a page fails.
+ * Stage 3 step 3: a build with no DATABASE_URL (CI) marks every page per visit instead of prerendering frames without the line; a build that reaches
+ * the database prerenders them (the rules confirm clears them, ALL_PAGES).
  */
-export async function readSiteFrame(): Promise<{ signedIn: boolean; standingLine: string | null; origin: string | null }> {
-  await headers(); // first: it marks every page in the frame as built per visit (it shows who is signed in), before any database work at build time
-  const [signedIn, line] = await Promise.all([
-    readSignedIn(),
-    Promise.resolve().then(() => getRules(getPool())).then((r) => standingLine(r.minimums.checkedOn), () => null), // a missing DATABASE_URL is a failed read, not a crash
-  ]);
-  return { signedIn, standingLine: line, origin: (() => { try { return siteOrigin(); } catch { return null; } })() };
+export async function readSiteFrame(): Promise<{ standingLine: string | null; origin: string | null }> {
+  if (!process.env.DATABASE_URL) await connection();
+  const line = await Promise.resolve().then(() => getRules(getPool())).then((r) => standingLine(r.minimums.checkedOn), () => null);
+  return { standingLine: line, origin: (() => { try { return siteOrigin(); } catch { return null; } })() };
 }

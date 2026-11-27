@@ -130,7 +130,7 @@ describe("a visitor (S3)", () => {
   });
   it("is every session that is not a live candidate's: forged, expired, suspended, another site's cookie name", async () => {
     const live = await login();
-    const token = live.cookie.split("=").slice(1).join("=");
+    const token = live.cookie.split(";")[0]!.split("=").slice(1).join("="); // the session cookie only: the answer also sets the hint cookie cand_in (Stage 3 step 4)
     const expired = await login();
     await su.query("update candidate_session set expires_at = now() - interval '1 hour' where user_id = $1", [expired.id]);
     const suspended = await login({ suspended: true });

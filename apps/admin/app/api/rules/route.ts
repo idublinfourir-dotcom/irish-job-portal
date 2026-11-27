@@ -1,8 +1,10 @@
 // The rules versions (#229, #230, #234 D9): GET lists the versions in force, the confirmed ones still to come and the pending proposals (any active
 // staff member). POST proposes a new version of a kind or the big-company flag on one company (a rules data editor), confirms or refuses one (an
 // administrator who did not propose) or withdraws one's own proposal. Every call needs a signed-in staff member; the role check is inside each database call.
+import { after } from "next/server";
 import { staffSettings } from "@portal/auth";
 import { confirmRules, getPool, listRules, proposeBigFlag, proposeRules, refuseRules, withdrawRules } from "@portal/db";
+import { ALL_PAGES, revalidateCandidate, revalidateOn } from "@portal/db/revalidate";
 import { checkOrigin } from "../../../lib/account-review";
 import { checkLength, parseBody, refuse } from "../../../lib/rules";
 import { readQuery } from "../../../lib/admin-api";
@@ -29,7 +31,12 @@ export async function POST(request: Request) {
     const db = getPool();
     if (b.action === "propose") return Response.json({ ok: true, ...(await proposeRules(db, staff, b)) });
     if (b.action === "propose_flag") return Response.json({ ok: true, ...(await proposeBigFlag(db, staff, b.organisationId)) });
-    if (b.action === "confirm") return Response.json({ ok: true, ...(await confirmRules(db, staff, b.requestId)) });
+    if (b.action === "confirm") {
+      const done = await confirmRules(db, staff, b.requestId);
+      // Stage 3: every cached candidate page shows the rules date in its footer (and the minimums), so a confirm clears them all once it has committed
+      if (revalidateOn(process.env)) after(() => revalidateCandidate(process.env, [ALL_PAGES]));
+      return Response.json({ ok: true, ...done });
+    }
     await (b.action === "refuse" ? refuseRules : withdrawRules)(db, staff, b.requestId);
     return Response.json({ ok: true });
   } catch (e) {

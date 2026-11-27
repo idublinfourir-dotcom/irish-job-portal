@@ -5,6 +5,13 @@ import { initials } from "./format";
 
 export const wrap = "mx-auto max-w-page px-5 sm:px-8";
 
+/** Stage 3 step 6: on a cached page the server does not know who reads. Both variants are sent and the hint switch (globals.css) shows one. */
+export const ForCandidate = ({ children }: { children: ReactNode }) => <span data-in-only="" className="contents">{children}</span>;
+export const ForVisitor = ({ children }: { children: ReactNode }) => <span data-out-only="" className="contents">{children}</span>;
+/** The known variant when the server knows (`signedIn` a boolean), both under the hint switch when it does not (undefined). */
+export const BySignIn = ({ signedIn, yes, no }: { signedIn: boolean | undefined; yes: ReactNode; no: ReactNode }) =>
+  signedIn === undefined ? <><ForCandidate>{yes}</ForCandidate><ForVisitor>{no}</ForVisitor></> : <>{signedIn ? yes : no}</>;
+
 const HL = { peach: "bg-peach text-ink", green: "bg-deep-green text-white", lilac: "bg-lilac text-ink", white: "bg-white text-ink" } as const;
 /** A heading's key word in a coloured pill (NS2: at most two pills a line). */
 export function Hl({ c, tight, children }: { c: keyof typeof HL; tight?: boolean; children: ReactNode }) {
@@ -33,9 +40,10 @@ export function PhotoBlock({ className = "" }: { className?: string }) {
 }
 
 /** The dark join band the footer runs on from (frame N01): only for a visitor. data-join tells the footer to drop its gap and corners. */
+/** The visitor band. data-out-only: hidden by the hint switch (globals.css) for a signed-in candidate, so a cached page can carry it for everyone. */
 export function Join() {
   return (
-    <section data-join aria-labelledby="join-h" className="mt-12 rounded-t-[2.5rem] bg-ink text-white">
+    <section data-join data-out-only="" aria-labelledby="join-h" className="mt-12 rounded-t-[2.5rem] bg-ink text-white">
       <div className={`${wrap} flex flex-col items-start justify-between gap-8 border-b border-white/15 py-14 lg:flex-row lg:items-center`}>
         <h2 id="join-h" className="text-[2.4rem] leading-[1.3] text-white sm:text-[3.75rem]">
           Create a <Hl c="green">free</Hl> account{" "}

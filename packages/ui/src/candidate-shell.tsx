@@ -11,6 +11,11 @@ import { NavPill } from "./nav-pill";
  * ONE switch. Set it to true when the directory page is built; nothing else changes. A company's own page (/companies/<slug>) is not the directory and is linked from jobs.
  */
 export const COMPANIES_DIRECTORY_LIVE = false;
+/**
+ * Stage 3 step 8 (PERF-5): the candidate routes the CDN caches (legal, guides, help, occupation pages). Their links prefetch again: a prefetch is a CDN hit,
+ * not a function run. Keep in step with the pages that export `revalidate` (packages/db/test/step16-w3-pages.test.ts lists them).
+ */
+export const cachedRoute = (href: string) => /^\/(privacy|terms|cookies|employer-acceptable-use|data-retention|guides|help)(\/[^/?#]+)?$|^\/occupations\/[^/?#]+$/.test(href);
 const listed = <T extends { href: string }>(items: readonly T[]): T[] => items.filter((i) => COMPANIES_DIRECTORY_LIVE || i.href !== "/companies");
 
 // Paths are placeholders until the page slices fix them (#288); change them here only. The header follows frame N01: five links, then the
@@ -56,8 +61,26 @@ export function Wordmark({ className, dark }: { className?: string; dark?: boole
   );
 }
 
-/** The public header, or the signed-in one when `signedIn`: a floating bar (frame N01). The mobile menu is a native <details>, so it needs no script. */
-export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
+/**
+ * Stage 3 step 4 (AUDIT section 5, blocker 1): with `signedIn` left out, both variants are rendered, marked [data-in-only] and [data-out-only]; the
+ * candidate app's hint cookie script (apps/candidate/lib/hint.ts) marks <html data-in> and its globals.css shows one. One HTML for everyone.
+ */
+/** One of two variants: the known one when the server knows (`signedIn` a boolean), both under the hint's CSS switch when it does not (undefined). */
+function Either({ signedIn, yes, no }: { signedIn: boolean | undefined; yes: ReactNode; no: ReactNode }) {
+  if (signedIn !== undefined) return <>{signedIn ? yes : no}</>;
+  return (
+    <>
+      {yes && <div data-in-only="" className="contents">{yes}</div>}
+      {no && <div data-out-only="" className="contents">{no}</div>}
+    </>
+  );
+}
+
+/**
+ * The public header, or the signed-in one when `signedIn`: a floating bar (frame N01). The mobile menu is a native <details>, so it needs no script.
+ * `signedIn` left out: both, switched by the hint cookie (HINT_SCRIPT), so the HTML is the same for every visitor.
+ */
+export function SiteHeader({ signedIn }: { signedIn?: boolean }) {
   const items = listed(PUBLIC_NAV_ALL);
   return (
     <header className="relative z-30 px-5 pt-4 sm:px-8 sm:pt-5">
@@ -66,12 +89,14 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
         <nav aria-label="Main" className="hidden flex-1 items-center lg:flex">
           <NavPill className="flex flex-1 items-center justify-center gap-1">
             {items.map((i) => (
-              <A key={i.href} href={i.href} className={i.href === "/" ? link.replace("inline-flex", "hidden xl:inline-flex") : link}>
+              <A key={i.href} href={i.href} prefetch={cachedRoute(i.href)} className={i.href === "/" ? link.replace("inline-flex", "hidden xl:inline-flex") : link}>
                 {i.label}
               </A>
             ))}
           </NavPill>
-          {signedIn ? (
+          <Either
+            signedIn={signedIn}
+            yes={
             <div className="flex items-center gap-2">
               <A href="/account/notices" aria-label="Notices" className="grid size-11 place-items-center rounded-pill bg-white text-ink hover:bg-hover-light">
                 <Icon name="bell" />
@@ -90,7 +115,8 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
                 </div>
               </details>
             </div>
-          ) : (
+            }
+            no={
             <div className="flex items-center gap-1">
               <A href="/employers" className={link}>
                 For employers
@@ -102,14 +128,19 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
                 Create free account <Icon name="arrow" size={16} />
               </Button>
             </div>
-          )}
+            }
+          />
         </nav>
         <div className="flex items-center gap-2 lg:hidden">
-          {!signedIn && (
-            <A href="/login" className="hidden px-2 text-small font-semibold min-[360px]:inline">
-              Sign in
-            </A>
-          )}
+          <Either
+            signedIn={signedIn}
+            yes={null}
+            no={
+              <A href="/login" className="hidden px-2 text-small font-semibold min-[360px]:inline">
+                Sign in
+              </A>
+            }
+          />
           <details className="group relative" data-menu>
             <summary className="grid size-11 cursor-pointer list-none place-items-center rounded-pill bg-ink text-white group-open:bg-hover-light group-open:text-ink" aria-label="Menu">
               <Icon name="menu" className="group-open:hidden" />
@@ -118,11 +149,13 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
             {/* Frame M08: the rest of the screen under the bar, dark, one big row per link. */}
             <nav aria-label="Mobile" className="fixed inset-x-0 bottom-0 top-[5.25rem] z-10 flex flex-col overflow-y-auto bg-ink px-5 pb-8 pt-4 text-white sm:px-8">
               {listed(MOBILE_NAV_ALL).map((i) => (
-                <A key={i.href} href={i.href} className={menuRow}>
+                <A key={i.href} href={i.href} prefetch={cachedRoute(i.href)} className={menuRow}>
                   {i.label} <Icon name="arrow" />
                 </A>
               ))}
-              {signedIn ? (
+              <Either
+                signedIn={signedIn}
+                yes={
                 <>
                   {ACCOUNT_NAV.map((i) => (
                     <A key={i.href} href={i.href} className={menuRow}>
@@ -131,13 +164,15 @@ export function SiteHeader({ signedIn = false }: { signedIn?: boolean }) {
                   ))}
                   <SignOutHere className="mt-6 inline-flex min-h-11 w-full items-center justify-center font-semibold" />
                 </>
-              ) : (
+                }
+                no={
                 <div className="mt-7 flex flex-col items-center gap-4">
                   <Button href="/signup" variant="sun" size="lg" className="w-full">Create free account</Button>
                   <A href="/login" className="inline-flex min-h-11 items-center font-semibold">Sign in</A>
                   <A href="/employers" className="inline-flex min-h-11 items-center gap-2 text-small text-white/70">For employers and agencies <Icon name="external" size={16} /></A>
                 </div>
-              )}
+                }
+              />
             </nav>
           </details>
         </div>
@@ -189,7 +224,7 @@ export function SiteFooter({ standingLine, rulesCheckedOn }: { standingLine?: Re
             <ul className="flex flex-col">
               {g.links.map(([label, href]) => (
                 <li key={href}>
-                  <A href={href} className="inline-flex min-h-9 items-center text-small underline-offset-2 hover:text-white hover:underline">
+                  <A href={href} prefetch={cachedRoute(href)} className="inline-flex min-h-9 items-center text-small underline-offset-2 hover:text-white hover:underline">
                     {label}
                   </A>
                 </li>
@@ -233,7 +268,7 @@ export function CookieBanner({ onAccept, onReject, settingsHref = "/cookies" }: 
 }
 
 /** The candidate site frame: header, content, footer. Fixed: no data is read here. */
-export function CandidateShell({ children, signedIn = false, standingLine, rulesCheckedOn }: { children: ReactNode; signedIn?: boolean; standingLine?: ReactNode; rulesCheckedOn?: string }) {
+export function CandidateShell({ children, signedIn, standingLine, rulesCheckedOn }: { children: ReactNode; signedIn?: boolean; standingLine?: ReactNode; rulesCheckedOn?: string }) {
   return (
     <div className="flex min-h-screen flex-col">
       <A href="#main" className="sr-only focus:not-sr-only focus:p-3">Skip to content</A>

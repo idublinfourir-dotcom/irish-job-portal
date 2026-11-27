@@ -14,7 +14,7 @@ vi.mock("next/font/google", () => ({
 }));
 
 const { frame, shell, sidebar } = vi.hoisted(() => ({
-  frame: { value: { signedIn: false, standingLine: "Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 16 Nov 2026.", origin: "https://example.test" as string | null } },
+  frame: { value: { standingLine: "Our check is guidance, not a permit decision. Only DETE decides. Rules last checked on 16 Nov 2026.", origin: "https://example.test" as string | null } },
   shell: { value: null as { companyName: string; role: string } | null },
   sidebar: { value: null as { name: string; roles: string[]; counts: Record<string, number | undefined> } | null },
 }));
@@ -33,25 +33,24 @@ const admin = async () => html(await AdminLayout({ children: AdminPage() }));
 // a link's own text: its icon and its count are dropped
 const links = (h: string) => [...h.matchAll(/<a [^>]*>([\s\S]*?)<\/a>/g)].map((m) => m[1]!.replace(/<span data-count[\s\S]*?<\/span>/g, "").replace(/<[^>]*>/g, "").trim());
 beforeEach(() => {
-  frame.value = { ...frame.value, signedIn: false, origin: "https://example.test" };
+  frame.value = { ...frame.value, origin: "https://example.test" };
   shell.value = null;
   sidebar.value = null;
 });
 
 describe("candidate layout (P1)", () => {
-  it("signed out: the public nav, the page and both fonts", async () => {
+  it("both header variants, switched by the hint cookie: the public nav, the account nav and sign out, the page and both fonts", async () => {
     const h = await candidate();
-    for (const t of ["Find a job", "Guides", "Eligibility checker", "Permit services", "For employers", "Sign in", "Create free account", "Nothing here yet."]) expect(h).toContain(t);
+    for (const t of ["Find a job", "Guides", "Eligibility checker", "Permit services", "For employers", "Sign in", "Create free account", "Nothing here yet.", "Account", "Tracker", "Saved", "Alerts", "Sign out"]) expect(h).toContain(t);
     expect(h).not.toContain(">Companies<"); // hidden until the directory page is built (COMPANIES_DIRECTORY_LIVE)
     expect(h).toContain('lang="en"');
     expect(h).toContain("outfit-var dm-sans-var");
-    expect(h).not.toContain("Sign out");
-  });
-  it("signed in: the account nav and sign out, no sign in", async () => {
-    frame.value.signedIn = true;
-    const h = await candidate();
-    for (const t of ["Account", "Tracker", "Saved", "Alerts", "Sign out"]) expect(h).toContain(t);
-    expect(h).not.toContain("Create free account");
+    // Stage 3 step 4: the account parts sit under data-in-only, the sign-in parts under data-out-only, and the hint script runs before the header
+    expect(h.indexOf("cand_in")).toBeGreaterThan(-1);
+    expect(h.indexOf("cand_in")).toBeLessThan(h.indexOf("<header"));
+    const inOnly = [...h.matchAll(/<div data-in-only="" class="contents">([\s\S]*?)<\/div><div data-out-only/g)].map((m) => m[1]!).join("");
+    expect(inOnly).toContain("Sign out");
+    expect(inOnly).not.toContain("Create free account");
   });
   it("footer: the standing line with the date it was given, the GeoNames credit, the report line, the Cookies link", async () => {
     const h = await candidate();

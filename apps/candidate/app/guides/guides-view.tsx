@@ -17,7 +17,7 @@ function Card({ g }: { g: GuideItem }) {
     <article data-guide-card className="relative flex min-h-[170px] flex-col justify-between gap-6 rounded-bento bg-sand p-6 hover:bg-hover-light">
       {/* eslint-disable-next-line @next/next/no-img-element -- self-hosted, hashed by the build */}
       <img src={c.src} width={c.width} height={c.height} alt={c.alt} loading="lazy" className="aspect-video w-full rounded-card object-cover" />
-      <h2 className="break-words text-[1.35rem] leading-snug"><A href={guidePath(g.slug)} className="no-underline after:absolute after:inset-0 after:rounded-bento hover:underline">{g.title}</A></h2>
+      <h2 className="break-words text-[1.35rem] leading-snug"><A href={guidePath(g.slug)} prefetch className="no-underline after:absolute after:inset-0 after:rounded-bento hover:underline">{g.title}</A></h2>
       <p className="flex items-center justify-between gap-3 text-small text-muted">
         <span className="inline-flex items-center gap-1.5">{checked ? <><Icon name="check" size={14} />Checked on {checked}</> : "Not yet checked"}</span>
         <Icon name="arrow" size={16} className="text-deep-green" />

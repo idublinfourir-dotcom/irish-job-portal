@@ -2,3 +2,6 @@
 @import "@portal/ui/tokens.css";
 @import "@portal/ui/motion.css";
 @source "../../../packages/ui/src";
+
+/* Stage 3 step 4: the hint cookie's switch (HINT_SCRIPT in packages/ui/src/candidate-shell.tsx sets html[data-in]). One HTML for everyone; the hint picks the variant. */
+html:not([data-in]) [data-in-only], html[data-in] [data-out-only] { display: none !important; }

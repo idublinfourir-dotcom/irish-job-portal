@@ -195,7 +195,7 @@ describe("candidate shell", () => {
   });
   const nav = (h: string) => h.replace(/<[^>]*>/g, "|");
   it("shows the public nav signed out", () => {
-    const h = html(<CandidateShell>x</CandidateShell>);
+    const h = html(<CandidateShell signedIn={false}>x</CandidateShell>);
     for (const t of ["Find a job", "Guides", "Eligibility checker", "Permit services", "For employers", "Sign in", "Create free account"]) expect(h).toContain(t);
     expect(h).not.toContain("Sign out");
   });
@@ -208,9 +208,18 @@ describe("candidate shell", () => {
     expect(h).not.toContain("<script");
   });
   it("has no bell or account menu signed out", () => {
-    const h = html(<CandidateShell>x</CandidateShell>);
+    const h = html(<CandidateShell signedIn={false}>x</CandidateShell>);
     expect(h).not.toContain("data-account-menu");
     expect(h).not.toContain('aria-label="Notices"');
+  });
+  it("Stage 3 step 4: with signedIn left out, renders both variants, each under its hint switch attribute, and no script of its own", () => {
+    const h = html(<CandidateShell>x</CandidateShell>);
+    const parts = (attr: string) => [...h.matchAll(new RegExp(`<div ${attr}="" class="contents">`, "g"))].length;
+    expect(parts("data-in-only")).toBe(2); // the desktop account controls and the phone menu's account rows
+    expect(parts("data-out-only")).toBe(3); // the desktop sign-in controls, the phone bar's Sign in, the phone menu's sign-up block
+    for (const t of ["Sign out", "data-account-menu", "Create free account", "Sign in"]) expect(h).toContain(t);
+    expect(h).not.toContain("<script");
+    expect(html(<CandidateShell signedIn>x</CandidateShell>)).not.toMatch(/data-(in|out)-only/);
   });
   it("has a mobile menu with no script (native details)", () => expect(html(<CandidateShell>x</CandidateShell>)).toContain("<details"));
   it("fits the header between 1024 and 1280 px: compact links, Home only from xl, no display class fighting hidden (bug at 1100 px, 23 Nov)", () => {
@@ -346,6 +355,6 @@ describe("Sign out", () => {
       expect(new Set([...h.matchAll(/data-sign-out="([^"]*)"/g)].map((m) => m[1])), app).toEqual(new Set([`/api/auth/${pool}/sign-out`]));
       expect(existsSync(new URL(`../../../apps/${app}/app/api/auth/${pool}/[...all]/route.ts`, import.meta.url)), app).toBe(true);
     }
-    expect(html(<CandidateShell>x</CandidateShell>)).not.toContain("data-sign-out");
+    expect(html(<CandidateShell signedIn={false}>x</CandidateShell>)).not.toContain("data-sign-out");
   });
 });
