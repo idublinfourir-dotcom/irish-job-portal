@@ -16,7 +16,7 @@ const SECRET = "fake-revalidate-secret-fake-revalidate-secret";
 const CANDIDATE = "http://localhost:3000";
 const BUDGET = { publish: 8, route: 0 };
 type Handler = (r: Request) => Promise<Response>;
-let db: TestDb, h: Awaited<ReturnType<typeof staffHarness>>, content: Route, legal: Route, REVALIDATE: Handler;
+let db: TestDb, h: Awaited<ReturnType<typeof staffHarness>>, content: Route, legal: Route, rules: Route, REVALIDATE: Handler;
 let R: typeof import("../src/revalidate");
 const sent: string[] = [];
 const flush = async () => { await Promise.all(state.after.splice(0).map((f) => (typeof f === "function" ? f() : f))); const c = state.cleared.splice(0); return c; };
@@ -26,9 +26,10 @@ beforeAll(async () => {
   h = await staffHarness(db);
   content = await import("../../../apps/admin/app/api/content/route");
   legal = await import("../../../apps/admin/app/api/legal-texts/route");
+  rules = await import("../../../apps/admin/app/api/rules/route");
   ({ POST: REVALIDATE } = await import("../../../apps/candidate/app/api/revalidate/route"));
   R = await import("../src/revalidate");
-  for (const [name, roles] of [["ce1", ["content_editor"]], ["ad1", ["administrator"]], ["acc", ["account_reviewer"]]] as const) await h.makeStaff(name, [...roles]);
+  for (const [name, roles] of [["ce1", ["content_editor"]], ["ad1", ["administrator"]], ["acc", ["account_reviewer"]], ["re1", ["rules_data_editor"]]] as const) await h.makeStaff(name, [...roles]);
   Object.assign(process.env, { REVALIDATE_SECRET: SECRET, CANDIDATE_AUTH_URL: CANDIDATE });
   // the candidate site, reached without a network: the Request goes straight to its route handler
   vi.stubGlobal("fetch", async (url: URL | string, init?: RequestInit) => { sent.push(String(url)); return REVALIDATE(new Request(url, init)); });
@@ -61,6 +62,15 @@ describe("a staff write clears the candidate site's pages", () => {
     expect(await flush()).toEqual([]);
     await h.ok(h.call(legal, "/api/legal-texts", "ad1", { action: "confirm", requestId: p.requestId ?? p.id }));
     expect(await flush()).toEqual(R.LEGAL_PATHS.map((t) => [t.path, undefined]));
+  });
+  it("a rules confirm clears every page under the layout (the footer's rules date); a proposal clears nothing", async () => {
+    const data = (await h.su.query("select data from rules_version where kind = 'public_pay_employers' order by effective_from desc, id desc limit 1")).rows[0].data;
+    const from = new Date(Date.now() + 86_400_000 * 400).toISOString().slice(0, 10);
+    const added = { ...data, "fake revalidate body": { tier: 2, bodyType: "section_38", evidence: { kind: "dete_rule_text", link: "https://example.test/dete", file: null } } };
+    const p = await h.ok(h.call(rules, "/api/rules", "re1", { action: "propose", kind: "public_pay_employers", effectiveFrom: from, data: added }));
+    expect(await flush()).toEqual([]);
+    await h.ok(h.call(rules, "/api/rules", "ad1", { action: "confirm", requestId: p.requestId }));
+    expect(await flush()).toEqual([[R.ALL_PAGES.path, "layout"]]);
   });
   it("security: a refused write (wrong role, no session, other origin) clears nothing", async () => {
     const id = await helpDraft();
