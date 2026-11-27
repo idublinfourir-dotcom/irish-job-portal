@@ -3,8 +3,33 @@ name: Preview
 # An on-demand preview of one app from a branch you pick (audit DEP-2, option 1). Run it by hand from main: Actions, Preview, Run workflow
 # (use workflow from main), type the branch in "ref", choose the app. It applies that branch's migrations to the separate preview database, then
 # deploys the app to Vercel WITHOUT --prod, so the deploy gets only the Preview-target variables and counts once against Hobby's 100 a day.
-# Two branches with different migrations share the one preview database: reset it before switching (see the hand-over of S4).
-# Why two jobs:
+# Two branches with different migrations share the one preview database: reset it before switching.
+# Why two jobs: branch code must never meet a token that can deploy production (#110). Job "migrate" runs branch code (npm ci, drizzle) with
+# only the preview database login. Job "deploy" has the Vercel tokens and runs no branch code: it unpacks the branch source and passes it to a
+# pinned Vercel CLI started from an empty folder, so no .npmrc or package.json of the branch is read. Vercel builds it on its own side.
+# Both Environments, "preview-db" (secret PREVIEW_DATABASE_URL_MIGRATE, optional PREVIEW_DATABASE_CA_CERT) and "preview" (VERCEL_TOKEN_ADMIN,
+# VERCEL_TOKEN_CANDIDATE, VERCEL_TOKEN_PORTAL), must be created with the deployment branch rule "main only". Never on pull_request.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch to preview (code is taken from it; this workflow must be run from main)
+        type: string
+        required: true
+      app:
+        description: App to preview
+        type: choice
+        options: [candidate, portal, admin]
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview
+  cancel-in-progress: false
+
+jobs:
   migrate:
     runs-on: ubuntu-latest
     environment: { name: preview-db, deployment: false }
