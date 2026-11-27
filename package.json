@@ -22,12 +22,12 @@
     "check": "npm run typecheck && npm run lint && npm run lint:api && npm run test && npm run build && npm run test:size"
   },
   "devDependencies": {
-    "@redocly/cli": "2.75.0",
-    "@types/node": "24.19.2",
-    "eslint": "9.39.5",
-    "eslint-config-next": "16.4.5",
-    "typescript": "5.9.3",
-    "vitest": "5.1.0",
+    "@redocly/cli": "2.83.0",
+    "@types/node": "26.6.6",
+    "eslint": "10.15.0",
+    "eslint-config-next": "16.4.6",
+    "typescript": "7.0.2",
+    "vitest": "5.1.1",
     "yaml": "2.9.1"
   },
   "overrides": {
