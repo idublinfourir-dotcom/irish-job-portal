@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { croRows, csvRecords, importCro } from "../src/cro-import";
 import { importWrc } from "../src/wrc-import";
 import { main } from "../src/registers-cli";
 import { normaliseCompanyName } from "../src/registers";
@@ -118,11 +119,34 @@ describe("CRO import (as app_fetcher, through the command)", () => {
     await runCro(croZip([...second, { num: "810005", name: "New Co Ltd" }]), "2026-11-08");
     expect((await su("select count(*)::int n from cro_company where cro_number like '81000%'")).rows[0].n).toBe(4);
     expect(await cro("810001")).toMatchObject({ name: "FIRST IMPORT RENAMED LIMITED", last_seen_on: new Date("2026-11-08T00:00:00") });
-    expect(await cro("810002")).toMatchObject({ status: "Not in latest file", last_seen_on: new Date("2026-11-01T00:00:00") });
-    // a run on a day more than 90 days later without 810002 deletes it
+    // DB-3: a gone row's date is the day it went; an unchanged row (810004) keeps the date it was last written
+    expect(await cro("810002")).toMatchObject({ status: "Not in latest file", last_seen_on: new Date("2026-11-08T00:00:00") });
+    expect(await cro("810004")).toMatchObject({ status: "Normal", last_seen_on: new Date("2026-11-01T00:00:00") });
+    // a run on a day more than 90 days later without 810002 deletes it; the unchanged companies stay
     await runCro(croZip([...second, { num: "810005", name: "New Co Ltd" }]), "2027-02-20");
     expect(await cro("810002")).toBeUndefined();
+    expect(await cro("810004")).toMatchObject({ status: "Normal", last_seen_on: new Date("2026-11-01T00:00:00") });
+    expect(await cro("810001")).toMatchObject({ name: "FIRST IMPORT RENAMED LIMITED", status: "Normal" });
     expect((await su("select row_count from register_import where source = 'cro'")).rows[0].row_count).toBe(3);
+  });
+  it("DB-3: importing the same file again a week later writes 0 rows (every row's version is unchanged); a company back in the file is live again", async () => {
+    const many = Array.from({ length: 3000 }, (_, i): CroLine => ({ num: String(870000 + i), name: `Same ${i} Ltd`, address: ["Main St", "Galway"] }));
+    expect((await runCro(croZip(many), "2026-11-01")).code).toBe(0);
+    const versions = async () => (await su("select string_agg(cro_number || ':' || ctid::text || ':' || xmin::text, ',' order by cro_number) v from cro_company")).rows[0].v;
+    const before = await versions();
+    const fetcher = db.pool("app_fetcher");
+    const writes: number[] = [];
+    const counting = { query: async (sql: string, p?: unknown[]) => { const r = await fetcher.query(sql, p); if (/^(insert|update|delete)/.test(sql)) writes.push(r.rowCount ?? 0); return r; } };
+    const stats = { read: 0, kept: 0, skipped: 0, repeated: 0 };
+    const r = await importCro(counting as never, croRows(csvRecords([croCsv(many)]), stats), "2026-11-08", stats);
+    expect(r).toMatchObject({ kept: 3000, written: 0, marked: 0, deleted: 0 });
+    expect(writes.reduce((a, b) => a + b, 0)).toBe(0); // at most 1% asked (audit DB-3); none measured
+    expect(await versions()).toBe(before);
+    // a company dropped for one week and back the next is written twice: gone, then live with that day's date
+    await runCro(croZip(many.slice(1)), "2026-11-15");
+    expect(await cro("870000")).toMatchObject({ status: "Not in latest file", last_seen_on: new Date("2026-11-15T00:00:00") });
+    await runCro(croZip(many), "2026-11-22");
+    expect(await cro("870000")).toMatchObject({ status: "Normal", last_seen_on: new Date("2026-11-22T00:00:00") });
   });
   it("a repeated number in the file keeps the row with the later status date", async () => {
     await runCro(croZip(Array.from({ length: 3 }, (_, i): CroLine => ({ num: String(821000 + i), name: `Before ${i} Ltd` }))), "2026-11-08");
