@@ -6,8 +6,8 @@ import "server-only";
 import { cache } from "react";
 import { headers } from "next/headers";
 import {
-  dataRequestGet, checkerRead, companiesRead, closedJobRead, companyRead, countJobView, gatedRead, getPool, getRules, guideRead, guidesRead, helpListRead, helpRead, jobRead, jobsRead, legalRead, minimumsRead, occupationRead, occupationsRead,
-  permitNoticeRead, registrationBodiesRead, sectorsRead, similarRead, sitemapIds, sitemapIndexXml, sitemapPart, updatesRead, type ReadResult, type SitemapEntry, type Work,
+  dataRequestGet, checkerRead, companiesRead, closedJobRead, companyRead, countJobView, gatedRead, readGate, uncounted, getPool, getRules, guideRead, guidesRead, helpListRead, helpRead, jobRead, jobsRead, legalRead, minimumsRead, occupationRead, occupationsRead,
+  permitNoticeRead, registrationBodiesRead, sectorsRead, similarRead, sitemapIds, sitemapIndexXml, sitemapPart, updatesRead, type Gate, type ReadResult, type SitemapEntry, type Work,
 } from "@portal/db";
 import { candidateSettings, googleSettings } from "@portal/auth";
 import { standingLine } from "@portal/rules";
@@ -18,7 +18,11 @@ import { candidateAuth, signedInCandidate } from "./candidate";
 import { cvRead, docsList } from "./files";
 
 type Query = ConstructorParameters<typeof URLSearchParams>[0];
-const read = (work: Work) => async (query?: Query): Promise<ReadResult> => gatedRead(await headers(), new URLSearchParams(query), signedInCandidate, work);
+// PERF-3: one session lookup and one read-limit count per request, whatever the number of reads a render makes (the home page makes 6): React's
+// cache keeps the first gate's answer for the rest of the request. It takes no argument, so nothing of the query (or the RSC header) can make a second count.
+const requestGate = cache(async () => readGate(await headers(), signedInCandidate));
+const sharedGate: Gate = () => requestGate();
+const read = (work: Work, gate: Gate = sharedGate) => async (query?: Query): Promise<ReadResult> => gatedRead(await headers(), new URLSearchParams(query), signedInCandidate, work, gate);
 
 export const readJobs = read(jobsRead);
 export const readJob = read(jobRead);
@@ -29,7 +33,7 @@ export const readCompanies = read(companiesRead); // B25: the directory, ?q (a c
 export const readOccupation = read(occupationRead);
 export const readHelp = read(helpRead);
 export const readUpdates = read(updatesRead); // ?after, ?category (B17)
-export const readChecker = read(checkerRead);
+export const readChecker = read(checkerRead, uncounted); // PERF-3: reads no table (the rules are kept per instance), so not counted
 export const readLegal = read(legalRead); // R5, B20: ?purpose=signup_terms, privacy_notice, cookie_policy, employer_acceptable_use or data_retention
 export const readSectors = read(sectorsRead); // B1: the sectors with their live job counts
 export const readGuide = read(guideRead); // B1: ?slug
@@ -41,8 +45,8 @@ export const readPermitNotice = async (): Promise<ReadResult> => {
   return !r.ok && r.status === 404 ? { ok: true, data: null } : r;
 };
 export const readMinimums = read(minimumsRead); // B5: the minimums in force, no occupation
-export const readOccupations = read(occupationsRead); // B12: every code with title, slug and list status, for the pickers
-export const readRegistrationBodies = read(registrationBodiesRead); // B39: the profile's registration body dropdown
+export const readOccupations = read(occupationsRead, uncounted); // B12: every code with title, slug and list status, for the pickers
+export const readRegistrationBodies = read(registrationBodiesRead, uncounted); // B39: the profile's registration body dropdown
 /** B40: which sign-in providers are on. Google only when both of its settings are set (off in production until G10), so a page hides its buttons otherwise. Reads no database. */
 export const readSignInProviders = () => ({ google: googleSettings(process.env) !== undefined });
 

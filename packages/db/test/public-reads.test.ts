@@ -2,15 +2,15 @@
 // test database as app_candidate, through the real route handlers and the real candidate login route. A visitor gets 6 jobs of any list and no
 // cursor; a candidate pages as before; every read is rate limited per address (visitor) or per login (candidate). Hostile sessions, cursors, page
 // sizes and address headers are tried. Fake data only; no network (vitest.setup.ts refuses it).
-// Budget (measured 18 November 2026, see the printed line): a visitor's list is 3 statements (2 rate counts, the list), a candidate's is 4 (session 2,
-// rate count 1, the list). Statements and the median time of a visitor's list are budgeted; raise them only on purpose.
+// Budget (measured 18 November 2026, see the printed line; PERF-3 on 27 November 2026 counts both windows in one statement): a visitor's list is 2
+// statements (the rate count, the list), a candidate's is 4 (session 2, rate count 1, the list). Statements and the median time of a visitor's list are budgeted; raise them only on purpose.
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { answers, seedSignupTerms } from "./better-auth-helper";
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { loadSpec, replyProblems } from "./openapi";
 
-const BUDGET = { visitor: 3, candidate: 4, medianMs: 15 };
+const BUDGET = { visitor: 2, candidate: 4, medianMs: 15 };
 vi.setConfig({ testTimeout: 120000, hookTimeout: 60000 });
 const secret = "trial-only-secret-trial-only-secret-32";
 const BASE = "http://localhost:3000";
@@ -166,7 +166,7 @@ describe('S17: the "Not sure?" help page', () => {
     await su.query("update candidate_rate_limit set count = 60 where key = $1", [`read:ip:${ip}:60000`]);
     expect((await get(HELP, "/api/help?slug=not-sure", { ip })).status).toBe(429);
   });
-  it("costs a visitor 3 statements (2 rate counts, the page)", async () => {
+  it("costs a visitor 2 statements (the rate count, the page)", async () => {
     const [g, statements] = await counted(() => get(HELP, "/api/help?slug=not-sure"));
     expect([g.status, statements]).toEqual([200, BUDGET.visitor]);
   });
@@ -324,13 +324,13 @@ describe("more jobs like this (S9, GET /api/job/similar)", () => {
     for (const bad of ["999999999", "", "1;drop table job", "-1", "1e3", "a".repeat(5000), "%00"]) expect((await get(SIMILAR, `/api/job/similar?id=${encodeURIComponent(bad)}`)).status, bad.slice(0, 20)).toBe(404);
     expect((await get(SIMILAR, "/api/job/similar")).status).toBe(404);
   });
-  it("is rate limited like the other public reads and costs 4 statements for a visitor (2 rate counts, the lookup, one similar query)", async () => {
+  it("is rate limited like the other public reads and costs 3 statements for a visitor (the rate count, the lookup, one similar query)", async () => {
     const ip = "192.0.2.50";
     await get(SIMILAR, `/api/job/similar?id=${jobIds[0]}`, { ip });
     await su.query("update candidate_rate_limit set count = 60 where key = $1", [`read:ip:${ip}:60000`]);
     expect((await get(SIMILAR, `/api/job/similar?id=${jobIds[0]}`, { ip })).status).toBe(429);
     const [, n] = await counted(() => get(SIMILAR, `/api/job/similar?id=${jobIds[0]}`));
-    expect(n).toBe(4);
+    expect(n).toBe(3);
   });
 });
 
