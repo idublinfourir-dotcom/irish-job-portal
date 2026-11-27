@@ -1,5 +1,5 @@
-// The text of one legal purpose, as the public legal route gives it (GET /api/legal): plain text with its line breaks, never HTML. Every answer of the route has a state.
-import { Notice } from "@portal/ui";
+// The text of one legal purpose, as the public legal route gives it (GET /api/legal), shown in the body format (B16) with the same Body as the candidate site, never HTML. Every answer of the route has a state.
+import { Body, Notice } from "@portal/ui";
 
 export type Text = { version: string; body: string; publishedAt: string };
 
@@ -11,7 +11,7 @@ export function LegalView({ title, status, text }: { title: string; status: numb
       {status === 200 && text ? (
         <>
           <p className="text-small text-muted">Version {text.version}</p>
-          <div data-legal-text className="whitespace-pre-line text-body">{text.body}</div>
+          <div data-legal-text className="text-body"><Body text={text.body} /></div>
         </>
       ) : status === 404 ? (
         <Notice kind="info" title="Not published yet">This text has not been published yet. Check again soon.</Notice>

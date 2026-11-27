@@ -107,9 +107,13 @@ describe("verification (E06)", () => {
 });
 
 describe("legal pages", () => {
-  it("shows the text with its line breaks as text, never as HTML", () => {
-    const p = html(<LegalView title="Terms" status={200} text={{ version: "v1", body: "Line one\n<b>two</b>", publishedAt: "x" }} />);
-    expect(p).toMatch(/whitespace-pre-line/);
+  it("shows the text in the body format like the candidate site, never as HTML (27 Nov 2026: the live check saw raw ** and ##)", () => {
+    const body = "## The short version\n\n- **Free** posting\n\nLine one\n<b>two</b> [help](/help) [bad](javascript:alert(1))";
+    const p = html(<LegalView title="Terms" status={200} text={{ version: "v1", body, publishedAt: "x" }} />);
+    expect(p).toMatch(/<h2[^>]*>The short version<\/h2>/);
+    expect(p).toMatch(/<li><strong[^>]*>Free<\/strong> posting<\/li>/);
+    expect(p).toMatch(/<a[^>]*href="\/help"[^>]*>help<\/a>/);
+    expect(p).not.toMatch(/\*\*|## |href="javascript/);
     expect(p).toContain("&lt;b&gt;two&lt;/b&gt;");
     expect(p).not.toContain("<b>two</b>");
   });
