@@ -912,6 +912,52 @@ paths:
         '404': { $ref: '#/components/responses/PublicNotFound' }
         '429': { $ref: '#/components/responses/PublicTooMany' }
 
+  /api/companies:
+    get:
+      operationId: listCompanies
+      tags: [public]
+      summary: The companies directory (B25)
+      description: |
+        Every company with a public page (not rejected, closed or merged away), by display name, 20 a page, keyset paged with `after`
+        for visitors and candidates alike. `q` matches any legal or alias name of the company, compared as normalised name keys, so
+        `%`, `_` and quotes are plain text. A `q` with no letters or digits finds nothing.
+      security: [{}, { candidateSession: [] }]
+      x-roles: [anyone]
+      x-rate-limit: visitor 60 a minute and 600 an hour per address; candidate 300 a minute per login
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: after, in: query, description: The opaque `next` of the page before., schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,1000}$' } }
+      responses:
+        '200':
+          description: One page of companies; `next` is null on the last page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [companies, next]
+                additionalProperties: false
+                properties:
+                  next: { type: [string, 'null'] }
+                  companies:
+                    type: array
+                    maxItems: 20
+                    items:
+                      type: object
+                      required: [slug, name, initials, county, labels, permitsSince2019, liveJobs]
+                      additionalProperties: false
+                      properties:
+                        slug: { type: string }
+                        name: { type: string }
+                        initials: { type: string, maxLength: 2 }
+                        county: { type: [string, 'null'] }
+                        labels: { type: array, items: { enum: [Claimed, First-time sponsor, Permit history not linked yet, Sponsorship claims removed] } }
+                        permitsSince2019: { type: [integer, 'null'], description: Null when no DETE name is linked (not zero). }
+                        liveJobs: { type: integer }
+              example:
+                companies: [{ slug: example-care, name: Example Care Ltd, initials: EC, county: Dublin, labels: [Claimed], permitsSince2019: 14, liveJobs: 2 }]
+                next: null
+        '400': { $ref: '#/components/responses/PublicBadRequest' }
+        '429': { $ref: '#/components/responses/PublicTooMany' }
   /api/company:
     get:
       operationId: getCompanyPage
