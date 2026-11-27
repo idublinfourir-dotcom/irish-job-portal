@@ -170,7 +170,21 @@ export const fetchPhenom: SourceAdapter<PhenomBoard> = (b, known, fetch, opts) =
 export type SitemapBoard = { employer: string; board: string; origin: string; sitemap: string; pattern: string; idFrom: "url" | "page"; query?: string; place?: "url"; maxPages?: number };
 export const MAX_SITEMAPS = 20; // files under one index
 export const MAX_URLS = 100_000; // all files together (the protocol allows 50,000 a file; Citi has about 7,000)
-const LOC = /<loc>\s*(?:<!\[CDATA\[)?([^<]*?)(?:\]\]>)?\s*<\/loc>/g; // Rezoomo writes <loc><![CDATA[...]]></loc>
+export const MAX_LOC = 2_000; // characters of one URL; a longer entry is skipped
+/** The text of every `<loc>...</loc>`, by indexOf (OPS-2: a regular expression backtracked cubically on `<loc>` plus spaces). Rezoomo writes `<loc><![CDATA[...]]></loc>`. */
+export function locTexts(xml: string): string[] {
+  const out: string[] = [];
+  for (let at = xml.indexOf("<loc>"); at >= 0; ) {
+    const from = at + 5;
+    const end = xml.indexOf("</loc>", from);
+    if (end < 0) break;
+    let v = xml.slice(from, end).trim();
+    if (v.startsWith("<![CDATA[") && v.endsWith("]]>")) v = v.slice(9, -3).trim();
+    if (v.length <= MAX_LOC && !v.includes("<")) out.push(v);
+    at = xml.indexOf("<loc>", end + 6);
+  }
+  return out;
+}
 
 const NOT_REPUBLIC = /northern ireland|\b(?:ni|uk|united kingdom|gb)\b/i;
 /**
@@ -196,7 +210,7 @@ async function sitemapUrls(board: string, call: Caller, url: string): Promise<st
   const urls: string[] = [];
   const locs = (xml: string, cap: number, what: string) => {
     const out: string[] = [];
-    for (const m of xml.matchAll(LOC)) if (out.push(htmlUnescape(m[1]!).trim()) > cap) throw new FetchFailedError(board, `sitemap has more than ${cap} ${what}`);
+    for (const m of locTexts(xml)) if (out.push(htmlUnescape(m).trim()) > cap) throw new FetchFailedError(board, `sitemap has more than ${cap} ${what}`);
     return out;
   };
   const root = asStr(await call(url));

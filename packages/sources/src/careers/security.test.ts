@@ -2,7 +2,7 @@
 // Everything goes through the fake fetch; a call to any other host is recorded and must never happen.
 import { describe, expect, it } from "vitest";
 import { fake, none, noSleep, redirect } from "../ats/testkit";
-import { fetchEightfold, fetchPhenom, fetchSalesforce, fetchSitemap, jobPosting, MAX_SITEMAPS, MAX_URLS, readPosting } from "./careers";
+import { fetchEightfold, fetchPhenom, fetchSalesforce, fetchSitemap, jobPosting, locTexts, MAX_LOC, MAX_SITEMAPS, MAX_URLS, readPosting } from "./careers";
 import { EF, page, PH, read, SF, sites, SM } from "./testkit";
 import { MAX_PAGES } from "../ats/shared";
 
@@ -173,5 +173,38 @@ describe("eightfold against a hostile site (W1e)", () => {
     const a = (await fetchEightfold(EF, none, fetch, noSleep)).adverts[0]!;
     for (const f of [a.title, a.location, a.description]) expect(f).not.toMatch(/<|>/);
     expect([a.title.includes("Engineer"), a.location]).toEqual([true, "Cork, Ireland"]);
+  });
+});
+
+describe("sitemap <loc> scan (OPS-2)", () => {
+  const timedMs = <T>(f: () => T) => {
+    const t = performance.now();
+    const value = f();
+    return { value, ms: performance.now() - t };
+  };
+  it("hostile input: <loc> then 200,000 spaces and no closing tag, and 1 MB of nested <loc>, each under 100 ms", () => {
+    expect(timedMs(() => locTexts("<loc>" + " ".repeat(200_000) + "<x>")).ms).toBeLessThan(100);
+    expect(timedMs(() => locTexts("<loc>".repeat(200_000))).ms).toBeLessThan(100);
+    expect(timedMs(() => locTexts("<loc>" + " ".repeat(200_000) + "<x></loc>")).value).toEqual([]);
+  });
+  it("parses plain, padded and CDATA entries; refuses an entry over the cap", () => {
+    expect(locTexts("<loc>a</loc><loc>\n  b </loc><loc> <![CDATA[ c ]]> </loc>")).toEqual(["a", "b", "c"]);
+    expect(locTexts(`<loc>${"x".repeat(MAX_LOC + 1)}</loc><loc>ok</loc>`)).toEqual(["ok"]);
+  });
+  it("a 1 MB sitemap of 20,000 entries parses in under 200 ms", () => {
+    const xml = `<urlset>${Array.from({ length: 20_000 }, (_, i) => `<url><loc>https://jobs.fidelity.com/ie/jobs/${i}/x/</loc></url>`).join("")}</urlset>`;
+    expect(xml.length).toBeGreaterThan(1_000_000);
+    const r = timedMs(() => locTexts(xml));
+    expect(r.value).toHaveLength(20_000);
+    expect(r.ms).toBeLessThan(200);
+  });
+  it("gives the same URLs as the old expression on every saved sitemap", () => {
+    const OLD = /<loc>\s*(?:<!\[CDATA\[)?([^<]*?)(?:\]\]>)?\s*<\/loc>/g;
+    for (const f of ["citi-sitemap.xml", "fidelity-sitemap.xml", "icims-dawnmeats-sitemap.xml", "icims-hsedne-sitemap.xml", "rezoomo-sitemap.xml"]) {
+      const xml = read(f);
+      const old = [...xml.matchAll(OLD)].map((m) => m[1]!);
+      expect(old.length, f).toBeGreaterThan(0);
+      expect(locTexts(xml), f).toEqual(old);
+    }
   });
 });
