@@ -24,6 +24,8 @@ export const MAX_BATCH = 200;
 export const ALERT_MAX_AGE_MS = 3 * 86_400_000; // D4: a job alert queued more than 3 days ago is stale, not sent
 // The sender now runs many times a day (outbox.yml), so the day's limit and the retry spacing live here, not in the run count.
 export const DAILY_CAP = 200; // sends per UTC day, under Brevo's free 300 with room for the apps' own sign-up and reset emails (#275)
+// ponytail: one pool for notices and job alerts. Notices go first only inside a run, so alerts sent early in the day can use the 200 up and a later
+// notice waits for tomorrow; keep part of the limit for notices when alert subscribers pass about 150 (0 on 27 Nov 2026).
 /** A row that is due: pending, its time has come, and a failed one waits before the next try (the 2nd an hour, the 3rd a day after it was due).
  *  ponytail: spaced from send_after, not from the last try (no such column); a row already a day old when it first fails is retried on the next runs. */
 export const DUE = "status = 'pending' and send_after <= now() and (attempts = 0 or send_after <= now() - case attempts when 1 then interval '1 hour' else interval '1 day' end)";

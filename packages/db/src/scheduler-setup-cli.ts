@@ -5,7 +5,7 @@
 // It asks for the GitHub token with a hidden prompt (or reads it from a pipe), never from an argument, and never prints it. The token is a
 // fine-grained one of the repository's owner, for this repository only, with "Actions: read and write"; it is kept in Supabase Vault and the
 // scheduled statements read it from there by name, so no table, log line or job text holds it. Safe to run again (a new token replaces the old one).
-//   ... node packages/db/src/scheduler-setup-cli.ts --status   prints the jobs and the last answers GitHub gave, and asks for nothing.
+//   ... node packages/db/src/scheduler-setup-cli.ts --status   prints the jobs, their last runs and the last answers GitHub gave, and asks for nothing.
 // The jobs and the Vault are outside the backup (it dumps public, private and drizzle), so after a restore into a new project this is run again.
 import pg from "pg";
 import { DAILY_CAP, DUE, SENT_TODAY } from "./outbox-cli.ts";
@@ -17,24 +17,32 @@ export const SECRET_NAME = "github_actions_dispatch";
 export const TOKEN_SHAPE = /^github_pat_[A-Za-z0-9_]{30,255}$/;
 const APP_ROLES = ["app_backup", "app_candidate", "app_portal", "app_admin", "app_fetcher"];
 
-/** What the database starts, and when. `when` is a SQL condition: the statement calls GitHub only while it holds. */
-export const JOBS = [
-  // The backup's own four slots (backup.yml): 00:47, 06:47, 12:47 and 18:47 UTC.
-  { name: "portal-backup", schedule: "47 */6 * * *", workflow: "backup.yml", when: "true" },
-  // Every 15 minutes, but only when a row is due and the day's limit has room: an idle site starts no run at all.
-  { name: "portal-outbox", schedule: "*/15 * * * *", workflow: "outbox.yml", when: `exists (select 1 from email_outbox where ${DUE}) and (${SENT_TODAY}) < ${DAILY_CAP}` },
-] as const;
-
-/** The statement a job runs. Built from the constants above only; the token is read from the Vault when it runs, so this text never holds it. */
+/** The statement a job runs. Built from constants only; the token is read from the Vault when it runs, so this text never holds it.
+ *  `when` is a SQL condition: GitHub is called only while it holds. */
 export const dispatchSql = (workflow: string, when: string) =>
   `select net.http_post(url := 'https://api.github.com/repos/${REPO}/actions/workflows/${workflow}/dispatches', body := '{"ref":"main"}'::jsonb, ` +
   `headers := jsonb_build_object('Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = '${SECRET_NAME}'), ` +
   `'Accept', 'application/vnd.github+json', 'User-Agent', 'irish-job-portal-scheduler', 'Content-Type', 'application/json'), timeout_milliseconds := 10000) where ${when}`;
 
+/** The outbox is started only when a row is due and the day's limit has room (the sender's own two questions): an idle site starts no run at all. */
+export const OUTBOX_WHEN = `exists (select 1 from email_outbox where ${DUE}) and (${SENT_TODAY}) < ${DAILY_CAP}`;
+
+/** What the database runs, and when (UTC). */
+export const JOBS = [
+  // The backup's own four slots (backup.yml): 00:47, 06:47, 12:47 and 18:47.
+  { name: "portal-backup", schedule: "47 */6 * * *", command: dispatchSql("backup.yml", "true") },
+  { name: "portal-outbox", schedule: "*/15 * * * *", command: dispatchSql("outbox.yml", OUTBOX_WHEN) },
+  // pg_cron never cleans its own run log (about 100 rows a day here, each with the statement's text): keep a week, on a database capped at 500 MB.
+  { name: "portal-cron-log", schedule: "23 3 * * *", command: "delete from cron.job_run_details where end_time < now() - interval '7 days'" },
+] as const;
+
 const CAN_DECRYPT =
   "select coalesce(bool_or(has_function_privilege(r.oid, p.oid, 'execute')), false) as can from pg_roles r, pg_proc p join pg_namespace n on n.oid = p.pronamespace " +
   "where r.rolname = any($1::text[]) and n.nspname = 'vault' and p.proname = '_crypto_aead_det_decrypt'";
 const STATUS_JOBS = "select jobname, schedule, active from cron.job where jobname = any($1::text[]) order by jobname";
+const STATUS_RUNS =
+  "select j.jobname, to_char(d.start_time at time zone 'utc', 'YYYY-MM-DD HH24:MI') as at, d.status, left(coalesce(d.return_message, ''), 80) as message " +
+  "from cron.job_run_details d join cron.job j using (jobid) where j.jobname = any($1::text[]) order by d.start_time desc limit 6";
 const STATUS_ANSWERS = "select to_char(created at time zone 'utc', 'YYYY-MM-DD HH24:MI') as at, status_code, timed_out, left(coalesce(error_msg, ''), 80) as error from net._http_response order by created desc limit 8";
 
 type Db = { query: (text: string, values?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>; end: () => Promise<void> };
@@ -46,20 +54,25 @@ async function readToken(): Promise<string> {
   if (!input.isTTY) { let all = ""; for await (const c of input) all += c; return all.trim(); }
   process.stderr.write("Paste the GitHub token (nothing is shown), then press Enter: ");
   input.setRawMode(true);
-  let typed = "";
+  input.resume();
   try {
-    for await (const c of input) {
-      const text = String(c);
-      if (text.includes("\u0003")) throw new Error("cancelled");
-      typed += text;
-      if (/[\r\n]/.test(text)) break;
-    }
+    return await new Promise<string>((done, stop) => {
+      let typed = "";
+      const onData = (c: Buffer) => {
+        const text = c.toString("utf8");
+        typed += text;
+        if (!text.includes("\u0003") && !/[\r\n]/.test(text)) return;
+        input.off("data", onData);
+        if (text.includes("\u0003")) stop(new Error("cancelled"));
+        else done(typed.trim());
+      };
+      input.on("data", onData);
+    });
   } finally {
     input.setRawMode(false);
     input.pause();
     process.stderr.write("\n");
   }
-  return typed.trim();
 }
 
 const real: Deps = {
@@ -71,6 +84,8 @@ const real: Deps = {
 async function status(db: Db, log: (line: string) => void): Promise<number> {
   const jobs = (await db.query(STATUS_JOBS, [JOBS.map((j) => j.name)])).rows;
   for (const j of jobs) log(`job ${j.jobname}: ${j.schedule}, ${j.active ? "on" : "OFF"}`);
+  // A statement that fails never reaches pg_net, so its error shows only in pg_cron's own run log.
+  for (const r of (await db.query(STATUS_RUNS, [JOBS.map((j) => j.name)])).rows) log(`run ${r.at} UTC ${r.jobname}: ${r.status}${r.status === "succeeded" ? "" : ` (${r.message})`}`);
   for (const a of (await db.query(STATUS_ANSWERS)).rows) log(`answer ${a.at} UTC: ${a.timed_out ? "timed out" : a.status_code}${a.error ? ` (${a.error})` : ""}`);
   return jobs.length === JOBS.length && jobs.every((j) => j.active) ? 0 : 1;
 }
@@ -94,14 +109,16 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, log: (line: s
     const old = (await db.query("select id from vault.secrets where name = $1", [SECRET_NAME])).rows[0];
     if (old) await db.query("select vault.update_secret($1::uuid, $2)", [old.id, token]);
     else await db.query("select vault.create_secret($1, $2, $3)", [token, SECRET_NAME, "GitHub token that may start this repository's workflows (scheduler-setup-cli.ts)"]);
-    for (const j of JOBS) await db.query("select cron.schedule($1, $2, $3)", [j.name, j.schedule, dispatchSql(j.workflow, j.when)]);
+    for (const j of JOBS) await db.query("select cron.schedule($1, $2, $3)", [j.name, j.schedule, j.command]);
     // Security: no app login, the read-only backup login included, may be able to decrypt what the Vault holds.
     if ((await db.query(CAN_DECRYPT, [APP_ROLES])).rows[0]!.can) throw new Error("an app login can decrypt Vault secrets; nothing was changed");
     await db.query("commit");
-    log(`stored the token in the Vault as ${SECRET_NAME} and scheduled ${JOBS.map((j) => j.name).join(" and ")}`);
+    log(`stored the token in the Vault as ${SECRET_NAME} and scheduled ${JOBS.map((j) => j.name).join(", ")}`);
     if ((await db.query("select has_table_privilege('app_backup', 'net.http_request_queue', 'select') as can")).rows[0]!.can)
       log("note: the read-only backup login can read pg_net's request queue, where a call waits (with its token) for the moment before it is sent");
-    // Proof: start one backup now and read GitHub's answer. pg_net sends only after the statement commits.
+    // Proof 1: the outbox job's own statement runs here once, so a mistake in it shows now and not as a silent failed job. It calls GitHub only if a row is due.
+    await db.query(JOBS[1].command);
+    // Proof 2: start one backup now and read GitHub's answer. pg_net sends only after the statement commits.
     const id = (await db.query(dispatchSql("backup.yml", "true"))).rows[0]!.http_post;
     for (let i = 0; i < 20; i++) {
       await deps.sleep(1000);

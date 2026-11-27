@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { createTestDb, urlFor, type TestDb } from "./db";
 import { fixtures } from "./fixtures";
 import { main, sendPending, DAILY_CAP, MAX_ATTEMPTS, ALERTS, LIVE_JOBS, reservedAddress } from "../src/outbox-cli.ts";
-import { JOBS } from "../src/scheduler-setup-cli.ts";
+import { OUTBOX_WHEN } from "../src/scheduler-setup-cli.ts";
 import { writeDigest } from "../src/staff-digest-cli.ts";
 import { createBrevoMail, BREVO_URL } from "../../auth/src/brevo.ts";
 import { deleteAccount } from "../src/candidate.ts";
@@ -218,8 +218,7 @@ describe("outbox command (main)", () => {
     expect((await su.query("select count(*)::int n from email_outbox where status = 'pending'")).rows[0].n).toBe(3);
   });
   it("the database's own trigger (the portal-outbox job) starts a run only when a row is due and the day's limit has room", async () => {
-    const when = JOBS.find((j) => j.name === "portal-outbox")!.when;
-    const go = async () => (await su.query(`select ${when} as go`)).rows[0].go;
+    const go = async () => (await su.query(`select ${OUTBOX_WHEN} as go`)).rows[0].go;
     const c = await F.cand();
     expect(await go()).toBe(false); // nothing queued: no run at all
     const later = await queue({ candidate_user_id: c, send_after: new Date(Date.now() + 3600_000) });
