@@ -9,7 +9,7 @@ import {
   dataRequestGet, checkerRead, companiesRead, closedJobRead, companyRead, countJobView, gatedRead, readGate, uncounted, getPool, getRules, guideRead, guidesRead, helpListRead, helpRead, jobRead, jobsRead, legalRead, minimumsRead, occupationRead, occupationsRead,
   permitNoticeRead, registrationBodiesRead, sectorsRead, similarRead, sitemapIds, sitemapIndexXml, sitemapPart, updatesRead, type Gate, type ReadResult, type SitemapEntry, type Work,
 } from "@portal/db";
-import { candidateSettings, googleSettings } from "@portal/auth";
+import { candidateSettings, googleSettings, sessionOnce } from "@portal/auth";
 import { standingLine } from "@portal/rules";
 import { alertsGet, unsubscribeGet } from "./alerts";
 import { dataAccessGet, jobGet, noticesGet, profileGet, promptsGet, savedList, securityGet, settingsGet, trackerGet } from "./account";
@@ -72,7 +72,7 @@ export const readTracker = () => mine(trackerGet); // B31
 export const readNotices = (query?: Query) => mine(noticesGet, query); // B38: ?after=
 /** The signed-in candidate's email, whether it is confirmed, and the name given at sign-up (the profile has its own, empty until it is saved), or null when signed out. */
 export const readAccountEmail = cache(async (): Promise<{ email: string; verified: boolean; name: string } | null> => {
-  const s = await candidateAuth().api.getSession({ headers: await headers() }).catch(() => null);
+  const s = await sessionOnce(candidateAuth(), await headers()).catch(() => null);
   return s ? { email: s.user.email, verified: s.user.emailVerified === true, name: s.user.name ?? "" } : null;
 });
 export const readSecurity = () => mine(securityGet); // B40: passwordChangedAt and signInMethods
