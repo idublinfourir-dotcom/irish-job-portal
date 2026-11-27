@@ -130,6 +130,9 @@ describe("home page photos", () => {
     expect(wide).toEqual(["face-1", "face-2", "face-3", "rules-card"]);
     for (const n of wide) expect(h).not.toMatch(new RegExp(`${n}\\.webp" alt="" loading="eager"`));
   });
+  it("PERF-10: only the hero is fetched at high priority", () => {
+    expect([...h.matchAll(/<img[^>]*fetchPriority="high"[^>]*>/gi)].map((m) => m[0].match(/photos\/([a-z0-9-]+)\.webp/)![1])).toEqual(["hero"]);
+  });
   it("has a file for every featured occupation, and no file nothing uses", () => {
     for (const f of FEATURED) expect(files).toContain(f.photo);
     const all = html(<HomeView data={full({ occupations: { ok: true, data: FEATURED.map((f) => occ(f.code, `Fake ${f.code}`, "ineligible")) }, sectors: { ok: true, data: ["health", "hospitality", "IT", "construction and engineering", "finance", "pharma and science"].map((sector) => ({ sector, jobs: 1 })) as never }, guides: { ok: true, data: [1, 2, 3].map((n) => ({ slug: `g-${n}`, title: `Fake ${n}`, checkedOn: "2026-11-01" })) } })} />);

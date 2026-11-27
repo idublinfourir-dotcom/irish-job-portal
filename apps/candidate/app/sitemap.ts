@@ -5,8 +5,9 @@ import { occupationSlug } from "../lib/occupations";
 import { companyPath, guidePath, helpPath, jobPath, legalPath, occupationPath, staticPath } from "../lib/paths";
 
 // S13: /sitemap/<id>.xml, one file per part of live jobs, company pages and occupation pages, plus the static pages, legal texts, guides and
-// help pages (packages/db/src/sitemap.ts). /sitemap-index.xml lists them all (app/sitemap-index.xml/route.ts). Read at request time: the build has no database.
-export const dynamic = "force-dynamic";
+// help pages (packages/db/src/sitemap.ts). /sitemap-index.xml lists them all (app/sitemap-index.xml/route.ts). Read on first request, then kept for an hour
+// (PERF-11): the build has no database, so generateSitemaps gives no ids there and each file is made on demand.
+export const revalidate = 3600;
 
 export async function generateSitemaps() {
   // Next also calls this at build time to prerender the files; the build has no database, so it gets none there and every id is read per request.

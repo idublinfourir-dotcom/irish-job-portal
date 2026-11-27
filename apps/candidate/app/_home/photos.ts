@@ -32,7 +32,7 @@ import sectorIt from "./photos/sector-it.webp";
 import sectorPharma from "./photos/sector-pharma.webp";
 
 // Next gives an image's { src }, Vitest its path.
-const PHOTOS = new Map<string, string | { src: string }>([
+const PHOTOS = new Map<string, string | { src: string; width?: number; height?: number }>([
   ["employer", employer],
   ["face-1", face1],
   ["face-10", face10],
@@ -69,4 +69,10 @@ export function photoSrc(name: string): string {
   const photo = PHOTOS.get(name);
   if (!photo) throw new Error(`no photo ${name} in _home/photos`);
   return typeof photo === "string" ? photo : photo.src;
+}
+
+/** PERF-10: the intrinsic size Next puts on a static import, so the browser reserves the space before the file arrives. Vitest has none. */
+export function photoSize(name: string): { width: number; height: number } | undefined {
+  const photo = PHOTOS.get(name);
+  return typeof photo === "object" && photo.width && photo.height ? { width: photo.width, height: photo.height } : undefined;
 }

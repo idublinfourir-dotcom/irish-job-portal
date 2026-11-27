@@ -12,7 +12,6 @@ initBotId({
 });
 
 // Sentry in the browser (decision #267). Only NEXT_PUBLIC_ values reach the browser: the DSN, and the environment Vercel exposes itself.
+// Browser tracing is left out of the bundle (next.config.ts, PERF-9), so there is no router transition hook; errors are still reported.
 // The release comes from the build. Never put SENTRY_AUTH_TOKEN or any other Sentry value here.
 Sentry.init(sentryOptions(process.env.NEXT_PUBLIC_SENTRY_DSN, { VERCEL_ENV: process.env.NEXT_PUBLIC_VERCEL_ENV }));
-
-export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

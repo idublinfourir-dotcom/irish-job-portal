@@ -1,5 +1,5 @@
-import { minimumsRead, publicRead } from "@portal/db";
-import { signedInCandidate } from "../../../lib/candidate";
+import { minimumsRead } from "@portal/db";
+import { cachedRead } from "../cached";
 
 // The pay and contract minimums in force today, with no occupation. Open to everyone, rate limited like the other public reads.
-export const GET = (r: Request) => publicRead(r, signedInCandidate, minimumsRead);
+export const GET = (r: Request) => cachedRead(r, minimumsRead);

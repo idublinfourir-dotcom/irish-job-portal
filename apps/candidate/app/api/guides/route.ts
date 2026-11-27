@@ -1,5 +1,5 @@
-import { guidesRead, publicRead } from "@portal/db";
-import { signedInCandidate } from "../../../lib/candidate";
+import { guidesRead } from "@portal/db";
+import { cachedRead } from "../cached";
 
 // B15: every published guide by title: slug, title, checkedOn. Open to everyone, rate limited like the other public reads.
-export const GET = (r: Request) => publicRead(r, signedInCandidate, guidesRead);
+export const GET = (r: Request) => cachedRead(r, guidesRead);
